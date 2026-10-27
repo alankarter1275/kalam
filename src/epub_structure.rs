@@ -256,6 +256,53 @@ pub fn toc_count(entries: &[TocEntry]) -> usize {
     entries.iter().map(TocEntry::count).sum()
 }
 
+/// Flatten a forest into (depth, leaf) rows in reading order —
+/// the form every Edit-contents gesture works on (decision
+/// 136). Children ride in the rows below, so each emitted
+/// entry is childless.
+pub fn toc_flatten(entries: Vec<TocEntry>) -> Vec<(usize, TocEntry)> {
+    fn walk(entries: Vec<TocEntry>, depth: usize, out: &mut Vec<(usize, TocEntry)>) {
+        for mut entry in entries {
+            let children = std::mem::take(&mut entry.children);
+            out.push((depth, entry));
+            walk(children, depth + 1, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(entries, 0, &mut out);
+    out
+}
+
+/// Rebuild a forest from flattened rows. Depths are clamped —
+/// the first row is a root and no row sits more than one
+/// deeper than the row above — so a hand-broken depth jump
+/// nests, never drops.
+pub fn toc_unflatten(flat: Vec<(usize, TocEntry)>) -> Vec<TocEntry> {
+    fn build(rows: &[(usize, TocEntry)], pos: &mut usize, depth: usize) -> Vec<TocEntry> {
+        let mut out = Vec::new();
+        while *pos < rows.len() && rows[*pos].0 == depth {
+            let mut entry = rows[*pos].1.clone();
+            entry.children = Vec::new();
+            *pos += 1;
+            if *pos < rows.len() && rows[*pos].0 > depth {
+                entry.children = build(rows, pos, depth + 1);
+            }
+            out.push(entry);
+        }
+        out
+    }
+    let mut rows: Vec<(usize, TocEntry)> = Vec::with_capacity(flat.len());
+    for (depth, entry) in flat {
+        let clamped = match rows.last() {
+            None => 0,
+            Some((prev, _)) => depth.min(prev + 1),
+        };
+        rows.push((clamped, entry));
+    }
+    let mut pos = 0;
+    build(&rows, &mut pos, 0)
+}
+
 /// Nesting depth of a forest (1 for a flat list, 0 for none).
 pub fn toc_depth(entries: &[TocEntry]) -> usize {
     entries
@@ -1131,6 +1178,44 @@ pub fn link_stylesheets(html: &str, self_path: &str, css_paths: &[String]) -> St
         }
         None => html.to_string(),
     }
+}
+
+/// Make the document link exactly `css_paths`: stylesheet
+/// `<link>`s pointing elsewhere are removed, missing ones are
+/// added. Non-stylesheet links are left alone.
+pub fn set_linked_stylesheets(html: &str, self_path: &str, css_paths: &[String]) -> String {
+    let dir = parent_dir(self_path);
+    let (Ok(re), Ok(href_re)) = (
+        regex::Regex::new(r#"(?i)<link\b[^>]*>"#),
+        regex::Regex::new(r#"(?i)href\s*=\s*(?:"([^"]*)"|'([^']*)')"#),
+    ) else {
+        return html.to_string();
+    };
+    let stripped = re.replace_all(html, |c: &regex::Captures| {
+        let tag = c.get(0).map(|m| m.as_str()).unwrap_or("");
+        if !tag.to_ascii_lowercase().contains("stylesheet") {
+            return tag.to_string();
+        }
+        let keep = href_re
+            .captures(tag)
+            .and_then(|caps| {
+                let raw = caps
+                    .get(1)
+                    .or_else(|| caps.get(2))
+                    .map(|m| m.as_str())
+                    .unwrap_or("");
+                let (path, _) = split_href(raw);
+                let resolved = resolve_href(&dir, path);
+                css_paths.iter().any(|p| p == &resolved).then_some(())
+            })
+            .is_some();
+        if keep {
+            tag.to_string()
+        } else {
+            String::new()
+        }
+    });
+    link_stylesheets(&stripped, self_path, css_paths)
 }
 
 // ── spell checking ──────────────────────────────────────────────────

@@ -173,6 +173,48 @@ pub enum EpubEditorMsg {
         to: usize,
         after: bool,
     },
+    // ── E4: structure tools + file-tree menu (decisions 125, 139) ──
+    /// Snapshot taken: mutate the book's structure now.
+    ApplyStructure(Box<StructurePlan>),
+    /// Preset: 0 = at cursor, 1 = at every heading, 2 = by size.
+    OpenSplitDialog(u8),
+    RunSplit {
+        mode: u8,
+        max_kb: usize,
+    },
+    MergeSelected,
+    RenameActive,
+    OpenRename(String),
+    RunRename {
+        from: String,
+        to: String,
+    },
+    OpenReorder,
+    RunReorder(Vec<String>),
+    OpenSemantics(String),
+    RunSemantics {
+        path: String,
+        value: Option<String>,
+    },
+    OpenLinkCss(String),
+    PalettePickSemantics,
+    PalettePickLinkCss,
+    RunLinkCss {
+        path: String,
+        css: Vec<String>,
+    },
+    TreeMenu(String),
+    TreeToggleSelect(String),
+    TreeDelete(String),
+    TreeDeleteConfirmed(String),
+    MarkCover(String),
+    TreeAddFiles,
+    FilesLoaded(Vec<(String, Vec<u8>)>),
+    TreeExport(String),
+    TreeReplace(String),
+    ReplaceLoaded(String, Vec<u8>),
+    TreeOpenExternal(String),
+    ExternalReady(std::path::PathBuf),
     /// Escape: fold away whichever floating panel is open.
     ClosePanels,
 }
@@ -226,12 +268,79 @@ enum ToolUndoEntry {
     Pending(String, Option<String>),
 }
 
+/// One structural operation, fully computed before its snapshot
+/// is taken (decision 139): text edits ride the buffer/pending
+/// rails, container mutations ride beside them, and Save
+/// replays the whole shape (added/removed path sets included).
+#[derive(Debug)]
+struct StructurePlan {
+    summary: String,
+    snapshot_label: String,
+    /// (path, new text) — OPF included where it changes. Paths
+    /// are post-rename.
+    text_changes: Vec<(String, String)>,
+    /// (path, new bytes) for binary files (Replace from file).
+    byte_changes: Vec<(String, Vec<u8>)>,
+    new_files: Vec<(EpubFile, Vec<u8>)>,
+    removed_files: Vec<String>,
+    renames: Vec<(String, String)>,
+    /// Full new reading order (container paths), when it moves.
+    spine_order: Option<Vec<String>>,
+    /// Path of the image to wear cover-image (Mark as cover).
+    set_cover: Option<String>,
+}
+
+impl StructurePlan {
+    fn new(summary: String, snapshot_label: &str) -> Self {
+        StructurePlan {
+            summary,
+            snapshot_label: snapshot_label.to_string(),
+            text_changes: Vec::new(),
+            byte_changes: Vec::new(),
+            new_files: Vec::new(),
+            removed_files: Vec::new(),
+            renames: Vec::new(),
+            spine_order: None,
+            set_cover: None,
+        }
+    }
+
+    fn files_changed(&self) -> i64 {
+        (self.text_changes.len()
+            + self.byte_changes.len()
+            + self.new_files.len()
+            + self.removed_files.len()
+            + self.renames.len()) as i64
+    }
+}
+
+/// The working state before a structure run — the pill's Undo
+/// for operations buffers alone cannot take back.
+struct StructureUndo {
+    files: Vec<EpubFile>,
+    bytes: HashMap<String, Vec<u8>>,
+    pending: HashMap<String, String>,
+    added_paths: HashSet<String>,
+    removed_paths: HashSet<String>,
+    /// (path, pinned, (text, modified) for buffered tabs)
+    tabs: Vec<(String, bool, Option<(String, bool)>)>,
+    active_path: Option<String>,
+}
+
 #[derive(Clone)]
 enum PaletteAction {
     Save,
     CheckBook,
     FindReplace,
     EditContents,
+    SplitCursor,
+    SplitDialog(u8),
+    MergeSelected,
+    RenameActive,
+    Reorder,
+    Semantics,
+    LinkCss,
+    AddFiles,
     Tool(InstantTool),
     View(ViewMode),
     Tab(RightTab),
@@ -357,6 +466,17 @@ pub struct EpubEditorModel {
     /// from (or was written to): a mismatch means the files
     /// were hand-edited and win on re-entry.
     toc_source_hash: u64,
+    // ── E4: structure tools + tree menu ──
+    /// Ctrl+clicked tree rows, in click order (Merge selected).
+    tree_selected: Vec<String>,
+    tree_menu: Option<MenuPopover>,
+    /// Live tree row widgets by path, for anchoring the
+    /// right-click menu. Interior because `rebuild_tree` is
+    /// shared-`&self`.
+    tree_rows: Rc<RefCell<Vec<(String, gtk::Button)>>>,
+    /// Whether Ctrl is currently held (tree click routing).
+    ctrl_down: Rc<RefCell<bool>>,
+    structure_undo: Option<StructureUndo>,
 }
 
 const EMPTY_TAB: &str = "__kalam_empty";
@@ -873,13 +993,24 @@ impl Component for EpubEditorModel {
         palette_panel.set_visible(false);
         root.add_overlay(&palette_panel);
 
-        // Ctrl+S saves, from anywhere in the workspace.
+        // Ctrl+S saves, from anywhere in the workspace. F2
+        // renames the open file; Ctrl's press state routes tree
+        // clicks (multi-select for Merge).
+        let ctrl_down = Rc::new(RefCell::new(false));
         let keys = gtk::EventControllerKey::new();
         {
             let s = sender.clone();
+            let ctrl_cell = ctrl_down.clone();
             keys.connect_key_pressed(move |_, keyval, _, state| {
                 let ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
                 let stop = gtk::glib::Propagation::Stop;
+                if matches!(keyval, gtk::gdk::Key::Control_L | gtk::gdk::Key::Control_R) {
+                    *ctrl_cell.borrow_mut() = true;
+                }
+                if keyval == gtk::gdk::Key::F2 {
+                    s.input(EpubEditorMsg::RenameActive);
+                    return stop;
+                }
                 if ctrl && keyval == gtk::gdk::Key::s {
                     s.input(EpubEditorMsg::SavePressed);
                     return stop;
@@ -901,6 +1032,12 @@ impl Component for EpubEditorModel {
                     s.input(EpubEditorMsg::ClosePanels);
                 }
                 gtk::glib::Propagation::Proceed
+            });
+            let ctrl_cell = ctrl_down.clone();
+            keys.connect_key_released(move |_, keyval, _, _| {
+                if matches!(keyval, gtk::gdk::Key::Control_L | gtk::gdk::Key::Control_R) {
+                    *ctrl_cell.borrow_mut() = false;
+                }
             });
         }
         root.add_controller(keys);
@@ -994,6 +1131,11 @@ impl Component for EpubEditorModel {
             toc_selected: None,
             toc_editing: None,
             toc_source_hash: 0,
+            tree_selected: Vec::new(),
+            tree_menu: None,
+            tree_rows: Rc::new(RefCell::new(Vec::new())),
+            ctrl_down,
+            structure_undo: None,
         };
         model.sync_switches();
         let widgets = view_output!();
@@ -1371,7 +1513,13 @@ impl Component for EpubEditorModel {
             EpubEditorMsg::ApplyChanges { summary, changes } => {
                 self.apply_changes(&summary, changes, &sender)
             }
-            EpubEditorMsg::PillUndo => self.undo_tool(&sender),
+            EpubEditorMsg::PillUndo => {
+                if self.structure_undo.is_some() {
+                    self.undo_structure(&sender);
+                } else {
+                    self.undo_tool(&sender);
+                }
+            }
             EpubEditorMsg::PillHide => {
                 self.pill_src = None;
                 self.pill.set_visible(false);
@@ -1480,6 +1628,112 @@ impl Component for EpubEditorModel {
             }
             EpubEditorMsg::TocDrop { from, to, after } => {
                 self.toc_drop(from, to, after, &sender)
+            }
+            // ── E4: structure tools + tree menu ──
+            EpubEditorMsg::ApplyStructure(plan) => self.apply_structure(*plan, &sender),
+            EpubEditorMsg::OpenSplitDialog(preset) => {
+                self.present_split_dialog(preset, &sender)
+            }
+            EpubEditorMsg::RunSplit { mode, max_kb } => {
+                self.run_split(mode, max_kb, &sender)
+            }
+            EpubEditorMsg::MergeSelected => self.run_merge(&sender),
+            EpubEditorMsg::RenameActive => {
+                if let Some(path) = self
+                    .active_path
+                    .clone()
+                    .filter(|p| p != CONTENTS_TAB)
+                {
+                    self.present_rename_dialog(&path, &sender);
+                }
+            }
+            EpubEditorMsg::OpenRename(path) => self.present_rename_dialog(&path, &sender),
+            EpubEditorMsg::RunRename { from, to } => self.run_rename(from, to, &sender),
+            EpubEditorMsg::OpenReorder => self.present_reorder_dialog(&sender),
+            EpubEditorMsg::RunReorder(order) => self.run_reorder(order, &sender),
+            EpubEditorMsg::OpenSemantics(path) => {
+                self.present_semantics_dialog(&path, &sender)
+            }
+            EpubEditorMsg::RunSemantics { path, value } => {
+                self.run_semantics(path, value, &sender)
+            }
+            EpubEditorMsg::OpenLinkCss(path) => {
+                self.present_link_css_dialog(&path, &sender)
+            }
+            EpubEditorMsg::RunLinkCss { path, css } => {
+                self.run_link_css(path, css, &sender)
+            }
+            EpubEditorMsg::PalettePickSemantics => {
+                if let Some(path) = self.active_path.clone().filter(|p| {
+                    self.container
+                        .as_ref()
+                        .and_then(|c| c.file(p))
+                        .map(|f| f.kind == FileKind::Html)
+                        .unwrap_or(false)
+                }) {
+                    self.present_semantics_dialog(&path, &sender);
+                } else {
+                    self.show_pill("Open a page first", false, &sender);
+                }
+            }
+            EpubEditorMsg::PalettePickLinkCss => {
+                if let Some(path) = self.active_path.clone().filter(|p| {
+                    self.container
+                        .as_ref()
+                        .and_then(|c| c.file(p))
+                        .map(|f| f.kind == FileKind::Html)
+                        .unwrap_or(false)
+                }) {
+                    self.present_link_css_dialog(&path, &sender);
+                } else {
+                    self.show_pill("Open a page first", false, &sender);
+                }
+            }
+            EpubEditorMsg::TreeMenu(path) => self.present_tree_menu(&path, &sender),
+            EpubEditorMsg::TreeToggleSelect(path) => {
+                if let Some(at) = self.tree_selected.iter().position(|p| p == &path) {
+                    self.tree_selected.remove(at);
+                } else {
+                    self.tree_selected.push(path);
+                }
+                self.rebuild_tree(&sender);
+            }
+            EpubEditorMsg::TreeDelete(path) => {
+                let s = sender.input_sender().clone();
+                let name = file_name(&path).to_string();
+                let _ = crate::widgets::dialog::confirmation_dialog(
+                    &self.root_overlay,
+                    &format!("Delete {name}?"),
+                    "The file leaves the book when you save. Links pointing \
+                     at it will break — Check book will list them.",
+                    "Cancel",
+                    "Delete",
+                    crate::widgets::dialog::ConfirmationKind::Destructive,
+                    move || {
+                        let _ = s.send(EpubEditorMsg::TreeDeleteConfirmed(path.clone()));
+                    },
+                );
+            }
+            EpubEditorMsg::TreeDeleteConfirmed(path) => {
+                self.run_tree_delete(path, &sender)
+            }
+            EpubEditorMsg::MarkCover(path) => self.run_mark_cover(path, &sender),
+            EpubEditorMsg::TreeAddFiles => self.pick_add_files(&sender),
+            EpubEditorMsg::FilesLoaded(imported) => {
+                self.run_files_loaded(imported, &sender)
+            }
+            EpubEditorMsg::TreeExport(path) => self.pick_export_file(&path, &sender),
+            EpubEditorMsg::TreeReplace(path) => self.pick_replace_file(&path, &sender),
+            EpubEditorMsg::ReplaceLoaded(path, bytes) => {
+                self.run_replace_loaded(path, bytes, &sender)
+            }
+            EpubEditorMsg::TreeOpenExternal(path) => self.open_external(&path, &sender),
+            EpubEditorMsg::ExternalReady(path) => {
+                let file = gtk::gio::File::for_path(&path);
+                let _ = gtk::gio::AppInfo::launch_default_for_uri(
+                    file.uri().as_str(),
+                    None::<&gtk::gio::AppLaunchContext>,
+                );
             }
             EpubEditorMsg::ClosePanels => {
                 self.find_panel.set_visible(false);
@@ -2406,8 +2660,26 @@ impl EpubEditorModel {
     /// manifest/spine. Structure ops (E4) all lean on this.
     fn opf_text_for_current_files(&self) -> Option<String> {
         let container = self.container.as_ref()?;
+        let ncx = container.ncx_path.clone();
+        self.opf_text_for_files(&container.files, ncx.as_deref(), None)
+    }
+
+    /// As above, against a file list a structure plan is
+    /// simulating before anything is applied. `base` overrides
+    /// the OPF text to preserve (a plan's link-fixed copy, so
+    /// guide hrefs keep their retargeting).
+    fn opf_text_for_files(
+        &self,
+        files: &[EpubFile],
+        ncx_path: Option<&str>,
+        base: Option<&str>,
+    ) -> Option<String> {
+        let container = self.container.as_ref()?;
         let opf_path = container.opf_path.clone();
-        let current = self.file_text(&opf_path)?;
+        let current = match base {
+            Some(text) => text.to_string(),
+            None => self.file_text(&opf_path)?,
+        };
         let (old_items, old_spine, _) =
             crate::epub_structure::parse_opf_data(&current, &opf_path);
         let old_id_path: HashMap<String, String> = old_items
@@ -2421,7 +2693,7 @@ impl EpubEditorModel {
         let mut used: HashSet<String> = old_items.iter().map(|i| i.id.clone()).collect();
         let mut items: Vec<crate::epub_structure::OpfItem> = Vec::new();
         let mut id_by_path: HashMap<String, String> = HashMap::new();
-        for file in container.files.iter().filter(|f| f.in_manifest) {
+        for file in files.iter().filter(|f| f.in_manifest) {
             let old = old_items.iter().find(|i| i.href == file.path);
             let id = match old {
                 Some(o) => o.id.clone(),
@@ -2445,8 +2717,7 @@ impl EpubEditorModel {
                 properties,
             });
         }
-        let mut spined: Vec<&EpubFile> = container
-            .files
+        let mut spined: Vec<&EpubFile> = files
             .iter()
             .filter(|f| f.in_manifest && f.spine_index.is_some())
             .collect();
@@ -2462,11 +2733,7 @@ impl EpubEditorModel {
                 })
             })
             .collect();
-        let toc_id = container
-            .ncx_path
-            .as_ref()
-            .and_then(|p| id_by_path.get(p))
-            .cloned();
+        let toc_id = ncx_path.and_then(|p| id_by_path.get(p)).cloned();
         Some(crate::epub_structure::rebuild_opf(
             &current,
             &opf_path,
@@ -2884,6 +3151,7 @@ impl EpubEditorModel {
 
     fn rebuild_tree(&self, sender: &ComponentSender<Self>) {
         clear_box(&self.tree_host);
+        self.tree_rows.borrow_mut().clear();
         let Some(container) = &self.container else {
             return;
         };
@@ -2941,8 +3209,14 @@ impl EpubEditorModel {
         if self.active_path.as_deref() == Some(file.path.as_str()) {
             row.add_css_class("open");
         }
+        if self.tree_selected.contains(&file.path) {
+            row.add_css_class("checked");
+        }
         row.set_size_request(-1, 36);
         row.set_tooltip_text(Some(&file.path));
+        self.tree_rows
+            .borrow_mut()
+            .push((file.path.clone(), row.clone()));
 
         let content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let name = gtk::Label::new(Some(file_name(&file.path)));
@@ -2968,6 +3242,35 @@ impl EpubEditorModel {
                 pin: already_open,
             });
         });
+
+        // Ctrl+click toggles the merge selection instead of
+        // opening (decision 139's "Merge selected").
+        {
+            let ctrl = self.ctrl_down.clone();
+            let path = file.path.clone();
+            let s = sender.clone();
+            let click = gtk::GestureClick::new();
+            click.set_button(1);
+            click.connect_pressed(move |gesture, _, _, _| {
+                if *ctrl.borrow() {
+                    gesture.set_state(gtk::EventSequenceState::Claimed);
+                    s.input(EpubEditorMsg::TreeToggleSelect(path.clone()));
+                }
+            });
+            row.add_controller(click);
+        }
+        // Right-click opens the file's menu (decision 139).
+        {
+            let path = file.path.clone();
+            let s = sender.clone();
+            let click = gtk::GestureClick::new();
+            click.set_button(3);
+            click.connect_pressed(move |gesture, _, _, _| {
+                gesture.set_state(gtk::EventSequenceState::Claimed);
+                s.input(EpubEditorMsg::TreeMenu(path.clone()));
+            });
+            row.add_controller(click);
+        }
         row
     }
 
@@ -4018,6 +4321,40 @@ impl EpubEditorModel {
             let _ = s.send(EpubEditorMsg::OpenContents);
         });
         menu.add_separator();
+        let structure =
+            crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
+        {
+            let s = sender.input_sender().clone();
+            structure.add_item("Split file…", move || {
+                let _ = s.send(EpubEditorMsg::OpenSplitDialog(0));
+            });
+            let s = sender.input_sender().clone();
+            structure.add_item("Merge files", move || {
+                let _ = s.send(EpubEditorMsg::MergeSelected);
+            });
+            let s = sender.input_sender().clone();
+            structure.add_item_with_hint("Rename file…", "F2", move || {
+                let _ = s.send(EpubEditorMsg::RenameActive);
+            });
+            let s = sender.input_sender().clone();
+            structure.add_item("Reorder files…", move || {
+                let _ = s.send(EpubEditorMsg::OpenReorder);
+            });
+            let s = sender.input_sender().clone();
+            structure.add_item("Set semantics…", move || {
+                let _ = s.send(EpubEditorMsg::PalettePickSemantics);
+            });
+            let s = sender.input_sender().clone();
+            structure.add_item("Link stylesheets…", move || {
+                let _ = s.send(EpubEditorMsg::PalettePickLinkCss);
+            });
+            structure.add_separator();
+            let s = sender.input_sender().clone();
+            structure.add_item("Add files…", move || {
+                let _ = s.send(EpubEditorMsg::TreeAddFiles);
+            });
+        }
+        menu.add_submenu("Structure", structure);
         let clean = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
         for kind in [
             InstantTool::Reformat,
@@ -4039,38 +4376,6 @@ impl EpubEditorModel {
     /// "This file or Whole book?" (decision 128): two option rows
     /// (section 38) and the tool's own name on the filled button.
     fn present_scope_dialog(&self, kind: InstantTool, sender: &ComponentSender<Self>) {
-        fn set_tick(tick: &gtk::Label, on: bool) {
-            if on {
-                tick.add_css_class("on");
-            } else {
-                tick.remove_css_class("on");
-            }
-        }
-        fn option_row(title: &str, meta: &str) -> (gtk::Button, gtk::Label) {
-            let row = gtk::Button::new();
-            row.add_css_class("kalam-ed-option");
-            row.set_size_request(-1, 52);
-            let h = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-            let tick = gtk::Label::new(Some("✓"));
-            tick.add_css_class("kalam-ed-tick");
-            tick.set_size_request(22, 22);
-            tick.set_valign(gtk::Align::Center);
-            h.append(&tick);
-            let texts = gtk::Box::new(gtk::Orientation::Vertical, 0);
-            texts.set_valign(gtk::Align::Center);
-            let t = gtk::Label::new(Some(title));
-            t.add_css_class("kalam-ed-option-title");
-            t.set_halign(gtk::Align::Start);
-            texts.append(&t);
-            let m = gtk::Label::new(Some(meta));
-            m.add_css_class("kalam-ui-meta");
-            m.set_halign(gtk::Align::Start);
-            texts.append(&m);
-            h.append(&texts);
-            row.set_child(Some(&h));
-            (row, tick)
-        }
-
         let this_file = self
             .active_tab()
             .filter(|t| kind.applies_to(t.kind))
@@ -4288,6 +4593,1490 @@ impl EpubEditorModel {
         );
     }
 
+    // ── E4: structural operations (decisions 125, 139) ───────
+    //
+    // Every structure tool computes a full StructurePlan from
+    // the book's current texts, snapshots, then applies. Undo
+    // restores the captured working state wholesale — the only
+    // honest inverse for renames and removals.
+
+    /// Snapshot, then apply a computed plan.
+    fn start_structure(&self, plan: StructurePlan, sender: &ComponentSender<Self>) {
+        let Some(book) = self.book.clone() else {
+            return;
+        };
+        let files = plan.files_changed();
+        let label = plan.snapshot_label.clone();
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        crate::tasks::spawn_internal(
+            "Taking snapshot",
+            move |_reporter| {
+                service
+                    .editor_snapshot(&book, &label, files)
+                    .map(|()| plan)
+            },
+            |_| {},
+            move |result| match result {
+                Ok(plan) => {
+                    let _ = s.send(EpubEditorMsg::ApplyStructure(Box::new(plan)));
+                }
+                Err(message) => {
+                    let _ = s.send(EpubEditorMsg::ActionFailed(message));
+                }
+            },
+        );
+    }
+
+    fn capture_structure_undo(&self) -> StructureUndo {
+        let (files, bytes) = self
+            .container
+            .as_ref()
+            .map(|c| c.snapshot_state())
+            .unwrap_or_default();
+        StructureUndo {
+            files,
+            bytes,
+            pending: self.pending.clone(),
+            added_paths: self.added_paths.clone(),
+            removed_paths: self.removed_paths.clone(),
+            tabs: self
+                .tabs
+                .iter()
+                .map(|t| {
+                    (
+                        t.path.clone(),
+                        t.pinned,
+                        t.buffer
+                            .as_ref()
+                            .map(|b| (buffer_text(b), b.is_modified())),
+                    )
+                })
+                .collect(),
+            active_path: self.active_path.clone(),
+        }
+    }
+
+    fn apply_structure(&mut self, plan: StructurePlan, sender: &ComponentSender<Self>) {
+        self.structure_undo = Some(self.capture_structure_undo());
+        self.tool_undo = None;
+
+        // Pending edits travel with renames.
+        for (old, new) in &plan.renames {
+            if let Some(text) = self.pending.remove(old) {
+                self.pending.insert(new.clone(), text);
+            }
+        }
+        if let Some(container) = &mut self.container {
+            for (old, new) in &plan.renames {
+                container.rename_file(old, new);
+            }
+            if let Some(order) = &plan.spine_order {
+                for file in &mut container.files {
+                    file.spine_index = order.iter().position(|p| p == &file.path);
+                }
+            }
+            if let Some(cover) = &plan.set_cover {
+                for file in &mut container.files {
+                    file.is_cover_image = &file.path == cover;
+                }
+            }
+            for (file, bytes) in &plan.new_files {
+                container.add_file(file.clone(), bytes.clone());
+            }
+            for path in &plan.removed_files {
+                container.remove_file(path);
+            }
+            for (path, bytes) in &plan.byte_changes {
+                container.set_bytes(path, bytes.clone());
+            }
+        }
+        for (old, new) in &plan.renames {
+            self.removed_paths.insert(old.clone());
+            self.added_paths.remove(old);
+            self.added_paths.insert(new.clone());
+        }
+        for (file, _) in &plan.new_files {
+            self.added_paths.insert(file.path.clone());
+        }
+        for path in &plan.removed_files {
+            if !self.added_paths.remove(path) {
+                self.removed_paths.insert(path.clone());
+            }
+            self.pending.remove(path);
+            self.tree_selected.retain(|p| p != path);
+        }
+        for (path, _) in &plan.byte_changes {
+            self.added_paths.insert(path.clone());
+        }
+
+        // Tabs follow renames and removals.
+        for (old, new) in &plan.renames {
+            if let Some(tab) = self.tabs.iter_mut().find(|t| &t.path == old) {
+                tab.path = new.clone();
+                tab.kind = self
+                    .container
+                    .as_ref()
+                    .and_then(|c| c.file(new))
+                    .map(|f| f.kind)
+                    .unwrap_or(tab.kind);
+            }
+            if let Some(child) = self.tab_stack.child_by_name(old) {
+                self.tab_stack.remove(&child);
+                self.tab_stack.add_named(&child, Some(new.as_str()));
+            }
+            if self.active_path.as_deref() == Some(old.as_str()) {
+                self.active_path = Some(new.clone());
+                self.tab_stack.set_visible_child_name(new);
+            }
+        }
+        for path in &plan.removed_files {
+            self.close_tab_quietly(path);
+        }
+        // A replaced binary's tab re-renders from the new bytes.
+        for (path, _) in &plan.byte_changes {
+            let rebuild = self
+                .tabs
+                .iter()
+                .find(|t| &t.path == path)
+                .map(|t| (t.buffer.is_none(), t.pinned))
+                .unwrap_or((false, false));
+            if rebuild.0 {
+                self.close_tab_quietly(path);
+                self.open_file(path, rebuild.1, sender);
+            }
+        }
+
+        for (path, text) in &plan.text_changes {
+            self.set_text_quiet(path, text);
+        }
+
+        // Keep an active tab standing if the op removed it.
+        if self
+            .active_path
+            .as_ref()
+            .is_some_and(|p| !self.tabs.iter().any(|t| &t.path == p))
+        {
+            match self.tabs.last().map(|t| t.path.clone()) {
+                Some(next) => self.activate_tab(&next, sender),
+                None => {
+                    self.active_path = None;
+                    self.tab_stack.set_visible_child_name(EMPTY_TAB);
+                }
+            }
+        }
+        if self.contents_active() {
+            self.maybe_reload_toc();
+            self.rebuild_contents(sender);
+        }
+        self.show_pill(&plan.summary, true, sender);
+        self.run_check(sender);
+        self.request_preview_write(sender);
+        self.sync_chrome(sender);
+        self.rebuild_tree(sender);
+        self.rebuild_tab_strip(sender);
+        self.rebuild_outline(sender);
+        if self.find_panel.is_visible() {
+            self.run_find(sender);
+        }
+    }
+
+    /// Take back the last structure run, buffers and all.
+    fn undo_structure(&mut self, sender: &ComponentSender<Self>) {
+        let Some(undo) = self.structure_undo.take() else {
+            return;
+        };
+        let paths: Vec<String> = self.tabs.iter().map(|t| t.path.clone()).collect();
+        for path in paths {
+            self.close_tab_quietly(&path);
+        }
+        if let Some(container) = &mut self.container {
+            container.restore_state(undo.files, undo.bytes);
+        }
+        self.pending = undo.pending;
+        self.added_paths = undo.added_paths;
+        self.removed_paths = undo.removed_paths;
+        self.tree_selected.clear();
+        for (path, pinned, saved) in &undo.tabs {
+            if path == CONTENTS_TAB {
+                self.open_contents(sender);
+                continue;
+            }
+            self.open_file(path, *pinned, sender);
+            if let Some((text, modified)) = saved {
+                if let Some(buffer) = self
+                    .tabs
+                    .iter()
+                    .find(|t| &t.path == path)
+                    .and_then(|t| t.buffer.clone())
+                {
+                    if buffer_text(&buffer) != *text {
+                        let undo_levels = buffer.max_undo_levels();
+                        buffer.set_max_undo_levels(0);
+                        buffer.set_text(text);
+                        buffer.set_max_undo_levels(undo_levels);
+                        buffer.place_cursor(&buffer.start_iter());
+                    }
+                    buffer.set_modified(*modified);
+                }
+            }
+        }
+        match undo.active_path {
+            Some(path) if self.tabs.iter().any(|t| t.path == path) => {
+                self.activate_tab(&path, sender)
+            }
+            _ => {
+                if let Some(last) = self.tabs.last().map(|t| t.path.clone()) {
+                    self.activate_tab(&last, sender);
+                } else {
+                    self.tab_stack.set_visible_child_name(EMPTY_TAB);
+                }
+            }
+        }
+        self.hide_pill();
+        self.run_check(sender);
+        self.request_preview_write(sender);
+        self.sync_chrome(sender);
+        self.rebuild_tree(sender);
+        self.rebuild_tab_strip(sender);
+    }
+
+    /// Reading-order paths of the book's spine files.
+    fn spine_order_paths(&self) -> Vec<String> {
+        let Some(container) = &self.container else {
+            return Vec::new();
+        };
+        let mut spined: Vec<&EpubFile> = container
+            .files
+            .iter()
+            .filter(|f| f.spine_index.is_some())
+            .collect();
+        spined.sort_by_key(|f| f.spine_index);
+        spined.iter().map(|f| f.path.clone()).collect()
+    }
+
+    /// Simulate a plan's file-list mutations on a clone, so the
+    /// OPF in the plan matches the book it will meet on apply.
+    fn simulated_files(&self, plan: &StructurePlan) -> Vec<EpubFile> {
+        let mut files: Vec<EpubFile> = self
+            .container
+            .as_ref()
+            .map(|c| c.files.clone())
+            .unwrap_or_default();
+        for (old, new) in &plan.renames {
+            if let Some(file) = files.iter_mut().find(|f| &f.path == old) {
+                file.path = new.clone();
+                file.kind = crate::epub_container::classify(new, &file.media_type);
+            }
+        }
+        files.retain(|f| !plan.removed_files.contains(&f.path));
+        for (file, _) in &plan.new_files {
+            files.push(file.clone());
+        }
+        if let Some(order) = &plan.spine_order {
+            for file in &mut files {
+                file.spine_index = order.iter().position(|p| p == &file.path);
+            }
+        }
+        if let Some(cover) = &plan.set_cover {
+            for file in &mut files {
+                file.is_cover_image = &file.path == cover;
+            }
+        }
+        files
+    }
+
+    /// Finish a plan: append the OPF rewrite that matches its
+    /// simulated end state, then snapshot+apply. Returns false
+    /// (with a pill) when the OPF cannot be rebuilt.
+    fn finish_structure(
+        &mut self,
+        mut plan: StructurePlan,
+        sender: &ComponentSender<Self>,
+    ) {
+        let files = self.simulated_files(&plan);
+        let ncx = self
+            .container
+            .as_ref()
+            .and_then(|c| c.ncx_path.clone())
+            .map(|p| {
+                plan.renames
+                    .iter()
+                    .find(|(old, _)| old == &p)
+                    .map(|(_, new)| new.clone())
+                    .unwrap_or(p)
+            })
+            .filter(|p| files.iter().any(|f| &f.path == p));
+        let opf_path_now = self
+            .container
+            .as_ref()
+            .map(|c| c.opf_path.clone())
+            .unwrap_or_default();
+        let base = plan
+            .text_changes
+            .iter()
+            .find(|(p, _)| p == &opf_path_now)
+            .map(|(_, t)| t.clone());
+        plan.text_changes.retain(|(p, _)| p != &opf_path_now);
+        let Some(mut opf_text) =
+            self.opf_text_for_files(&files, ncx.as_deref(), base.as_deref())
+        else {
+            self.show_pill("Could not read the book's package file", false, sender);
+            return;
+        };
+        if let Some(cover) = &plan.set_cover {
+            let opf_path = self
+                .container
+                .as_ref()
+                .map(|c| c.opf_path.clone())
+                .unwrap_or_default();
+            let (items, _, _) =
+                crate::epub_structure::parse_opf_data(&opf_text, &opf_path);
+            if let Some(id) = items
+                .iter()
+                .find(|i| &i.href == cover)
+                .map(|i| i.id.clone())
+            {
+                opf_text = crate::epub_structure::set_cover_meta(&opf_text, &id);
+            }
+        }
+        if let Some(container) = &self.container {
+            let opf_path = container.opf_path.clone();
+            if self.file_text(&opf_path).as_deref() != Some(opf_text.as_str()) {
+                plan.text_changes.push((opf_path, opf_text));
+            }
+        }
+        self.start_structure(plan, sender);
+    }
+
+    // ── E4: split & merge (decision 139) ───────────────────────
+
+    fn present_split_dialog(&self, preset: u8, sender: &ComponentSender<Self>) {
+        let Some(tab) = self.active_tab().filter(|t| t.kind == FileKind::Html) else {
+            return;
+        };
+        let Some(buffer) = tab.buffer.clone() else {
+            return;
+        };
+        let path = tab.path.clone();
+        let text = Rc::new(buffer_text(&buffer));
+        let cursor = self.cursor_char_offset().unwrap_or(0);
+        let mode = Rc::new(std::cell::Cell::new(preset.min(2)));
+
+        let shell = dialog_shell(
+            DialogSize::Form,
+            Some("Links to the new files are fixed automatically"),
+        );
+        let rows: Vec<(gtk::Button, gtk::Label)> = [
+            option_row("At the cursor", ""),
+            option_row("At every heading", ""),
+            option_row("By size", "Split when a piece grows past the size below"),
+        ]
+        .into_iter()
+        .collect();
+        let size_entry = gtk::Entry::new();
+        size_entry.add_css_class("kalam-ed-entry");
+        size_entry.set_text("250");
+        size_entry.set_width_chars(6);
+        let size_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let size_label = gtk::Label::new(Some("Max size"));
+        size_label.add_css_class("kalam-ed-option-title");
+        size_row.append(&size_label);
+        size_row.append(&size_entry);
+        let kb = gtk::Label::new(Some("KB"));
+        kb.add_css_class("kalam-ui-meta");
+        size_row.append(&kb);
+        let count = gtk::Label::new(None);
+        count.add_css_class("kalam-ui-meta");
+        count.set_halign(gtk::Align::Start);
+        count.set_margin_top(8);
+
+        let recount: Rc<dyn Fn()> = {
+            let text = text.clone();
+            let mode = mode.clone();
+            let entry = size_entry.clone();
+            let label = count.clone();
+            Rc::new(move || {
+                let kb: usize = entry.text().trim().parse().unwrap_or(250).max(1);
+                let m = match mode.get() {
+                    0 => crate::epub_structure::SplitMode::AtChar(cursor),
+                    1 => crate::epub_structure::SplitMode::AtHeadings,
+                    _ => crate::epub_structure::SplitMode::BySize(kb * 1024),
+                };
+                let n = crate::epub_structure::split_document(&text, m).len();
+                label.set_label(&if n < 2 {
+                    "This file stays whole — nothing to split here.".to_string()
+                } else {
+                    format!("This creates {n} files.")
+                });
+            })
+        };
+        let sync_ticks: Rc<dyn Fn()> = {
+            let ticks: Vec<gtk::Label> = rows.iter().map(|(_, t)| t.clone()).collect();
+            let mode = mode.clone();
+            let recount = recount.clone();
+            Rc::new(move || {
+                for (i, tick) in ticks.iter().enumerate() {
+                    set_tick(tick, mode.get() == i as u8);
+                }
+                recount();
+            })
+        };
+        for (i, (row, _)) in rows.iter().enumerate() {
+            let mode = mode.clone();
+            let sync = sync_ticks.clone();
+            row.connect_clicked(move |_| {
+                mode.set(i as u8);
+                sync();
+            });
+            shell.body().append(row);
+        }
+        shell.body().append(&size_row);
+        {
+            let recount = recount.clone();
+            size_entry.connect_changed(move |_| recount());
+        }
+        shell.body().append(&count);
+        sync_ticks();
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        let slot_ok = slot.clone();
+        let s = sender.input_sender().clone();
+        let mode_ok = mode.clone();
+        let entry_ok = size_entry.clone();
+        shell.footer().append(&primary_button("Split", move || {
+            close_slot(&slot_ok);
+            let kb: usize = entry_ok.text().trim().parse().unwrap_or(250).max(1);
+            let _ = s.send(EpubEditorMsg::RunSplit {
+                mode: mode_ok.get(),
+                max_kb: kb,
+            });
+        }));
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            &format!("Split {}", file_name(&path)),
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    fn run_split(&mut self, mode: u8, max_kb: usize, sender: &ComponentSender<Self>) {
+        let Some(tab) = self.active_tab().filter(|t| t.kind == FileKind::Html) else {
+            return;
+        };
+        let orig = tab.path.clone();
+        let Some(text) = self.file_text(&orig) else {
+            return;
+        };
+        let split_mode = match mode {
+            0 => crate::epub_structure::SplitMode::AtChar(
+                self.cursor_char_offset().unwrap_or(0),
+            ),
+            1 => crate::epub_structure::SplitMode::AtHeadings,
+            _ => crate::epub_structure::SplitMode::BySize(max_kb * 1024),
+        };
+        let pieces = crate::epub_structure::split_document(&text, split_mode);
+        if pieces.len() < 2 {
+            self.show_pill("Nothing to split", false, sender);
+            return;
+        }
+        let dir = crate::epub_structure::parent_dir(&orig);
+        let base = file_name(&orig).to_string();
+        let (stem, ext) = match base.rsplit_once('.') {
+            Some((s, e)) => (s.to_string(), format!(".{e}")),
+            None => (base.clone(), String::new()),
+        };
+        let taken: HashSet<String> = self
+            .container
+            .as_ref()
+            .map(|c| c.files.iter().map(|f| f.path.clone()).collect())
+            .unwrap_or_default();
+        let mut names: Vec<String> = vec![orig.clone()];
+        for i in 1..pieces.len() {
+            let mut n = i + 1;
+            let mut candidate = format!("{dir}{stem}_part{n}{ext}");
+            while taken.contains(&candidate) || names.contains(&candidate) {
+                n += 1;
+                candidate = format!("{dir}{stem}_part{n}{ext}");
+            }
+            names.push(candidate);
+        }
+        // Which anchors moved to which new file.
+        let mut id_map: HashMap<String, String> = HashMap::new();
+        for (i, piece) in pieces.iter().enumerate().skip(1) {
+            for id in crate::epub_structure::ids_in(piece) {
+                id_map.insert(id, names[i].clone());
+            }
+        }
+        let orig_for_map = orig.clone();
+        let map = move |p: &str, frag: Option<&str>| -> Option<(String, Option<String>)> {
+            if p == orig_for_map {
+                if let Some(f) = frag {
+                    if let Some(np) = id_map.get(f) {
+                        return Some((np.clone(), Some(f.to_string())));
+                    }
+                }
+            }
+            None
+        };
+
+        let orig_spine = self
+            .container
+            .as_ref()
+            .and_then(|c| c.file(&orig))
+            .and_then(|f| f.spine_index);
+        let mut plan = StructurePlan::new(
+            format!(
+                "Split {} into {} files",
+                file_name(&orig),
+                pieces.len()
+            ),
+            "Before split",
+        );
+        for (i, piece) in pieces.iter().enumerate() {
+            let fixed =
+                crate::epub_structure::rewrite_links(piece, &names[i], &orig, &map);
+            if i == 0 {
+                plan.text_changes.push((orig.clone(), fixed));
+            } else {
+                plan.new_files.push((
+                    EpubFile {
+                        path: names[i].clone(),
+                        kind: FileKind::Html,
+                        media_type: "application/xhtml+xml".to_string(),
+                        spine_index: orig_spine.map(|s| s + i),
+                        is_nav: false,
+                        is_cover_image: false,
+                        in_manifest: true,
+                    },
+                    fixed.into_bytes(),
+                ));
+            }
+        }
+        if let Some(container) = &self.container {
+            for file in &container.files {
+                if file.path == orig || !file.kind.is_text() {
+                    continue;
+                }
+                if let Some(current) = self.file_text(&file.path) {
+                    let fixed = crate::epub_structure::rewrite_links(
+                        &current,
+                        &file.path,
+                        &file.path,
+                        &map,
+                    );
+                    if fixed != current {
+                        plan.text_changes.push((file.path.clone(), fixed));
+                    }
+                }
+            }
+        }
+        if orig_spine.is_some() {
+            let mut order = self.spine_order_paths();
+            if let Some(at) = order.iter().position(|p| p == &orig) {
+                for (j, name) in names.iter().skip(1).enumerate() {
+                    order.insert(at + 1 + j, name.clone());
+                }
+            }
+            plan.spine_order = Some(order);
+        }
+        self.finish_structure(plan, sender);
+    }
+
+    fn run_merge(&mut self, sender: &ComponentSender<Self>) {
+        let Some(container) = &self.container else {
+            return;
+        };
+        let order = self.spine_order_paths();
+        let mut targets: Vec<String> = self
+            .tree_selected
+            .iter()
+            .filter(|p| {
+                container
+                    .file(p)
+                    .map(|f| f.kind == FileKind::Html && f.spine_index.is_some())
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+        targets.sort_by_key(|p| order.iter().position(|o| o == p).unwrap_or(usize::MAX));
+        targets.dedup();
+        if targets.len() < 2 {
+            // Fall back to the open chapter and the one after it.
+            targets.clear();
+            if let Some(active) = self.active_path.clone() {
+                if let Some(at) = order.iter().position(|p| p == &active) {
+                    if at + 1 < order.len() {
+                        targets = vec![order[at].clone(), order[at + 1].clone()];
+                    }
+                }
+            }
+        }
+        if targets.len() < 2 {
+            self.show_pill(
+                "Select two or more files in the tree (Ctrl+click) to merge",
+                false,
+                sender,
+            );
+            return;
+        }
+        let survivor = targets[0].clone();
+        let texts: Vec<String> = targets
+            .iter()
+            .filter_map(|p| self.file_text(p))
+            .collect();
+        if texts.len() != targets.len() {
+            return;
+        }
+        let Some(mut merged) = crate::epub_structure::merge_documents(&texts) else {
+            self.show_pill("Those files could not be merged", false, sender);
+            return;
+        };
+        let removed: HashSet<String> = targets[1..].iter().cloned().collect();
+        let survivor_map = survivor.clone();
+        let removed_for_map = removed.clone();
+        let map = move |p: &str, frag: Option<&str>| -> Option<(String, Option<String>)> {
+            if removed_for_map.contains(p) {
+                Some((survivor_map.clone(), frag.map(str::to_string)))
+            } else {
+                None
+            }
+        };
+        merged =
+            crate::epub_structure::rewrite_links(&merged, &survivor, &survivor, &map);
+        let mut plan = StructurePlan::new(
+            format!(
+                "Merged {} files into {}",
+                targets.len(),
+                file_name(&survivor)
+            ),
+            "Before merge",
+        );
+        plan.text_changes.push((survivor.clone(), merged));
+        plan.removed_files = targets[1..].to_vec();
+        if let Some(container) = &self.container {
+            for file in &container.files {
+                if targets.contains(&file.path) || !file.kind.is_text() {
+                    continue;
+                }
+                if let Some(current) = self.file_text(&file.path) {
+                    let fixed = crate::epub_structure::rewrite_links(
+                        &current,
+                        &file.path,
+                        &file.path,
+                        &map,
+                    );
+                    if fixed != current {
+                        plan.text_changes.push((file.path.clone(), fixed));
+                    }
+                }
+            }
+        }
+        plan.spine_order = Some(
+            order
+                .into_iter()
+                .filter(|p| !removed.contains(p))
+                .collect(),
+        );
+        self.finish_structure(plan, sender);
+    }
+
+    // ── E4: rename (decision 139) ──────────────────────────────
+
+    fn present_rename_dialog(&self, path: &str, sender: &ComponentSender<Self>) {
+        let dir = crate::epub_structure::parent_dir(path);
+        let shell = dialog_shell(
+            DialogSize::Form,
+            Some("Links to the new name are fixed automatically"),
+        );
+        let entry = gtk::Entry::new();
+        entry.add_css_class("kalam-ed-entry");
+        entry.set_text(file_name(path));
+        if let Some(dot) = entry.text().rfind('.') {
+            entry.select_region(0, dot as i32);
+        }
+        shell.body().append(&entry);
+        let note = gtk::Label::new(None);
+        note.add_css_class("kalam-ui-meta");
+        note.set_halign(gtk::Align::Start);
+        note.set_margin_top(8);
+        shell.body().append(&note);
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        let slot_ok = slot.clone();
+        let from = path.to_string();
+        let entry_ok = entry.clone();
+        let s = sender.input_sender().clone();
+        shell.footer().append(&primary_button("Rename", move || {
+            let name = entry_ok.text().trim().to_string();
+            if name.is_empty() || name.contains('/') {
+                return;
+            }
+            close_slot(&slot_ok);
+            let _ = s.send(EpubEditorMsg::RunRename {
+                from: from.clone(),
+                to: format!("{dir}{name}"),
+            });
+        }));
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            &format!("Rename {}", file_name(path)),
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+            entry.grab_focus();
+        }
+    }
+
+    fn run_rename(&mut self, from: String, to: String, sender: &ComponentSender<Self>) {
+        let Some(container) = &self.container else {
+            return;
+        };
+        if from == to || container.file(&from).is_none() {
+            return;
+        }
+        if container.file(&to).is_some() {
+            self.show_pill(
+                &format!("A file named {} already exists", file_name(&to)),
+                false,
+                sender,
+            );
+            return;
+        }
+        if from == container.opf_path || from == "META-INF/container.xml" || from == "mimetype" {
+            self.show_pill("That file keeps its name — the package points at it", false, sender);
+            return;
+        }
+        let old_for_map = from.clone();
+        let new_for_map = to.clone();
+        let map = move |p: &str, frag: Option<&str>| -> Option<(String, Option<String>)> {
+            if p == old_for_map {
+                Some((new_for_map.clone(), frag.map(str::to_string)))
+            } else {
+                None
+            }
+        };
+        let mut plan = StructurePlan::new(
+            format!(
+                "Renamed {} to {}",
+                file_name(&from),
+                file_name(&to)
+            ),
+            "Before rename",
+        );
+        plan.renames.push((from.clone(), to.clone()));
+        if let Some(container) = &self.container {
+            for file in &container.files {
+                if file.path == from || !file.kind.is_text() {
+                    continue;
+                }
+                if let Some(current) = self.file_text(&file.path) {
+                    let fixed = crate::epub_structure::rewrite_links(
+                        &current,
+                        &file.path,
+                        &file.path,
+                        &map,
+                    );
+                    if fixed != current {
+                        plan.text_changes.push((file.path.clone(), fixed));
+                    }
+                }
+            }
+        }
+        // The renamed file's own links re-base under its new path.
+        let kind = container.file(&from).map(|f| f.kind);
+        if kind.map(|k| k.is_text()).unwrap_or(false) {
+            if let Some(current) = self.file_text(&from) {
+                let fixed = crate::epub_structure::rewrite_links(
+                    &current, &to, &from, &map,
+                );
+                if fixed != current {
+                    plan.text_changes.push((to.clone(), fixed));
+                }
+            }
+        }
+        self.finish_structure(plan, sender);
+    }
+
+    // ── E4: reorder, semantics, linked stylesheets ─────────────
+
+    fn present_reorder_dialog(&self, sender: &ComponentSender<Self>) {
+        let order = self.spine_order_paths();
+        if order.len() < 2 {
+            return;
+        }
+        let order = Rc::new(RefCell::new(order));
+        let shell = dialog_shell(
+            DialogSize::List,
+            Some("Drag files into reading order"),
+        );
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        build_reorder_rows(&list, &order);
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scroll.set_min_content_height(360);
+        scroll.set_child(Some(&list));
+        shell.body().append(&scroll);
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        let slot_ok = slot.clone();
+        let s = sender.input_sender().clone();
+        let order_ok = order.clone();
+        shell.footer().append(&primary_button("Save order", move || {
+            close_slot(&slot_ok);
+            let _ = s.send(EpubEditorMsg::RunReorder(order_ok.borrow().clone()));
+        }));
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Reorder files",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    fn run_reorder(&mut self, order: Vec<String>, sender: &ComponentSender<Self>) {
+        if order == self.spine_order_paths() {
+            self.show_pill("The reading order is unchanged", false, sender);
+            return;
+        }
+        let mut plan = StructurePlan::new(
+            "Reordered the reading order".to_string(),
+            "Before reorder",
+        );
+        plan.spine_order = Some(order);
+        self.finish_structure(plan, sender);
+    }
+
+    fn present_semantics_dialog(&self, path: &str, sender: &ComponentSender<Self>) {
+        let Some(text) = self.file_text(path) else {
+            return;
+        };
+        let current = crate::epub_structure::body_semantics(&text);
+        // The dialog picks one standing type (decision 139); a
+        // page wearing several shows none ticked and choosing
+        // replaces the set.
+        let current = if current.len() == 1 {
+            Some(current[0].clone())
+        } else {
+            None
+        };
+        let choice: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(current));
+        let shell = dialog_shell(DialogSize::Form, Some(file_name(path)));
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        let mut ticks: Vec<(Option<String>, gtk::Label)> = Vec::new();
+        let mut add = |label: &str, value: Option<&str>, ticks: &mut Vec<(Option<String>, gtk::Label)>| {
+            let (row, tick) = option_row(label, "");
+            row.set_size_request(-1, 40);
+            ticks.push((value.map(str::to_string), tick.clone()));
+            list.append(&row);
+            (row, tick)
+        };
+        let mut rows: Vec<(Option<String>, gtk::Button)> = Vec::new();
+        let (row, _) = add("No semantics", None, &mut ticks);
+        rows.push((None, row));
+        for (label, value) in SEMANTICS_CHOICES {
+            let (row, _) = add(label, Some(value), &mut ticks);
+            rows.push((Some(value.to_string()), row));
+        }
+        let sync: Rc<dyn Fn()> = {
+            let choice = choice.clone();
+            let ticks = ticks.clone();
+            Rc::new(move || {
+                let current = choice.borrow().clone();
+                for (value, tick) in &ticks {
+                    set_tick(tick, *value == current);
+                }
+            })
+        };
+        for (value, row) in rows {
+            let choice = choice.clone();
+            let sync = sync.clone();
+            row.connect_clicked(move |_| {
+                *choice.borrow_mut() = value.clone();
+                sync();
+            });
+        }
+        sync();
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scroll.set_min_content_height(320);
+        scroll.set_child(Some(&list));
+        shell.body().append(&scroll);
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        let slot_ok = slot.clone();
+        let s = sender.input_sender().clone();
+        let path_ok = path.to_string();
+        shell.footer().append(&primary_button("Set", move || {
+            close_slot(&slot_ok);
+            let _ = s.send(EpubEditorMsg::RunSemantics {
+                path: path_ok.clone(),
+                value: choice.borrow().clone(),
+            });
+        }));
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Set semantics",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    fn run_semantics(
+        &mut self,
+        path: String,
+        value: Option<String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(text) = self.file_text(&path) else {
+            return;
+        };
+        let types: Vec<&str> = value.as_deref().into_iter().collect();
+        let next = crate::epub_structure::set_semantics(&text, &types);
+        if next == text {
+            self.show_pill("The semantics are unchanged", false, sender);
+            return;
+        }
+        let mut plan = StructurePlan::new(
+            format!("Set semantics for {}", file_name(&path)),
+            "Before set semantics",
+        );
+        plan.text_changes.push((path, next));
+        self.finish_structure(plan, sender);
+    }
+
+    fn present_link_css_dialog(&self, path: &str, sender: &ComponentSender<Self>) {
+        let Some(container) = &self.container else {
+            return;
+        };
+        let Some(text) = self.file_text(path) else {
+            return;
+        };
+        let linked: HashSet<String> =
+            crate::epub_structure::linked_stylesheets(&text, path)
+                .into_iter()
+                .collect();
+        let css_files: Vec<String> = container
+            .files
+            .iter()
+            .filter(|f| f.kind == FileKind::Css)
+            .map(|f| f.path.clone())
+            .collect();
+        if css_files.is_empty() {
+            self.show_pill("This book has no stylesheets", false, sender);
+            return;
+        }
+        let selected: Rc<RefCell<HashSet<String>>> = Rc::new(RefCell::new(linked));
+        let shell = dialog_shell(DialogSize::Form, Some(file_name(path)));
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        for css in &css_files {
+            let (row, tick) = option_row(file_name(css), css);
+            row.set_size_request(-1, 48);
+            set_tick(&tick, selected.borrow().contains(css));
+            let selected = selected.clone();
+            let css = css.clone();
+            row.connect_clicked(move |_| {
+                let on = {
+                    let mut set = selected.borrow_mut();
+                    if set.contains(&css) {
+                        set.remove(&css);
+                        false
+                    } else {
+                        set.insert(css.clone());
+                        true
+                    }
+                };
+                set_tick(&tick, on);
+            });
+            list.append(&row);
+        }
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+        scroll.set_min_content_height(240);
+        scroll.set_child(Some(&list));
+        shell.body().append(&scroll);
+
+        let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+        let slot_cancel = slot.clone();
+        shell.footer().append(&boxed_ghost_button("Cancel", move || {
+            close_slot(&slot_cancel);
+        }));
+        let slot_ok = slot.clone();
+        let s = sender.input_sender().clone();
+        let path_ok = path.to_string();
+        let order = css_files.clone();
+        shell.footer().append(&primary_button("Link", move || {
+            close_slot(&slot_ok);
+            let chosen: Vec<String> = order
+                .iter()
+                .filter(|p| selected.borrow().contains(*p))
+                .cloned()
+                .collect();
+            let _ = s.send(EpubEditorMsg::RunLinkCss {
+                path: path_ok.clone(),
+                css: chosen,
+            });
+        }));
+        if let Some(dialog) = present_dialog(
+            &self.root_overlay,
+            "Link stylesheets",
+            DialogExit::OwnButtons,
+            &shell,
+        ) {
+            *slot.borrow_mut() = Some(dialog);
+        }
+    }
+
+    fn run_link_css(
+        &mut self,
+        path: String,
+        css: Vec<String>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(text) = self.file_text(&path) else {
+            return;
+        };
+        let next = crate::epub_structure::set_linked_stylesheets(&text, &path, &css);
+        if next == text {
+            self.show_pill("The linked stylesheets are unchanged", false, sender);
+            return;
+        }
+        let mut plan = StructurePlan::new(
+            format!("Updated stylesheets for {}", file_name(&path)),
+            "Before link stylesheets",
+        );
+        plan.text_changes.push((path, next));
+        self.finish_structure(plan, sender);
+    }
+
+    // ── E4: the file-tree menu (decision 139) ──────────────────
+
+    fn present_tree_menu(&mut self, path: &str, sender: &ComponentSender<Self>) {
+        if let Some(menu) = self.tree_menu.take() {
+            menu.popover().popdown();
+            menu.popover().unparent();
+        }
+        let Some(container) = &self.container else {
+            return;
+        };
+        let Some(file) = container.file(path).cloned() else {
+            return;
+        };
+        let protected = path == container.opf_path
+            || path == "META-INF/container.xml"
+            || path == "mimetype";
+        let menu = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Wide);
+        if !protected {
+            let s = sender.input_sender().clone();
+            let p = path.to_string();
+            menu.add_item_with_hint("Rename…", "F2", move || {
+                let _ = s.send(EpubEditorMsg::OpenRename(p.clone()));
+            });
+            let s = sender.input_sender().clone();
+            let p = path.to_string();
+            menu.add_destructive_item("Delete", move || {
+                let _ = s.send(EpubEditorMsg::TreeDelete(p.clone()));
+            });
+        }
+        if self.tree_selected.len() >= 2 {
+            let s = sender.input_sender().clone();
+            menu.add_item("Merge selected", move || {
+                let _ = s.send(EpubEditorMsg::MergeSelected);
+            });
+        }
+        menu.add_separator();
+        let s = sender.input_sender().clone();
+        menu.add_item("Add files…", move || {
+            let _ = s.send(EpubEditorMsg::TreeAddFiles);
+        });
+        let s = sender.input_sender().clone();
+        let p = path.to_string();
+        menu.add_item("Export file…", move || {
+            let _ = s.send(EpubEditorMsg::TreeExport(p.clone()));
+        });
+        if !protected {
+            let s = sender.input_sender().clone();
+            let p = path.to_string();
+            menu.add_item("Replace from file…", move || {
+                let _ = s.send(EpubEditorMsg::TreeReplace(p.clone()));
+            });
+        }
+        let s = sender.input_sender().clone();
+        let p = path.to_string();
+        menu.add_item("Open in external app", move || {
+            let _ = s.send(EpubEditorMsg::TreeOpenExternal(p.clone()));
+        });
+        menu.add_separator();
+        if file.kind == FileKind::Image {
+            let s = sender.input_sender().clone();
+            let p = path.to_string();
+            menu.add_check_item("Mark as cover", file.is_cover_image, move |_| {
+                let _ = s.send(EpubEditorMsg::MarkCover(p.clone()));
+            });
+        }
+        if file.kind == FileKind::Html {
+            let s = sender.input_sender().clone();
+            let p = path.to_string();
+            menu.add_item("Set semantics…", move || {
+                let _ = s.send(EpubEditorMsg::OpenSemantics(p.clone()));
+            });
+            let s = sender.input_sender().clone();
+            let p = path.to_string();
+            menu.add_item("Link stylesheets…", move || {
+                let _ = s.send(EpubEditorMsg::OpenLinkCss(p.clone()));
+            });
+        }
+        let anchor = self
+            .tree_rows
+            .borrow()
+            .iter()
+            .find(|(p, _)| p == path)
+            .map(|(_, row)| row.clone());
+        if let Some(row) = anchor {
+            menu.popover().set_parent(&row);
+            menu.popover().popup();
+            self.tree_menu = Some(menu);
+        }
+    }
+
+    fn run_tree_delete(&mut self, path: String, sender: &ComponentSender<Self>) {
+        let in_spine = self
+            .container
+            .as_ref()
+            .and_then(|c| c.file(&path))
+            .map(|f| f.spine_index.is_some())
+            .unwrap_or(false);
+        let mut plan = StructurePlan::new(
+            format!("Deleted {}", file_name(&path)),
+            "Before delete",
+        );
+        plan.removed_files.push(path.clone());
+        if in_spine {
+            plan.spine_order = Some(
+                self.spine_order_paths()
+                    .into_iter()
+                    .filter(|p| p != &path)
+                    .collect(),
+            );
+        }
+        self.finish_structure(plan, sender);
+    }
+
+    fn run_mark_cover(&mut self, path: String, sender: &ComponentSender<Self>) {
+        let already = self
+            .container
+            .as_ref()
+            .and_then(|c| c.file(&path))
+            .map(|f| f.is_cover_image)
+            .unwrap_or(false);
+        if already {
+            self.show_pill("That image is already the cover", false, sender);
+            return;
+        }
+        let mut plan = StructurePlan::new(
+            format!("{} is now the cover", file_name(&path)),
+            "Before mark as cover",
+        );
+        plan.set_cover = Some(path);
+        self.finish_structure(plan, sender);
+    }
+
+    /// Add files… imports (disk name, bytes) into the book:
+    /// same-named existing files are replaced in place, new
+    /// ones land beside their kind and join the manifest;
+    /// chapters also join the reading order at the end.
+    fn run_files_loaded(
+        &mut self,
+        imported: Vec<(String, Vec<u8>)>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let Some(container) = &self.container else {
+            return;
+        };
+        if imported.is_empty() {
+            return;
+        }
+        let mut plan = StructurePlan::new(
+            if imported.len() == 1 {
+                format!("Added {}", imported[0].0)
+            } else {
+                format!("Added {} files", imported.len())
+            },
+            "Before add files",
+        );
+        // Donor directories by kind, from files already present.
+        let donor_dir = |kind: FileKind| -> String {
+            container
+                .files
+                .iter()
+                .find(|f| f.kind == kind)
+                .map(|f| crate::epub_structure::parent_dir(&f.path))
+                .unwrap_or_else(|| crate::epub_structure::parent_dir(&container.opf_path))
+        };
+        let mut order = self.spine_order_paths();
+        let mut order_changed = false;
+        for (name, bytes) in imported {
+            let bare = file_name(&name).to_string();
+            let media = crate::epub_container::guess_media_type(&bare);
+            let kind = crate::epub_container::classify(&bare, &media);
+            if let Some(existing) = container
+                .files
+                .iter()
+                .find(|f| file_name(&f.path) == bare)
+                .map(|f| f.path.clone())
+            {
+                match String::from_utf8(bytes.clone()) {
+                    Ok(text) if kind.is_text() => {
+                        plan.text_changes.push((existing, text));
+                    }
+                    _ => plan.byte_changes.push((existing, bytes)),
+                }
+                continue;
+            }
+            let path = format!("{}{}", donor_dir(kind), bare);
+            let spined = kind == FileKind::Html;
+            if spined {
+                order.push(path.clone());
+                order_changed = true;
+            }
+            plan.new_files.push((
+                EpubFile {
+                    path,
+                    kind,
+                    media_type: media,
+                    spine_index: spined.then_some(order.len() - 1),
+                    is_nav: false,
+                    is_cover_image: false,
+                    in_manifest: true,
+                },
+                bytes,
+            ));
+        }
+        if order_changed {
+            plan.spine_order = Some(order);
+        }
+        self.finish_structure(plan, sender);
+    }
+
+    fn run_replace_loaded(
+        &mut self,
+        path: String,
+        bytes: Vec<u8>,
+        sender: &ComponentSender<Self>,
+    ) {
+        let kind = self
+            .container
+            .as_ref()
+            .and_then(|c| c.file(&path))
+            .map(|f| f.kind);
+        let mut plan = StructurePlan::new(
+            format!("Replaced {}", file_name(&path)),
+            "Before replace file",
+        );
+        match String::from_utf8(bytes.clone()) {
+            Ok(text) if kind.map(|k| k.is_text()).unwrap_or(false) => {
+                plan.text_changes.push((path, text));
+            }
+            _ => plan.byte_changes.push((path, bytes)),
+        }
+        self.finish_structure(plan, sender);
+    }
+
+    // ── E4: file dialogs for the tree menu ─────────────────────
+
+    fn host_window(&self) -> Option<gtk::Window> {
+        self.root_overlay
+            .root()
+            .and_then(|r| r.downcast::<gtk::Window>().ok())
+            .or_else(|| {
+                relm4::main_application()
+                    .active_window()
+                    .and_then(|w| w.downcast::<gtk::Window>().ok())
+            })
+    }
+
+    fn pick_add_files(&self, sender: &ComponentSender<Self>) {
+        let dialog = gtk::FileDialog::builder()
+            .title("Add files to the book")
+            .modal(true)
+            .build();
+        let filter = gtk::FileFilter::new();
+        filter.set_name(Some("Book files"));
+        for suffix in [
+            "xhtml", "html", "htm", "css", "xml", "ncx", "opf", "txt", "svg", "png",
+            "jpg", "jpeg", "gif", "webp", "ttf", "otf", "woff", "woff2",
+        ] {
+            filter.add_suffix(suffix);
+        }
+        let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+        filters.append(&filter);
+        dialog.set_filters(Some(&filters));
+        let window = self.host_window();
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        dialog.open_multiple(
+            window.as_ref(),
+            gtk::gio::Cancellable::NONE,
+            move |result| {
+                let Ok(files) = result else {
+                    return;
+                };
+                let mut paths = Vec::new();
+                for i in 0..files.n_items() {
+                    if let Some(file) = files
+                        .item(i)
+                        .and_then(|obj| obj.downcast::<gtk::gio::File>().ok())
+                    {
+                        if let Some(p) = file.path() {
+                            paths.push(p);
+                        }
+                    }
+                }
+                if paths.is_empty() {
+                    return;
+                }
+                let s2 = s.clone();
+                crate::tasks::spawn_internal(
+                    "Reading files",
+                    move |_reporter| {
+                        let mut out = Vec::new();
+                        for path in &paths {
+                            let name = path
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| "file".to_string());
+                            let bytes = service.read_editor_import(path)?;
+                            out.push((name, bytes));
+                        }
+                        Ok::<_, String>(out)
+                    },
+                    |_| {},
+                    move |result| match result {
+                        Ok(imported) => {
+                            let _ = s2.send(EpubEditorMsg::FilesLoaded(imported));
+                        }
+                        Err(message) => {
+                            let _ = s2.send(EpubEditorMsg::ActionFailed(message));
+                        }
+                    },
+                );
+            },
+        );
+    }
+
+    fn pick_replace_file(&self, target: &str, sender: &ComponentSender<Self>) {
+        let dialog = gtk::FileDialog::builder()
+            .title(format!("Replace {}", file_name(target)))
+            .modal(true)
+            .build();
+        let window = self.host_window();
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        let target = target.to_string();
+        dialog.open(window.as_ref(), gtk::gio::Cancellable::NONE, move |result| {
+            let Ok(file) = result else {
+                return;
+            };
+            let Some(path) = file.path() else {
+                return;
+            };
+            let s2 = s.clone();
+            let target = target.clone();
+            crate::tasks::spawn_internal(
+                "Reading file",
+                move |_reporter| service.read_editor_import(&path),
+                |_| {},
+                move |result| match result {
+                    Ok(bytes) => {
+                        let _ = s2.send(EpubEditorMsg::ReplaceLoaded(target.clone(), bytes));
+                    }
+                    Err(message) => {
+                        let _ = s2.send(EpubEditorMsg::ActionFailed(message));
+                    }
+                },
+            );
+        });
+    }
+
+    fn pick_export_file(&self, path: &str, sender: &ComponentSender<Self>) {
+        let Some(bytes) = self.file_bytes(path) else {
+            return;
+        };
+        let dialog = gtk::FileDialog::builder()
+            .title(format!("Export {}", file_name(path)))
+            .modal(true)
+            .initial_name(file_name(path))
+            .build();
+        let window = self.host_window();
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        dialog.save(window.as_ref(), gtk::gio::Cancellable::NONE, move |result| {
+            let Ok(file) = result else {
+                return;
+            };
+            let Some(dest) = file.path() else {
+                return;
+            };
+            let s2 = s.clone();
+            crate::tasks::spawn_internal(
+                "Exporting file",
+                move |_reporter| service.write_editor_export(&dest, &bytes),
+                |_| {},
+                move |result| {
+                    if let Err(message) = result {
+                        let _ = s2.send(EpubEditorMsg::ActionFailed(message));
+                    }
+                },
+            );
+        });
+    }
+
+    fn open_external(&self, path: &str, sender: &ComponentSender<Self>) {
+        let (Some(book), Some(bytes)) = (self.book.clone(), self.file_bytes(path))
+        else {
+            return;
+        };
+        let inner = path.to_string();
+        let service = self.service.clone();
+        let s = sender.input_sender().clone();
+        crate::tasks::spawn_internal(
+            "Preparing file",
+            move |_reporter| service.materialize_editor_file(&book, &inner, &bytes),
+            |_| {},
+            move |result| match result {
+                Ok(path) => {
+                    let _ = s.send(EpubEditorMsg::ExternalReady(path));
+                }
+                Err(message) => {
+                    let _ = s.send(EpubEditorMsg::ActionFailed(message));
+                }
+            },
+        );
+    }
+
     /// Apply whole-file replacements: one undo step per open
     /// buffer, a pending edit per unopened file.
     fn apply_changes(
@@ -4320,6 +6109,7 @@ impl EpubEditorModel {
             }
         }
         self.tool_undo = Some(undo);
+        self.structure_undo = None;
         self.show_pill(summary, true, sender);
         self.run_check(sender);
         self.request_preview_write(sender);
@@ -4750,6 +6540,15 @@ impl EpubEditorModel {
             item("Check book", "", None, PaletteAction::CheckBook),
             item("Find & replace", "", Some("Ctrl+F"), PaletteAction::FindReplace),
             item("Edit contents", "", None, PaletteAction::EditContents),
+            item("Split at cursor", "Structure", None, PaletteAction::SplitCursor),
+            item("Split at every heading…", "Structure", None, PaletteAction::SplitDialog(1)),
+            item("Split chapter by size…", "Structure", None, PaletteAction::SplitDialog(2)),
+            item("Merge files", "Structure", None, PaletteAction::MergeSelected),
+            item("Rename file…", "Structure", Some("F2"), PaletteAction::RenameActive),
+            item("Reorder files…", "Structure", None, PaletteAction::Reorder),
+            item("Set semantics…", "Structure", None, PaletteAction::Semantics),
+            item("Link stylesheets…", "Structure", None, PaletteAction::LinkCss),
+            item("Add files…", "Structure", None, PaletteAction::AddFiles),
             item("Smarten punctuation", "Clean up", None, PaletteAction::Tool(InstantTool::Smarten)),
             item("Reformat code", "Clean up", None, PaletteAction::Tool(InstantTool::Reformat)),
             item("Remove unused CSS", "Clean up", None, PaletteAction::Tool(InstantTool::RemoveUnusedCss)),
@@ -4850,6 +6649,18 @@ impl EpubEditorModel {
             }
             PaletteAction::FindReplace => self.toggle_find(sender),
             PaletteAction::EditContents => self.open_contents(sender),
+            PaletteAction::SplitCursor => self.run_split(0, 250, sender),
+            PaletteAction::SplitDialog(preset) => {
+                self.present_split_dialog(preset, sender)
+            }
+            PaletteAction::MergeSelected => self.run_merge(sender),
+            PaletteAction::RenameActive => sender.input(EpubEditorMsg::RenameActive),
+            PaletteAction::Reorder => self.present_reorder_dialog(sender),
+            PaletteAction::Semantics => {
+                sender.input(EpubEditorMsg::PalettePickSemantics)
+            }
+            PaletteAction::LinkCss => sender.input(EpubEditorMsg::PalettePickLinkCss),
+            PaletteAction::AddFiles => sender.input(EpubEditorMsg::TreeAddFiles),
             PaletteAction::Tool(kind) => self.present_scope_dialog(kind, sender),
             PaletteAction::View(mode) => sender.input(EpubEditorMsg::SetViewMode(mode)),
             PaletteAction::Tab(tab) => sender.input(EpubEditorMsg::SetRightTab(tab)),
@@ -4922,6 +6733,164 @@ impl EpubEditorModel {
 }
 
 // ── helpers ────────────────────────────────────────────────────────
+
+/// Light or darken a §38 option row's tick circle.
+fn set_tick(tick: &gtk::Label, on: bool) {
+    if on {
+        tick.add_css_class("on");
+    } else {
+        tick.remove_css_class("on");
+    }
+}
+
+/// One section-38 option row: tick circle, title, optional meta.
+/// Returns the row button and its tick for state flips.
+fn option_row(title: &str, meta: &str) -> (gtk::Button, gtk::Label) {
+    let row = gtk::Button::new();
+    row.add_css_class("kalam-ed-option");
+    row.set_size_request(-1, 52);
+    let h = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    let tick = gtk::Label::new(Some("✓"));
+    tick.add_css_class("kalam-ed-tick");
+    tick.set_size_request(22, 22);
+    tick.set_valign(gtk::Align::Center);
+    h.append(&tick);
+    let texts = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    texts.set_valign(gtk::Align::Center);
+    let t = gtk::Label::new(Some(title));
+    t.add_css_class("kalam-ed-option-title");
+    t.set_halign(gtk::Align::Start);
+    texts.append(&t);
+    if !meta.is_empty() {
+        let m = gtk::Label::new(Some(meta));
+        m.add_css_class("kalam-ui-meta");
+        m.set_halign(gtk::Align::Start);
+        texts.append(&m);
+    }
+    h.append(&texts);
+    row.set_child(Some(&h));
+    (row, tick)
+}
+
+/// The semantics a page can wear (decision 139's Set
+/// semantics): display name and `epub:type` value.
+const SEMANTICS_CHOICES: &[(&str, &str)] = &[
+    ("Cover page", "cover"),
+    ("Title page", "titlepage"),
+    ("Contents", "toc"),
+    ("Chapter", "chapter"),
+    ("Part", "part"),
+    ("Preface", "preface"),
+    ("Foreword", "foreword"),
+    ("Introduction", "introduction"),
+    ("Prologue", "prologue"),
+    ("Epilogue", "epilogue"),
+    ("Appendix", "appendix"),
+    ("Afterword", "afterword"),
+    ("Acknowledgements", "acknowledgments"),
+    ("Copyright page", "copyright-page"),
+    ("Dedication", "dedication"),
+    ("Glossary", "glossary"),
+    ("Bibliography", "bibliography"),
+    ("Index", "index"),
+    ("Footnotes", "footnotes"),
+    ("Endnotes", "endnotes"),
+];
+
+/// (Re)build the Reorder dialog's draggable rows: grip dots,
+/// sequence number, file name; a drop moves the path in
+/// `order` and rebuilds so indices stay honest.
+fn build_reorder_rows(list: &gtk::Box, order: &Rc<RefCell<Vec<String>>>) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+    let paths = order.borrow().clone();
+    for (index, path) in paths.iter().enumerate() {
+        let row = gtk::Button::new();
+        row.add_css_class("kalam-ed-order-row");
+        row.set_size_request(-1, 44);
+        let h = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let grip = gtk::Label::new(Some("⠿"));
+        grip.add_css_class("kalam-ed-grip");
+        grip.set_valign(gtk::Align::Center);
+        h.append(&grip);
+        let num = gtk::Label::new(Some(&format!("{}", index + 1)));
+        num.add_css_class("kalam-ui-meta");
+        num.set_width_chars(3);
+        num.set_valign(gtk::Align::Center);
+        h.append(&num);
+        let name = gtk::Label::new(Some(file_name(path)));
+        name.add_css_class("kalam-ed-option-title");
+        name.set_halign(gtk::Align::Start);
+        name.set_valign(gtk::Align::Center);
+        h.append(&name);
+        row.set_child(Some(&h));
+
+        let provider = gtk::gdk::ContentProvider::for_value(&(index as i64).to_value());
+        let source = gtk::DragSource::new();
+        source.set_actions(gtk::gdk::DragAction::MOVE);
+        source.set_content(Some(&provider));
+        let row_begin = row.clone();
+        source.connect_drag_begin(move |source, _| {
+            row_begin.set_opacity(0.4);
+            let paintable = gtk::WidgetPaintable::new(Some(&row_begin));
+            source.set_icon(Some(&paintable), 14, 18);
+        });
+        let row_end = row.clone();
+        source.connect_drag_end(move |_, _, _| row_end.set_opacity(1.0));
+        let row_cancel = row.clone();
+        source.connect_drag_cancel(move |_, _, _| {
+            row_cancel.set_opacity(1.0);
+            false
+        });
+        row.add_controller(source);
+
+        let target = gtk::DropTarget::new(i64::static_type(), gtk::gdk::DragAction::MOVE);
+        let row_motion = row.clone();
+        target.connect_enter(move |_, _, y| {
+            set_toc_drop(&row_motion, y);
+            gtk::gdk::DragAction::MOVE
+        });
+        let row_motion2 = row.clone();
+        target.connect_motion(move |_, _, y| {
+            set_toc_drop(&row_motion2, y);
+            gtk::gdk::DragAction::MOVE
+        });
+        let row_leave = row.clone();
+        target.connect_leave(move |_| {
+            row_leave.remove_css_class("drop-before");
+            row_leave.remove_css_class("drop-after");
+        });
+        let row_drop = row.clone();
+        let list_drop = list.clone();
+        let order_drop = order.clone();
+        target.connect_drop(move |_, value, _, y| {
+            let after = y >= row_drop.height() as f64 / 2.0;
+            row_drop.remove_css_class("drop-before");
+            row_drop.remove_css_class("drop-after");
+            let Ok(from) = value.get::<i64>() else {
+                return false;
+            };
+            let from = from as usize;
+            {
+                let mut paths = order_drop.borrow_mut();
+                if from >= paths.len() || from == index {
+                    return false;
+                }
+                let item = paths.remove(from);
+                let mut to = if after { index + 1 } else { index };
+                if from < to {
+                    to -= 1;
+                }
+                paths.insert(to, item);
+            }
+            build_reorder_rows(&list_drop, &order_drop);
+            true
+        });
+        row.add_controller(target);
+        list.append(&row);
+    }
+}
 
 /// The 3px accent drop bar on a contents row, before or after
 /// by pointer half (decision 136's "drag to reorder").

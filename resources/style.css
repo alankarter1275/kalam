@@ -8791,6 +8791,35 @@ button.kalam-ed-toc-row.drop-before {
 button.kalam-ed-toc-row.drop-after {
   box-shadow: inset 0 -3px @kalam_accent;
 }
+
+/* E4 structure tools (decision 139): tree multi-selection and
+   the Reorder dialog's draggable rows. */
+button.kalam-ed-tree-row.checked {
+  background: @kalam_surface_2;
+  box-shadow: inset 3px 0 @kalam_accent;
+}
+button.kalam-ed-order-row {
+  background: transparent;
+  font-weight: 400;
+  border: none;
+  border-radius: 8px;
+  box-shadow: none;
+  padding: 0 12px;
+  color: @kalam_text;
+  font-size: 13px;
+}
+button.kalam-ed-order-row:hover {
+  background: @kalam_hover;
+}
+button.kalam-ed-order-row.drop-before {
+  box-shadow: inset 0 3px @kalam_accent;
+}
+button.kalam-ed-order-row.drop-after {
+  box-shadow: inset 0 -3px @kalam_accent;
+}
+.kalam-ed-grip {
+  color: @kalam_text_dim;
+}
 .kalam-ed-css-element {
   font-family: "DM Mono", monospace;
   font-size: 13px;

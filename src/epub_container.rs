@@ -290,6 +290,9 @@ impl EpubContainer {
         for file in &mut self.files {
             if file.path == old {
                 file.path = new.to_string();
+                // A new extension can mean a new nature
+                // (page.html → page.xhtml); kind follows.
+                file.kind = classify(new, &file.media_type);
             }
         }
         if self.nav_path.as_deref() == Some(old) {
@@ -440,7 +443,7 @@ fn normalize_zip_path(path: &str) -> String {
     parts.join("/")
 }
 
-fn classify(path: &str, media_type: &str) -> FileKind {
+pub(crate) fn classify(path: &str, media_type: &str) -> FileKind {
     let lower_path = path.to_ascii_lowercase();
     let ext = lower_path.rsplit('.').next().unwrap_or("");
     let mt = media_type.to_ascii_lowercase();

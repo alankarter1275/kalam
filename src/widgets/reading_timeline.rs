@@ -7,8 +7,7 @@
 //! The open card is a Gtk.Revealer below the canvas; clicking a session
 //! reveals it with that book's details.
 
-use crate::db::history::{TimelineLane, TimelineSession};
-use crate::db::Catalog;
+use crate::db::{Catalog, TimelineLane, TimelineSession};
 use crate::widgets::paint::{color_probe, probe_color, rounded_rect, set_source};
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -142,7 +141,7 @@ impl Component for ReadingTimelineModel {
 
     fn init(
         catalog: Self::Init,
-        _root: &Self::Root,
+        root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let lanes = catalog.timeline_lanes(200).unwrap_or_default();
@@ -202,7 +201,7 @@ impl Component for ReadingTimelineModel {
             &probes.hl[4],
         ];
         for probe in all_probes {
-            _root.append(probe);
+            root.append(probe);
         }
 
         setup_canvas(&widgets.canvas, &model, &probes, draw_state);
@@ -226,7 +225,7 @@ impl Component for ReadingTimelineModel {
                     let card = build_card(lane);
                     widgets.card_revealer.set_child(Some(&card));
                 }
-                sender.output(ReadingTimelineOut::OpenBook { book_id }).ok();
+                sender.input(ReadingTimelineMsg::SessionClicked { book_id });
             }
         }
         self.update_view(widgets, sender);
@@ -267,8 +266,8 @@ fn setup_canvas(
 
         draw_timeline(
             cr,
-            width,
-            height,
+            width as f64,
+            height as f64,
             &lanes,
             day_min,
             day_max,
@@ -310,7 +309,7 @@ fn setup_interactions(
             ds.borrow_mut().hovered_book = Some(book_id);
             let widget = gesture.widget().unwrap();
             widget.queue_draw();
-            s.input(ReadingTimelineMsg::SessionClicked { book_id }).ok();
+            s.input(ReadingTimelineMsg::SessionClicked { book_id });
         }
     });
     canvas.add_controller(click);
@@ -333,7 +332,7 @@ fn setup_interactions(
     // Horizontal drag to scroll.
     let drag = gtk::GestureDrag::new();
     let ds = draw_state.clone();
-    drag.connect_update(move |_gesture, offset_x, _offset_y| {
+    drag.connect_update(move |_gesture, offset_x| {
         let mut state = ds.borrow_mut();
         state.scroll_offset += offset_x;
         let max_scroll = ((MIN_TIMELINE_WIDTH as f64) * 0.5).max(0.0);
@@ -356,10 +355,10 @@ fn setup_interactions(
             let state = ds.borrow();
             if let Some(book_id) = state.hovered_book {
                 drop(state);
-                s.input(ReadingTimelineMsg::SessionClicked { book_id }).ok();
+                s.input(ReadingTimelineMsg::SessionClicked { book_id });
             }
         }
-        false
+        gtk::Propagation::Proceed
     });
     canvas.add_controller(key);
 }
@@ -503,7 +502,7 @@ fn draw_timeline(
     }
 
     let axis_x = AXIS_WIDTH as f64 + scroll_offset;
-    let plot_width = (width as f64) - axis_x - scroll_offset;
+    let plot_width = width - axis_x - scroll_offset;
     let day_span = (day_max - day_min).max(1) as f64;
 
     // ── Today vertical line ───────────────────────────────────────────
@@ -512,7 +511,7 @@ fn draw_timeline(
         set_source(cr, accent.clone(), 1.0);
         cr.set_line_width(TODAY_LINE_THICKNESS);
         cr.move_to(today_x, 30.0);
-        cr.line_to(today_x, height as f64);
+        cr.line_to(today_x, height);
         cr.stroke();
     }
 
@@ -529,7 +528,7 @@ fn draw_timeline(
         if is_open || is_hovered {
             let hover_bg = if is_open { accent } else { border };
             set_source(cr, hover_bg.clone(), if is_open { 0.15 } else { 0.08 });
-            cr.rectangle(0.0, lane_y - 22.0, width as f64, LANE_HEIGHT as f64);
+            cr.rectangle(0.0, lane_y - 22.0, width, LANE_HEIGHT as f64);
             cr.fill();
         }
 

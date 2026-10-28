@@ -6,7 +6,9 @@ use crate::pages::history::pretty_day;
 use crate::service::{DashboardFeedRow, DashboardSnapshot, LibraryService, NowReading};
 use crate::widgets::book_row::cover_widget_deferred;
 use crate::widgets::charts::{monthly_series, sparkline};
-use crate::widgets::reading_timeline::ReadingTimelineModel;
+use crate::widgets::reading_timeline::{
+    ReadingTimelineModel, ReadingTimelineOut,
+};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -101,7 +103,11 @@ impl Component for LibraryPageModel {
         let timeline_ctrl = ReadingTimelineModel::builder()
             .launch(catalog)
             .forward(sender.input_sender(), |msg| {
-                LibraryMsg::TimelineOpenBook { book_id: msg.book_id }
+                match msg {
+                    ReadingTimelineOut::OpenBook { book_id } => {
+                        LibraryMsg::TimelineOpenBook { book_id }
+                    }
+                }
             });
         // The timeline widget is added to the body once the snapshot loads.
 
@@ -127,12 +133,12 @@ impl Component for LibraryPageModel {
                 // child of the body, right after the header that
                 // apply_snapshot just built.
                 if let Some(ctrl) = &self.timeline_ctrl {
-                    let widget = ctrl.widget().upcast::<gtk::Widget>();
-                    widgets.body.insert_child_after(&widget, None);
+                    let widget: &gtk::Widget = ctrl.widget().upcast();
+                    widgets.body.insert_child_after(&widget, None as Option<&gtk::Widget>);
                 }
             }
             LibraryMsg::TimelineOpenBook { book_id } => {
-                sender.output(LibraryOut::Book { book_id }).ok();
+                sender.output(LibraryOut::Book { book_id });
             }
         }
         self.update_view(widgets, sender);

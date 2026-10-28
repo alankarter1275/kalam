@@ -162,7 +162,7 @@ impl Component for LibraryPageModel {
                     widgets.body.append(&widget);
                     // Attach the Cairo draw function once the widget is realised.
                     let model = ctrl.model();
-                    if let Some(drawing) = widget.downcast::<gtk::DrawingArea>() {
+                    if let Ok(drawing) = widget.downcast::<gtk::DrawingArea>() {
                         setup_sphere_draw(&drawing, &model);
                     }
                 }

@@ -8,8 +8,6 @@ use crate::db::Catalog;
 use crate::widgets::paint::{color_probe, probe_color, set_source};
 use gtk::prelude::*;
 use pango::{FontDescription, Layout, Weight};
-use pango::prelude::*;
-use pangocairo::functions::{show_layout, update_layout};
 
 use relm4::prelude::*;
 use std::cell::RefCell;
@@ -296,8 +294,8 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
         compute_positions(&words, &draw_state, STAGE_W, STAGE_H);
 
         let state = draw_state.borrow();
-        let positions = &state.positions;
         let hovered = state.hovered_word;
+        let positions = &state.positions;
         drop(state);
 
         set_source(cr, bg, 1.0);
@@ -325,7 +323,7 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
             cr.translate(pos.px - pos.size / 2.0, pos.py - pos.size / 2.0);
 
             let layout = Layout::new(&pc);
-            let desc = FontDescription::from_string("Playfair Display");
+            let mut desc = FontDescription::from_string("Playfair Display");
             let size = if is_hovered { 24.0 } else { pos.size };
             let pango_size = (size * 1024.0) as i32;
             desc.set_size(pango_size);

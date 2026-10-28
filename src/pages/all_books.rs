@@ -56,7 +56,7 @@ pub enum AllBooksMsg {
     /// The "All books" title button was clicked: open the shelves menu (§47).
     OpenShelves,
     /// A shelf was chosen from the filter popover: add it as an active filter.
-    FilterShelfSelected { shelf_id: i64, name: String },
+    FilterShelfSelected(String),
     /// A tag was chosen from the filter popover: add it as an active filter.
     FilterTagSelected(String),
     /// Remove one active filter chip (§47 toolbar: chips).
@@ -703,7 +703,7 @@ impl Component for AllBooksModel {
             AllBooksMsg::OpenShelves => {
                 let _ = sender.output(AllBooksOut::OpenShelves);
             }
-            AllBooksMsg::FilterShelfSelected { shelf_id: _, name } => {
+            AllBooksMsg::FilterShelfSelected(name) => {
                 let chip = format!("shelf:{name}");
                 if !self.filter_chips.contains(&chip) {
                     self.filter_chips.push(chip);
@@ -1546,17 +1546,13 @@ fn build_filter_popup(
     for shelf in &shelves.shelves {
         let s = sender.clone();
         let name = shelf.name.clone();
-        let sid = shelf.id;
         let count = shelf.book_count;
         let name_for_closure = name.clone();
         shelf_menu.add_item_with_count(
             &format!("{} ({})", shelf.name, count),
             count,
             move || {
-                s.input(AllBooksMsg::FilterShelfSelected {
-                    shelf_id: sid,
-                    name: name_for_closure.clone(),
-                });
+                s.input(AllBooksMsg::FilterShelfSelected(name_for_closure.clone()));
             },
         );
     }

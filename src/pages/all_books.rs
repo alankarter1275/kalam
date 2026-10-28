@@ -1,9 +1,7 @@
 use crate::db::{BulkMetadataEdit, Catalog, SortKey};
 use crate::models::Book;
 use crate::service::{AllBooksSnapshot, LibraryService};
-use crate::widgets::book_row::{
-    build_book_grid, build_book_grid_selectable, build_book_list, invalidate_cover_cache,
-};
+use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable, build_book_list, invalidate_cover_cache};
 use crate::widgets::in_app_dialog;
 use crate::widgets::menu::{menu_popover, MenuWidth};
 use gtk::prelude::*;
@@ -19,8 +17,6 @@ pub enum AllBooksOut {
     OpenBookDialog { book_id: i64 },
     OpenReader { book_id: i64, chapter: Option<usize> },
     ComicSeries { series_name: String },
-    /// The "All books" title button opens the shelves menu (§47).
-    OpenShelves,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -28,15 +24,6 @@ pub enum SearchMode {
     #[default]
     Metadata,
     Content,
-}
-
-/// How books are grouped in the grid (§47 toolbar: Group).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum GroupBy {
-    #[default]
-    None,
-    Author,
-    Series,
 }
 
 /// Grid or List view (§47 toolbar: Grid / List).
@@ -47,9 +34,7 @@ pub enum ViewMode {
     List,
 }
 
-/// A column that can be shown in the list view (§50). The order here is the
-/// default left-to-right order; the Columns menu toggles visibility and the
-/// view itself is reorderable by drag.
+/// A column that can be shown in the list view (§50).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListColumn {
     Title,
@@ -74,7 +59,6 @@ impl ListColumn {
         }
     }
 
-    /// All columns in default order.
     pub const ALL: [Self; 7] = [
         Self::Title,
         Self::Author,
@@ -85,7 +69,6 @@ impl ListColumn {
         Self::Status,
     ];
 
-    /// The columns shown by default.
     pub fn default_visible() -> Vec<Self> {
         vec![
             Self::Title,
@@ -106,32 +89,6 @@ pub enum AllBooksMsg {
     SetQuery(String),
     /// Put keyboard focus in the library search (the shell's Ctrl+F).
     FocusSearch,
-    /// A shelf was chosen from the filter popover: add it as an active filter.
-    FilterShelfSelected(String),
-    /// A tag was chosen from the filter popover: add it as an active filter.
-    FilterTagSelected(String),
-    /// Remove one active filter chip (§47 toolbar: chips).
-    FilterChipRemoved(String),
-    /// Clear every active filter chip (§47 toolbar: Clear filters).
-    ClearFilters,
-    /// Change the grouping (§47 toolbar: Group).
-    GroupChanged(GroupBy),
-    /// Switch between Grid and List view (§47 toolbar: Grid / List).
-    ViewModeChanged(ViewMode),
-    /// Toggle one list-view column's visibility (§50 Columns menu).
-    ListColumnToggled(ListColumn),
-    /// Sort the list by one column; toggles direction on repeat click.
-    ListSortChanged(ListColumn),
-    /// A shelf was chosen from the title popover: navigate to that shelf.
-    ShelvesPopoverShelfSelected(String),
-    /// "Manage shelves…" from the title popover.
-    ShelvesPopoverManageShelves,
-    /// "New shelf…" from the title popover.
-    ShelvesPopoverNewShelf,
-    /// "Import files…" from the import menu.
-    ImportMenuImportFiles,
-    /// "Import a folder…" from the import menu.
-    ImportMenuImportFolder,
     SearchModeChanged(SearchMode),
     SortChanged(SortKey),
     PickFiles,
@@ -163,6 +120,12 @@ pub enum AllBooksMsg {
     ToggleSelectBook(i64),
     SelectAll,
     DeselectAll,
+    /// Switch between Grid and List view (§47 toolbar: Grid / List).
+    ViewModeChanged(ViewMode),
+    /// Toggle one list-view column's visibility (§50 Columns menu).
+    ListColumnToggled(ListColumn),
+    /// Sort the list by one column; toggles direction on repeat click.
+    ListSortChanged(ListColumn),
     OpenBulkEditDialog(gtk::Widget),
     ApplyBulkEdit(BulkMetadataEdit),
     /// Ask before deleting the selected books; carries the button as anchor.
@@ -316,18 +279,11 @@ pub struct AllBooksModel {
     index_status: crate::content_index::ContentIndexStatus,
     indexing: bool,
     expanded_books: HashSet<i64>,
-    /// Active filter labels shown as chips (§47 toolbar).
-    filter_chips: Vec<String>,
-    /// Current grouping (§47 toolbar: Group).
-    group_by: GroupBy,
     /// Grid or List view (§47 toolbar: Grid / List).
     view_mode: ViewMode,
-    /// Column count for the grid, from `grid_cols_for(viewport width)` (§47).
-    grid_cols: i32,
     /// Which list-view columns are visible, in left-to-right order (§50).
     list_columns: Vec<ListColumn>,
-    /// Current list sort column and direction (§50). `None` = keep the
-    /// database order (already sorted by the toolbar Sort key).
+    /// Current list sort column and direction (§50).
     list_sort_column: Option<ListColumn>,
     list_sort_desc: bool,
 }
@@ -343,65 +299,22 @@ impl Component for AllBooksModel {
         #[root]
         gtk::Overlay {
             // Main content area.
-            gtk::Box {
+            #[wrap(Some)]
+            set_child = &gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 12,
                 set_hexpand: true,
                 set_vexpand: true,
 
-                // Title row (§47): "Library" label, the "All books" title button
-                // which opens the shelves menu, and the filled Add books pill.
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 8,
-                    set_halign: gtk::Align::Fill,
-                    set_valign: gtk::Align::Center,
-
-                    gtk::Label {
-                        set_label: "Library",
-                        add_css_class: "kalam-library-label",
-                        set_halign: gtk::Align::Start,
-                        set_valign: gtk::Align::Center,
-                    },
-
-                    #[name = "title_btn"]
-                    gtk::MenuButton {
-                        set_child: Some(&crate::icons::labelled(
-                            "pan-down-symbolic",
-                            16,
-                            "All books",
-                            6,
-                        )),
-                        add_css_class: "kalam-title-btn",
-                        set_always_show_arrow: false,
-                        set_tooltip_text: Some("Open the shelves menu"),
-                    },
-
-                    gtk::Box {
-                        set_hexpand: true,
-                    },
-
-                    #[name = "add_btn"]
-                    gtk::MenuButton {
-                        #[watch]
-                        set_label: if model.importing {
-                            "Importing…"
-                        } else {
-                            "+ Import EPUB"
-                        },
-                        add_css_class: "kalam-primary-btn",
-                        set_always_show_arrow: false,
-                        #[watch]
-                        set_sensitive: !model.importing,
-                    },
+                gtk::Label {
+                    set_label: "All books",
+                    add_css_class: "kalam-page-title",
+                    set_halign: gtk::Align::Start,
                 },
 
-                // Search row (§47): pill field with the ? help icon at the right.
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
                     set_spacing: 8,
-                    set_halign: gtk::Align::Fill,
-                    set_valign: gtk::Align::Center,
 
                     #[name = "search"]
                     gtk::SearchEntry {
@@ -412,24 +325,6 @@ impl Component for AllBooksModel {
                         },
                     },
 
-                    #[name = "search_help_btn"]
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic("dialog-question-symbolic", 18)),
-                        set_halign: gtk::Align::Center,
-                        set_valign: gtk::Align::Center,
-                        set_tooltip_text: Some("Search syntax help"),
-                    },
-                },
-
-                // Toolbar (§47): Filter + chips + Clear filters (left);
-                // count, Group, Sort, Select, Grid/List (right).
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 8,
-                    set_halign: gtk::Align::Fill,
-                    set_valign: gtk::Align::Center,
-
-                    // LEFT: search mode, filter, chips, clear filters
                     #[name = "mode_box"]
                     gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
@@ -457,65 +352,6 @@ impl Component for AllBooksModel {
                                 }
                             },
                         },
-                    },
-
-                    #[name = "filter_btn"]
-                    gtk::MenuButton {
-                        set_child: Some(&crate::icons::labelled(
-                            "edit-find-symbolic",
-                            16,
-                            "Filter",
-                            6,
-                        )),
-                        add_css_class: "kalam-toolbar-btn",
-                        set_always_show_arrow: false,
-                        set_tooltip_text: Some("Filter by shelf, tag, status, or rating"),
-                    },
-
-                    #[name = "filter_chips"]
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 4,
-                    },
-
-                    #[name = "clear_filters_btn"]
-                    gtk::Button {
-                        set_label: "Clear filters",
-                        add_css_class: "kalam-secondary-btn",
-                        #[watch]
-                        set_visible: !model.filter_chips.is_empty(),
-                        connect_clicked => AllBooksMsg::ClearFilters,
-                    },
-
-                    gtk::Box {
-                        set_hexpand: true,
-                    },
-
-                    // RIGHT: count, Group, Sort, Select, Grid/List
-                    #[name = "count_label"]
-                    gtk::Label {
-                        #[watch]
-                        set_label: &format!(
-                            "{} book{}",
-                            model.books.len(),
-                            if model.books.len() == 1 { "" } else { "s" }
-                        ),
-                        add_css_class: "kalam-page-sub",
-                        set_halign: gtk::Align::Center,
-                        set_valign: gtk::Align::Center,
-                    },
-
-                    #[name = "group_btn"]
-                    gtk::MenuButton {
-                        set_child: Some(&crate::icons::labelled(
-                            "object-select-symbolic",
-                            16,
-                            "Group",
-                            6,
-                        )),
-                        add_css_class: "kalam-toolbar-btn",
-                        set_always_show_arrow: false,
-                        set_tooltip_text: Some("Group books by author, series, or none"),
                     },
 
                     #[name = "sort_box"]
@@ -549,24 +385,17 @@ impl Component for AllBooksModel {
                         connect_clicked => AllBooksMsg::ToggleSelectionMode,
                     },
 
-                    #[name = "view_btn"]
-                    gtk::ToggleButton {
+                    gtk::Button {
                         #[watch]
-                        set_label: if model.view_mode == ViewMode::Grid {
-                            "Grid"
+                        set_label: if model.importing {
+                            "Importing…"
                         } else {
-                            "List"
+                            "+ Import EPUB"
                         },
-                        add_css_class: "kalam-secondary-btn",
-                        set_tooltip_text: Some("Switch between grid and list view"),
-                        connect_toggled[sender] => move |btn| {
-                            let mode = if btn.is_active() {
-                                ViewMode::List
-                            } else {
-                                ViewMode::Grid
-                            };
-                            sender.input(AllBooksMsg::ViewModeChanged(mode));
-                        },
+                        add_css_class: "kalam-primary-btn",
+                        #[watch]
+                        set_sensitive: !model.importing,
+                        connect_clicked => AllBooksMsg::PickFiles,
                     },
                 },
 
@@ -586,11 +415,10 @@ impl Component for AllBooksModel {
                     set_hexpand: false,
                     set_vexpand: false,
                 },
-            },
+            }
 
             // Floating bulk bar (§49): bottom centre, 48 high, 32 up from bottom.
-            #[name = "selection_bar"]
-            gtk::Box {
+            add_overlay = &gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_spacing: 8,
                 set_halign: gtk::Align::Center,
@@ -645,7 +473,7 @@ impl Component for AllBooksModel {
                         sender.input(AllBooksMsg::OpenDeleteConfirm(btn.clone().upcast()));
                     },
                 },
-            },
+            }
         }
     }
 
@@ -688,10 +516,7 @@ impl Component for AllBooksModel {
             index_status: crate::content_index::ContentIndexStatus::default(),
             indexing: false,
             expanded_books: HashSet::new(),
-            filter_chips: Vec::new(),
-            group_by: GroupBy::None,
             view_mode: ViewMode::Grid,
-            grid_cols: 8,
             list_columns: ListColumn::default_visible(),
             list_sort_column: None,
             list_sort_desc: false,
@@ -699,23 +524,6 @@ impl Component for AllBooksModel {
         let widgets = view_output!();
         widgets.mode_content_btn.set_group(Some(&widgets.mode_meta_btn));
         model.check_index_status(&sender);
-
-        // Build the §47 filter popover: Shelf and Tag submenus (decision 168).
-        build_filter_popup(&widgets.filter_btn, &sender, &model);
-
-        // Build the §47 group popover: None / Author / Series.
-        build_group_popup(&widgets.group_btn, &sender);
-
-        // Render any chips that came in with the model (none on first load).
-        rebuild_filter_chips(&widgets.filter_chips, &model.filter_chips, &sender);
-
-        // Build the §47 title-button popover: All books, shelves (Manual/Smart
-        // with counts), Manage shelves…, New shelf… — 280 wide.
-        build_shelves_popover(&widgets.title_btn, &sender, &model);
-
-        // Build the §47 "+ Import EPUB" pill menu: Import files…, Import a
-        // folder…, disabled Find online….
-        build_import_menu(&widgets.add_btn, &sender);
 
         for key in SortKey::ALL {
             let btn = gtk::ToggleButton::with_label(key.label());
@@ -734,6 +542,8 @@ impl Component for AllBooksModel {
         }
         group_toggles(&widgets.sort_box);
 
+        setup_columns_menu(&widgets.columns_btn, &sender, &model.list_columns);
+
         rebuild_list(
             &widgets.list,
             &model.books,
@@ -743,10 +553,7 @@ impl Component for AllBooksModel {
             &sender,
             model.view_mode,
             &model.list_columns,
-            model.grid_cols,
         );
-
-        setup_columns_menu(&widgets.columns_btn, &sender, &model.list_columns);
 
         ComponentParts { model, widgets }
     }
@@ -809,121 +616,6 @@ impl Component for AllBooksModel {
             AllBooksMsg::FocusSearch => {
                 widgets.search.grab_focus();
                 return;
-            }
-            AllBooksMsg::FilterShelfSelected(name) => {
-                let chip = format!("shelf:{name}");
-                if !self.filter_chips.contains(&chip) {
-                    self.filter_chips.push(chip);
-                    self.query = if self.query.trim().is_empty() {
-                        format!("shelf:{name}")
-                    } else {
-                        format!("{} shelf:{}", self.query, name)
-                    };
-                    self.reload(&sender);
-                }
-                widgets.filter_btn.set_active(false);
-                rebuild_filter_chips(&widgets.filter_chips, &self.filter_chips, &sender);
-                widgets.clear_filters_btn.set_visible(!self.filter_chips.is_empty());
-            }
-            AllBooksMsg::FilterTagSelected(tag) => {
-                let chip = format!("tag:{tag}");
-                if !self.filter_chips.contains(&chip) {
-                    self.filter_chips.push(chip);
-                    self.query = if self.query.trim().is_empty() {
-                        format!("tag:{tag}")
-                    } else {
-                        format!("{} tag:{}", self.query, tag)
-                    };
-                    self.reload(&sender);
-                }
-                widgets.filter_btn.set_active(false);
-                rebuild_filter_chips(&widgets.filter_chips, &self.filter_chips, &sender);
-                widgets.clear_filters_btn.set_visible(!self.filter_chips.is_empty());
-            }
-            AllBooksMsg::FilterChipRemoved(chip) => {
-                self.filter_chips.retain(|c| c != &chip);
-                // Rebuild the query from the remaining chips.
-                let mut q = String::new();
-                for c in &self.filter_chips {
-                    if !q.is_empty() {
-                        q.push(' ');
-                    }
-                    q.push_str(c);
-                }
-                self.query = q;
-                self.reload(&sender);
-                rebuild_filter_chips(&widgets.filter_chips, &self.filter_chips, &sender);
-                widgets.clear_filters_btn.set_visible(!self.filter_chips.is_empty());
-            }
-            AllBooksMsg::ClearFilters => {
-                self.filter_chips.clear();
-                self.query.clear();
-                self.reload(&sender);
-                rebuild_filter_chips(&widgets.filter_chips, &self.filter_chips, &sender);
-                widgets.clear_filters_btn.set_visible(false);
-                widgets.search.set_text("");
-            }
-            AllBooksMsg::GroupChanged(group) => {
-                self.group_by = group;
-                // Grouping changes how cards are laid out; reload with the
-                // same query so section headings appear.
-                self.reload(&sender);
-            }
-            AllBooksMsg::ViewModeChanged(mode) => {
-                self.view_mode = mode;
-                // Switching grid↔list rebuilds the page with the other layout.
-                self.reload(&sender);
-            }
-            AllBooksMsg::ListColumnToggled(col) => {
-                if let Some(pos) = self.list_columns.iter().position(|c| *c == col) {
-                    self.list_columns.remove(pos);
-                } else {
-                    // Insert preserving the default relative order.
-                    let insert_at = ListColumn::ALL
-                        .iter()
-                        .take_while(|c| **c != col)
-                        .filter(|c| self.list_columns.contains(c))
-                        .count();
-                    self.list_columns.insert(insert_at, col);
-                }
-                self.reload(&sender);
-            }
-            AllBooksMsg::ListSortChanged(col) => {
-                if self.list_sort_column == Some(col) {
-                    self.list_sort_desc = !self.list_sort_desc;
-                } else {
-                    self.list_sort_column = Some(col);
-                    self.list_sort_desc = false;
-                }
-                self.sort_books_in_place();
-            }
-            AllBooksMsg::ShelvesPopoverShelfSelected(name) => {
-                let chip = format!("shelf:{name}");
-                if !self.filter_chips.contains(&chip) {
-                    let chip_clone = chip.clone();
-                    self.filter_chips.push(chip);
-                    self.query = if self.query.trim().is_empty() {
-                        chip_clone
-                    } else {
-                        format!("{} {}", self.query, chip_clone)
-                    };
-                    self.reload(&sender);
-                }
-                widgets.filter_btn.set_active(false);
-                rebuild_filter_chips(&widgets.filter_chips, &self.filter_chips, &sender);
-                widgets.clear_filters_btn.set_visible(!self.filter_chips.is_empty());
-            }
-            AllBooksMsg::ShelvesPopoverManageShelves => {
-                let _ = sender.output(AllBooksOut::OpenShelves);
-            }
-            AllBooksMsg::ShelvesPopoverNewShelf => {
-                crate::notify::info("New shelf", "Coming soon — shelf creation dialog.");
-            }
-            AllBooksMsg::ImportMenuImportFiles => {
-                sender.input(AllBooksMsg::PickFiles);
-            }
-            AllBooksMsg::ImportMenuImportFolder => {
-                crate::notify::info("Import folder", "Coming soon — folder chooser dialog.");
             }
             AllBooksMsg::SetQuery(q) => {
                 // Setting the entry text fires search-changed, which
@@ -1077,6 +769,34 @@ impl Component for AllBooksModel {
             }
             AllBooksMsg::DeselectAll => {
                 self.selected_books.clear();
+            }
+            AllBooksMsg::ViewModeChanged(mode) => {
+                self.view_mode = mode;
+                self.status.clear();
+                self.reload(&sender);
+            }
+            AllBooksMsg::ListColumnToggled(col) => {
+                if let Some(pos) = self.list_columns.iter().position(|c| *c == col) {
+                    self.list_columns.remove(pos);
+                } else {
+                    let insert_at = ListColumn::ALL
+                        .iter()
+                        .take_while(|c| **c != col)
+                        .filter(|c| self.list_columns.contains(c))
+                        .count();
+                    self.list_columns.insert(insert_at, col);
+                }
+                self.status.clear();
+                self.reload(&sender);
+            }
+            AllBooksMsg::ListSortChanged(col) => {
+                if self.list_sort_column == Some(col) {
+                    self.list_sort_desc = !self.list_sort_desc;
+                } else {
+                    self.list_sort_column = Some(col);
+                    self.list_sort_desc = false;
+                }
+                self.sort_books_in_place();
             }
             AllBooksMsg::OpenBulkEditDialog(anchor) => {
                 let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -1464,7 +1184,6 @@ impl Component for AllBooksModel {
                 &sender,
                 self.view_mode,
                 &self.list_columns,
-                self.grid_cols,
             );
         }
         self.update_view(widgets, sender);
@@ -1542,8 +1261,7 @@ impl AllBooksModel {
     }
 
     /// Sort the already-loaded books in memory by the current list-view
-    /// sort column/direction (§50). The grid keeps `self.books` too, so this
-    /// is cheap and immediate — no round trip to the database.
+    /// sort column/direction (§50). Cheap and immediate — no round trip.
     fn sort_books_in_place(&mut self) {
         let Some(col) = self.list_sort_column else {
             return;
@@ -1579,22 +1297,6 @@ fn status_line(n: usize, query: &str) -> String {
     }
 }
 
-fn group_toggles(box_: &gtk::Box) {
-    let mut group_leader: Option<gtk::ToggleButton> = None;
-    let mut child = box_.first_child();
-    while let Some(w) = child {
-        let next = w.next_sibling();
-        if let Ok(btn) = w.downcast::<gtk::ToggleButton>() {
-            if let Some(ref leader) = group_leader {
-                btn.set_group(Some(leader));
-            } else {
-                group_leader = Some(btn);
-            }
-        }
-        child = next;
-    }
-}
-
 /// Build (or rebuild) the §50 Columns popover on `columns_btn`, keeping the
 /// check items in sync with `list_columns`. Each check item toggles one
 /// column's visibility; toggling sends `ListColumnToggled`, which reloads the
@@ -1616,6 +1318,22 @@ fn setup_columns_menu(
     button.set_popover(Some(&menu.popover()));
 }
 
+fn group_toggles(box_: &gtk::Box) {
+    let mut group_leader: Option<gtk::ToggleButton> = None;
+    let mut child = box_.first_child();
+    while let Some(w) = child {
+        let next = w.next_sibling();
+        if let Ok(btn) = w.downcast::<gtk::ToggleButton>() {
+            if let Some(ref leader) = group_leader {
+                btn.set_group(Some(leader));
+            } else {
+                group_leader = Some(btn);
+            }
+        }
+        child = next;
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn rebuild_list(
     list: &gtk::Box,
@@ -1626,7 +1344,6 @@ fn rebuild_list(
     sender: &ComponentSender<AllBooksModel>,
     view_mode: ViewMode,
     list_columns: &[ListColumn],
-    cols: i32,
 ) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
@@ -1651,17 +1368,14 @@ fn rebuild_list(
 
     if view_mode == ViewMode::List {
         let sel_set = selected_books.clone();
-        let s_open = s.clone();
-        let s_toggle = s.clone();
-        let s_sort = s.clone();
         let on_open = Rc::new(move |id| {
-            s_open.output(AllBooksOut::OpenBook { book_id: id }).ok();
+            s.output(AllBooksOut::OpenBook { book_id: id }).ok();
         });
         let on_toggle_select = Rc::new(move |id| {
-            s_toggle.input(AllBooksMsg::ToggleSelectBook(id));
+            s.input(AllBooksMsg::ToggleSelectBook(id));
         });
         let on_sort = Rc::new(move |col| {
-            s_sort.input(AllBooksMsg::ListSortChanged(col));
+            s.input(AllBooksMsg::ListSortChanged(col));
         });
         let list_view = build_book_list(
             books,
@@ -1677,8 +1391,6 @@ fn rebuild_list(
         let sel_set = selected_books.clone();
         let grid = build_book_grid_selectable(
             books,
-            cols,
-            selection_mode,
             move |id| sel_set.contains(&id),
             move |id| {
                 s.input(AllBooksMsg::ToggleSelectBook(id));
@@ -1698,7 +1410,6 @@ fn rebuild_list(
         let cm = cm_rc.clone();
         let grid = build_book_grid(
             books,
-            cols,
             move |id| {
                 if let Some(Some(ser)) = cm.get(&id) {
                     s.output(AllBooksOut::ComicSeries { series_name: ser.clone() }).ok();
@@ -1763,198 +1474,6 @@ fn confirm_bulk_delete(anchor: &gtk::Widget, count: usize, on_confirm: impl Fn()
             dialog.close();
         });
     }
-}
-
-/// Build the §47 filter popover: Shelf and Tag submenus (decision 168).
-///
-/// Reads live shelves and tag counts from the catalog so the popover always
-/// shows current data. Selecting a shelf or tag adds it as an active filter
-/// chip and reloads the book list with the matching query.
-fn build_filter_popup(
-    filter_btn: &gtk::MenuButton,
-    sender: &relm4::ComponentSender<AllBooksModel>,
-    model: &AllBooksModel,
-) {
-    let menu = menu_popover(MenuWidth::Wide);
-
-    // ── Shelf submenu ──
-    let shelf_menu = menu_popover(MenuWidth::Wide);
-    let shelves = model.service.shelves();
-    for shelf in &shelves.shelves {
-        let s = sender.clone();
-        let name = shelf.name.clone();
-        let count = shelf.book_count;
-        let name_for_closure = name.clone();
-        shelf_menu.add_item_with_count(
-            &format!("{} ({})", shelf.name, count),
-            count,
-            move || {
-                s.input(AllBooksMsg::FilterShelfSelected(name_for_closure.clone()));
-            },
-        );
-    }
-    if shelves.shelves.is_empty() {
-        shelf_menu.add_item("No shelves", || {});
-    }
-    menu.add_submenu("Shelf", shelf_menu);
-
-    // ── Tag submenu ──
-    let tag_menu = menu_popover(MenuWidth::Wide);
-    let tags = model.service.tags();
-    for (tag, count) in &tags.tags {
-        let s = sender.clone();
-        let t = tag.clone();
-        tag_menu.add_item_with_count(
-            tag,
-            *count as usize,
-            move || {
-                s.input(AllBooksMsg::FilterTagSelected(t.clone()));
-            },
-        );
-    }
-    if tags.tags.is_empty() {
-        tag_menu.add_item("No tags", || {});
-    }
-    menu.add_submenu("Tag", tag_menu);
-
-    filter_btn.set_popover(Some(&menu.popover()));
-}
-
-/// Build the §47 group popover: None / Author / Series.
-fn build_group_popup(
-    group_btn: &gtk::MenuButton,
-    sender: &relm4::ComponentSender<AllBooksModel>,
-) {
-    let menu = menu_popover(MenuWidth::Wide);
-
-    let s = sender.clone();
-    menu.add_item("None", move || {
-        s.input(AllBooksMsg::GroupChanged(GroupBy::None));
-    });
-
-    let s = sender.clone();
-    menu.add_item("Author", move || {
-        s.input(AllBooksMsg::GroupChanged(GroupBy::Author));
-    });
-
-    let s = sender.clone();
-    menu.add_item("Series", move || {
-        s.input(AllBooksMsg::GroupChanged(GroupBy::Series));
-    });
-
-    group_btn.set_popover(Some(&menu.popover()));
-}
-
-/// Render the active filter chips (§47 toolbar: chips).
-///
-/// Each chip is a toggleable pill: clicking it again removes the filter.
-fn rebuild_filter_chips(
-    chips_box: &gtk::Box,
-    chips: &[String],
-    sender: &relm4::ComponentSender<AllBooksModel>,
-) {
-    while let Some(child) = chips_box.first_child() {
-        chips_box.remove(&child);
-    }
-
-    for chip in chips {
-        let display = chip
-            .strip_prefix("shelf:")
-            .or_else(|| chip.strip_prefix("tag:"))
-            .unwrap_or(chip)
-            .to_string();
-
-        let chip = chip.clone();
-        let s = sender.clone();
-        let btn = crate::widgets::chip::filter_chip(
-            &display,
-            true,
-            crate::widgets::chip::ChipSize::Standard,
-            move |_active| {
-                s.input(AllBooksMsg::FilterChipRemoved(chip.clone()));
-            },
-        );
-        btn.set_tooltip_text(Some(&format!("Remove “{display}” filter")));
-        chips_box.append(&btn);
-    }
-}
-
-/// Build the §47 title-button popover: All books, shelves (Manual/Smart with
-/// counts), Manage shelves…, New shelf… — 280 wide.
-fn build_shelves_popover(
-    title_btn: &gtk::MenuButton,
-    sender: &relm4::ComponentSender<AllBooksModel>,
-    model: &AllBooksModel,
-) {
-    let menu = menu_popover(MenuWidth::Wide);
-    let s_all = sender.clone();
-    let s_manage = sender.clone();
-    let s_new = sender.clone();
-
-    menu.add_item("All books", move || {
-        s_all.input(AllBooksMsg::ShelvesPopoverShelfSelected("All books".to_string()));
-    });
-
-    // Shelves section with Manual/Smart sub-groups and counts.
-    let shelves = model.service.shelves();
-    if !shelves.shelves.is_empty() {
-        menu.add_separator();
-        let shelf_menu = menu_popover(MenuWidth::Wide);
-        for shelf in &shelves.shelves {
-            let s = sender.clone();
-            let name = shelf.name.clone();
-            let count = shelf.book_count;
-            shelf_menu.add_item_with_count(
-                &format!("{} ({})", shelf.name, count),
-                count,
-                move || {
-                    s.input(AllBooksMsg::ShelvesPopoverShelfSelected(name.clone()));
-                },
-            );
-        }
-
-    menu.add_separator();
-    menu.add_item("Manage shelves…", move || {
-        s_manage.input(AllBooksMsg::ShelvesPopoverManageShelves);
-    });
-    menu.add_item("New shelf…", move || {
-        s_new.input(AllBooksMsg::ShelvesPopoverNewShelf);
-    });
-        menu.add_submenu("Shelves", shelf_menu);
-    }
-
-    title_btn.set_popover(Some(&menu.popover()));
-}
-
-/// Build the §47 "+ Import EPUB" pill menu: Import files…, Import a folder…,
-/// disabled Find online….
-fn build_import_menu(
-    add_btn: &gtk::MenuButton,
-    sender: &relm4::ComponentSender<AllBooksModel>,
-) {
-    let menu = menu_popover(MenuWidth::Short);
-
-    let s = sender.clone();
-    menu.add_item_with_hint("Import files…", "Ctrl+I", move || {
-        s.input(AllBooksMsg::ImportMenuImportFiles);
-    });
-
-    let s = sender.clone();
-    menu.add_item_with_hint("Import a folder…", "Ctrl+Shift+I", move || {
-        s.input(AllBooksMsg::ImportMenuImportFolder);
-    });
-
-    menu.add_separator();
-
-    // Disabled "Find online…" item.
-    let disabled_btn = gtk::Button::with_label("Find online…");
-    disabled_btn.set_sensitive(false);
-    disabled_btn.add_css_class("kalam-ui-menu-item");
-    disabled_btn.set_hexpand(true);
-    disabled_btn.set_halign(gtk::Align::Fill);
-    menu.list().append(&disabled_btn);
-
-    add_btn.set_popover(Some(&menu.popover()));
 }
 
 fn rebuild_content_search_list(

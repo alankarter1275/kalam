@@ -322,7 +322,7 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
             let word = &words[idx];
             let pos = &positions[idx];
 
-            let layout = Layout::new(pc);
+            let layout = Layout::new(&pc);
             let desc = FontDescription::from_string("Playfair Display");
             let size = if is_hovered { 24.0 } else { pos.size };
             let pango_size = (size * 1024.0) as i32;
@@ -357,7 +357,8 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
             let b = if is_hovered { accent.blue() } else { text.blue() };
             cr.set_source_rgba(r, g, b, alpha);
 
-            pangocairo::functions::show_layout(cr, &layout);
+            cr.move_to(0.0, 0.0);
+            cr.show_text(&word.word);
 
             cr.restore();
         }

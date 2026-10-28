@@ -1,2 +1,164 @@
+<<<<<<< Updated upstream
 (no tasks report produced)
 --- run 40771238587 ---
+=======
+=== kalam screenshot run ===
+books=139 out=ci-shots-tasks settle=20 output=1600x1000
+config home: /home/runner/work/kalam/kalam/ci-shots-tasks/config-home
+binary: 68858296 bytes
+
+=== seeding 139 books ===
+seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
+
+=== starting headless sway ===
+sway binary: /usr/bin/sway sway version 1.11
+SWAYSOCK=/run/user/1001/sway-ipc.1001.8359.sock
+sway up: {
+  "human_readable": "1.11",
+  "variant": "sway",
+  "major": 1,
+  "minor": 11,
+  "patch": 0,
+  "loaded_config_file_name
+WAYLAND_DISPLAY=wayland-1
+
+=== launching kalam ===
+requested route: tasks
+requested theme: <saved/default>
+requested dialog: <none>
+requested series view: <remembered>
+requested settings pane: <default>
+requested reader action: <none>
+settings fixture: 0 empty-dicts=0
+windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
+toplevel windows seen: 1
+  shot: 01-tasks (33774 bytes)
+focused: 1
+  shot: 02-tasks-settling (33774 bytes)
+  shot: 03-tasks-settled (33774 bytes)
+navigation: app accepted route 'tasks'
+navigation: 'tasks' is not a grid page; no grid_build expected
+  shot: 04-home-for-comparison (70987 bytes)
+navigation: 'tasks' differs from Home -- the page really did change
+navigation: OK -- the images below are 'tasks'
+
+=== timing lines from the app ===
+  [timing] startup_fonts           4.0 ms
+  [timing] startup_gtk_init       76.7 ms
+  [timing] startup_splash_show      1.5 ms
+  [timing] icons_write             0.1 ms
+  [timing] icons_theme             0.1 ms
+  [timing] icons_init              0.1 ms
+  [timing] startup_splash_pump    122.4 ms
+  [timing] startup_libraries       0.2 ms
+  [timing] startup_db_open         9.4 ms
+  [timing] startup_theme          80.3 ms
+  [timing] pre_run               294.8 ms
+  [timing] route_open:home         0.4 ms
+  [timing] startup_first_page      0.4 ms
+  [timing] service_home            4.5 ms
+  [timing] init_done             331.1 ms
+  [timing] window_shown          333.3 ms
+  [timing] covers_queued            11
+  [timing] home_fill               2.1 ms
+  [timing] page_cache_miss           1
+  [timing] route_open:task_manager      0.8 ms
+  [timing] render_backend     GskCairoRenderer
+  [timing] frame_after:startup_fonts    334.3 ms
+  [timing] frame_after:startup_gtk_init    257.6 ms
+  [timing] frame_after:startup_splash_show    256.0 ms
+  [timing] frame_after:icons_write    251.7 ms
+  [timing] frame_after:icons_theme    251.6 ms
+  [timing] frame_after:icons_init    251.6 ms
+  [timing] frame_after:startup_splash_pump    133.6 ms
+  [timing] frame_after:startup_libraries    133.4 ms
+  [timing] frame_after:startup_db_open    123.9 ms
+  [timing] frame_after:startup_theme     43.6 ms
+  [timing] frame_after:pre_run     43.6 ms
+  [timing] frame_after:route_open:home     42.7 ms
+  [timing] frame_after:startup_first_page     42.7 ms
+  [timing] frame_after:service_home     38.1 ms
+  [timing] frame_after:init_done      7.4 ms
+  [timing] frame_after:window_shown      5.1 ms
+  [timing] frame_after:home_fill      2.1 ms
+  [timing] frame_after:route_open:task_manager      1.1 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      0.4 ms
+  [timing] frame_after:covers_gap      0.4 ms
+  [timing] frame_after:covers_land      0.4 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_decoded           10
+  [timing] covers_thumb              3
+  [timing] covers_full               8
+  [timing] covers_decode          67.8 ms
+  [timing] covers_decode_max      10.7 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land    137.7 ms
+  [timing] frame_after:covers_land    121.9 ms
+  [timing] frame_after:covers_land    110.4 ms
+  [timing] frame_after:covers_land    104.3 ms
+  [timing] frame_after:covers_land     92.8 ms
+  [timing] frame_after:covers_land     86.7 ms
+  [timing] frame_after:covers_decode     75.3 ms
+  [timing] frame_after:covers_decode_max     75.3 ms
+  [timing] frame_after:covers_land     75.3 ms
+  [timing] thumbs_backfilled        50
+  [timing] thumbs_backfilled       100
+  [timing] thumbs_backfilled       130
+  [timing] thumbs_backfill_done      130
+  [timing] startup_dicts        1742.2 ms
+  [timing] frame_after:startup_dicts    261.8 ms
+
+=== main-thread stalls (roadmap 7.1 watchdog) ===
+  (none -- no UI-loop block over ~100 ms was detected)
+
+=== screenshot pixel sample ===
+  low colour is a cover warning only on a seeded library-grid route.
+  01-tasks.png: 1600x1000  coloured=0.1%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
+  02-tasks-settling.png: 1600x1000  coloured=0.1%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
+  03-tasks-settled.png: 1600x1000  coloured=0.1%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
+  04-home-for-comparison.png: 1600x1000  coloured=16.9%  lit=100.0%
+  (numbers only -- no threshold is enforced yet; see the docstring)
+
+=== screenshot fingerprints ===
+  d37d3ae4b2df682bb2bad348cbb3c34b  ci-shots-tasks/01-tasks.png
+  d37d3ae4b2df682bb2bad348cbb3c34b  ci-shots-tasks/02-tasks-settling.png
+  d37d3ae4b2df682bb2bad348cbb3c34b  ci-shots-tasks/03-tasks-settled.png
+  4ecf5e0ec399bac51c978a6ede7b71ea  ci-shots-tasks/04-home-for-comparison.png
+
+=== app stderr (non-timing lines) ===
+  
+  (process:8408): Gtk-WARNING **: 12:36:58.383: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  kalam: KALAM_ROUTE=tasks — navigating
+
+=== peak memory ===
+books=139 peak_rss_kb=249412 peak_rss_mb=243
+
+=== shutting down ===
+
+=== artifacts ===
+  total 224
+  drwxr-xr-x  3 runner runner  4096 Oct 24 12:37 .
+  drwxr-xr-x 28 runner runner  4096 Oct 24 12:36 ..
+  -rw-r--r--  1 runner runner 33774 Oct 24 12:37 01-tasks.png
+  -rw-r--r--  1 runner runner 33774 Oct 24 12:37 02-tasks-settling.png
+  -rw-r--r--  1 runner runner 33774 Oct 24 12:37 03-tasks-settled.png
+  -rw-r--r--  1 runner runner 70987 Oct 24 12:37 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner  4096 Oct 24 12:36 config-home
+  -rw-r--r--  1 runner runner     0 Oct 24 12:37 grim.log
+  -rw-r--r--  1 runner runner  6322 Oct 24 12:37 kalam-home.log
+  -rw-r--r--  1 runner runner  3516 Oct 24 12:37 kalam.log
+  -rw-r--r--  1 runner runner  6144 Oct 24 12:37 report.txt
+  -rw-r--r--  1 runner runner    88 Oct 24 12:36 sway.log
+  -rw-r--r--  1 runner runner  7184 Oct 24 12:37 tree.json
+--- run 40093492013 ---
+>>>>>>> Stashed changes

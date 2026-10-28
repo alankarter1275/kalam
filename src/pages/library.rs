@@ -162,10 +162,9 @@ impl Component for LibraryPageModel {
                     widgets.body.append(&widget);
                     // Attach the Cairo draw function once the widget is realised.
                     let model = ctrl.model();
-                    setup_sphere_draw(
-                        &widget.downcast::<gtk::DrawingArea>().unwrap(),
-                        &model,
-                    );
+                    if let Some(drawing) = widget.downcast::<gtk::DrawingArea>() {
+                        setup_sphere_draw(&drawing, &model);
+                    }
                 }
             }
             LibraryMsg::TimelineOpenBook { book_id } => {

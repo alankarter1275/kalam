@@ -105,6 +105,7 @@ fn install() {
             "kalam-pdf-even-spreads-symbolic.svg",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="9" height="16" rx="1.5" /><rect x="13" y="4" width="9" height="16" rx="1.5" /><path d="M5 10a1.5 1.5 0 0 1 1.5-1.5h.5a1.5 1.5 0 0 1 1.5 1.5c0 1.5-3 2-3 3.5h3" /><path d="M16 9.5a1.5 1.5 0 0 1 2.5 1c0 1-1.5 1.5-1.5 1.5s1.5.5 1.5 1.5a1.5 1.5 0 0 1-2.5 1" /></svg>"#,
         ),
+<<<<<<< Updated upstream
         // The PDF panels' pin (decision 57): the board's upright
         // outline thumbtack. It is one even-odd filled silhouette,
         // not a pair of stroked paths: symbolic-icon recolouring is
@@ -174,6 +175,8 @@ fn install() {
             "kalam-shape-arrow-symbolic.svg",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.2 3.8v6.5h-2.2V6.9L6 19l-1.9-1.9 12-12H12.7V2.9z" transform="translate(1.5 1.5) scale(.88)" /></svg>"#,
         ),
+=======
+>>>>>>> Stashed changes
         // The reader's bookmark ribbon (decision 16): a V-notched strip
         // hanging from the top edge. Idle is an outline in the border
         // colour over the page; set is the same shape filled with the
@@ -186,6 +189,7 @@ fn install() {
             "kalam-ribbon-filled-symbolic.svg",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M5 2.5h14V21l-7-4.6L5 21z" /></svg>"#,
         ),
+<<<<<<< Updated upstream
         // The PDF open states (decision 73): one quiet line glyph
         // over each dashed card — the lock that asks, the damaged
         // file that cannot be read, and the file Kalam cannot find.
@@ -205,6 +209,8 @@ fn install() {
             "kalam-file-question-symbolic.svg",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M7 3h7l4 4v14H7zM8.6 4.6h4.6l3.2 3.2v11.6H8.6zM10.05 11.6c-.9-.35-1.45-1.15-1.45-2.1 0-1.75 1.5-3.2 3.4-3.2s3.4 1.35 3.4 3.05c0 1.2-.65 2.1-1.65 2.7-.75.45-1.05.8-1.05 1.55v.55h-1.6V13.3c0-1.2.6-2.05 1.55-2.6.6-.35.95-.75.95-1.4 0-.9-.75-1.6-1.65-1.6s-1.65.7-1.65 1.6c0 .45.2.85.55 1.1zM12 16.05a.95.95 0 1 1 0 1.9.95.95 0 0 1 0-1.9z" /></svg>"#,
         ),
+=======
+>>>>>>> Stashed changes
     ];
 
     for (name, content) in ICONS {

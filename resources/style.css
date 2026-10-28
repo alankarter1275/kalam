@@ -450,6 +450,7 @@ button.kalam-notify-clear:focus-visible {
     color: @kalam_text;
 }
 
+<<<<<<< Updated upstream
 /* ── reading timeline canvas (§51) ───────────────────────────── */
 .drawingarea.kalam-reading-timeline {
     background: @kalam_bg;
@@ -480,6 +481,8 @@ button.kalam-notify-clear:focus-visible {
 .kalam-ui-token-hl-pink { color: @kalam_hl_pink; }
 .kalam-ui-token-hl-orange { color: @kalam_hl_orange; }
 
+=======
+>>>>>>> Stashed changes
 /* ── hub tiles inside My Library ────────────────────── */
 .kalam-hub-grid {
     margin-top: 8px;

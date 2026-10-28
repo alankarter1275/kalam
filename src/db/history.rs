@@ -330,6 +330,7 @@ impl Catalog {
             })
             .collect();
         lanes.sort_by(|a, b| {
+<<<<<<< Updated upstream
             let a_date = a
                 .most_recent
                 .as_ref()
@@ -341,6 +342,12 @@ impl Catalog {
                 .map(|s| s.started_at.as_str())
                 .unwrap_or("");
             b_date.cmp(a_date)
+=======
+            b.most_recent
+                .as_ref()
+                .map(|s| s.started_at.as_str())
+                .cmp(a.most_recent.as_ref().map(|s| s.started_at.as_str()))
+>>>>>>> Stashed changes
         });
         lanes.truncate(limit);
         Ok(lanes)

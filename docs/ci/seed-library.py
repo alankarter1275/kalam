@@ -407,6 +407,7 @@ def _add_column_if_missing(conn, table: str, column: str, declaration: str) -> N
         )
 
 
+<<<<<<< Updated upstream
 def comic_page_png(page: int, chapter: int) -> bytes:
     """One comic page drawn the way the design boards draw them: a
     cream sheet with bordered colour panels. Enough structure that a
@@ -1259,6 +1260,8 @@ def seed_comic_fixture(conn, library: pathlib.Path, now: datetime) -> int:
     return covers_written
 
 
+=======
+>>>>>>> Stashed changes
 def seed_series_fixture(conn, library: pathlib.Path, now: datetime, first_index: int) -> int:
     """Add one coherent series for the series-page screenshot.
 
@@ -1652,9 +1655,14 @@ def seed_settings_fixture(
 
     A bare seeded catalog can only show the empty/default half of most
     panes. This fixture supplies the other designed states without driving
+<<<<<<< Updated upstream
     the UI: two shelves and a watch rule routed into them, rejected
     Google Books/MyAnimeList credentials beside a present Comic Vine
     key, three EPUB original backups, and a libraries
+=======
+    the UI: two shelves and a watch rule routed into them, a rejected
+    Google Books key, three EPUB original backups, and a libraries
+>>>>>>> Stashed changes
     registry holding the active library, a second folder that can be
     opened, and one whose folder is missing.
 
@@ -1761,12 +1769,15 @@ def seed_settings_fixture(
         "meta.googlebooks.key": "AIza-fixture-key",
         "meta.googlebooks.country": "GB",
         "meta.googlebooks.key_rejected": "1",
+<<<<<<< Updated upstream
         "meta.myanimelist.enabled": "1",
         "meta.myanimelist.client_id": "fixture-mal-client-id",
         "meta.myanimelist.client_id_rejected": "1",
         "meta.comicvine.enabled": "1",
         "meta.comicvine.key": "fixture-comic-vine-key",
         "meta.comicvine.key_rejected": "0",
+=======
+>>>>>>> Stashed changes
     }
     for key, value in prefs.items():
         conn.execute(
@@ -1960,6 +1971,7 @@ def main() -> int:
         help="add the cached bibliography + marks the author-page screenshot opens",
     )
     ap.add_argument(
+<<<<<<< Updated upstream
         "--pdf-fixture",
         action="store_true",
         help="add the real outlined PDF the PDF-reader screenshots open",
@@ -1981,6 +1993,8 @@ def main() -> int:
         help="add the two-chapter CBZ series the comics reader screenshots open",
     )
     ap.add_argument(
+=======
+>>>>>>> Stashed changes
         "--reader-fixture",
         action="store_true",
         help="seed the tiny dictionary the reader popover screenshots look up",
@@ -2137,6 +2151,7 @@ def main() -> int:
         )
         total_books += 2
 
+<<<<<<< Updated upstream
     if args.pdf_fixture:
         covers_written += seed_pdf_fixture(
             conn,
@@ -2151,6 +2166,8 @@ def main() -> int:
         covers_written += seed_comic_fixture(conn, library, now)
         total_books += 2
 
+=======
+>>>>>>> Stashed changes
     if args.reader_fixture:
         seed_reader_fixture(conn, now)
 

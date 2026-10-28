@@ -20,7 +20,13 @@ pub mod segmented;
 pub mod selection_chip;
 pub mod setting_row;
 pub mod slide_out_pill;
+<<<<<<< Updated upstream
 pub mod reading_timeline;
 pub mod saved_words_sphere;
 pub mod surface;
 pub mod timeline;
+=======
+pub mod surface;
+pub mod timeline;
+pub mod timeline_reading;
+>>>>>>> Stashed changes

@@ -1,6 +1,10 @@
 //! Reader component messages, payload types, preference structures, and sidebar enums.
 
+<<<<<<< Updated upstream
 use crate::db::{Annotation, HighlightColor, ReadingBookmark, SavedWord};
+=======
+use crate::db::HighlightColor;
+>>>>>>> Stashed changes
 use relm4::prelude::*;
 
 /// Move the book-theme dropdown to a theme id without firing it
@@ -90,6 +94,7 @@ pub(crate) struct ReaderSettingsControls {
     pub(crate) keybind_hint: gtk::Label,
 }
 
+<<<<<<< Updated upstream
 /// The search bar's Chapter / Book switch (decision 34): Chapter is
 /// the standing choice every time the bar opens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,6 +148,8 @@ pub(crate) fn search_count_text(query: &str, scoped_len: usize, search_index: us
     }
 }
 
+=======
+>>>>>>> Stashed changes
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // reader->app messages; some variants are not yet emitted
 pub enum ReaderMsg {
@@ -253,9 +260,12 @@ pub enum ReaderMsg {
     ToggleSaveWord,
     /// A saved word's delete in the Notes list (decision 22).
     DeleteSavedWord(i64),
+<<<<<<< Updated upstream
     /// Ctrl+Z (decision 30): bring back the last deleted highlight,
     /// bookmark or saved word.
     UndoDelete,
+=======
+>>>>>>> Stashed changes
     ClearDict,
     /// The ribbon and the B key: set the mark here, or take it away
     /// (decision 16). Quiet either way — the ribbon is the feedback.
@@ -320,6 +330,7 @@ pub enum ReaderMsg {
     LightboxRotateLeft,
     LightboxRotateRight,
     UserScrolled,
+<<<<<<< Updated upstream
 }
 
 #[cfg(test)]
@@ -352,4 +363,6 @@ mod tests {
         assert!(!search_has_no_matches("", 0));
         assert!(!search_has_no_matches("river", 2));
     }
+=======
+>>>>>>> Stashed changes
 }

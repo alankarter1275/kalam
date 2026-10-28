@@ -100,10 +100,13 @@ pub enum Route {
     BookPage {
         book_id: i64,
     },
+<<<<<<< Updated upstream
     /// The deep EPUB editor workspace for one book (decisions 118–143).
     EditorWorkspace {
         book_id: i64,
     },
+=======
+>>>>>>> Stashed changes
     /// The full book-series page. The first author is part of the route
     /// because it is part of the cached listing's identity: two authors can
     /// use the same series name without sharing a page or a fetch.
@@ -151,12 +154,17 @@ impl Route {
             Route::ComponentPreview => NavItem::Settings,
             Route::ComicSeries { .. } => NavItem::Comics,
             Route::LibrarySection(_) => NavItem::Library,
+<<<<<<< Updated upstream
             // Shelves live under My Library now, so that rail item is
             // the one that stays lit while browsing them.
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Library,
             Route::TagBooks { .. } => NavItem::Library,
             Route::AuthorsIndex | Route::AuthorPage { .. } => NavItem::Authors,
             Route::EditorWorkspace { .. } => NavItem::Editor,
+=======
+            Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
+            Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,
+>>>>>>> Stashed changes
             Route::BookPage { .. } | Route::SeriesPage { .. } | Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
             Route::RemoteDetail { .. } => NavItem::RemoteBrowse,
             Route::RemoteSearch { source_id, .. } => {

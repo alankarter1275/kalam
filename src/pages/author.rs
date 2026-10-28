@@ -9,6 +9,7 @@
 //!
 //! The grouping (cached bibliography merged with owned books) lives in
 //! `LibraryService::author_page`; this file only renders it. Dialogs:
+<<<<<<< Updated upstream
 //! Edit author and Merge into another author (decision 112), Create
 //! shelf (§31), and the author-scoped Annotations dialog
 //! (decision 115).
@@ -25,6 +26,19 @@ use crate::service::{
     AuthorEditInput, AuthorEntrySnapshot, AuthorGroupSnapshot, AuthorIndexEntry,
     AuthorPageSnapshot, AuthorPortraitEdit, LibraryService, AUTHOR_SHELF_PREF_PREFIX,
 };
+=======
+//! Create shelf (§31) and the author-scoped Annotations dialog
+//! (decision 115) at the bottom of the file.
+
+use crate::author::{self, display_author_name, initials};
+use crate::db::{Annotation, AuthorProfile, Catalog, HighlightColor, ShelfKind};
+use crate::models::{Book, BookFormat};
+use crate::pages::history::pretty_day;
+use crate::service::{
+    AuthorEntrySnapshot, AuthorGroupSnapshot, AuthorPageSnapshot, LibraryService,
+    AUTHOR_SHELF_PREF_PREFIX,
+};
+>>>>>>> Stashed changes
 use crate::shelf_rules::{Rule, RuleField, RuleOp, RuleSet};
 use crate::widgets::book_row::{cache_decoded_cover, cover_widget};
 use crate::widgets::{
@@ -80,6 +94,7 @@ pub enum AuthorPageMsg {
     Loaded(Box<AuthorPageLoad>),
     ToggleGroup(usize),
     ClosePanel,
+<<<<<<< Updated upstream
     OpenEditAuthor,
     OpenMergeAuthor,
     /// An edit or merge renamed the identity this page is about;
@@ -87,6 +102,8 @@ pub enum AuthorPageMsg {
     IdentityChanged {
         name: String,
     },
+=======
+>>>>>>> Stashed changes
     OpenCreateShelf,
     OpenAnnotations,
     AddAllToReadingList,
@@ -124,6 +141,7 @@ pub struct AuthorPageModel {
     more_host: gtk::Box,
     panel_revealer: gtk::Revealer,
     panel_box: gtk::Box,
+<<<<<<< Updated upstream
     /// The joined outline around the open card + panel, stroked in
     /// Cairo. A CSS border with differing sides is not an option:
     /// GskBorderNode's mesh-pattern path under the Cairo renderer
@@ -131,6 +149,8 @@ pub struct AuthorPageModel {
     /// the open card and panel are borderless and this draws the one
     /// rounded rect around both.
     panel_outline: gtk::DrawingArea,
+=======
+>>>>>>> Stashed changes
     /// Shared with the root key handler: while the ⋯ menu is open its Esc
     /// belongs to the menu, not the panel.
     menu_open: Rc<Cell<bool>>,
@@ -370,6 +390,7 @@ impl Component for AuthorPageModel {
         panel_revealer.set_visible(false);
         panel_revealer.set_child(Some(&panel_box));
 
+<<<<<<< Updated upstream
         // The joined outline around the open card and its panel (see
         // the field's note): one rounded rect, top corners on the
         // card, bottom corners on the panel, straight sides through
@@ -408,6 +429,8 @@ impl Component for AuthorPageModel {
             let _ = cr.stroke();
         });
 
+=======
+>>>>>>> Stashed changes
         let more_host = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         more_host.add_css_class("kalam-authorpage-more-host");
         more_host.set_halign(gtk::Align::End);
@@ -427,15 +450,21 @@ impl Component for AuthorPageModel {
             more_host: more_host.clone(),
             panel_revealer: panel_revealer.clone(),
             panel_box: panel_box.clone(),
+<<<<<<< Updated upstream
             panel_outline: panel_outline.clone(),
+=======
+>>>>>>> Stashed changes
             menu_open: menu_open.clone(),
         };
         let widgets = view_output!();
 
         root.add_overlay(&panel_revealer);
+<<<<<<< Updated upstream
         // Above the card and panel it outlines; can_target(false), so
         // it never eats a click meant for either.
         root.add_overlay(&panel_outline);
+=======
+>>>>>>> Stashed changes
         root.add_overlay(&more_host);
 
         // Esc closes the open panel (decision 108). Bubble phase (the
@@ -535,8 +564,11 @@ impl Component for AuthorPageModel {
                         }
                         Ok("shelf") => sender.input(AuthorPageMsg::OpenCreateShelf),
                         Ok("annotations") => sender.input(AuthorPageMsg::OpenAnnotations),
+<<<<<<< Updated upstream
                         Ok("edit-author") => sender.input(AuthorPageMsg::OpenEditAuthor),
                         Ok("merge-author") => sender.input(AuthorPageMsg::OpenMergeAuthor),
+=======
+>>>>>>> Stashed changes
                         _ => {}
                     }
                 }
@@ -561,6 +593,7 @@ impl Component for AuthorPageModel {
                     rebuild = false;
                 }
             }
+<<<<<<< Updated upstream
             AuthorPageMsg::OpenEditAuthor => {
                 present_edit_author_dialog(root, self, &sender);
                 rebuild = false;
@@ -575,6 +608,8 @@ impl Component for AuthorPageModel {
                 self.open_group_title = None;
                 request_snapshot(&self.service, &self.requested_name, &sender);
             }
+=======
+>>>>>>> Stashed changes
             AuthorPageMsg::OpenCreateShelf => {
                 present_create_shelf_dialog(root, self, &sender);
                 rebuild = false;
@@ -815,6 +850,7 @@ impl AuthorPageModel {
         name: &str,
         sender: &ComponentSender<Self>,
     ) {
+<<<<<<< Updated upstream
         let menu = menu_popover(MenuWidth::Wide);
 
         let s = sender.clone();
@@ -822,6 +858,13 @@ impl AuthorPageModel {
             s.input(AuthorPageMsg::OpenEditAuthor);
         });
 
+=======
+        // Edit author… and Merge into another author… belong to this menu
+        // (decision 112) but their dialogs are not designed yet; like the
+        // book page's Edit book, they stay out until they are.
+        let menu = menu_popover(MenuWidth::Wide);
+
+>>>>>>> Stashed changes
         match snap.shelf {
             Some((shelf_id, _)) => {
                 let s = sender.clone();
@@ -865,12 +908,15 @@ impl AuthorPageModel {
         menu.add_item("Export highlights…", move || {
             s.input(AuthorPageMsg::ExportHighlights);
         });
+<<<<<<< Updated upstream
         menu.add_separator();
 
         let s = sender.clone();
         menu.add_item("Merge into another author…", move || {
             s.input(AuthorPageMsg::OpenMergeAuthor);
         });
+=======
+>>>>>>> Stashed changes
 
         let more = menu_button("view-more-symbolic", "Author actions", menu);
         more.add_css_class("kalam-authorpage-more-btn");
@@ -1114,7 +1160,10 @@ impl AuthorPageModel {
         let Some((index, snap)) = open else {
             self.panel_revealer.set_reveal_child(false);
             self.panel_revealer.set_visible(false);
+<<<<<<< Updated upstream
             self.panel_outline.set_visible(false);
+=======
+>>>>>>> Stashed changes
             return;
         };
         let group = &snap.groups[index];
@@ -1190,6 +1239,7 @@ impl AuthorPageModel {
         scroller.set_child(Some(&row));
         self.panel_box.append(&scroller);
 
+<<<<<<< Updated upstream
         // Anchor under the card once it has a real allocation — and
         // keep anchoring it. This waits on the frame clock, not an
         // idle: idles can burn through any retry cap before the first
@@ -1296,6 +1346,37 @@ impl AuthorPageModel {
             // No card to anchor to: show the panel where it was, but
             // never a stale outline around some previous card.
             self.panel_outline.set_visible(false);
+=======
+        // Anchor under the card once it has a real allocation. This
+        // waits on the frame clock, not an idle: idles can burn through
+        // any retry cap before the first frame is even allocated, and
+        // compute_point on an unallocated card reads the origin (the
+        // panel landed over the header twice before CI taught us).
+        // Capped in frames; a rebuild destroys the old card and this
+        // callback with it, then re-anchors from the new one.
+        if let Some(card) = self.card_buttons.get(index).cloned().flatten() {
+            let revealer = self.panel_revealer.clone();
+            let overlay = root.clone();
+            let tries = Rc::new(Cell::new(0u32));
+            card.add_tick_callback(move |widget, _clock| {
+                tries.set(tries.get() + 1);
+                let ready = widget.is_mapped() && widget.width() > 1;
+                if !ready && tries.get() < 180 {
+                    return gtk::glib::ControlFlow::Continue;
+                }
+                if let Some(point) =
+                    widget.compute_point(&overlay, &gtk::graphene::Point::new(0.0, 0.0))
+                {
+                    revealer.set_margin_start(point.x() as i32);
+                    revealer.set_margin_top(point.y() as i32 + widget.height());
+                    revealer.set_size_request(widget.width(), -1);
+                }
+                revealer.set_visible(true);
+                revealer.set_reveal_child(true);
+                gtk::glib::ControlFlow::Break
+            });
+        } else {
+>>>>>>> Stashed changes
             self.panel_revealer.set_visible(true);
             self.panel_revealer.set_reveal_child(true);
         }
@@ -1978,6 +2059,7 @@ fn spawn_author_fetch(model: &AuthorPageModel, sender: &ComponentSender<AuthorPa
 }
 
 // ---------------------------------------------------------------------------
+<<<<<<< Updated upstream
 // Edit author dialog (decision 112)
 // ---------------------------------------------------------------------------
 
@@ -2041,11 +2123,18 @@ fn alias_field_initial(
 }
 
 fn present_edit_author_dialog(
+=======
+// Create shelf dialog (§31, decision 113)
+// ---------------------------------------------------------------------------
+
+fn present_create_shelf_dialog(
+>>>>>>> Stashed changes
     anchor: &gtk::Overlay,
     model: &AuthorPageModel,
     sender: &ComponentSender<AuthorPageModel>,
 ) {
     let Some(snap) = &model.snapshot else { return };
+<<<<<<< Updated upstream
     let profile = snap.profile.clone();
     let current_name = model.requested_name.clone();
     let author = display_name(model);
@@ -2385,11 +2474,118 @@ fn present_edit_author_dialog(
     let footer = shell.footer();
     let slot_for_cancel = slot.clone();
     footer.append(&boxed_ghost_button("Cancel", move || {
+=======
+    let author = display_name(model);
+    let requested_name = model.requested_name.clone();
+    let owned_ids: Vec<i64> = snap.owned_books.iter().map(|b| b.id).collect();
+    let service = model.service.clone();
+
+    let ruleset = RuleSet {
+        match_mode: "all".to_string(),
+        rules: vec![Rule::new(RuleField::Author, RuleOp::Is, author.clone())],
+    };
+    let smart_count = service
+        .catalog()
+        .count_matching_rules(&ruleset)
+        .unwrap_or(owned_ids.len());
+    let owned_count = owned_ids.len();
+
+    let shell = dialog_shell(DialogSize::Form, Some(&format!("for {author}")));
+
+    let name_field = text_field("Name", &author, &author);
+    name_field.entry().set_sensitive(false);
+    shell.body().append(&name_field.widget());
+
+    // "Name the shelf after the author": on = the field is disabled and
+    // the shelf follows a future author rename (recorded in the pref).
+    let switch_row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+    switch_row.set_margin_top(16);
+    let switch_text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    switch_text.set_hexpand(true);
+    let switch_label = gtk::Label::new(Some("Name the shelf after the author"));
+    switch_label.add_css_class("kalam-ui-body");
+    switch_label.set_halign(gtk::Align::Start);
+    switch_label.set_xalign(0.0);
+    switch_text.append(&switch_label);
+    let switch_caption = gtk::Label::new(Some("Renamed automatically if the author is renamed."));
+    switch_caption.add_css_class("kalam-ui-meta");
+    switch_caption.set_halign(gtk::Align::Start);
+    switch_caption.set_xalign(0.0);
+    switch_text.append(&switch_caption);
+    switch_row.append(&switch_text);
+
+    let follow_switch = gtk::Switch::new();
+    follow_switch.set_active(true);
+    follow_switch.set_valign(gtk::Align::Center);
+    set_accessible_label(&follow_switch, "Name the shelf after the author");
+    let field_for_switch = name_field.entry();
+    let author_for_switch = author.clone();
+    follow_switch.connect_active_notify(move |sw| {
+        let on = sw.is_active();
+        field_for_switch.set_sensitive(!on);
+        if on {
+            field_for_switch.set_text(&author_for_switch);
+        }
+    });
+    switch_row.append(&follow_switch);
+    shell.body().append(&switch_row);
+
+    let smart = Rc::new(Cell::new(true));
+    let explanation = gtk::Label::new(None);
+    explanation.add_css_class("kalam-ui-meta");
+    explanation.set_halign(gtk::Align::Start);
+    explanation.set_xalign(0.0);
+    explanation.set_wrap(true);
+    explanation.set_max_width_chars(52);
+    explanation.set_margin_top(8);
+    let smart_text = format!(
+        "Books by {author} join automatically, including future imports. {smart_count} book{} match now.",
+        if smart_count == 1 { "" } else { "s" }
+    );
+    let manual_text = format!(
+        "Adds the {owned_count} book{} you own now. New books are not added automatically.",
+        if owned_count == 1 { "" } else { "s" }
+    );
+    explanation.set_text(&smart_text);
+
+    let type_caption = gtk::Label::new(Some("TYPE"));
+    type_caption.add_css_class("kalam-ui-field-label");
+    type_caption.set_halign(gtk::Align::Start);
+    type_caption.set_margin_top(16);
+    shell.body().append(&type_caption);
+
+    let explanation_for_seg = explanation.clone();
+    let smart_for_seg = smart.clone();
+    let type_switch = segmented_control(
+        &["Smart", "Manual"],
+        0,
+        SegmentedSize::Small,
+        move |index| {
+            let is_smart = index == 0;
+            smart_for_seg.set(is_smart);
+            explanation_for_seg.set_text(if is_smart {
+                &smart_text
+            } else {
+                &manual_text
+            });
+        },
+    );
+    let type_widget = type_switch.widget();
+    type_widget.set_halign(gtk::Align::Start);
+    type_widget.set_margin_top(6);
+    shell.body().append(&type_widget);
+    shell.body().append(&explanation);
+
+    let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+    let slot_for_cancel = slot.clone();
+    shell.footer().append(&boxed_ghost_button("Cancel", move || {
+>>>>>>> Stashed changes
         if let Some(dialog) = slot_for_cancel.borrow().clone() {
             dialog.close();
         }
     }));
 
+<<<<<<< Updated upstream
     let slot_for_save = slot.clone();
     let s = sender.input_sender().clone();
     let footer_for_save = footer.clone();
@@ -2464,11 +2660,78 @@ fn present_edit_author_dialog(
         None => crate::notify::error(
             "Could not open the dialog",
             "The edit-author dialog could not be opened.",
+=======
+    let slot_for_create = slot.clone();
+    let s = sender.input_sender().clone();
+    shell.footer().append(&primary_button("Create shelf", move || {
+        let follow = follow_switch.is_active();
+        let name = if follow {
+            author.clone()
+        } else {
+            name_field.value().trim().to_string()
+        };
+        if name.is_empty() {
+            crate::notify::error("Name the shelf", "The shelf needs a name first.");
+            return;
+        }
+        let catalog = service.catalog();
+        match catalog.shelf_name_taken(&name, None) {
+            Ok(true) => {
+                crate::notify::error(
+                    "That shelf name is taken",
+                    "Pick a different name for this shelf.",
+                );
+                return;
+            }
+            Ok(false) => {}
+            Err(err) => {
+                crate::notify::error("Could not check the shelf name", &err.to_string());
+                return;
+            }
+        }
+        let created = if smart.get() {
+            catalog.create_shelf(&name, ShelfKind::Smart, "", &ruleset.to_json())
+        } else {
+            catalog.create_shelf(&name, ShelfKind::Manual, "", "")
+        };
+        let shelf_id = match created {
+            Ok(id) => id,
+            Err(err) => {
+                crate::notify::error("Could not create the shelf", &err.to_string());
+                return;
+            }
+        };
+        if !smart.get() {
+            for book_id in &owned_ids {
+                let _ = catalog.add_book_to_shelf(shelf_id, *book_id);
+            }
+        }
+        catalog.set_pref(
+            &format!(
+                "{AUTHOR_SHELF_PREF_PREFIX}{}",
+                crate::author::normalize_author_name(&requested_name)
+            ),
+            &format!("{shelf_id}{}", if follow { ":linked" } else { "" }),
+        );
+        crate::notify::success("Shelf created", &name);
+        if let Some(dialog) = slot_for_create.borrow().clone() {
+            dialog.close();
+        }
+        let _ = s.send(AuthorPageMsg::Refresh);
+    }));
+
+    match present_dialog(anchor, "Create shelf", DialogExit::OwnButtons, &shell) {
+        Some(dialog) => *slot.borrow_mut() = Some(dialog),
+        None => crate::notify::error(
+            "Could not open the dialog",
+            "The create-shelf dialog could not be opened.",
+>>>>>>> Stashed changes
         ),
     }
 }
 
 // ---------------------------------------------------------------------------
+<<<<<<< Updated upstream
 // Merge into another author dialog (decision 112)
 // ---------------------------------------------------------------------------
 
@@ -2998,6 +3261,20 @@ fn author_dialog_scroll(child: &gtk::Box) -> gtk::ScrolledWindow {
     scroll
 }
 
+=======
+// Annotations dialog, author scope (decision 115)
+// ---------------------------------------------------------------------------
+
+fn author_dialog_scroll(child: &gtk::Box) -> gtk::ScrolledWindow {
+    let scroll = gtk::ScrolledWindow::new();
+    scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::External);
+    scroll.set_hexpand(true);
+    scroll.set_vexpand(true);
+    scroll.set_child(Some(child));
+    scroll
+}
+
+>>>>>>> Stashed changes
 fn author_annotations_empty(host: &gtk::Box, text: &str) {
     let label = gtk::Label::new(Some(text));
     label.add_css_class("kalam-ui-meta");

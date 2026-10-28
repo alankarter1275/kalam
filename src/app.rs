@@ -63,6 +63,14 @@ pub enum AppMsg {
         book_id: i64,
     },
     CloseBookDialog,
+<<<<<<< Updated upstream
+=======
+    /// Toggle the `w` task dialog.
+    ToggleTasksFloat,
+    /// Re-read the task registry: refreshes the sidebar badge and, when the
+    /// `w` dialog is open, its rows. One tick drives both.
+    TasksTick,
+>>>>>>> Stashed changes
     /// Open the shelves checklist panel (in-app float).
     OpenShelvesFloat {
         book_id: i64,
@@ -192,6 +200,12 @@ enum Floating {
     Shelves {
         return_to: Option<i64>,
     },
+<<<<<<< Updated upstream
+=======
+    /// The `w` task dialog. Holds the box its rows are drawn into so the
+    /// app-wide tick can repaint it.
+    Tasks,
+>>>>>>> Stashed changes
 }
 
 pub struct AppModel {
@@ -252,7 +266,10 @@ fn cache_key(route: &Route) -> Option<String> {
         | Route::TagBooks { .. }
         | Route::AuthorPage { .. }
         | Route::BookPage { .. }
+<<<<<<< Updated upstream
         | Route::EditorWorkspace { .. }
+=======
+>>>>>>> Stashed changes
         | Route::SeriesPage { .. }
         | Route::ComicSeries { .. }
         | Route::Reader { .. }
@@ -1470,6 +1487,79 @@ impl Component for AppModel {
         });
         root.add_controller(app_shortcut_key);
 
+        // The rebindable app shortcuts (decision 155). This remains a
+        // bubble-phase handler on the window: page and reader handlers
+        // get first claim on the keys they own (notably Ctrl+F inside a
+        // book), and only an unclaimed press reaches the shell table.
+        // The table is the same shared copy Settings edits, so a
+        // successful recording changes this handler's next keypress.
+        let app_shortcut_key = gtk::EventControllerKey::new();
+        let shortcut_bindings = crate::shortcuts::shared(&model.catalog);
+        let s_shortcuts = sender.clone();
+        let key_root_shortcuts = root.clone();
+        let notifications_shortcuts = notifications.clone();
+        let float_host_shortcuts = model.float_host.clone();
+        app_shortcut_key.connect_key_pressed(move |_, keyval, _, state| {
+            use crate::shortcuts::ShortcutAction;
+
+            let (action, binding) = {
+                let table = shortcut_bindings.borrow();
+                let Some(action) = table.action_for(keyval, state) else {
+                    return gtk::glib::Propagation::Proceed;
+                };
+                (action, table.binding(action))
+            };
+
+            // There is no app-wide undo stack yet. Leaving the press
+            // unclaimed also preserves the local Ctrl+Z undo that does
+            // exist (for example, the Tag dialog's own history).
+            if action == ShortcutAction::UndoDelete {
+                return gtk::glib::Propagation::Proceed;
+            }
+
+            let focused = gtk::prelude::GtkWindowExt::focus(&key_root_shortcuts);
+            let typing = focused
+                .map(|w| {
+                    w.is::<gtk::Editable>()
+                        || w.is::<gtk::Text>()
+                        || w.is::<gtk::TextView>()
+                })
+                .unwrap_or(false);
+            if typing && !binding.fires_while_typing() {
+                return gtk::glib::Propagation::Proceed;
+            }
+
+            match action {
+                ShortcutAction::Notifications => {
+                    notifications_shortcuts.toggle();
+                    return gtk::glib::Propagation::Stop;
+                }
+                ShortcutAction::ClosePanel => {
+                    if notifications_shortcuts.is_open() {
+                        notifications_shortcuts.close();
+                        return gtk::glib::Propagation::Stop;
+                    }
+                    if float_host_shortcuts.is_visible() {
+                        s_shortcuts.input(AppMsg::CloseBookDialog);
+                        return gtk::glib::Propagation::Stop;
+                    }
+                    // Reader and page panels own their close keys for
+                    // now; do not swallow a press the shell cannot use.
+                    return gtk::glib::Propagation::Proceed;
+                }
+                _ => {}
+            }
+
+            // A shell action replaces the bell panel rather than
+            // navigating underneath its outside-click catcher.
+            if notifications_shortcuts.is_open() {
+                notifications_shortcuts.close();
+            }
+            s_shortcuts.input(AppMsg::Shortcut(action));
+            gtk::glib::Propagation::Stop
+        });
+        root.add_controller(app_shortcut_key);
+
         // From here on, any notify::* call lands on screen.
         crate::notify::attach(widgets.toast_host.clone());
 
@@ -1575,6 +1665,20 @@ impl Component for AppModel {
             }
         });
 
+<<<<<<< Updated upstream
+=======
+        // Above Settings, on the same end of the rail. Prepended rather than
+        // appended so the order is Tasks, then the bell, then Settings;
+        // `bottom_nav` holds nothing else since Downloads was hidden.
+        {
+            let btn = model.tasks_btn.clone();
+            let s = sender.clone();
+            btn.connect_clicked(move |_| s.input(AppMsg::Push(Route::LibrarySection(
+                LibrarySection::TaskManager,
+            ))));
+            widgets.bottom_nav.prepend(&btn);
+        }
+>>>>>>> Stashed changes
         widgets.bottom_nav.append(&notifications.button());
 
         for item in NavItem::ALL {
@@ -1632,7 +1736,10 @@ impl Component for AppModel {
         if let Some(name) = std::env::var_os("KALAM_ROUTE") {
             let name = name.to_string_lossy().to_string();
             match series_route_for_book(&model.catalog, &name)
+<<<<<<< Updated upstream
                 .or_else(|| comic_series_route_for_book(&model.catalog, &name))
+=======
+>>>>>>> Stashed changes
                 .or_else(|| author_route_for_book(&model.catalog, &name))
                 .or_else(|| route_by_name(&name))
             {
@@ -1757,6 +1864,7 @@ impl Component for AppModel {
                             &sender,
                         );
                     }
+<<<<<<< Updated upstream
                     ShortcutAction::GoEditor => {
                         self.close_floating();
                         self.swap_page(
@@ -1766,6 +1874,8 @@ impl Component for AppModel {
                             &sender,
                         );
                     }
+=======
+>>>>>>> Stashed changes
                     ShortcutAction::OpenSettings => {
                         self.close_floating();
                         self.swap_page(
@@ -2182,7 +2292,11 @@ pub(crate) fn brand_texture(accent: &str) -> Option<gtk::gdk::Texture> {
 fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     // Icon only. The rail is too narrow for a readable caption, and the
     // tooltip already carries the page name.
+<<<<<<< Updated upstream
     let icon = crate::icons::symbolic_with_classes(item.icon(), 22, &["kalam-nav-icon"]);
+=======
+    let icon = crate::icons::symbolic_with_classes(item.icon(), 20, &["kalam-nav-icon"]);
+>>>>>>> Stashed changes
     icon.set_halign(gtk::Align::Center);
     icon.set_valign(gtk::Align::Center);
 
@@ -2371,6 +2485,7 @@ fn series_route_for_book(catalog: &Catalog, name: &str) -> Option<Route> {
     })
 }
 
+<<<<<<< Updated upstream
 /// The comic-series route a `KALAM_ROUTE=comic-series-book-<id>` value
 /// refers to: the drawer for the series that chapter belongs to. The
 /// relational series wins; an unmigrated chapter falls back to the
@@ -2399,6 +2514,8 @@ fn comic_series_route_for_book(catalog: &Catalog, name: &str) -> Option<Route> {
     Some(Route::ComicSeries { series_name })
 }
 
+=======
+>>>>>>> Stashed changes
 /// The author route a `KALAM_ROUTE=author-book-<id>` value refers to: the
 /// anchor book's first author, exactly what its own author link opens.
 /// Same catalog-dependent reasoning as [`series_route_for_book`].
@@ -2517,6 +2634,7 @@ fn known_route_names() -> Vec<&'static str> {
 
 /// The names that take an id, for the error message only. They are not in
 /// `known_route_names` because that list is asserted to resolve as it stands.
+<<<<<<< Updated upstream
 const ROUTE_ID_FORMS: [&str; 8] = [
     "book-<id>",
     "edit-book-<id>",
@@ -2525,6 +2643,12 @@ const ROUTE_ID_FORMS: [&str; 8] = [
     "comic-read-<id>",
     "series-book-<id>",
     "comic-series-book-<id>",
+=======
+const ROUTE_ID_FORMS: [&str; 4] = [
+    "book-<id>",
+    "read-<id>",
+    "series-book-<id>",
+>>>>>>> Stashed changes
     "author-book-<id>",
 ];
 

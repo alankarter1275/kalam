@@ -523,7 +523,10 @@ pub fn css_variables(t: &Theme) -> String {
          @define-color kalam_accent_dim {accent_dim};\n\
          @define-color kalam_selection alpha({text}, {selection_alpha});\n\
          @define-color kalam_search_match alpha({text}, {match_alpha});\n\
+<<<<<<< Updated upstream
          @define-color kalam_diff_add alpha({accent}, 0.20);\n\
+=======
+>>>>>>> Stashed changes
          @define-color kalam_search_current alpha({accent}, 0.38);\n\
          @define-color kalam_hl_yellow #e8b93a;\n\
          @define-color kalam_hl_green #6fb36f;\n\

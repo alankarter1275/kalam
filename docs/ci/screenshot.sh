@@ -26,8 +26,11 @@ BOOKS="${BOOKS:-139}"
 # runner: a screenshot taken too early shows an empty window and looks
 # exactly like a bug, so timing out still photographs the latest frame.
 SETTLE="${SETTLE:-25}"
+<<<<<<< Updated upstream
 MIN_SETTLE="${MIN_SETTLE:-}"
 STABLE_MAX_CHANGED_PCT="${STABLE_MAX_CHANGED_PCT:-0.5}"
+=======
+>>>>>>> Stashed changes
 # Headless output size. The default matches a laptop-ish window. A tall
 # route (the component gallery is ~3,000 px of stacked sections) can ask
 # for a taller output instead of synthetic scrolling, which headless sway
@@ -112,6 +115,7 @@ READER_FIXTURE="${READER_FIXTURE:-}"
 if [ -n "$READER_FIXTURE" ]; then
   SEED_ARGS+=(--reader-fixture)
 fi
+<<<<<<< Updated upstream
 # PDF_FIXTURE adds the seeder's real outlined PDF after the
 # generic books, so `pdf-read-$((BOOKS+1))` opens page 4 as a
 # bookmarked 4-5 spread — the PDF reader's drawn state.
@@ -138,6 +142,8 @@ COMIC_FIXTURE="${COMIC_FIXTURE:-}"
 if [ -n "$COMIC_FIXTURE" ]; then
   SEED_ARGS+=(--comic-fixture)
 fi
+=======
+>>>>>>> Stashed changes
 # SETTINGS_FIXTURE gives the Settings panes the populated states a bare
 # library cannot show: known/missing libraries, shelves and a watch rule,
 # rejected Google Books key state, EPUB original backups, and the four
@@ -392,11 +398,18 @@ say "requested route: $ROUTE"
 # evidence of which theme was photographed.
 THEME="${THEME:-}"
 say "requested theme: ${THEME:-<saved/default>}"
+<<<<<<< Updated upstream
 # DIALOG asks the loaded page to open one of its dialogs over itself
 # (KALAM_DIALOG values include book tags/annotations, author edit/merge,
 # and comic-series edit/find/find-review). No route reaches a dialog,
 # so without this the loop could photograph every page and still never
 # see the dialogs those pages own.
+=======
+# DIALOG asks the book page to open one of its dialogs over itself once
+# loaded (KALAM_DIALOG=tags|annotations). No route reaches a dialog, so
+# without this the loop could photograph every page and still never see
+# the two dialogs the book page owns.
+>>>>>>> Stashed changes
 DIALOG="${DIALOG:-}"
 say "requested dialog: ${DIALOG:-<none>}"
 # SERIES_VIEW asks the series page to open on its strip or list view
@@ -414,6 +427,7 @@ say "requested settings pane: ${SETTINGS_PANE:-<default>}"
 # a proof frame of the Back+Bubble unit would otherwise need a pointer.
 READER_ACTION="${READER_ACTION:-}"
 say "requested reader action: ${READER_ACTION:-<none>}"
+<<<<<<< Updated upstream
 # COMIC_ACTION is the same ask for the comics reader
 # (KALAM_COMIC_ACTION: chrome, chapters, pages, reading, presets,
 # image, shortcuts, jump, jump-range).
@@ -426,6 +440,8 @@ say "requested comic action: ${COMIC_ACTION:-<none>}"
 # drawing-text, drawing-sticky).
 PDF_ACTION="${PDF_ACTION:-}"
 say "requested PDF action: ${PDF_ACTION:-<none>}"
+=======
+>>>>>>> Stashed changes
 say "settings fixture: ${SETTINGS_FIXTURE:-0} empty-dicts=${SETTINGS_EMPTY_DICTS:-0}"
 # WINDOWED controls the A0 step 6 windowed grid (build only the cards on
 # screen). It became the default on 2026-09-04, so the app flag is now the
@@ -453,6 +469,7 @@ else
   NO_WINDOWED=0
 fi
 say "windowed grid: $WINDOWED (KALAM_NO_WINDOWED_GRID=$NO_WINDOWED)"
+<<<<<<< Updated upstream
 
 # Readers do real asynchronous work after their route has opened --
 # opening a book, decoding a comic page, rendering a PDF spread and
@@ -501,6 +518,9 @@ say "readiness: min=${MIN_SETTLE}s max=${MAX_SETTLE}s stable_max_changed=${STABL
 
 APP_START="$(now_s)"
 KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_SETTINGS_PANE="$SETTINGS_PANE" KALAM_READER_ACTION="$READER_ACTION" KALAM_COMIC_ACTION="$COMIC_ACTION" KALAM_PDF_ACTION="$PDF_ACTION" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
+=======
+KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_SETTINGS_PANE="$SETTINGS_PANE" KALAM_READER_ACTION="$READER_ACTION" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
+>>>>>>> Stashed changes
 APP_PID=$!
 
 wait_for_app_ready "$APP_PID" "$OUT/kalam.log" "$ROUTE" "$SETTLE"
@@ -694,7 +714,10 @@ if [ "$ROUTE" != "home" ]; then
   # `sample_rss` uses `pgrep -n` (newest), so it follows this process too.
   # That keeps the peak-memory figure honest -- it is still the high-water
   # mark of a single kalam process, just possibly the second one.
+<<<<<<< Updated upstream
   HOME_START="$(now_s)"
+=======
+>>>>>>> Stashed changes
   KALAM_ROUTE=home KALAM_THEME="$THEME" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam-home.log" 2>&1 &
   HOME_PID=$!
   wait_for_app_ready "$HOME_PID" "$OUT/kalam-home.log" home 10

@@ -304,12 +304,15 @@ pub struct SettingsSnapshot {
     /// Metadata sources pane shows the rejected-key state. Written by the
     /// fetcher via `enabled_sources`, cleared on key save or success.
     pub google_books_key_rejected: bool,
+<<<<<<< Updated upstream
     pub source_myanimelist: bool,
     pub myanimelist_client_id: String,
     pub myanimelist_client_id_rejected: bool,
     pub source_comic_vine: bool,
     pub comic_vine_key: String,
     pub comic_vine_key_rejected: bool,
+=======
+>>>>>>> Stashed changes
     /// EPUB polish-on-import and metadata writeback toggles (Book Files).
     pub clean_on_import: bool,
     pub writeback_enabled: bool,
@@ -378,6 +381,7 @@ pub struct AuthorPageSnapshot {
     /// Owned books with a finished stamp — read state is "stamped or at
     /// 100%", the series page's rule, and the stamp lives outside `Book`.
     pub finished: std::collections::HashSet<i64>,
+<<<<<<< Updated upstream
 }
 
 /// One author on the Authors index (decision 117): every spelling of
@@ -432,6 +436,8 @@ pub struct AuthorEditInput {
     pub death_date: String,
     pub aliases: Vec<String>,
     pub portrait: AuthorPortraitEdit,
+=======
+>>>>>>> Stashed changes
 }
 
 /// The vocabulary page: the visible word list plus its header counts.
@@ -1135,6 +1141,7 @@ impl LibraryService {
                 .get_pref("meta.googlebooks.key_rejected")
                 .map(|v| v == "1")
                 .unwrap_or(false),
+<<<<<<< Updated upstream
             source_myanimelist,
             myanimelist_client_id: self
                 .catalog
@@ -1155,6 +1162,8 @@ impl LibraryService {
                 .get_pref("meta.comicvine.key_rejected")
                 .map(|v| v == "1")
                 .unwrap_or(false),
+=======
+>>>>>>> Stashed changes
             clean_on_import: crate::epub_sanitizer::clean_on_import_enabled(&self.catalog),
             writeback_enabled: crate::epub_metadata::write_enabled(&self.catalog),
             // The Reading pane's data. The typeface list builds a font
@@ -1694,6 +1703,7 @@ impl LibraryService {
 /// Unwrap a query result, or record why it failed and fall back to the empty
 /// value. This is the one place the "a failed read shows as empty" policy
 /// lives; it used to be repeated, silently, in every page.
+<<<<<<< Updated upstream
 #[derive(Default)]
 struct AuthorAccum {
     /// Display spellings seen on books, with counts — the most-used
@@ -1895,6 +1905,8 @@ fn store_author_portrait(
     }
 }
 
+=======
+>>>>>>> Stashed changes
 /// The first plausible four-digit year in a free-form published string
 /// (`1969`, `1969-06-01`, `June 1969`). The catalog stores whatever the
 /// file's metadata said, so a series row that wants a year has to dig it
@@ -2070,6 +2082,7 @@ fn author_groups(
     groups
 }
 
+<<<<<<< Updated upstream
 fn comic_field_selected(selected_fields: &[String], field: &str) -> bool {
     selected_fields.iter().any(|selected| selected == field)
 }
@@ -2281,6 +2294,8 @@ pub fn apply_comic_series_candidate(
     })
 }
 
+=======
+>>>>>>> Stashed changes
 fn take<T: Default>(result: crate::db::Result<T>, what: &str, errors: &mut Errors) -> T {
     match result {
         Ok(value) => value,
@@ -3427,6 +3442,7 @@ mod tests {
     }
 
     #[test]
+<<<<<<< Updated upstream
     fn authors_index_folds_spellings_and_counts_books() {
         let cat = Catalog::open_in_memory().unwrap();
         let svc = LibraryService::new(Arc::new(cat));
@@ -3516,6 +3532,8 @@ mod tests {
     }
 
     #[test]
+=======
+>>>>>>> Stashed changes
     fn series_page_merges_the_listing_with_owned_books() {
         let cat = Catalog::open_in_memory().unwrap();
         let svc = LibraryService::new(Arc::new(cat));

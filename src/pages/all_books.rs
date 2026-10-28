@@ -417,7 +417,7 @@ impl Component for AllBooksModel {
                     set_hexpand: false,
                     set_vexpand: false,
                 },
-            }
+            },
 
             // Floating bulk bar (§49): bottom centre, 48 high, 32 up from bottom.
             add_overlay = &gtk::Box {

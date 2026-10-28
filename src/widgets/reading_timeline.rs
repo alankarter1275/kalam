@@ -247,7 +247,7 @@ fn setup_canvas(
     let open_book = model.open_book;
 
     canvas.set_draw_func(move |_area, cr, width, height| {
-        if width <= 0.0 || height <= 0.0 {
+        if width <= 0 || height <= 0 {
             return;
         }
 
@@ -332,7 +332,8 @@ fn setup_interactions(
     // Horizontal drag to scroll.
     let drag = gtk::GestureDrag::new();
     let ds = draw_state.clone();
-    drag.connect_update(move |_gesture, offset_x| {
+    drag.connect_update(move |_gesture, _sequence, offset_x, offset_y| {
+        let _ = offset_y;
         let mut state = ds.borrow_mut();
         state.scroll_offset += offset_x;
         let max_scroll = ((MIN_TIMELINE_WIDTH as f64) * 0.5).max(0.0);
@@ -340,7 +341,6 @@ fn setup_interactions(
         drop(state);
         let widget = _gesture.widget().unwrap();
         widget.queue_draw();
-        _gesture.set_point(0, 0.0, 0.0);
     });
     canvas.add_controller(drag);
 
@@ -358,7 +358,7 @@ fn setup_interactions(
                 s.input(ReadingTimelineMsg::SessionClicked { book_id });
             }
         }
-        gtk::Propagation::Proceed
+        true
     });
     canvas.add_controller(key);
 }

@@ -392,7 +392,7 @@ fn hit_test_lane(
     x_scale: f64,
 ) -> i64 {
     let axis_x = AXIS_WIDTH as f64;
-    let day_span = (day_max - day_min).max(1) as f64;
+    let _day_span = (day_max - day_min).max(1) as f64;
 
     for (lane_index, lane) in lanes.iter().enumerate() {
         let lane_y = (lane_index as f64) * (LANE_HEIGHT + LANE_GAP) as f64

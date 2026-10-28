@@ -10,6 +10,7 @@ use gtk::cairo::Context as CairoContext;
 use gtk::gdk::RGBA;
 use gtk::pango::{FontDescription, Layout, Weight};
 use gtk::prelude::*;
+use pangocairo::functions::show_layout;
 
 
 use relm4::prelude::*;
@@ -468,8 +469,7 @@ fn draw_word(
     let b = if is_hovered { accent.blue() } else { text.blue() };
     cr.set_source_rgba(r, g, b, alpha);
 
-    cr.move_to(0.0, 0.0);
-    cr.show_text(&word.word);
+    pangocairo::functions::show_layout(cr.as_ref(), &layout);
 
     cr.restore();
 }

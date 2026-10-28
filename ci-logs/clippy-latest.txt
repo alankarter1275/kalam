@@ -1,9 +1,6 @@
-src/widgets/saved_words_sphere.rs:11:5: [1m[91merror[0m: unused import: `pango::prelude::*`
-src/widgets/saved_words_sphere.rs:12:29: [1m[91merror[0m: unused imports: `show_layout` and `update_layout`
-src/widgets/saved_words_sphere.rs:301:14: [1m[91merror[E0505][0m: cannot move out of `state` because it is borrowed: move out of `state` occurs here
-src/widgets/saved_words_sphere.rs:328:17: [1m[91merror[E0596][0m: cannot borrow `desc` as mutable, as it is not declared as mutable: not mutable
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+src/widgets/saved_words_sphere.rs:299:14: [1m[91merror[E0505][0m: cannot move out of `state` because it is borrowed: move out of `state` occurs here
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -27,11 +24,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/widgets/saved_words_sphere.rs:11:5: [1m[91merror[0m: unused import: `pango::prelude::*`
-src/widgets/saved_words_sphere.rs:12:29: [1m[91merror[0m: unused imports: `show_layout` and `update_layout`
-src/widgets/saved_words_sphere.rs:301:14: [1m[91merror[E0505][0m: cannot move out of `state` because it is borrowed: move out of `state` occurs here
-src/widgets/saved_words_sphere.rs:328:17: [1m[91merror[E0596][0m: cannot borrow `desc` as mutable, as it is not declared as mutable: not mutable
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+src/widgets/saved_words_sphere.rs:299:14: [1m[91merror[E0505][0m: cannot move out of `state` because it is borrowed: move out of `state` occurs here
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
---- run 40763642154 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+--- run 40764251912 ---

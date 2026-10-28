@@ -317,8 +317,9 @@ fn setup_interactions(
     click.set_button(1);
     let s = sender.clone();
     let ds = draw_state.clone();
+    let lanes_click = lanes.clone();
     click.connect_released(move |gesture, _n_press, x, y| {
-        let book_id = hit_test_lane(x, y, &lanes, day_min, day_max, x_scale);
+        let book_id = hit_test_lane(x, y, &lanes_click, day_min, day_max, x_scale);
         if book_id != 0 {
             ds.borrow_mut().hovered_book = Some(book_id);
             let widget = gesture.widget().unwrap();
@@ -331,8 +332,9 @@ fn setup_interactions(
     // Motion for hover tracking.
     let motion = gtk::EventControllerMotion::new();
     let ds = draw_state.clone();
+    let lanes_motion = lanes.clone();
     motion.connect_motion(move |_controller, x, y| {
-        let book_id = hit_test_lane(x, y, &lanes, day_min, day_max, x_scale);
+        let book_id = hit_test_lane(x, y, &lanes_motion, day_min, day_max, x_scale);
         let mut state = ds.borrow_mut();
         if state.hovered_book != Some(book_id) {
             state.hovered_book = if book_id != 0 { Some(book_id) } else { None };

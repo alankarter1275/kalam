@@ -7,7 +7,7 @@
 //! The open card is a Gtk.Revealer below the canvas; clicking a session
 //! reveals it with that book's details.
 
-use crate::db::{Catalog, TimelineLane, TimelineSession};
+use crate::db::{Catalog, TimelineLane};
 use crate::widgets::paint::{color_probe, probe_color, rounded_rect, set_source};
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -119,8 +119,8 @@ impl Component for ReadingTimelineModel {
                     add_css_class: "kalam-reading-timeline";
                     set_hexpand: true;
                     set_vexpand: false;
-                    set_content_height: DEFAULT_HEIGHT;
-                    set_width_request: MIN_TIMELINE_WIDTH;
+                    set_content_height: 320;
+                    set_width_request: 900;
                     set_focusable: true;
                     set_cursor_from_name: Some("pointer");
                 },
@@ -267,8 +267,8 @@ fn setup_canvas(
 
         let accent = probe_color(&accent_probe);
         let border = probe_color(&border_probe);
-        let text = probe_color(&text_probe);
-        let text_dim = probe_color(&text_dim_probe);
+        let _text = probe_color(&text_probe);
+        let _text_dim = probe_color(&text_dim_probe);
         let bg = probe_color(&bg_probe);
 
         let hl_colours: Vec<gtk::gdk::RGBA> = hl_probes.iter().map(probe_color).collect();
@@ -292,8 +292,8 @@ fn setup_canvas(
             hovered_book,
             &accent,
             &border,
-            &text,
-            &text_dim,
+            &_text,
+            &_text_dim,
             &bg,
             &hl_colours,
         );
@@ -504,8 +504,8 @@ fn draw_timeline(
     hovered_book: Option<i64>,
     accent: &gtk::gdk::RGBA,
     border: &gtk::gdk::RGBA,
-    text: &gtk::gdk::RGBA,
-    text_dim: &gtk::gdk::RGBA,
+    _text: &gtk::gdk::RGBA,
+    _text_dim: &gtk::gdk::RGBA,
     bg: &gtk::gdk::RGBA,
     hl_colours: &[gtk::gdk::RGBA],
 ) {
@@ -519,7 +519,7 @@ fn draw_timeline(
 
     let axis_x = AXIS_WIDTH as f64 + scroll_offset;
     let plot_width = width - axis_x - scroll_offset;
-    let day_span = (day_max - day_min).max(1) as f64;
+    let _day_span = (day_max - day_min).max(1) as f64;
 
     // ── Today vertical line ───────────────────────────────────────────
     if today_day >= day_min && today_day <= day_max {
@@ -660,6 +660,7 @@ fn build_card(lane: &TimelineLane) -> gtk::Box {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::TimelineSession;
 
     #[test]
     fn date_to_day_num_round_trip() {

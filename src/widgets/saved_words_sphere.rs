@@ -468,7 +468,8 @@ fn draw_word(
     let b = if is_hovered { accent.blue() } else { text.blue() };
     cr.set_source_rgba(r, g, b, alpha);
 
-    pangocairo::functions::show_layout(&**cr, &layout);
+    cr.move_to(0.0, 0.0);
+    cr.show_text(&word.word);
 
     cr.restore();
 }

@@ -1,6 +1,29 @@
-src/widgets/saved_words_sphere.rs:337:16: [1m[91merror[E0308][0m: arguments to this method are incorrect
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+src/widgets/saved_words_sphere.rs:8:42: [1m[91merror[0m: unused imports: `probe_color` and `set_source`
+src/widgets/saved_words_sphere.rs:280:9: [1m[91merror[0m: unused variable: `draw_state`: help: if this is intentional, prefix it with an underscore: `_draw_state`
+src/widgets/saved_words_sphere.rs:281:9: [1m[91merror[0m: unused variable: `words`: help: if this is intentional, prefix it with an underscore: `_words`
+src/widgets/saved_words_sphere.rs:282:9: [1m[91merror[0m: unused variable: `probes`: help: if this is intentional, prefix it with an underscore: `_probes`
+src/widgets/paint.rs:89:8: [1m[91merror[0m: function `fill_path` is never used
+src/widgets/saved_words_sphere.rs:19:7: [1m[91merror[0m: constant `STAGE_W` is never used
+src/widgets/saved_words_sphere.rs:20:7: [1m[91merror[0m: constant `STAGE_H` is never used
+src/widgets/saved_words_sphere.rs:26:7: [1m[91merror[0m: constant `MIN_SIZE` is never used
+src/widgets/saved_words_sphere.rs:28:7: [1m[91merror[0m: constant `MAX_SIZE` is never used
+src/widgets/saved_words_sphere.rs:31:7: [1m[91merror[0m: constant `DEPTH_SCALE_MIN` is never used
+src/widgets/saved_words_sphere.rs:32:7: [1m[91merror[0m: constant `DEPTH_SCALE_MAX` is never used
+src/widgets/saved_words_sphere.rs:35:7: [1m[91merror[0m: constant `OPACITY_BACK` is never used
+src/widgets/saved_words_sphere.rs:36:7: [1m[91merror[0m: constant `OPACITY_FRONT` is never used
+src/widgets/saved_words_sphere.rs:44:5: [1m[91merror[0m: fields `word`, `sx`, `sy`, `sz`, `weight`, and `vertical` are never read
+src/widgets/saved_words_sphere.rs:69:5: [1m[91merror[0m: field `positions` is never read
+src/widgets/saved_words_sphere.rs:75:5: [1m[91merror[0m: fields `px`, `py`, `size`, `alpha`, and `rz` are never read
+src/widgets/saved_words_sphere.rs:93:5: [1m[91merror[0m: variant `OpenSavedWord` is never constructed
+src/widgets/saved_words_sphere.rs:108:5: [1m[91merror[0m: field `catalog` is never read
+src/widgets/saved_words_sphere.rs:334:4: [1m[91merror[0m: function `compute_positions` is never used
+src/widgets/saved_words_sphere.rs:374:4: [1m[91merror[0m: function `rotate_point` is never used
+src/pages/library.rs:167:25: [1m[91merror[0m: deref which would be done by auto-deref: help: try: `&model`
+src/widgets/saved_words_sphere.rs:329:5: [1m[91merror[0m: consider using `sort_by_key`
+src/widgets/saved_words_sphere.rs:349:18: [1m[91merror[0m: casting to the same type is unnecessary (`f64` -> `f64`): help: try: `(stage_w.min(stage_h) * 0.42)`
+src/widgets/saved_words_sphere.rs:44:5: [1m[91merror[0m: fields `word` and `vertical` are never read
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 23 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 22 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -22,10 +45,33 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/widgets/saved_words_sphere.rs:337:16: [1m[91merror[E0308][0m: arguments to this method are incorrect
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+src/widgets/saved_words_sphere.rs:8:42: [1m[91merror[0m: unused imports: `probe_color` and `set_source`
+src/widgets/saved_words_sphere.rs:280:9: [1m[91merror[0m: unused variable: `draw_state`: help: if this is intentional, prefix it with an underscore: `_draw_state`
+src/widgets/saved_words_sphere.rs:281:9: [1m[91merror[0m: unused variable: `words`: help: if this is intentional, prefix it with an underscore: `_words`
+src/widgets/saved_words_sphere.rs:282:9: [1m[91merror[0m: unused variable: `probes`: help: if this is intentional, prefix it with an underscore: `_probes`
+src/widgets/paint.rs:89:8: [1m[91merror[0m: function `fill_path` is never used
+src/widgets/saved_words_sphere.rs:19:7: [1m[91merror[0m: constant `STAGE_W` is never used
+src/widgets/saved_words_sphere.rs:20:7: [1m[91merror[0m: constant `STAGE_H` is never used
+src/widgets/saved_words_sphere.rs:26:7: [1m[91merror[0m: constant `MIN_SIZE` is never used
+src/widgets/saved_words_sphere.rs:28:7: [1m[91merror[0m: constant `MAX_SIZE` is never used
+src/widgets/saved_words_sphere.rs:31:7: [1m[91merror[0m: constant `DEPTH_SCALE_MIN` is never used
+src/widgets/saved_words_sphere.rs:32:7: [1m[91merror[0m: constant `DEPTH_SCALE_MAX` is never used
+src/widgets/saved_words_sphere.rs:35:7: [1m[91merror[0m: constant `OPACITY_BACK` is never used
+src/widgets/saved_words_sphere.rs:36:7: [1m[91merror[0m: constant `OPACITY_FRONT` is never used
+src/widgets/saved_words_sphere.rs:44:5: [1m[91merror[0m: fields `word`, `sx`, `sy`, `sz`, `weight`, and `vertical` are never read
+src/widgets/saved_words_sphere.rs:69:5: [1m[91merror[0m: field `positions` is never read
+src/widgets/saved_words_sphere.rs:75:5: [1m[91merror[0m: fields `px`, `py`, `size`, `alpha`, and `rz` are never read
+src/widgets/saved_words_sphere.rs:93:5: [1m[91merror[0m: variant `OpenSavedWord` is never constructed
+src/widgets/saved_words_sphere.rs:108:5: [1m[91merror[0m: field `catalog` is never read
+src/widgets/saved_words_sphere.rs:334:4: [1m[91merror[0m: function `compute_positions` is never used
+src/widgets/saved_words_sphere.rs:374:4: [1m[91merror[0m: function `rotate_point` is never used
+src/pages/library.rs:167:25: [1m[91merror[0m: deref which would be done by auto-deref: help: try: `&model`
+src/widgets/saved_words_sphere.rs:329:5: [1m[91merror[0m: consider using `sort_by_key`
+src/widgets/saved_words_sphere.rs:349:18: [1m[91merror[0m: casting to the same type is unnecessary (`f64` -> `f64`): help: try: `(stage_w.min(stage_h) * 0.42)`
+src/widgets/saved_words_sphere.rs:44:5: [1m[91merror[0m: fields `word` and `vertical` are never read
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 23 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
---- run 40759956078 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 22 previous errors
+--- run 40760736388 ---

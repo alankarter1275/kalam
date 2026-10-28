@@ -606,13 +606,13 @@ impl Component for AllBooksModel {
         model.check_index_status(&sender);
 
         // Build the §47 filter popover: Shelf and Tag submenus (decision 168).
-        build_filter_popup(&widgets, &sender, &model);
+        build_filter_popup(&widgets.filter_btn, &sender, &model);
 
         // Build the §47 group popover: None / Author / Series.
-        build_group_popup(&widgets, &sender);
+        build_group_popup(&widgets.group_btn, &sender);
 
         // Render any chips that came in with the model (none on first load).
-        rebuild_filter_chips(widgets, &model.filter_chips, &sender);
+        rebuild_filter_chips(&widgets.filter_chips, &model.filter_chips, &sender);
 
         for key in SortKey::ALL {
             let btn = gtk::ToggleButton::with_label(key.label());
@@ -721,7 +721,7 @@ impl Component for AllBooksModel {
                     self.reload(&sender);
                 }
                 widgets.filter_btn.set_active(false);
-                rebuild_filter_chips(widgets, &self.filter_chips, &sender);
+                rebuild_filter_chips(&widgets.filter_chips, &self.filter_chips, &sender);
                 widgets.clear_filters_btn.set_visible(!self.filter_chips.is_empty());
             }
             AllBooksMsg::FilterTagSelected(tag) => {
@@ -736,7 +736,7 @@ impl Component for AllBooksModel {
                     self.reload(&sender);
                 }
                 widgets.filter_btn.set_active(false);
-                rebuild_filter_chips(widgets, &self.filter_chips, &sender);
+                rebuild_filter_chips(&widgets.filter_chips, &self.filter_chips, &sender);
                 widgets.clear_filters_btn.set_visible(!self.filter_chips.is_empty());
             }
             AllBooksMsg::FilterChipRemoved(chip) => {
@@ -751,14 +751,14 @@ impl Component for AllBooksModel {
                 }
                 self.query = q;
                 self.reload(&sender);
-                rebuild_filter_chips(widgets, &self.filter_chips, &sender);
+                rebuild_filter_chips(&widgets.filter_chips, &self.filter_chips, &sender);
                 widgets.clear_filters_btn.set_visible(!self.filter_chips.is_empty());
             }
             AllBooksMsg::ClearFilters => {
                 self.filter_chips.clear();
                 self.query.clear();
                 self.reload(&sender);
-                rebuild_filter_chips(widgets, &self.filter_chips, &sender);
+                rebuild_filter_chips(&widgets.filter_chips, &self.filter_chips, &sender);
                 widgets.clear_filters_btn.set_visible(false);
                 widgets.search.set_text("");
             }
@@ -1554,13 +1554,14 @@ fn build_filter_popup(
         let name = shelf.name.clone();
         let sid = shelf.id;
         let count = shelf.book_count;
+        let name_for_closure = name.clone();
         shelf_menu.add_item_with_count(
             &format!("{} ({})", shelf.name, count),
             count,
             move || {
                 let _ = s.input(AllBooksMsg::FilterShelfSelected {
                     shelf_id: sid,
-                    name,
+                    name: name_for_closure.clone(),
                 });
             },
         );

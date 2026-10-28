@@ -1,2 +1,488 @@
-//! Saved-words sphere widget (§52).\n//!\n//! A Cairo- and Pango-drawn widget: saved words placed on a 3D sphere,\n//! depth-sorted, with horizontal and vertical orientations, drag rotation\n//! with inertia, slow automatic drift, and a hover popover for each word.\n\nuse crate::db::Catalog;\nuse crate::widgets::paint::{color_probe, probe_color, set_source};\nuse gtk::prelude::*;\n\n\nuse relm4::prelude::*;\nuse std::cmp::Reverse;
-use std::cell::RefCell;\nuse std::f64::consts::PI;\nuse std::rc::Rc;\nuse std::sync::Arc;\n\n/// Fixed stage size (design system §52, decision 176).\nconst STAGE_W: f64 = 520.0;\nconst STAGE_H: f64 = 480.0;\n\n/// How many words to draw at most (design system §52: \"about 110\").\nconst MAX_WORDS: usize = 110;\n\n/// Smallest font size (design system §52: 9.5).\nconst MIN_SIZE: f64 = 9.5;\n/// Largest font size (design system §52: about 38).\nconst MAX_SIZE: f64 = 38.0;\n\n/// Depth scale range: front words full size, back at 0.72.\nconst DEPTH_SCALE_MIN: f64 = 0.72;\nconst DEPTH_SCALE_MAX: f64 = 1.0;\n\n/// Opacity range: back words fade to 0.2, front fully opaque.\nconst OPACITY_BACK: f64 = 0.2;\nconst OPACITY_FRONT: f64 = 1.0;\n\n/// Vertical proportion: roughly a third of words are rotated -90°.\nconst VERTICAL_EVERY: usize = 3;\n\n/// Immutable word data for the sphere.\n#[derive(Clone, Debug)]\nstruct SphereWord {\n    word: String,\n    count: i64,\n    /// Fibonacci sphere position (unit sphere).\n    sx: f64,\n    sy: f64,\n    sz: f64,\n    /// Pango weight (400, 500, 600, 700).\n    weight: i32,\n    /// Whether the word is vertical (-90° rotation).\n    vertical: bool,\n}\n\n/// Computed per-frame state shared between the Cairo closure and handlers.\nstruct SphereDrawState {\n    /// Rotation around Y (left/right drag), radians.\n    yaw: f64,\n    /// Rotation around X (up/down drag), radians.\n    pitch: f64,\n    /// Auto-drift angle offset.\n    drift: f64,\n    /// Dragging pauses drift.\n    dragging: bool,\n    /// Hovered word index.\n    hovered_word: Option<usize>,\n    /// Computed projected positions for this frame.\n    positions: Vec<WordPosition>,\n}\n\n/// A word's projected 2D position and visual attributes for one frame.\n#[derive(Clone, Debug)]\nstruct WordPosition {\n    px: f64,\n    py: f64,\n    size: f64,\n    alpha: f64,\n    rz: f64, // depth for sorting\n}\n\n/// Colour probes (must live in the widget tree so GTK resolves their styles).\n#[derive(Clone)]\nstruct SphereProbes {\n    accent: gtk::Label,\n    text: gtk::Label,\n    bg: gtk::Label,\n}\n\n/// Output from the sphere component.\n#[derive(Debug)]\npub enum SavedWordsSphereOut {\n    OpenSavedWord { word: String },\n}\n\n/// Input messages.\n#[derive(Debug)]\npub enum SavedWordsSphereMsg {\n    /// New frequency data arrived from the catalog (kept for future updates).\n    #[allow(dead_code)]\n    WordsReady(Vec<(String, i64)>),\n    HoverWord(Option<usize>),\n    ClickWord(usize),\n}\n\n/// The model.\npub struct SavedWordsSphereModel {\n    catalog: Arc<Catalog>,\n    words: Vec<SphereWord>,\n    probes: SphereProbes,\n    draw_state: Rc<RefCell<SphereDrawState>>,\n}\n\n#[relm4::component(pub)]\nimpl Component for SavedWordsSphereModel {\n    type Init = Arc<Catalog>;\n    type Input = SavedWordsSphereMsg;\n    type Output = SavedWordsSphereOut;\n    type CommandOutput = ();\n\n    view! {\n        #[root]\n        gtk::Box {\n            set_orientation: gtk::Orientation::Vertical,\n            set_hexpand: true,\n            set_vexpand: true,\n\n            #[name = \"stage\"]\n            gtk::DrawingArea {\n                set_hexpand: true,\n                set_vexpand: true,\n                set_width_request: 520,\n                set_height_request: 480,\n                set_can_focus: true,\n                set_focusable: true,\n                set_cursor_from_name: Some(\"pointer\"),\n            },\n\n            #[name = \"all_words_link\"]\n            gtk::Label {\n                set_label: \"All words ›\",\n                add_css_class: \"kalam-sphere-all-words\",\n                set_halign: gtk::Align::End,\n                set_margin_end: 8,\n                set_margin_top: 4,\n                set_tooltip_text: Some(\"Open the full saved-words list\"),\n            },\n        }\n    }\n\n    fn init(\n        catalog: Self::Init,\n        root: Self::Root,\n        sender: ComponentSender<Self>,\n    ) -> ComponentParts<Self> {\n        let draw_state = Rc::new(RefCell::new(SphereDrawState {\n            yaw: 0.0,\n            pitch: 0.0,\n            drift: 0.0,\n            dragging: false,\n            hovered_word: None,\n            positions: Vec::new(),\n        }));\n\n        let probes = SphereProbes {\n            accent: color_probe(\"kalam-ui-token-accent\"),\n            text: color_probe(\"kalam-ui-token-text\"),\n            bg: color_probe(\"kalam-ui-token-bg\"),\n        };\n        // Probes must be in the widget tree for GTK to resolve their styles.\n        for p in [&probes.accent, &probes.text, &probes.bg] {\n            root.append(p);\n        }\n\n        let words = load_words(&catalog);\n        let model = SavedWordsSphereModel {\n            catalog,\n            words,\n            probes,\n            draw_state: draw_state.clone(),\n        };\n        let widgets = view_output!();\n\n        // Drag to rotate.\n        let ds = draw_state.clone();\n        let drag = gtk::GestureDrag::new();\n        drag.connect_drag_update(move |_gesture, offset_x, offset_y| {\n            let mut state = ds.borrow_mut();\n            state.dragging = true;\n            state.yaw += offset_x * 0.005;\n            state.pitch =\n                (state.pitch + offset_y * 0.005).clamp(-PI / 2.0 + 0.05, PI / 2.0 - 0.05);\n            drop(state);\n            if let Some(widget) = _gesture.widget() {\n                widget.queue_draw();\n            }\n        });\n        widgets.stage.add_controller(drag);\n\n        // Motion for hover.\n        let ds_m = draw_state.clone();\n        let s_m = sender.clone();\n        let motion = gtk::EventControllerMotion::new();\n        motion.connect_motion(move |_controller, x, y| {\n            let _ = (x, y);\n            let state = ds_m.borrow();\n            let _ = state;\n            drop(state);\n            s_m.input(SavedWordsSphereMsg::HoverWord(None));\n        });\n        widgets.stage.add_controller(motion);\n\n        // Click to open word.\n        let ds_c = draw_state.clone();\n        let s_c = sender.clone();\n        let click = gtk::GestureClick::new();\n        click.set_button(1);\n        click.connect_released(move |gesture, _n_press, _x, _y| {\n            let state = ds_c.borrow();\n            let hovered = state.hovered_word;\n            drop(state);\n            if let Some(idx) = hovered {\n                s_c.input(SavedWordsSphereMsg::ClickWord(idx));\n            }\n            if let Some(widget) = gesture.widget() {\n                widget.queue_draw();\n            }\n        });\n        widgets.stage.add_controller(click);\n\n        // Drift animation tick.\n        let ds_t = draw_state.clone();\n        let stage_clone = widgets.stage.clone();\n        glib::timeout_add_local(std::time::Duration::from_millis(16), move || {\n            let mut state = ds_t.borrow_mut();\n            if !state.dragging && state.hovered_word.is_none() {\n                state.drift += 0.0005;\n                if state.drift > 2.0 * PI {\n                    state.drift -= 2.0 * PI;\n                }\n            }\n            drop(state);\n            stage_clone.queue_draw();\n            glib::ControlFlow::Continue\n        });\n\n        ComponentParts { model, widgets }\n    }\n\n    fn update_with_view(\n        &mut self,\n        widgets: &mut Self::Widgets,\n        msg: Self::Input,\n        _sender: ComponentSender<Self>,\n        _root: &Self::Root,\n    ) {\n        match msg {\n            SavedWordsSphereMsg::HoverWord(idx) => {\n                let mut state = self.draw_state.borrow_mut();\n                state.hovered_word = idx;\n                drop(state);\n                widgets.stage.queue_draw();\n            }\n            SavedWordsSphereMsg::ClickWord(idx) => {\n                let _ = idx;\n            }\n            SavedWordsSphereMsg::WordsReady(_) => {\n                // Data is loaded in init; keep for future dynamic updates.\n            }\n        }\n        self.update_view(widgets, _sender);\n    }\n}\n\n// ── Public setup ──────────────────────────────────────────────────────\n\n/// Attach the Cairo draw function to the sphere canvas. Called by the\n/// parent after launch, once the widget is realised.\npub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {\n    let _draw_state = model.draw_state.clone();\n    let _words = model.words.clone();\n    let _probes = model.probes.clone();\n\n    canvas.set_draw_func(move |_area, cr, width, height| {\n        let _ = cr;\n        let _ = width;\n        let _ = height;\n    });\n}\n\n/// Load top vocab terms from the catalog and build sphere words.\nfn load_words(catalog: &Catalog) -> Vec<SphereWord> {\n    let terms = catalog.top_vocab_terms(MAX_WORDS as i64).unwrap_or_default();\n    build_sphere_words(&terms)\n}\n\n/// Build sphere words from (term, count) pairs.\nfn build_sphere_words(terms: &[(String, i64)]) -> Vec<SphereWord> {\n    let mut words: Vec<SphereWord> = Vec::new();\n    let n = terms.len();\n    if n == 0 {\n        return words;\n    }\n\n    let max_count = terms.iter().map(|(_, c)| *c).max().unwrap_or(1) as f64;\n\n    for (i, (word, count)) in terms.iter().enumerate() {\n        let phi = PI * (3.0 - (5.0_f64).sqrt());\n        let z = 1.0 - (2.0 * (i as f64) / (n as f64).max(1.0));\n        let radius_xy = (1.0 - z * z).sqrt();\n        let theta = phi * (i as f64);\n        let sx = theta.cos() * radius_xy;\n        let sy = theta.sin() * radius_xy;\n        let sz = z;\n\n        let bucket = ((*count as f64 / max_count) * 3.0).floor().clamp(0.0, 3.0) as i32;\n        let weight = [400, 500, 600, 700][bucket as usize];\n        let vertical = i % VERTICAL_EVERY == 0;\n\n        words.push(SphereWord {\n            word: word.clone(),\n            count: *count,\n            sx, sy, sz,\n            weight,\n            vertical,\n        });\n    }\n\n    words.sort_by_key(|w| Reverse(w.count));\n    words\n}\n\n/// Compute projected positions for all words at the current rotation.\n#[allow(dead_code)]\nfn compute_positions(\n    words: &[SphereWord],\n    state: &RefCell<SphereDrawState>,\n    stage_w: f64,\n    stage_h: f64,\n) {\n    let st = state.borrow_mut();\n    let yaw = st.yaw + st.drift;\n    let pitch = st.pitch;\n    drop(st);\n\n    let cy = yaw.cos();\n    let sy = yaw.sin();\n    let cp = pitch.cos();\n    let sp = pitch.sin();\n    let radius = stage_w.min(stage_h) * 0.42;\n\n    let max_count = words.iter().map(|w| w.count as f64).fold(1.0_f64, f64::max);\n\n    let mut positions: Vec<WordPosition> = Vec::with_capacity(words.len());\n    for w in words {\n        let (rx, ry, rz) = rotate_point(w.sx, w.sy, w.sz, cy, sy, cp, sp);\n\n        let depth_scale =\n            DEPTH_SCALE_MIN + (DEPTH_SCALE_MAX - DEPTH_SCALE_MIN) * ((rz + 1.0) / 2.0).clamp(0.0, 1.0);\n        let size = (MIN_SIZE + (MAX_SIZE - MIN_SIZE) * w.count as f64 / max_count) * depth_scale;\n        let alpha = OPACITY_BACK\n            + (OPACITY_FRONT - OPACITY_BACK) * ((rz + 1.0) / 2.0).clamp(0.0, 1.0);\n\n        let scale = radius * depth_scale;\n        let px = stage_w / 2.0 + rx * scale;\n        let py = stage_h / 2.0 + ry * scale * 0.9;\n\n        positions.push(WordPosition { px, py, size, alpha, rz });\n    }\n\n    state.borrow_mut().positions = positions;\n}\n\n/// Rotate a unit-sphere point by yaw then pitch.\n#[allow(dead_code)]\nfn rotate_point(x: f64, y: f64, z: f64, cy: f64, sy: f64, cp: f64, sp: f64) -> (f64, f64, f64) {\n    let (x1, z1) = (x * cy + z * sy, -x * sy + z * cy);\n    let y2 = y * cp - z1 * sp;\n    let z2 = y * sp + z1 * cp;\n    (x1, y2, z2)\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn fibonacci_sphere_spreads_points() {\n        let terms: Vec<(String, i64)> = (0..50)\n            .map(|i| (format!(\"word{i}\"), (50 - i) as i64))\n            .collect();\n        let words = build_sphere_words(&terms);\n        assert_eq!(words.len(), 50);\n        for w in &words {\n            let len: f64 = (w.sx * w.sx + w.sy * w.sy + w.sz * w.sz).sqrt();\n            assert!((len - 1.0).abs() < 1e-6, \"point not on unit sphere: {len}\");\n        }\n    }\n\n    #[test]\n    fn weights_are_in_valid_range() {\n        let terms: Vec<(String, i64)> = (0..20)\n            .map(|i| (format!(\"w{i}\"), (20 - i) as i64))\n            .collect();\n        let words = build_sphere_words(&terms);\n        for w in &words {\n            assert!((400..=700).contains(&w.weight), \"weight {} out of range\", w.weight);\n        }\n    }\n\n    #[test]\n    fn empty_terms_yields_no_words() {\n        let words = build_sphere_words(&[]);\n        assert!(words.is_empty());\n    }\n\n    #[test]\n    fn rotate_point_preserves_length() {\n        let (x, y, z) = (0.6_f64, 0.4_f64, 0.7_f64);\n        let len0 = (x * x + y * y + z * z).sqrt();\n        let (rx, ry, rz) = rotate_point(x, y, z, 1.0, 0.0, 1.0, 0.0);\n        let len1 = (rx * rx + ry * ry + rz * rz).sqrt();\n        assert!((len0 - len1).abs() < 1e-6);\n    }\n}\n
+//! Saved-words sphere widget (§52).
+//!
+//! A Cairo- and Pango-drawn widget: saved words placed on a 3D sphere,
+//! depth-sorted, with horizontal and vertical orientations, drag rotation
+//! with inertia, slow automatic drift, and a hover popover for each word.
+
+use crate::db::Catalog;
+use crate::widgets::paint::{color_probe, probe_color, set_source};
+use gtk::prelude::*;
+use pango::{FontDescription, Layout, Weight};
+use pango::prelude::*;
+use pangocairo::functions::{show_layout, update_layout};
+
+use relm4::prelude::*;
+use std::cell::RefCell;
+use std::f64::consts::PI;
+use std::rc::Rc;
+use std::sync::Arc;
+
+/// Fixed stage size (design system §52, decision 176).
+const STAGE_W: f64 = 520.0;
+const STAGE_H: f64 = 480.0;
+
+/// How many words to draw at most (design system §52: "about 110").
+const MAX_WORDS: usize = 110;
+
+/// Smallest font size (design system §52: 9.5).
+const MIN_SIZE: f64 = 9.5;
+/// Largest font size (design system §52: about 38).
+const MAX_SIZE: f64 = 38.0;
+
+/// Depth scale range: front words full size, back at 0.72.
+const DEPTH_SCALE_MIN: f64 = 0.72;
+const DEPTH_SCALE_MAX: f64 = 1.0;
+
+/// Opacity range: back words fade to 0.2, front fully opaque.
+const OPACITY_BACK: f64 = 0.2;
+const OPACITY_FRONT: f64 = 1.0;
+
+/// Vertical proportion: roughly a third of words are rotated -90°.
+const VERTICAL_EVERY: usize = 3;
+
+/// Immutable word data for the sphere.
+#[derive(Clone, Debug)]
+struct SphereWord {
+    word: String,
+    count: i64,
+    /// Fibonacci sphere position (unit sphere).
+    sx: f64,
+    sy: f64,
+    sz: f64,
+    /// Pango weight (400, 500, 600, 700).
+    weight: i32,
+    /// Whether the word is vertical (-90° rotation).
+    vertical: bool,
+}
+
+/// Computed per-frame state shared between the Cairo closure and handlers.
+struct SphereDrawState {
+    /// Rotation around Y (left/right drag), radians.
+    yaw: f64,
+    /// Rotation around X (up/down drag), radians.
+    pitch: f64,
+    /// Auto-drift angle offset.
+    drift: f64,
+    /// Dragging pauses drift.
+    dragging: bool,
+    /// Hovered word index.
+    hovered_word: Option<usize>,
+    /// Computed projected positions for this frame.
+    positions: Vec<WordPosition>,
+}
+
+/// A word's projected 2D position and visual attributes for one frame.
+#[derive(Clone, Debug)]
+struct WordPosition {
+    px: f64,
+    py: f64,
+    size: f64,
+    alpha: f64,
+    rz: f64, // depth for sorting
+}
+
+/// Colour probes (must live in the widget tree so GTK resolves their styles).
+#[derive(Clone)]
+struct SphereProbes {
+    accent: gtk::Label,
+    text: gtk::Label,
+    bg: gtk::Label,
+}
+
+/// Output from the sphere component.
+#[derive(Debug)]
+pub enum SavedWordsSphereOut {
+    OpenSavedWord { word: String },
+}
+
+/// Input messages.
+#[derive(Debug)]
+pub enum SavedWordsSphereMsg {
+    /// New frequency data arrived from the catalog (kept for future updates).
+    #[allow(dead_code)]
+    WordsReady(Vec<(String, i64)>),
+    HoverWord(Option<usize>),
+    ClickWord(usize),
+}
+
+/// The model.
+pub struct SavedWordsSphereModel {
+    catalog: Arc<Catalog>,
+    words: Vec<SphereWord>,
+    probes: SphereProbes,
+    draw_state: Rc<RefCell<SphereDrawState>>,
+}
+
+#[relm4::component(pub)]
+impl Component for SavedWordsSphereModel {
+    type Init = Arc<Catalog>;
+    type Input = SavedWordsSphereMsg;
+    type Output = SavedWordsSphereOut;
+    type CommandOutput = ();
+
+    view! {
+        #[root]
+        gtk::Box {
+            set_orientation: gtk::Orientation::Vertical,
+            set_hexpand: true,
+            set_vexpand: true,
+
+            #[name = "stage"]
+            gtk::DrawingArea {
+                set_hexpand: true,
+                set_vexpand: true,
+                set_width_request: 520,
+                set_height_request: 480,
+                set_can_focus: true,
+                set_focusable: true,
+                set_cursor_from_name: Some("pointer"),
+            },
+
+            #[name = "all_words_link"]
+            gtk::Label {
+                set_label: "All words ›",
+                add_css_class: "kalam-sphere-all-words",
+                set_halign: gtk::Align::End,
+                set_margin_end: 8,
+                set_margin_top: 4,
+                set_tooltip_text: Some("Open the full saved-words list"),
+            },
+        }
+    }
+
+    fn init(
+        catalog: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let draw_state = Rc::new(RefCell::new(SphereDrawState {
+            yaw: 0.0,
+            pitch: 0.0,
+            drift: 0.0,
+            dragging: false,
+            hovered_word: None,
+            positions: Vec::new(),
+        }));
+
+        let probes = SphereProbes {
+            accent: color_probe("kalam-ui-token-accent"),
+            text: color_probe("kalam-ui-token-text"),
+            bg: color_probe("kalam-ui-token-bg"),
+        };
+        // Probes must be in the widget tree for GTK to resolve their styles.
+        for p in [&probes.accent, &probes.text, &probes.bg] {
+            root.append(p);
+        }
+
+        let words = load_words(&catalog);
+        let model = SavedWordsSphereModel {
+            catalog,
+            words,
+            probes,
+            draw_state: draw_state.clone(),
+        };
+        let widgets = view_output!();
+
+        // Drag to rotate.
+        let ds = draw_state.clone();
+        let drag = gtk::GestureDrag::new();
+        drag.connect_drag_update(move |_gesture, offset_x, offset_y| {
+            let mut state = ds.borrow_mut();
+            state.dragging = true;
+            state.yaw += offset_x * 0.005;
+            state.pitch =
+                (state.pitch + offset_y * 0.005).clamp(-PI / 2.0 + 0.05, PI / 2.0 - 0.05);
+            drop(state);
+            if let Some(widget) = _gesture.widget() {
+                widget.queue_draw();
+            }
+        });
+        widgets.stage.add_controller(drag);
+
+        // Motion for hover.
+        let ds_m = draw_state.clone();
+        let s_m = sender.clone();
+        let motion = gtk::EventControllerMotion::new();
+        motion.connect_motion(move |_controller, x, y| {
+            let _ = (x, y);
+            let state = ds_m.borrow();
+            let _ = state;
+            drop(state);
+            s_m.input(SavedWordsSphereMsg::HoverWord(None));
+        });
+        widgets.stage.add_controller(motion);
+
+        // Click to open word.
+        let ds_c = draw_state.clone();
+        let s_c = sender.clone();
+        let click = gtk::GestureClick::new();
+        click.set_button(1);
+        click.connect_released(move |gesture, _n_press, _x, _y| {
+            let state = ds_c.borrow();
+            let hovered = state.hovered_word;
+            drop(state);
+    if let Some(idx) = hovered {
+        s_c.input(SavedWordsSphereMsg::ClickWord(idx));
+    }
+            if let Some(widget) = gesture.widget() {
+                widget.queue_draw();
+            }
+        });
+        widgets.stage.add_controller(click);
+
+        // Drift animation tick.
+        let ds_t = draw_state.clone();
+        let stage_clone = widgets.stage.clone();
+        glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
+            let mut state = ds_t.borrow_mut();
+            if !state.dragging && state.hovered_word.is_none() {
+                state.drift += 0.0005;
+                if state.drift > 2.0 * PI {
+                    state.drift -= 2.0 * PI;
+                }
+            }
+            drop(state);
+            stage_clone.queue_draw();
+            glib::ControlFlow::Continue
+        });
+
+        ComponentParts { model, widgets }
+    }
+
+    fn update_with_view(
+        &mut self,
+        widgets: &mut Self::Widgets,
+        msg: Self::Input,
+        _sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
+        match msg {
+            SavedWordsSphereMsg::HoverWord(idx) => {
+                let mut state = self.draw_state.borrow_mut();
+                state.hovered_word = idx;
+                drop(state);
+                widgets.stage.queue_draw();
+            }
+            SavedWordsSphereMsg::ClickWord(idx) => {
+                let _ = idx;
+            }
+            SavedWordsSphereMsg::WordsReady(_) => {
+                // Data is loaded in init; keep for future dynamic updates.
+            }
+        }
+        self.update_view(widgets, _sender);
+    }
+}
+
+// ── Public setup ──────────────────────────────────────────────────────
+
+/// Attach the Cairo draw function to the sphere canvas. Called by the
+/// parent after launch, once the widget is realised.
+pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
+    let pc = canvas.pango_context();
+    let draw_state = model.draw_state.clone();
+    let words = model.words.clone();
+    let probes = model.probes.clone();
+
+    canvas.set_draw_func(move |_area, cr, width, height| {
+        if width <= 0 || height <= 0 {
+            return;
+        }
+
+        let accent = probe_color(&probes.accent);
+        let text = probe_color(&probes.text);
+        let bg = probe_color(&probes.bg);
+
+        compute_positions(&words, &draw_state, STAGE_W, STAGE_H);
+
+        let state = draw_state.borrow();
+        let positions = &state.positions;
+        let hovered = state.hovered_word;
+        drop(state);
+
+        set_source(cr, bg, 1.0);
+
+        if words.is_empty() {
+            return;
+        }
+
+        let mut order: Vec<usize> = (0..positions.len()).collect();
+        order.sort_by(|a, b| {
+            positions[*a]
+                .rz
+                .partial_cmp(&positions[*b].rz)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        for &idx in &order {
+            if idx >= words.len() || idx >= positions.len() {
+                continue;
+            }
+            let is_hovered = hovered == Some(idx);
+            let word = &words[idx];
+            let pos = &positions[idx];
+
+            cr.translate(pos.px - pos.size / 2.0, pos.py - pos.size / 2.0);
+
+            let layout = Layout::new(&pc);
+            let desc = FontDescription::from_string("Playfair Display");
+            let size = if is_hovered { 24.0 } else { pos.size };
+            let pango_size = (size * 1024.0) as i32;
+            desc.set_size(pango_size);
+            let w = if is_hovered {
+                Weight::Bold
+            } else {
+                match word.weight {
+                    400 => Weight::Normal,
+                    500 => Weight::Medium,
+                    _ => Weight::Bold,
+                }
+            };
+            desc.set_weight(w);
+            layout.set_font_description(Some(&desc));
+            layout.set_text(&word.word);
+
+            let word_color = if is_hovered { accent } else { text };
+            set_source(cr, word_color, pos.alpha);
+
+            pangocairo::functions::update_layout(cr, &layout);
+            pangocairo::functions::show_layout(cr, &layout);
+
+            cr.translate(-pos.px + pos.size / 2.0, -pos.py + pos.size / 2.0);
+        }
+    });
+}
+
+/// Load top vocab terms from the catalog and build sphere words.
+fn load_words(catalog: &Catalog) -> Vec<SphereWord> {
+    let terms = catalog.top_vocab_terms(MAX_WORDS as i64).unwrap_or_default();
+    build_sphere_words(&terms)
+}
+
+/// Build sphere words from (term, count) pairs.
+fn build_sphere_words(terms: &[(String, i64)]) -> Vec<SphereWord> {
+    let mut words: Vec<SphereWord> = Vec::new();
+    let n = terms.len();
+    if n == 0 {
+        return words;
+    }
+
+    let max_count = terms.iter().map(|(_, c)| *c).max().unwrap_or(1) as f64;
+
+    for (i, (word, count)) in terms.iter().enumerate() {
+        let phi = PI * (3.0 - (5.0_f64).sqrt());
+        let z = 1.0 - (2.0 * (i as f64) / (n as f64).max(1.0));
+        let radius_xy = (1.0 - z * z).sqrt();
+        let theta = phi * (i as f64);
+        let sx = theta.cos() * radius_xy;
+        let sy = theta.sin() * radius_xy;
+        let sz = z;
+
+        let bucket = ((*count as f64 / max_count) * 3.0).floor().clamp(0.0, 3.0) as i32;
+        let weight = [400, 500, 600, 700][bucket as usize];
+        let vertical = i % VERTICAL_EVERY == 0;
+
+        words.push(SphereWord {
+            word: word.clone(),
+            count: *count,
+            sx, sy, sz,
+            weight,
+            vertical,
+        });
+    }
+
+    words.sort_by(|a, b| b.count.cmp(&a.count));
+    words
+}
+
+/// Compute projected positions for all words at the current rotation.
+fn compute_positions(
+    words: &[SphereWord],
+    state: &RefCell<SphereDrawState>,
+    stage_w: f64,
+    stage_h: f64,
+) {
+    let st = state.borrow_mut();
+    let yaw = st.yaw + st.drift;
+    let pitch = st.pitch;
+    drop(st);
+
+    let cy = yaw.cos();
+    let sy = yaw.sin();
+    let cp = pitch.cos();
+    let sp = pitch.sin();
+    let radius = (stage_w.min(stage_h) * 0.42) as f64;
+
+    let max_count = words.iter().map(|w| w.count as f64).fold(1.0_f64, f64::max);
+
+    let mut positions: Vec<WordPosition> = Vec::with_capacity(words.len());
+    for w in words {
+        let (rx, ry, rz) = rotate_point(w.sx, w.sy, w.sz, cy, sy, cp, sp);
+
+        let depth_scale =
+            DEPTH_SCALE_MIN + (DEPTH_SCALE_MAX - DEPTH_SCALE_MIN) * ((rz + 1.0) / 2.0).clamp(0.0, 1.0);
+        let size = (MIN_SIZE + (MAX_SIZE - MIN_SIZE) * w.count as f64 / max_count) * depth_scale;
+        let alpha = OPACITY_BACK
+            + (OPACITY_FRONT - OPACITY_BACK) * ((rz + 1.0) / 2.0).clamp(0.0, 1.0);
+
+        let scale = radius * depth_scale;
+        let px = stage_w / 2.0 + rx * scale;
+        let py = stage_h / 2.0 + ry * scale * 0.9;
+
+        positions.push(WordPosition { px, py, size, alpha, rz });
+    }
+
+    state.borrow_mut().positions = positions;
+}
+
+/// Rotate a unit-sphere point by yaw then pitch.
+fn rotate_point(x: f64, y: f64, z: f64, cy: f64, sy: f64, cp: f64, sp: f64) -> (f64, f64, f64) {
+    let (x1, z1) = (x * cy + z * sy, -x * sy + z * cy);
+    let y2 = y * cp - z1 * sp;
+    let z2 = y * sp + z1 * cp;
+    (x1, y2, z2)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fibonacci_sphere_spreads_points() {
+        let terms: Vec<(String, i64)> = (0..50)
+            .map(|i| (format!("word{i}"), (50 - i) as i64))
+            .collect();
+        let words = build_sphere_words(&terms);
+        assert_eq!(words.len(), 50);
+        for w in &words {
+            let len: f64 = (w.sx * w.sx + w.sy * w.sy + w.sz * w.sz).sqrt();
+            assert!((len - 1.0).abs() < 1e-6, "point not on unit sphere: {len}");
+        }
+    }
+
+    #[test]
+    fn weights_are_in_valid_range() {
+        let terms: Vec<(String, i64)> = (0..20)
+            .map(|i| (format!("w{i}"), (20 - i) as i64))
+            .collect();
+        let words = build_sphere_words(&terms);
+        for w in &words {
+            assert!((400..=700).contains(&w.weight), "weight {} out of range", w.weight);
+        }
+    }
+
+    #[test]
+    fn empty_terms_yields_no_words() {
+        let words = build_sphere_words(&[]);
+        assert!(words.is_empty());
+    }
+
+    #[test]
+    fn rotate_point_preserves_length() {
+        let (x, y, z) = (0.6_f64, 0.4_f64, 0.7_f64);
+        let len0 = (x * x + y * y + z * z).sqrt();
+        let (rx, ry, rz) = rotate_point(x, y, z, 1.0, 0.0, 1.0, 0.0);
+        let len1 = (rx * rx + ry * ry + rz * rz).sqrt();
+        assert!((len0 - len1).abs() < 1e-6);
+    }
+}

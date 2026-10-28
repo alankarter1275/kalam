@@ -67,8 +67,6 @@ pub enum AllBooksMsg {
     GroupChanged(GroupBy),
     /// Switch between Grid and List view (§47 toolbar: Grid / List).
     ViewModeChanged(ViewMode),
-    /// The viewport width changed, so the column count changed (§47).
-    GridColsChanged(i32),
     SearchModeChanged(SearchMode),
     SortChanged(SortKey),
     PickFiles,

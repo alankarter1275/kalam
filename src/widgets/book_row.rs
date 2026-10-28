@@ -205,6 +205,10 @@ pub const CARD_H: i32 = COVER_H + GAP + TITLE_AREA_H + AUTHOR_AREA_H;
 
 /// Column count for a grid of `width` pixels, per `library-spec.md` §47:
 /// 4 at 640, 8 at 1280, 12 at 1920 (and wider).
+///
+/// Used by `AllBooks` to rebuild the grid on resize; other library pages
+/// will adopt it as they are migrated to the responsive grid.
+#[allow(dead_code)]
 pub fn grid_cols_for(width: i32) -> i32 {
     if width <= 640 {
         4
@@ -1576,7 +1580,7 @@ mod tests {
         // Second card: one card width plus one column gap to the right.
         assert_eq!(card_position(1, TEST_COLS), (CARD_W + COL_SPACING as i32, 0));
         // First card of the second row: back to x=0, down one row pitch.
-        assert_eq!(card_position(TEST_COLS as usize), (0, ROW_PITCH));
+        assert_eq!(card_position(TEST_COLS as usize, TEST_COLS), (0, ROW_PITCH));
         // Last column, then wrap.
         let last_col = (TEST_COLS - 1) as usize;
         assert_eq!(card_position(last_col, TEST_COLS).1, 0, "row 0 must not wrap early");

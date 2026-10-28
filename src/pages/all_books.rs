@@ -1650,6 +1650,12 @@ fn rebuild_list(
 
     if view_mode == ViewMode::List {
         let sel_set = selected_books.clone();
+        let on_open = Rc::new(move |id| {
+            s.output(AllBooksOut::OpenBook { book_id: id }).ok();
+        });
+        let on_toggle_select = Rc::new(move |id| {
+            s.input(AllBooksMsg::ToggleSelectBook(id));
+        });
         let on_sort = Rc::new(move |col| {
             s.input(AllBooksMsg::ListSortChanged(col));
         });
@@ -1658,12 +1664,8 @@ fn rebuild_list(
             list_columns,
             selection_mode,
             &sel_set,
-            move |id| {
-                s.output(AllBooksOut::OpenBook { book_id: id }).ok();
-            },
-            move |id| {
-                s.input(AllBooksMsg::ToggleSelectBook(id));
-            },
+            on_open,
+            on_toggle_select,
             on_sort,
         );
         list.append(&list_view);

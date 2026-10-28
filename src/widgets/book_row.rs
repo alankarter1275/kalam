@@ -6,8 +6,6 @@
 use crate::models::Book;
 use crate::pages::all_books::ListColumn;
 use gtk::gdk::ModifierType;
-use gtk::glib::BoxedAnyObject;
-use gtk::gio::ListStore;
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -928,181 +926,121 @@ pub fn build_book_grid_selectable(
     shell
 }
 
-/// §50 list view: a `Gtk.ColumnView` with resizable, reorderable columns.
-/// Each visible column gets its own cell factory. Clicking a row opens the
-/// book; in selection mode clicking toggles the selection instead. Column
-/// headers are clickable to sort (`on_sort`).
+/// §50 list view: a scrollable column of rows, one per book. Column headers
+/// are clickable to sort (`on_sort`); clicking a row opens the book, or
+/// toggles its selection when selection mode is on. Built from plain GTK
+/// rows and buttons so it leans on the widgets the rest of the app already
+/// uses.
 pub fn build_book_list(
     books: &[Book],
     columns: &[ListColumn],
     selection_mode: bool,
     selected_books: &HashSet<i64>,
-    on_open: impl Fn(i64) + 'static,
-    on_toggle_select: impl Fn(i64) + 'static,
+    on_open: Rc<dyn Fn(i64)>,
+    on_toggle_select: Rc<dyn Fn(i64)>,
     on_sort: Rc<dyn Fn(ListColumn)>,
 ) -> gtk::Widget {
-    let store = ListStore::new::<BoxedAnyObject>();
-    for book in books {
-        store.append(&BoxedAnyObject::new(book.id));
-    }
+    let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    list.add_css_class("kalam-book-list");
+    list.set_hexpand(true);
+    list.set_vexpand(false);
 
-    let selection = gtk::NoSelection::new(Some(&store));
-    // Selection is driven by the page's `selected_books` set (kept in sync via
-    // `on_toggle_select`), not by GTK's own selection state.
-    //
-    let view = gtk::ColumnView::new(Some(&selection));
-    view.add_css_class("kalam-book-list");
-    view.set_hexpand(true);
-
-    // Cloned so the activate closure can look a book id up by row position.
-    let store_act = store.clone();
-
-    let books_rc = Rc::new(books.to_vec());
-    let selected_books = selected_books.clone();
-
+    // Header row: one clickable button per visible column, to sort (§50).
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    header.add_css_class("kalam-book-list-header-row");
+    header.set_hexpand(true);
+    header.set_height_request(36);
     for col in columns {
-        let column = gtk::ColumnViewColumn::new();
-        column.set_title(col.label());
-        column.set_resizable(true);
-        column.set_reorderable(true);
-
-        // Clickable header: sort by this column (§50).
-        let header = gtk::Button::with_label(col.label());
-        header.add_css_class("kalam-book-list-header");
-        header.set_hexpand(true);
-        header.set_halign(gtk::Align::Start);
-        header.set_valign(gtk::Align::Center);
+        let btn = gtk::Button::with_label(col.label());
+        btn.add_css_class("kalam-book-list-header");
+        btn.set_hexpand(true);
+        btn.set_halign(gtk::Align::Start);
+        btn.set_valign(gtk::Align::Center);
         let c = *col;
         let sort = on_sort.clone();
-        header.connect_clicked(move |_| {
-            sort(c);
-        });
-        column.set_header(Some(&header));
+        btn.connect_clicked(move |_| sort(c));
+        header.append(&btn);
+    }
+    list.append(&header);
 
-        let factory = gtk::SignalListItemFactory::new();
-        let kind = *col;
-        let books = books_rc.clone();
-        let sel = selected_books.clone();
-        factory.connect_setup(move |_, object| {
-            let Some(list_item) = object.downcast_ref::<gtk::ListItem>() else {
-                return;
-            };
-            list_item.set_activatable(false);
-            list_item.set_selectable(false);
-            list_item.set_focusable(false);
+    let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
+    list.append(&separator);
 
-            let cell: gtk::Widget = match kind {
-                ListColumn::Status => {
-                    let pb = gtk::ProgressBar::new();
-                    pb.set_hexpand(true);
-                    pb.set_valign(gtk::Align::Center);
-                    pb.set_margin_start(8);
-                    pb.upcast()
-                }
-                _ => {
-                    let lbl = gtk::Label::new(None);
-                    lbl.add_css_class("kalam-book-list-cell");
-                    lbl.set_hexpand(true);
-                    lbl.set_halign(gtk::Align::Start);
-                    lbl.set_valign(gtk::Align::Center);
-                    lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                    lbl.set_margin_start(8);
-                    lbl.upcast()
-                }
-            };
-            list_item.set_child(Some(&cell));
-        });
+    let selected_books = selected_books.clone();
+    for book in books {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        row.add_css_class("kalam-book-list-row");
+        row.set_hexpand(true);
+        row.set_valign(gtk::Align::Center);
+        let selected = selected_books.contains(&book.id);
+        if selected {
+            row.add_css_class("selected");
+        }
 
-        factory.connect_bind(move |_, object| {
-            let Some(list_item) = object.downcast_ref::<gtk::ListItem>() else {
-                return;
-            };
-            let Some(boxed) = list_item.item().and_downcast::<BoxedAnyObject>() else {
-                return;
-            };
-            let Ok(id) = boxed.try_borrow::<i64>() else {
-                return;
-            };
-            let Some(book) = books.iter().find(|b| b.id == *id) else {
-                return;
-            };
-            let selected = sel.contains(id);
-            let cell = list_item.child();
-            match kind {
-                ListColumn::Title => {
-                    if let Some(lbl) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
-                        lbl.set_text(&book.title);
-                    }
-                }
-                ListColumn::Author => {
-                    if let Some(lbl) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
-                        lbl.set_text(book.authors_display());
-                    }
-                }
-                ListColumn::Format => {
-                    if let Some(lbl) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
-                        lbl.set_text(book.format.as_str());
-                    }
-                }
+        for col in columns {
+            let cell: gtk::Widget = match col {
+                ListColumn::Title => text_cell(&book.title),
+                ListColumn::Author => text_cell(book.authors_display()),
+                ListColumn::Format => text_cell(book.format.as_str()),
                 ListColumn::Size => {
-                    if let Some(lbl) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
-                        let bytes = std::fs::metadata(&book.file_path)
-                            .ok()
-                            .map(|m| m.len())
-                            .unwrap_or(0);
-                        lbl.set_text(if bytes == 0 { "—" } else { &format_size(bytes) });
-                    }
+                    let bytes = std::fs::metadata(&book.file_path)
+                        .ok()
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    text_cell(if bytes == 0 { "—" } else { &format_size(bytes) })
                 }
-                ListColumn::Added => {
-                    if let Some(lbl) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
-                        lbl.set_text(&book.added_at);
-                    }
-                }
-                ListColumn::Rating => {
-                    if let Some(lbl) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
-                        lbl.set_text(&rating_text(book.rating));
-                    }
-                }
-                ListColumn::Status => {
-                    if let Some(pb) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::ProgressBar>()) {
-                        pb.set_fraction(book.progress as f64 / 100.0);
-                        pb.set_text(Some(&format!("{}%", book.progress)));
-                    }
-                }
-            }
-            if let Some(cell) = cell {
-                if selected {
-                    cell.add_css_class("selected");
-                } else {
-                    cell.remove_css_class("selected");
-                }
+                ListColumn::Added => text_cell(&book.added_at),
+                ListColumn::Rating => text_cell(&rating_text(book.rating)),
+                ListColumn::Status => progress_cell(book.progress),
+            };
+            row.append(&cell);
+        }
+
+        let id = book.id;
+        let open = on_open.clone();
+        let toggle = on_toggle_select.clone();
+        let sel = selection_mode;
+        let click = gtk::GestureClick::new();
+        click.set_button(1);
+        click.connect_released(move |_, _, _, _| {
+            if sel {
+                toggle(id);
+            } else {
+                open(id);
             }
         });
+        row.add_controller(click);
+        row.set_cursor_from_name(Some("pointer"));
 
-        column.set_factory(Some(&factory));
-        view.append_column(&column);
+        list.append(&row);
     }
 
-    let on_open_move = on_open;
-    let on_toggle_move = on_toggle_select;
-    view.connect_activate(move |_view, position| {
-        let Some(item) = store_act.item(position) else {
-            return;
-        };
-        let Ok(boxed) = item.downcast::<BoxedAnyObject>() else {
-            return;
-        };
-        let Ok(id) = boxed.try_borrow::<i64>() else {
-            return;
-        };
-        if selection_mode {
-            on_toggle_move(*id);
-        } else {
-            on_open_move(*id);
-        }
-    });
+    list.upcast()
+}
 
-    view.upcast()
+/// A single-line, ellipsizing list cell.
+fn text_cell(text: &str) -> gtk::Widget {
+    let lbl = gtk::Label::new(Some(text));
+    lbl.add_css_class("kalam-book-list-cell");
+    lbl.set_hexpand(true);
+    lbl.set_halign(gtk::Align::Start);
+    lbl.set_valign(gtk::Align::Center);
+    lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    lbl.set_margin_start(8);
+    lbl.set_xalign(0.0);
+    lbl.upcast()
+}
+
+/// The Status column's progress cell.
+fn progress_cell(progress: u8) -> gtk::Widget {
+    let pb = gtk::ProgressBar::new();
+    pb.add_css_class("kalam-book-list-cell");
+    pb.set_hexpand(true);
+    pb.set_valign(gtk::Align::Center);
+    pb.set_fraction(progress as f64 / 100.0);
+    pb.set_text(Some(&format!("{}%", progress)));
+    pb.set_margin_start(8);
+    pb.upcast()
 }
 
 /// Human-readable file size.

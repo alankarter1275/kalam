@@ -19,7 +19,28 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/widgets/reading_timeline.rs:208:62: [1m[91merror[E0382][0m: the type `Rc` does not implement `Copy`: value used here after move
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+src/widgets/reading_timeline.rs:25:7: [1m[91merror[0m: constant `DEFAULT_HEIGHT` is never used
+src/widgets/reading_timeline.rs:30:7: [1m[91merror[0m: constant `HIGHLIGHT_CSS_CLASSES` is never used
+src/widgets/reading_timeline.rs:46:5: [1m[91merror[0m: variant `OpenBook` is never constructed
+src/widgets/reading_timeline.rs:55:5: [1m[91merror[0m: fields `catalog` and `draw_state` are never read
+src/widgets/reading_timeline.rs:465:4: [1m[91merror[0m: function `day_num_to_label` is never used
+src/widgets/reading_timeline.rs:479:4: [1m[91merror[0m: function `civil_from_days` is never used
+src/widgets/reading_timeline.rs:493:1: [1m[91merror[0m: this function has too many arguments (17/7)
+src/widgets/reading_timeline.rs:513:20: [1m[91merror[0m: using `clone` on type `RGBA` which implements the `Copy` trait: help: try dereferencing it: `*bg`
+src/widgets/reading_timeline.rs:527:24: [1m[91merror[0m: using `clone` on type `RGBA` which implements the `Copy` trait: help: try dereferencing it: `*accent`
+src/widgets/reading_timeline.rs:546:28: [1m[91merror[0m: using `clone` on type `RGBA` which implements the `Copy` trait: help: try dereferencing it: `*hover_bg`
+src/widgets/reading_timeline.rs:553:24: [1m[91merror[0m: using `clone` on type `RGBA` which implements the `Copy` trait: help: try dereferencing it: `*border`
+src/widgets/reading_timeline.rs:577:32: [1m[91merror[0m: using `clone` on type `RGBA` which implements the `Copy` trait: help: try dereferencing it: `*hl_colour`
+src/widgets/reading_timeline.rs:581:32: [1m[91merror[0m: using `clone` on type `RGBA` which implements the `Copy` trait: help: try dereferencing it: `*hl_colour`
+src/widgets/reading_timeline.rs:590:28: [1m[91merror[0m: using `clone` on type `RGBA` which implements the `Copy` trait: help: try dereferencing it: `*accent`
+src/pages/library.rs:141:17: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/widgets/reading_timeline.rs:514:5: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/widgets/reading_timeline.rs:531:9: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/widgets/reading_timeline.rs:548:13: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/widgets/reading_timeline.rs:557:9: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/widgets/reading_timeline.rs:578:17: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/widgets/reading_timeline.rs:583:17: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/widgets/reading_timeline.rs:594:13: [1m[91merror[0m: unused `std::result::Result` that must be used
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 22 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 21 previous errors

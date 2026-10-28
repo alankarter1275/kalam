@@ -420,6 +420,7 @@ impl Component for AllBooksModel {
             }
 
             // Floating bulk bar (§49): bottom centre, 48 high, 32 up from bottom.
+            #[name = "selection_bar"]
             add_overlay = &gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_spacing: 8,

@@ -1035,7 +1035,6 @@ fn rebuild_comics_view(model: &ComicsModel, sender: &ComponentSender<ComicsModel
                 let s_float = sender.clone();
                 let grid = build_book_grid(
                     &model.filtered_all,
-                    8,
                     move |id| {
                         s_click.input(ComicsMsg::OpenComic(id));
                     },

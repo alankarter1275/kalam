@@ -16,7 +16,21 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 32.97s
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+src/widgets/saved_words_sphere.rs:248:19: [1m[91merror[E0425][0m: cannot find function, tuple struct or tuple variant `Continue` in crate `glib`: not found in `glib`
+src/pages/library.rs:124:68: [1m[91merror[E0308][0m: mismatched types: expected `LibraryMsg`, found `()`
+src/widgets/saved_words_sphere.rs:212:13: [1m[91merror[E0308][0m: mismatched types: expected `()`, found `Propagation`
+src/widgets/saved_words_sphere.rs:287:21: [1m[91merror[E0308][0m: mismatched types: expected `i32`, found floating-point number
+src/widgets/saved_words_sphere.rs:287:38: [1m[91merror[E0308][0m: mismatched types: expected `i32`, found floating-point number
+src/widgets/saved_words_sphere.rs:360:24: [1m[91merror[E0606][0m: casting `&i64` as `f64` is invalid
+src/widgets/saved_words_sphere.rs:443:17: [1m[91merror[E0599][0m: no variant, associated function, or constant named `from_u32` found for enum `pango::Weight` in the current scope: variant, associated function, or constant not found in `pango::Weight`
+src/widgets/saved_words_sphere.rs:447:12: [1m[91merror[E0061][0m: this method takes 1 argument but 2 arguments were supplied
+src/widgets/saved_words_sphere.rs:464:8: [1m[91merror[E0308][0m: arguments to this method are incorrect
+src/widgets/saved_words_sphere.rs:508:44: [1m[91merror[E0689][0m: can't call method `sqrt` on ambiguous numeric type `{float}`
+src/widgets/saved_words_sphere.rs:261:15: [1m[91merror[E0004][0m: non-exhaustive patterns: `widgets::saved_words_sphere::SavedWordsSphereMsg::WordsReady(_)` not covered: pattern `widgets::saved_words_sphere::SavedWordsSphereMsg::WordsReady(_)` not covered
+src/widgets/saved_words_sphere.rs:384:9: [1m[91merror[0m: variable does not need to be mutable
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 11 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 12 previous errors

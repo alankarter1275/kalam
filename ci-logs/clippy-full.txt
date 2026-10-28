@@ -16,16 +16,16 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 src/widgets/reading_timeline.rs:100:50: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
 src/widgets/reading_timeline.rs:106:44: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
 src/widgets/reading_timeline.rs:113:62: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
 src/widgets/reading_timeline.rs:119:60: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
 src/widgets/reading_timeline.rs:131:40: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
 src/widgets/reading_timeline.rs:10:40: [1m[91merror[0m: unused import: `TimelineSession`
-src/widgets/reading_timeline.rs:349:10: [1m[91merror[E0593][0m: closure is expected to take 2 arguments, but it takes 3 arguments: expected closure that takes 2 arguments
+src/widgets/reading_timeline.rs:334:27: [1m[91merror[E0382][0m: use of moved value: `lanes`: value used here after move
 src/widgets/reading_timeline.rs:393:9: [1m[91merror[0m: unused variable: `day_span`: help: if this is intentional, prefix it with an underscore: `_day_span`
 src/widgets/reading_timeline.rs:505:5: [1m[91merror[0m: unused variable: `text`: help: if this is intentional, prefix it with an underscore: `_text`
 src/widgets/reading_timeline.rs:506:5: [1m[91merror[0m: unused variable: `text_dim`: help: if this is intentional, prefix it with an underscore: `_text_dim`

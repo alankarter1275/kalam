@@ -779,7 +779,6 @@ fn build_windowed_grid_selectable(
         let mounted = mounted.clone();
         let books = books_owned.clone();
         let is_selected = is_selected.clone();
-        let selection_mode = selection_mode.clone();
         let on_full = on_full.clone();
         let on_float = on_float.clone();
         Rc::new(move |scroll_top: f64, viewport_h: f64| {

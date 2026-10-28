@@ -457,6 +457,8 @@ fn date_to_day_num(date: &str) -> Option<i64> {
     let m: i64 = date.get(5..7)?.parse().ok()?;
     let d: i64 = date.get(8..10)?.parse().ok()?;
 
+    // Howard Hinnant's algorithm: Jan/Feb are months 10/11 of the previous year.
+    let y = if m <= 2 { y - 1 } else { y };
     let era = if y >= 0 { y } else { y - 399 } / 400;
     let yoe = y - era * 400; // [0, 399]
     let mp = (m + 9) % 12;

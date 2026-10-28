@@ -6,11 +6,9 @@
 
 use crate::db::Catalog;
 use crate::widgets::paint::{color_probe, probe_color, set_source};
-use gtk::cairo::Context as CairoContext;
 use gtk::gdk::RGBA;
 use pango::{FontDescription, Layout, Weight};
 use gtk::prelude::*;
-use pangocairo::functions::show_layout;
 
 
 use relm4::prelude::*;
@@ -321,15 +319,47 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
                 continue;
             }
             let is_hovered = hovered == Some(idx);
-            draw_word(
-                cr,
-                &words[idx],
-                &positions[idx],
-                &pc,
-                is_hovered,
-                &accent,
-                &text,
-            );
+            let word = &words[idx];
+            let pos = &positions[idx];
+
+            let layout = Layout::new(pc);
+            let desc = FontDescription::from_string("Playfair Display");
+            let size = if is_hovered { 24.0 } else { pos.size };
+            let pango_size = (size * 1024.0) as i32;
+            desc.set_size(pango_size);
+            let w = if is_hovered {
+                Weight::Bold
+            } else {
+                match word.weight {
+                    400 => Weight::Normal,
+                    500 => Weight::Medium,
+                    _ => Weight::Bold,
+                }
+            };
+            desc.set_weight(w);
+            layout.set_font_description(Some(&desc));
+            layout.set_text(&word.word);
+
+            let (w_pix, h_pix) = layout.pixel_size();
+            let w_pix = w_pix as f64;
+            let h_pix = h_pix as f64;
+
+            cr.save();
+            cr.translate(pos.px - w_pix / 2.0, pos.py - h_pix / 2.0);
+
+            if word.vertical {
+                cr.rotate(-PI / 2.0);
+            }
+
+            let alpha = if is_hovered { 1.0 } else { pos.alpha };
+            let r = if is_hovered { accent.red() } else { text.red() };
+            let g = if is_hovered { accent.green() } else { text.green() };
+            let b = if is_hovered { accent.blue() } else { text.blue() };
+            cr.set_source_rgba(r, g, b, alpha);
+
+            pangocairo::functions::show_layout(cr, &layout);
+
+            cr.restore();
         }
     });
 }
@@ -422,56 +452,6 @@ fn rotate_point(x: f64, y: f64, z: f64, cy: f64, sy: f64, cp: f64, sp: f64) -> (
     let y2 = y * cp - z1 * sp;
     let z2 = y * sp + z1 * cp;
     (x1, y2, z2)
-}
-
-/// Draw a single word.
-fn draw_word(
-    cr: &CairoContext,
-    word: &SphereWord,
-    pos: &WordPosition,
-    pc: &pango::Context,
-    is_hovered: bool,
-    accent: &RGBA,
-    text: &RGBA,
-) {
-    let layout = Layout::new(pc);
-    let desc = FontDescription::from_string("Playfair Display");
-    let size = if is_hovered { 24.0 } else { pos.size };
-    let pango_size = (size * 1024.0) as i32;
-    desc.set_size(pango_size);
-    let w = if is_hovered {
-        Weight::Bold
-    } else {
-        match word.weight {
-            400 => Weight::Normal,
-            500 => Weight::Medium,
-            _ => Weight::Bold,
-        }
-    };
-    desc.set_weight(w);
-    layout.set_font_description(Some(&desc));
-    layout.set_text(&word.word);
-
-    let (w_pix, h_pix) = layout.pixel_size();
-    let w_pix = w_pix as f64;
-    let h_pix = h_pix as f64;
-
-    cr.save();
-    cr.translate(pos.px - w_pix / 2.0, pos.py - h_pix / 2.0);
-
-    if word.vertical {
-        cr.rotate(-PI / 2.0);
-    }
-
-    let alpha = if is_hovered { 1.0 } else { pos.alpha };
-    let r = if is_hovered { accent.red() } else { text.red() };
-    let g = if is_hovered { accent.green() } else { text.green() };
-    let b = if is_hovered { accent.blue() } else { text.blue() };
-    cr.set_source_rgba(r, g, b, alpha);
-
-    pangocairo::functions::show_layout(cr, &layout);
-
-    cr.restore();
 }
 
 #[cfg(test)]

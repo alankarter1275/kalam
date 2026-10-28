@@ -1,11 +1,6 @@
 [1m[92m   Compiling[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-<<<<<<< Updated upstream
 [1m[92m    Finished[0m `release` profile [optimized] target(s) in 1m 31s
 [1m[92m     Running[0m unittests src/main.rs (target/release/deps/kalam-249ca73f877e5fb2)
-=======
-[1m[92m    Finished[0m `release` profile [optimized] target(s) in 1m 12s
-[1m[92m     Running[0m unittests src/main.rs (target/release/deps/kalam-0ad4575e0e63b15e)
->>>>>>> Stashed changes
 
 running 1 test
 === page 1: 125 word boxes, 15 line groups, 15 recognition results
@@ -260,12 +255,6 @@ page 5: all expected snippets present in OCR output
 === end page 5 ===
 test ocr::tests::ocr_scan_probe_fixture_pages ... ok
 
-<<<<<<< Updated upstream
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 727 filtered out; finished in 10.59s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 731 filtered out; finished in 11.09s
 
---- run 40729436789 ---
-=======
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 582 filtered out; finished in 11.00s
-
---- run 40093492013 ---
->>>>>>> Stashed changes
+--- run 40786163719 ---

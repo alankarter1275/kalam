@@ -1,30 +1,21 @@
-src/widgets/reading_timeline.rs:89:50: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
-src/widgets/reading_timeline.rs:95:44: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
-src/widgets/reading_timeline.rs:102:62: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
-src/widgets/reading_timeline.rs:108:60: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
-src/widgets/reading_timeline.rs:120:40: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
-src/widgets/reading_timeline.rs:328:13: [1m[91merror[E0433][0m: cannot find module or crate `gdk` in this scope: use of unresolved module or unlinked crate `gdk`
-src/widgets/reading_timeline.rs:10:26: [1m[91merror[E0432][0m: unresolved imports `crate::db::TimelineLane`, `crate::db::TimelineSession`: no `TimelineLane` in `db`, no `TimelineSession` in `db`
-src/widgets/reading_timeline.rs:329:42: [1m[91merror[E0408][0m: variable `KP_Enter` is not bound in all patterns: pattern doesn't bind `KP_Enter`
-src/widgets/reading_timeline.rs:329:51: [1m[91merror[E0408][0m: variable `Return` is not bound in all patterns: pattern doesn't bind `Return`
-src/widgets/reading_timeline.rs:339:14: [1m[91merror[E0425][0m: cannot find function, tuple struct or tuple variant `Inhibit` in crate `gtk`: not found in `gtk`
-src/widgets/reading_timeline.rs:133:16: [1m[91merror[E0053][0m: method `init` has an incompatible type for trait: expected `gtk4::Box`, found `&gtk4::Box`
+src/widgets/reading_timeline.rs:101:50: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
+src/widgets/reading_timeline.rs:107:44: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
+src/widgets/reading_timeline.rs:114:62: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
+src/widgets/reading_timeline.rs:120:60: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
+src/widgets/reading_timeline.rs:132:40: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
+src/widgets/reading_timeline.rs:10:16: [1m[91merror[E0603][0m: module `history` is private: private module
+src/widgets/reading_timeline.rs:145:16: [1m[91merror[E0053][0m: method `init` has an incompatible type for trait: expected `gtk4::Box`, found `&gtk4::Box`
 src/pages/library.rs:104:61: [1m[91merror[E0609][0m: no field `book_id` on type `widgets::reading_timeline::ReadingTimelineOut`: unknown field
-src/pages/library.rs:130:53: [1m[91merror[E0277][0m: the trait `glib::object::IsA<gtk4::Widget>` is not implemented for `&gtk4::Box`: requires `&gtk4::Box` to be a GObject that can be statically cast to `gtk4::Widget`
-src/widgets/reading_timeline.rs:203:12: [1m[91merror[E0599][0m: the method `add_overlay` exists for reference `&gtk4::DrawingArea`, but its trait bounds were not satisfied: method cannot be called on `&gtk4::DrawingArea` due to unsatisfied trait bounds
-src/widgets/reading_timeline.rs:204:12: [1m[91merror[E0599][0m: the method `add_overlay` exists for reference `&gtk4::DrawingArea`, but its trait bounds were not satisfied: method cannot be called on `&gtk4::DrawingArea` due to unsatisfied trait bounds
-src/widgets/reading_timeline.rs:205:12: [1m[91merror[E0599][0m: the method `add_overlay` exists for reference `&gtk4::DrawingArea`, but its trait bounds were not satisfied: method cannot be called on `&gtk4::DrawingArea` due to unsatisfied trait bounds
-src/widgets/reading_timeline.rs:206:12: [1m[91merror[E0599][0m: the method `add_overlay` exists for reference `&gtk4::DrawingArea`, but its trait bounds were not satisfied: method cannot be called on `&gtk4::DrawingArea` due to unsatisfied trait bounds
-src/widgets/reading_timeline.rs:207:12: [1m[91merror[E0599][0m: the method `add_overlay` exists for reference `&gtk4::DrawingArea`, but its trait bounds were not satisfied: method cannot be called on `&gtk4::DrawingArea` due to unsatisfied trait bounds
-src/widgets/reading_timeline.rs:215:16: [1m[91merror[E0599][0m: the method `add_overlay` exists for reference `&gtk4::DrawingArea`, but its trait bounds were not satisfied: method cannot be called on `&gtk4::DrawingArea` due to unsatisfied trait bounds
-src/widgets/reading_timeline.rs:226:21: [1m[91merror[E0308][0m: mismatched types: expected `i32`, found floating-point number
-src/widgets/reading_timeline.rs:226:38: [1m[91merror[E0308][0m: mismatched types: expected `i32`, found floating-point number
-src/widgets/reading_timeline.rs:243:9: [1m[91merror[E0308][0m: arguments to this function are incorrect
-src/widgets/reading_timeline.rs:288:69: [1m[91merror[E0599][0m: no method named `ok` found for unit type `()` in the current scope: method not found in `()`
-src/widgets/reading_timeline.rs:311:10: [1m[91merror[E0593][0m: closure is expected to take 2 arguments, but it takes 3 arguments: expected closure that takes 2 arguments
-src/widgets/reading_timeline.rs:334:73: [1m[91merror[E0599][0m: no method named `ok` found for unit type `()` in the current scope: method not found in `()`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 25 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 25 previous errors
+src/pages/library.rs:131:62: [1m[91merror[E0283][0m: type annotations needed: cannot infer type of the type parameter `T` declared on the enum `Option`
+src/widgets/reading_timeline.rs:251:21: [1m[91merror[E0308][0m: mismatched types: expected `i32`, found floating-point number
+src/widgets/reading_timeline.rs:251:38: [1m[91merror[E0308][0m: mismatched types: expected `i32`, found floating-point number
+src/widgets/reading_timeline.rs:268:9: [1m[91merror[E0308][0m: arguments to this function are incorrect
+src/widgets/reading_timeline.rs:313:69: [1m[91merror[E0599][0m: no method named `ok` found for unit type `()` in the current scope: method not found in `()`
+src/widgets/reading_timeline.rs:336:10: [1m[91merror[E0593][0m: closure is expected to take 2 arguments, but it takes 3 arguments: expected closure that takes 2 arguments
+src/widgets/reading_timeline.rs:359:73: [1m[91merror[E0599][0m: no method named `ok` found for unit type `()` in the current scope: method not found in `()`
+src/widgets/reading_timeline.rs:362:9: [1m[91merror[E0308][0m: mismatched types: expected `Propagation`, found `bool`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 17 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 17 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -45,35 +36,26 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/widgets/reading_timeline.rs:89:50: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
-src/widgets/reading_timeline.rs:95:44: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
-src/widgets/reading_timeline.rs:102:62: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
-src/widgets/reading_timeline.rs:108:60: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
-src/widgets/reading_timeline.rs:120:40: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
-src/widgets/reading_timeline.rs:328:13: [1m[91merror[E0433][0m: cannot find module or crate `gdk` in this scope: use of unresolved module or unlinked crate `gdk`
-src/widgets/reading_timeline.rs:10:26: [1m[91merror[E0432][0m: unresolved imports `crate::db::TimelineLane`, `crate::db::TimelineSession`: no `TimelineLane` in `db`, no `TimelineSession` in `db`
-src/widgets/reading_timeline.rs:329:42: [1m[91merror[E0408][0m: variable `KP_Enter` is not bound in all patterns: pattern doesn't bind `KP_Enter`
-src/widgets/reading_timeline.rs:329:51: [1m[91merror[E0408][0m: variable `Return` is not bound in all patterns: pattern doesn't bind `Return`
-src/widgets/reading_timeline.rs:339:14: [1m[91merror[E0425][0m: cannot find function, tuple struct or tuple variant `Inhibit` in crate `gtk`: not found in `gtk`
-src/widgets/reading_timeline.rs:133:16: [1m[91merror[E0053][0m: method `init` has an incompatible type for trait: expected `gtk4::Box`, found `&gtk4::Box`
+src/widgets/reading_timeline.rs:101:50: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
+src/widgets/reading_timeline.rs:107:44: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
+src/widgets/reading_timeline.rs:114:62: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
+src/widgets/reading_timeline.rs:120:60: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
+src/widgets/reading_timeline.rs:132:40: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
+src/widgets/reading_timeline.rs:10:16: [1m[91merror[E0603][0m: module `history` is private: private module
+src/widgets/reading_timeline.rs:145:16: [1m[91merror[E0053][0m: method `init` has an incompatible type for trait: expected `gtk4::Box`, found `&gtk4::Box`
 src/pages/library.rs:104:61: [1m[91merror[E0609][0m: no field `book_id` on type `widgets::reading_timeline::ReadingTimelineOut`: unknown field
-src/pages/library.rs:130:53: [1m[91merror[E0277][0m: the trait `glib::object::IsA<gtk4::Widget>` is not implemented for `&gtk4::Box`: requires `&gtk4::Box` to be a GObject that can be statically cast to `gtk4::Widget`
-src/widgets/reading_timeline.rs:203:12: [1m[91merror[E0599][0m: the method `add_overlay` exists for reference `&gtk4::DrawingArea`, but its trait bounds were not satisfied: method cannot be called on `&gtk4::DrawingArea` due to unsatisfied trait bounds
-src/widgets/reading_timeline.rs:204:12: [1m[91merror[E0599][0m: the method `add_overlay` exists for reference `&gtk4::DrawingArea`, but its trait bounds were not satisfied: method cannot be called on `&gtk4::DrawingArea` due to unsatisfied trait bounds
-src/widgets/reading_timeline.rs:205:12: [1m[91merror[E0599][0m: the method `add_overlay` exists for reference `&gtk4::DrawingArea`, but its trait bounds were not satisfied: method cannot be called on `&gtk4::DrawingArea` due to unsatisfied trait bounds
-src/widgets/reading_timeline.rs:206:12: [1m[91merror[E0599][0m: the method `add_overlay` exists for reference `&gtk4::DrawingArea`, but its trait bounds were not satisfied: method cannot be called on `&gtk4::DrawingArea` due to unsatisfied trait bounds
-src/widgets/reading_timeline.rs:207:12: [1m[91merror[E0599][0m: the method `add_overlay` exists for reference `&gtk4::DrawingArea`, but its trait bounds were not satisfied: method cannot be called on `&gtk4::DrawingArea` due to unsatisfied trait bounds
-src/widgets/reading_timeline.rs:215:16: [1m[91merror[E0599][0m: the method `add_overlay` exists for reference `&gtk4::DrawingArea`, but its trait bounds were not satisfied: method cannot be called on `&gtk4::DrawingArea` due to unsatisfied trait bounds
-src/widgets/reading_timeline.rs:226:21: [1m[91merror[E0308][0m: mismatched types: expected `i32`, found floating-point number
-src/widgets/reading_timeline.rs:226:38: [1m[91merror[E0308][0m: mismatched types: expected `i32`, found floating-point number
-src/widgets/reading_timeline.rs:243:9: [1m[91merror[E0308][0m: arguments to this function are incorrect
-src/widgets/reading_timeline.rs:288:69: [1m[91merror[E0599][0m: no method named `ok` found for unit type `()` in the current scope: method not found in `()`
-src/widgets/reading_timeline.rs:311:10: [1m[91merror[E0593][0m: closure is expected to take 2 arguments, but it takes 3 arguments: expected closure that takes 2 arguments
-src/widgets/reading_timeline.rs:334:73: [1m[91merror[E0599][0m: no method named `ok` found for unit type `()` in the current scope: method not found in `()`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 25 previous errors
+src/pages/library.rs:131:62: [1m[91merror[E0283][0m: type annotations needed: cannot infer type of the type parameter `T` declared on the enum `Option`
+src/widgets/reading_timeline.rs:251:21: [1m[91merror[E0308][0m: mismatched types: expected `i32`, found floating-point number
+src/widgets/reading_timeline.rs:251:38: [1m[91merror[E0308][0m: mismatched types: expected `i32`, found floating-point number
+src/widgets/reading_timeline.rs:268:9: [1m[91merror[E0308][0m: arguments to this function are incorrect
+src/widgets/reading_timeline.rs:313:69: [1m[91merror[E0599][0m: no method named `ok` found for unit type `()` in the current scope: method not found in `()`
+src/widgets/reading_timeline.rs:336:10: [1m[91merror[E0593][0m: closure is expected to take 2 arguments, but it takes 3 arguments: expected closure that takes 2 arguments
+src/widgets/reading_timeline.rs:359:73: [1m[91merror[E0599][0m: no method named `ok` found for unit type `()` in the current scope: method not found in `()`
+src/widgets/reading_timeline.rs:362:9: [1m[91merror[E0308][0m: mismatched types: expected `Propagation`, found `bool`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 17 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 25 previous errors
---- run 40708107920 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 17 previous errors
+--- run 40709472154 ---

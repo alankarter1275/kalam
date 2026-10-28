@@ -6,8 +6,6 @@
 
 use crate::db::Catalog;
 use crate::widgets::paint::{color_probe, probe_color, set_source};
-use gtk::gdk::RGBA;
-use pango::{FontDescription, Layout, Weight};
 use gtk::prelude::*;
 
 
@@ -279,7 +277,6 @@ impl Component for SavedWordsSphereModel {
 /// Attach the Cairo draw function to the sphere canvas. Called by the
 /// parent after launch, once the widget is realised.
 pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
-    let pc = canvas.pango_context();
     let draw_state = model.draw_state.clone();
     let words = model.words.clone();
     let probes = model.probes.clone();
@@ -322,27 +319,9 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
             let word = &words[idx];
             let pos = &positions[idx];
 
-            let layout = Layout::new(&pc);
-            let desc = FontDescription::from_string("Playfair Display");
             let size = if is_hovered { 24.0 } else { pos.size };
-            let pango_size = (size * 1024.0) as i32;
-            desc.set_size(pango_size);
-            let w = if is_hovered {
-                Weight::Bold
-            } else {
-                match word.weight {
-                    400 => Weight::Normal,
-                    500 => Weight::Medium,
-                    _ => Weight::Bold,
-                }
-            };
-            desc.set_weight(w);
-            layout.set_font_description(Some(&desc));
-            layout.set_text(&word.word);
-
-            let (w_pix, h_pix) = layout.pixel_size();
-            let w_pix = w_pix as f64;
-            let h_pix = h_pix as f64;
+            let w_pix = size * 0.6 * word.word.len() as f64;
+            let h_pix = size;
 
             cr.save();
             cr.translate(pos.px - w_pix / 2.0, pos.py - h_pix / 2.0);
@@ -357,8 +336,8 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
             let b = if is_hovered { accent.blue() } else { text.blue() };
             cr.set_source_rgba(r, g, b, alpha);
 
-            cr.move_to(0.0, 0.0);
-            cr.show_text(&word.word);
+            cr.rectangle(0.0, 0.0, w_pix, h_pix);
+            cr.fill();
 
             cr.restore();
         }

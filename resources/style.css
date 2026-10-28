@@ -554,6 +554,27 @@ button.kalam-author-link-reader:hover {
     border-color: @kalam_accent;
 }
 
+/* ── All Books toolbar buttons (§47) ──────────────────────── */
+/* Small circular menu buttons for Filter and Group in the toolbar. */
+.kalam-toolbar-btn {
+    min-width: 36px;
+    min-height: 36px;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    background: transparent;
+    color: @kalam_text;
+}
+
+.kalam-toolbar-btn:hover {
+    border-color: @kalam_accent;
+    background: @kalam_surface_2;
+}
+
+.kalam-toolbar-btn > button {
+    min-width: 36px;
+    min-height: 36px;
+}
+
 /* ── empty / placeholder ────────────────────────────── */
 .kalam-placeholder {
     color: @kalam_text_dim;

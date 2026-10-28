@@ -3,6 +3,7 @@ use crate::models::Book;
 use crate::service::{AllBooksSnapshot, LibraryService};
 use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable, invalidate_cover_cache};
 use crate::widgets::in_app_dialog;
+use crate::widgets::menu::{menu_popover, MenuWidth};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::collections::HashSet;
@@ -26,6 +27,23 @@ pub enum SearchMode {
     Content,
 }
 
+/// How books are grouped in the grid (§47 toolbar: Group).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GroupBy {
+    #[default]
+    None,
+    Author,
+    Series,
+}
+
+/// Grid or List view (§47 toolbar: Grid / List).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ViewMode {
+    #[default]
+    Grid,
+    List,
+}
+
 #[derive(Debug)]
 pub enum AllBooksMsg {
     SearchChanged(String),
@@ -37,6 +55,20 @@ pub enum AllBooksMsg {
     FocusSearch,
     /// The "All books" title button was clicked: open the shelves menu (§47).
     OpenShelves,
+    /// Open/close the filter popover (§47 toolbar: Filter).
+    FilterToggle,
+    /// A shelf was chosen from the filter popover: add it as an active filter.
+    FilterShelfSelected { shelf_id: i64, name: String },
+    /// A tag was chosen from the filter popover: add it as an active filter.
+    FilterTagSelected(String),
+    /// Remove one active filter chip (§47 toolbar: chips).
+    FilterChipRemoved(String),
+    /// Clear every active filter chip (§47 toolbar: Clear filters).
+    ClearFilters,
+    /// Change the grouping (§47 toolbar: Group).
+    GroupChanged(GroupBy),
+    /// Switch between Grid and List view (§47 toolbar: Grid / List).
+    ViewModeChanged(ViewMode),
     SearchModeChanged(SearchMode),
     SortChanged(SortKey),
     PickFiles,
@@ -221,6 +253,12 @@ pub struct AllBooksModel {
     index_status: crate::content_index::ContentIndexStatus,
     indexing: bool,
     expanded_books: HashSet<i64>,
+    /// Active filter labels shown as chips (§47 toolbar).
+    filter_chips: Vec<String>,
+    /// Current grouping (§47 toolbar: Group).
+    group_by: GroupBy,
+    /// Grid or List view (§47 toolbar: Grid / List).
+    view_mode: ViewMode,
 }
 
 #[relm4::component(pub)]
@@ -311,10 +349,15 @@ impl Component for AllBooksModel {
                 },
             },
 
+            // Toolbar (§47): Filter + chips + Clear filters (left);
+            // count, Group, Sort, Select, Grid/List (right).
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_spacing: 8,
+                set_halign: gtk::Align::Fill,
+                set_valign: gtk::Align::Center,
 
+                // LEFT: search mode, filter, chips, clear filters
                 #[name = "mode_box"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
@@ -344,6 +387,65 @@ impl Component for AllBooksModel {
                     },
                 },
 
+                #[name = "filter_btn"]
+                gtk::MenuButton {
+                    set_child: Some(&crate::icons::labelled(
+                        "edit-find-symbolic",
+                        16,
+                        "Filter",
+                        6,
+                    )),
+                    add_css_class: "kalam-toolbar-btn",
+                    set_always_show_arrow: false,
+                    set_tooltip_text: Some("Filter by shelf, tag, status, or rating"),
+                },
+
+                #[name = "filter_chips"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 4,
+                },
+
+                #[name = "clear_filters_btn"]
+                gtk::Button {
+                    set_label: "Clear filters",
+                    add_css_class: "kalam-secondary-btn",
+                    #[watch]
+                    set_visible: !model.filter_chips.is_empty(),
+                    connect_clicked => AllBooksMsg::ClearFilters,
+                },
+
+                gtk::Box {
+                    set_hexpand: true,
+                },
+
+                // RIGHT: count, Group, Sort, Select, Grid/List
+                #[name = "count_label"]
+                gtk::Label {
+                    #[watch]
+                    set_label: &format!(
+                        "{} book{}",
+                        model.books.len(),
+                        if model.books.len() == 1 { "" } else { "s" }
+                    ),
+                    add_css_class: "kalam-page-sub",
+                    set_halign: gtk::Align::Center,
+                    set_valign: gtk::Align::Center,
+                },
+
+                #[name = "group_btn"]
+                gtk::MenuButton {
+                    set_child: Some(&crate::icons::labelled(
+                        "object-select-symbolic",
+                        16,
+                        "Group",
+                        6,
+                    )),
+                    add_css_class: "kalam-toolbar-btn",
+                    set_always_show_arrow: false,
+                    set_tooltip_text: Some("Group books by author, series, or none"),
+                },
+
                 #[name = "sort_box"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
@@ -360,6 +462,26 @@ impl Component for AllBooksModel {
                     },
                     add_css_class: "kalam-secondary-btn",
                     connect_clicked => AllBooksMsg::ToggleSelectionMode,
+                },
+
+                #[name = "view_btn"]
+                gtk::ToggleButton {
+                    #[watch]
+                    set_label: if model.view_mode == ViewMode::Grid {
+                        "Grid"
+                    } else {
+                        "List"
+                    },
+                    add_css_class: "kalam-secondary-btn",
+                    set_tooltip_text: Some("Switch between grid and list view"),
+                    connect_toggled[sender] => move |btn| {
+                        let mode = if btn.is_active() {
+                            ViewMode::List
+                        } else {
+                            ViewMode::Grid
+                        };
+                        sender.input(AllBooksMsg::ViewModeChanged(mode));
+                    },
                 },
             },
 
@@ -475,10 +597,22 @@ impl Component for AllBooksModel {
             index_status: crate::content_index::ContentIndexStatus::default(),
             indexing: false,
             expanded_books: HashSet::new(),
+            filter_chips: Vec::new(),
+            group_by: GroupBy::None,
+            view_mode: ViewMode::Grid,
         };
         let widgets = view_output!();
         widgets.mode_content_btn.set_group(Some(&widgets.mode_meta_btn));
         model.check_index_status(&sender);
+
+        // Build the §47 filter popover: Shelf and Tag submenus (decision 168).
+        build_filter_popup(&widgets, &sender, &model);
+
+        // Build the §47 group popover: None / Author / Series.
+        build_group_popup(&widgets, &sender);
+
+        // Render any chips that came in with the model (none on first load).
+        rebuild_filter_chips(widgets, &model.filter_chips, &sender);
 
         for key in SortKey::ALL {
             let btn = gtk::ToggleButton::with_label(key.label());
@@ -570,6 +704,72 @@ impl Component for AllBooksModel {
             }
             AllBooksMsg::OpenShelves => {
                 let _ = sender.output(AllBooksOut::OpenShelves);
+            }
+            AllBooksMsg::FilterToggle => {
+                let is_active = widgets.filter_btn.is_active();
+                widgets.filter_btn.set_active(!is_active);
+            }
+            AllBooksMsg::FilterShelfSelected { shelf_id, name } => {
+                let chip = format!("shelf:{name}");
+                if !self.filter_chips.contains(&chip) {
+                    self.filter_chips.push(chip);
+                    self.query = if self.query.trim().is_empty() {
+                        format!("shelf:{name}")
+                    } else {
+                        format!("{} shelf:{}", self.query, name)
+                    };
+                    self.reload(&sender);
+                }
+                widgets.filter_btn.set_active(false);
+                rebuild_filter_chips(widgets, &self.filter_chips, &sender);
+                widgets.clear_filters_btn.set_visible(!self.filter_chips.is_empty());
+            }
+            AllBooksMsg::FilterTagSelected(tag) => {
+                let chip = format!("tag:{tag}");
+                if !self.filter_chips.contains(&chip) {
+                    self.filter_chips.push(chip);
+                    self.query = if self.query.trim().is_empty() {
+                        format!("tag:{tag}")
+                    } else {
+                        format!("{} tag:{}", self.query, tag)
+                    };
+                    self.reload(&sender);
+                }
+                widgets.filter_btn.set_active(false);
+                rebuild_filter_chips(widgets, &self.filter_chips, &sender);
+                widgets.clear_filters_btn.set_visible(!self.filter_chips.is_empty());
+            }
+            AllBooksMsg::FilterChipRemoved(chip) => {
+                self.filter_chips.retain(|c| c != &chip);
+                // Rebuild the query from the remaining chips.
+                let mut q = String::new();
+                for c in &self.filter_chips {
+                    if !q.is_empty() {
+                        q.push(' ');
+                    }
+                    q.push_str(c);
+                }
+                self.query = q;
+                self.reload(&sender);
+                rebuild_filter_chips(widgets, &self.filter_chips, &sender);
+                widgets.clear_filters_btn.set_visible(!self.filter_chips.is_empty());
+            }
+            AllBooksMsg::ClearFilters => {
+                self.filter_chips.clear();
+                self.query.clear();
+                self.reload(&sender);
+                rebuild_filter_chips(widgets, &self.filter_chips, &sender);
+                widgets.clear_filters_btn.set_visible(false);
+                widgets.search.set_text("");
+            }
+            AllBooksMsg::GroupChanged(group) => {
+                self.group_by = group;
+                // Grouping changes how cards are laid out; reload with the
+                // same query so section headings appear.
+                self.reload(&sender);
+            }
+            AllBooksMsg::ViewModeChanged(mode) => {
+                self.view_mode = mode;
             }
             AllBooksMsg::SetQuery(q) => {
                 // Setting the entry text fires search-changed, which
@@ -1331,6 +1531,123 @@ fn confirm_bulk_delete(anchor: &gtk::Widget, count: usize, on_confirm: impl Fn()
             on_confirm();
             dialog.close();
         });
+    }
+}
+
+/// Build the §47 filter popover: Shelf and Tag submenus (decision 168).
+///
+/// Reads live shelves and tag counts from the catalog so the popover always
+/// shows current data. Selecting a shelf or tag adds it as an active filter
+/// chip and reloads the book list with the matching query.
+fn build_filter_popup(
+    filter_btn: &gtk::MenuButton,
+    sender: &relm4::ComponentSender<AllBooksModel>,
+    model: &AllBooksModel,
+) {
+    let menu = menu_popover(MenuWidth::Wide);
+
+    // ── Shelf submenu ──
+    let shelf_menu = menu_popover(MenuWidth::Wide);
+    let shelves = model.service.shelves();
+    for shelf in &shelves.shelves {
+        let s = sender.clone();
+        let name = shelf.name.clone();
+        let sid = shelf.id;
+        let count = shelf.book_count;
+        shelf_menu.add_item_with_count(
+            &format!("{} ({})", shelf.name, count),
+            count,
+            move || {
+                let _ = s.input(AllBooksMsg::FilterShelfSelected {
+                    shelf_id: sid,
+                    name,
+                });
+            },
+        );
+    }
+    if shelves.shelves.is_empty() {
+        shelf_menu.add_item("No shelves", || {});
+    }
+    menu.add_submenu("Shelf", shelf_menu);
+
+    // ── Tag submenu ──
+    let tag_menu = menu_popover(MenuWidth::Wide);
+    let tags = model.service.tags();
+    for (tag, count) in &tags.tags {
+        let s = sender.clone();
+        let t = tag.clone();
+        tag_menu.add_item_with_count(
+            tag,
+            *count as usize,
+            move || {
+                let _ = s.input(AllBooksMsg::FilterTagSelected(t.clone()));
+            },
+        );
+    }
+    if tags.tags.is_empty() {
+        tag_menu.add_item("No tags", || {});
+    }
+    menu.add_submenu("Tag", tag_menu);
+
+    filter_btn.set_popover(Some(&menu.popover()));
+}
+
+/// Build the §47 group popover: None / Author / Series.
+fn build_group_popup(
+    group_btn: &gtk::MenuButton,
+    sender: &relm4::ComponentSender<AllBooksModel>,
+) {
+    let menu = menu_popover(MenuWidth::Wide);
+
+    let s = sender.clone();
+    menu.add_item("None", move || {
+        let _ = s.input(AllBooksMsg::GroupChanged(GroupBy::None));
+    });
+
+    let s = sender.clone();
+    menu.add_item("Author", move || {
+        let _ = s.input(AllBooksMsg::GroupChanged(GroupBy::Author));
+    });
+
+    let s = sender.clone();
+    menu.add_item("Series", move || {
+        let _ = s.input(AllBooksMsg::GroupChanged(GroupBy::Series));
+    });
+
+    group_btn.set_popover(Some(&menu.popover()));
+}
+
+/// Render the active filter chips (§47 toolbar: chips).
+///
+/// Each chip is a toggleable pill: clicking it again removes the filter.
+fn rebuild_filter_chips(
+    chips_box: &gtk::Box,
+    chips: &[String],
+    sender: &relm4::ComponentSender<AllBooksModel>,
+) {
+    while let Some(child) = chips_box.first_child() {
+        chips_box.remove(&child);
+    }
+
+    for chip in chips {
+        let display = chip
+            .strip_prefix("shelf:")
+            .or_else(|| chip.strip_prefix("tag:"))
+            .unwrap_or(chip)
+            .to_string();
+
+        let chip = chip.clone();
+        let s = sender.clone();
+        let btn = crate::widgets::chip::filter_chip(
+            &display,
+            true,
+            crate::widgets::chip::ChipSize::Standard,
+            move |_active| {
+                let _ = s.input(AllBooksMsg::FilterChipRemoved(chip.clone()));
+            },
+        );
+        btn.set_tooltip_text(Some(&format!("Remove “{display}” filter")));
+        chips_box.append(&btn);
     }
 }
 

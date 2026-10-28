@@ -67,6 +67,20 @@ pub enum AllBooksMsg {
     GroupChanged(GroupBy),
     /// Switch between Grid and List view (§47 toolbar: Grid / List).
     ViewModeChanged(ViewMode),
+    /// The "All books" title button opened its popover; build it lazily.
+    ShelvesPopoverOpen,
+    /// A shelf was chosen from the title popover: navigate to that shelf.
+    ShelvesPopoverShelfSelected(String),
+    /// "Manage shelves…" from the title popover.
+    ShelvesPopoverManageShelves,
+    /// "New shelf…" from the title popover.
+    ShelvesPopoverNewShelf,
+    /// The "+ Import EPUB" pill opened its import menu.
+    ImportMenuOpen,
+    /// "Import files…" from the import menu.
+    ImportMenuImportFiles,
+    /// "Import a folder…" from the import menu.
+    ImportMenuImportFolder,
     SearchModeChanged(SearchMode),
     SortChanged(SortKey),
     PickFiles,
@@ -291,7 +305,7 @@ impl Component for AllBooksModel {
                 },
 
                 #[name = "title_btn"]
-                gtk::Button {
+                gtk::MenuButton {
                     set_child: Some(&crate::icons::labelled(
                         "pan-down-symbolic",
                         16,
@@ -299,10 +313,8 @@ impl Component for AllBooksModel {
                         6,
                     )),
                     add_css_class: "kalam-title-btn",
-                    set_halign: gtk::Align::Start,
-                    set_valign: gtk::Align::Center,
+                    set_always_show_arrow: false,
                     set_tooltip_text: Some("Open the shelves menu"),
-                    connect_clicked => AllBooksMsg::OpenShelves,
                 },
 
                 gtk::Box {
@@ -310,17 +322,26 @@ impl Component for AllBooksModel {
                 },
 
                 #[name = "add_btn"]
-                gtk::Button {
-                    #[watch]
-                    set_label: if model.importing {
-                        "Importing…"
-                    } else {
-                        "+ Import EPUB"
-                    },
+                gtk::MenuButton {
+                    set_child: Some(&gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 6,
+                        set_halign: gtk::Align::Center,
+                        set_valign: gtk::Align::Center,
+                        gtk::Label {
+                            #[watch]
+                            set_label: if model.importing {
+                                "Importing…"
+                            } else {
+                                "+ Import EPUB"
+                            },
+                            add_css_class: "kalam-primary-btn-label",
+                        },
+                    }),
                     add_css_class: "kalam-primary-btn",
+                    set_always_show_arrow: false,
                     #[watch]
                     set_sensitive: !model.importing,
-                    connect_clicked => AllBooksMsg::PickFiles,
                 },
             },
 
@@ -615,6 +636,14 @@ impl Component for AllBooksModel {
         // Render any chips that came in with the model (none on first load).
         rebuild_filter_chips(&widgets.filter_chips, &model.filter_chips, &sender);
 
+        // Build the §47 title-button popover: All books, shelves (Manual/Smart
+        // with counts), Manage shelves…, New shelf… — 280 wide.
+        build_shelves_popover(&widgets.title_btn, &sender, &model);
+
+        // Build the §47 "+ Import EPUB" pill menu: Import files…, Import a
+        // folder…, disabled Find online….
+        build_import_menu(&widgets.add_btn, &sender);
+
         for key in SortKey::ALL {
             let btn = gtk::ToggleButton::with_label(key.label());
             btn.add_css_class("kalam-secondary-btn");
@@ -768,6 +797,41 @@ impl Component for AllBooksModel {
             }
             AllBooksMsg::ViewModeChanged(mode) => {
                 self.view_mode = mode;
+            }
+            AllBooksMsg::ShelvesPopoverOpen => {
+                // Popover is built in init(); this just ensures it's shown.
+                // The popover is attached to the title_btn and auto-opens
+                // when the menu button is clicked.
+            }
+            AllBooksMsg::ShelvesPopoverShelfSelected(name) => {
+                let chip = format!("shelf:{name}");
+                if !self.filter_chips.contains(&chip) {
+                    self.filter_chips.push(chip);
+                    self.query = if self.query.trim().is_empty() {
+                        chip.clone()
+                    } else {
+                        format!("{} {}", self.query, chip)
+                    };
+                    self.reload(&sender);
+                }
+                widgets.filter_btn.set_active(false);
+                rebuild_filter_chips(&widgets.filter_chips, &self.filter_chips, &sender);
+                widgets.clear_filters_btn.set_visible(!self.filter_chips.is_empty());
+            }
+            AllBooksMsg::ShelvesPopoverManageShelves => {
+                let _ = sender.output(AllBooksOut::OpenShelves);
+            }
+            AllBooksMsg::ShelvesPopoverNewShelf => {
+                crate::notify::info("New shelf", "Coming soon — shelf creation dialog.");
+            }
+            AllBooksMsg::ImportMenuOpen => {
+                // Import menu is built in init(); auto-opens on menu button click.
+            }
+            AllBooksMsg::ImportMenuImportFiles => {
+                sender.input(AllBooksMsg::PickFiles);
+            }
+            AllBooksMsg::ImportMenuImportFolder => {
+                crate::notify::info("Import folder", "Coming soon — folder chooser dialog.");
             }
             AllBooksMsg::SetQuery(q) => {
                 // Setting the entry text fires search-changed, which
@@ -1648,6 +1712,81 @@ fn rebuild_filter_chips(
         btn.set_tooltip_text(Some(&format!("Remove “{display}” filter")));
         chips_box.append(&btn);
     }
+}
+
+/// Build the §47 title-button popover: All books, shelves (Manual/Smart with
+/// counts), Manage shelves…, New shelf… — 280 wide.
+fn build_shelves_popover(
+    title_btn: &gtk::MenuButton,
+    sender: &relm4::ComponentSender<AllBooksModel>,
+    model: &AllBooksModel,
+) {
+    let menu = menu_popover(MenuWidth::Wide);
+
+    menu.add_item("All books", move || {
+        let _ = sender.input(AllBooksMsg::ShelvesPopoverShelfSelected("All books".to_string()));
+    });
+
+    // Shelves section with Manual/Smart sub-groups and counts.
+    let shelves = model.service.shelves();
+    if !shelves.shelves.is_empty() {
+        menu.add_separator();
+        let shelf_menu = menu_popover(MenuWidth::Wide);
+        for shelf in &shelves.shelves {
+            let s = sender.clone();
+            let name = shelf.name.clone();
+            let count = shelf.book_count;
+            shelf_menu.add_item_with_count(
+                &format!("{} ({})", shelf.name, count),
+                count,
+                move || {
+                    let _ = s.input(AllBooksMsg::ShelvesPopoverShelfSelected(name.clone()));
+                },
+            );
+        }
+        menu.add_submenu("Shelves", shelf_menu);
+    }
+
+    menu.add_separator();
+    menu.add_item("Manage shelves…", move || {
+        let _ = sender.input(AllBooksMsg::ShelvesPopoverManageShelves);
+    });
+    menu.add_item("New shelf…", move || {
+        let _ = sender.input(AllBooksMsg::ShelvesPopoverNewShelf);
+    });
+
+    title_btn.set_popover(Some(&menu.popover()));
+}
+
+/// Build the §47 "+ Import EPUB" pill menu: Import files…, Import a folder…,
+/// disabled Find online….
+fn build_import_menu(
+    add_btn: &gtk::MenuButton,
+    sender: &relm4::ComponentSender<AllBooksModel>,
+) {
+    let menu = menu_popover(MenuWidth::Short);
+
+    let s = sender.clone();
+    menu.add_item_with_hint("Import files…", "Ctrl+I", move || {
+        let _ = s.input(AllBooksMsg::ImportMenuImportFiles);
+    });
+
+    let s = sender.clone();
+    menu.add_item_with_hint("Import a folder…", "Ctrl+Shift+I", move || {
+        let _ = s.input(AllBooksMsg::ImportMenuImportFolder);
+    });
+
+    menu.add_separator();
+
+    // Disabled "Find online…" item.
+    let disabled_btn = gtk::Button::with_label("Find online…");
+    disabled_btn.set_sensitive(false);
+    disabled_btn.add_css_class("kalam-ui-menu-item");
+    disabled_btn.set_hexpand(true);
+    disabled_btn.set_halign(gtk::Align::Fill);
+    menu.list().append(&disabled_btn);
+
+    add_btn.set_popover(Some(&menu.popover()));
 }
 
 fn rebuild_content_search_list(

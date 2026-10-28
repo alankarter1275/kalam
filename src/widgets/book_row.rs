@@ -946,15 +946,16 @@ pub fn build_book_list(
         store.append(&BoxedAnyObject::new(book.id));
     }
 
-    let selection = gtk::SingleSelection::new(Some(&store));
+    let selection = gtk::NoSelection::new(Some(&store));
     // Selection is driven by the page's `selected_books` set (kept in sync via
     // `on_toggle_select`), not by GTK's own selection state.
-    selection.set_selection_mode(gtk::SelectionMode::None);
-
+    //
     let view = gtk::ColumnView::new(Some(&selection));
     view.add_css_class("kalam-book-list");
     view.set_hexpand(true);
-    view.set_activate_on_single_click(true);
+
+    // Cloned so the activate closure can look a book id up by row position.
+    let store_act = store.clone();
 
     let books_rc = Rc::new(books.to_vec());
     let selected_books = selected_books.clone();
@@ -1085,7 +1086,7 @@ pub fn build_book_list(
     let on_open_move = on_open;
     let on_toggle_move = on_toggle_select;
     view.connect_activate(move |_view, position| {
-        let Some(item) = selection.item(position) else {
+        let Some(item) = store_act.item(position) else {
             return;
         };
         let Ok(boxed) = item.downcast::<BoxedAnyObject>() else {

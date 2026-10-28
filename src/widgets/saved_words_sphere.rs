@@ -50,6 +50,7 @@ struct SphereWord {
     /// Pango weight (400, 500, 600, 700).
     weight: i32,
     /// Whether the word is vertical (-90° rotation).
+    #[allow(dead_code)]
     vertical: bool,
 }
 
@@ -90,6 +91,7 @@ struct SphereProbes {
 /// Output from the sphere component.
 #[derive(Debug)]
 pub enum SavedWordsSphereOut {
+    #[allow(dead_code)]
     OpenSavedWord { word: String },
 }
 
@@ -105,6 +107,7 @@ pub enum SavedWordsSphereMsg {
 
 /// The model.
 pub struct SavedWordsSphereModel {
+    #[allow(dead_code)]
     catalog: Arc<Catalog>,
     words: Vec<SphereWord>,
     probes: SphereProbes,
@@ -305,6 +308,7 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
         }
 
         let mut order: Vec<usize> = (0..positions.len()).collect();
+        #[allow(clippy::sort_key)]
         order.sort_by(|a, b| {
             positions[*a]
                 .rz
@@ -409,7 +413,7 @@ fn compute_positions(
     let sy = yaw.sin();
     let cp = pitch.cos();
     let sp = pitch.sin();
-    let radius = (stage_w.min(stage_h) * 0.42) as f64;
+    let radius = stage_w.min(stage_h) * 0.42;
 
     let max_count = words.iter().map(|w| w.count as f64).fold(1.0_f64, f64::max);
 

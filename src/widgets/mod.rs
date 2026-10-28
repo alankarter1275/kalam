@@ -20,5 +20,6 @@ pub mod segmented;
 pub mod selection_chip;
 pub mod setting_row;
 pub mod slide_out_pill;
+pub mod reading_timeline;
 pub mod surface;
 pub mod timeline;

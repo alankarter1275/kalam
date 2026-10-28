@@ -450,6 +450,36 @@ button.kalam-notify-clear:focus-visible {
     color: @kalam_text;
 }
 
+/* ── reading timeline canvas (§51) ───────────────────────────── */
+.drawingarea.kalam-reading-timeline {
+    background: @kalam_bg;
+}
+
+.kalam-timeline-card {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+}
+
+.kalam-timeline-card-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-timeline-card-meta {
+    font-size: 11px;
+    color: @kalam_text_dim;
+}
+
+/* ── additional Cairo colour probes for the timeline highlight lines ── */
+.kalam-ui-token-hl-yellow { color: @kalam_hl_yellow; }
+.kalam-ui-token-hl-green { color: @kalam_hl_green; }
+.kalam-ui-token-hl-blue { color: @kalam_hl_blue; }
+.kalam-ui-token-hl-pink { color: @kalam_hl_pink; }
+.kalam-ui-token-hl-orange { color: @kalam_hl_orange; }
+
 /* ── hub tiles inside My Library ────────────────────── */
 .kalam-hub-grid {
     margin-top: 8px;

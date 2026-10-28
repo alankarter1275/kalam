@@ -6,6 +6,7 @@ use crate::pages::history::pretty_day;
 use crate::service::{DashboardFeedRow, DashboardSnapshot, LibraryService, NowReading};
 use crate::widgets::book_row::cover_widget_deferred;
 use crate::widgets::charts::{monthly_series, sparkline};
+use crate::widgets::reading_timeline::ReadingTimelineModel;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -43,10 +44,13 @@ pub enum LibraryOut {
 #[derive(Debug)]
 pub enum LibraryMsg {
     Loaded(Box<DashboardSnapshot>),
+    /// A session on the reading timeline was clicked — open that book.
+    TimelineOpenBook { book_id: i64 },
 }
 
 pub struct LibraryPageModel {
     service: LibraryService,
+    timeline_ctrl: Option<relm4::Controller<ReadingTimelineModel>>,
 }
 
 #[relm4::component(pub)]
@@ -78,7 +82,8 @@ impl Component for LibraryPageModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = LibraryPageModel {
-            service: LibraryService::new(catalog),
+            service: LibraryService::new(catalog.clone()),
+            timeline_ctrl: None,
         };
         let widgets = view_output!();
 
@@ -89,6 +94,19 @@ impl Component for LibraryPageModel {
         loading.add_css_class("kalam-muted");
         loading.set_halign(gtk::Align::Start);
         widgets.body.append(&loading);
+
+        // Reading timeline (§51): Cairo-drawn widget with its own catalog
+        // read on the UI thread (synchronous, like the history page's first
+        // read). Forward clicks to open the book.
+        let timeline_ctrl = ReadingTimelineModel::builder()
+            .launch(catalog)
+            .forward(sender.input_sender(), |msg| {
+                LibraryMsg::TimelineOpenBook { book_id: msg.book_id }
+            });
+        // The timeline widget is added to the body once the snapshot loads.
+
+        let mut model = model;
+        model.timeline_ctrl = Some(timeline_ctrl);
 
         request_snapshot(&model.service, &sender);
 
@@ -105,6 +123,15 @@ impl Component for LibraryPageModel {
         match message {
             LibraryMsg::Loaded(snap) => {
                 apply_snapshot(&widgets.body, snap, &sender);
+                // Insert the reading timeline section (§51) as the first
+                // child of the body, right after the header that
+                // apply_snapshot just built.
+                if let Some(ctrl) = &self.timeline_ctrl {
+                    widgets.body.insert_child_after(&ctrl.widget(), None);
+                }
+            }
+            LibraryMsg::TimelineOpenBook { book_id } => {
+                sender.output(LibraryOut::Book { book_id }).ok();
             }
         }
         self.update_view(widgets, sender);

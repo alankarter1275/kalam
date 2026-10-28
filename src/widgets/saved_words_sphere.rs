@@ -221,10 +221,9 @@ impl Component for SavedWordsSphereModel {
             let state = ds_c.borrow();
             let hovered = state.hovered_word;
             drop(state);
-            if let Some(idx) = hovered {
-                drop(s_c);
-                s_c.input(SavedWordsSphereMsg::ClickWord(idx));
-            }
+    if let Some(idx) = hovered {
+        s_c.input(SavedWordsSphereMsg::ClickWord(idx));
+    }
             if let Some(widget) = gesture.widget() {
                 widget.queue_draw();
             }
@@ -286,7 +285,7 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
     let probes = model.probes.clone();
 
     canvas.set_draw_func(move |_area, cr, width, height| {
-        if width <= 0.0 || height <= 0.0 {
+        if width <= 0 || height <= 0 {
             return;
         }
 
@@ -449,7 +448,7 @@ fn draw_word(
         }
     };
     desc.set_weight(w);
-    layout.set_font_description(Some(desc));
+    layout.set_font_description(Some(&desc));
     layout.set_text(&word.word, -1);
 
     let (w_pix, h_pix) = layout.pixel_size();

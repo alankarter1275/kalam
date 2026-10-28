@@ -1322,6 +1322,11 @@ impl Catalog {
                 tokenize = 'unicode61 remove_diacritics 2'
             );
 
+            -- v15b: Term-frequency vocabulary for the saved-words sphere (§52).
+            -- fts5vocab('row' mode) gives one row per distinct term with its
+            -- total occurrence count across all indexed content.
+            CREATE VIRTUAL TABLE IF NOT EXISTS book_content_vocab USING fts5vocab(book_content_fts, row);
+
             CREATE TABLE IF NOT EXISTS book_search_index_status (
                 book_id        INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
                 indexed_at     TEXT NOT NULL,
@@ -1574,6 +1579,21 @@ impl Catalog {
             |r| r.get(0),
         )?;
         Ok(count)
+    }
+
+    /// Top terms by frequency across all indexed book content, for the
+    /// saved-words sphere (§52). Returns at most `limit` (term, count) pairs.
+    pub fn top_vocab_terms(&self, limit: i64) -> Result<Vec<(String, i64)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT term, cnt FROM book_content_vocab
+             ORDER BY cnt DESC, term ASC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })?;
+        Ok(rows.flatten().collect())
     }
 
     /// Record a spaced-repetition answer (0 = again, 1 = good, 2 = easy) with a

@@ -9,6 +9,9 @@ use crate::widgets::charts::{monthly_series, sparkline};
 use crate::widgets::reading_timeline::{
     ReadingTimelineModel, ReadingTimelineOut,
 };
+use crate::widgets::saved_words_sphere::{
+    SavedWordsSphereModel, SavedWordsSphereOut, setup_draw as setup_sphere_draw,
+};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -53,6 +56,7 @@ pub enum LibraryMsg {
 pub struct LibraryPageModel {
     service: LibraryService,
     timeline_ctrl: Option<relm4::Controller<ReadingTimelineModel>>,
+    sphere_ctrl: Option<relm4::Controller<SavedWordsSphereModel>>,
 }
 
 #[relm4::component(pub)]
@@ -86,6 +90,7 @@ impl Component for LibraryPageModel {
         let model = LibraryPageModel {
             service: LibraryService::new(catalog.clone()),
             timeline_ctrl: None,
+            sphere_ctrl: None,
         };
         let widgets = view_output!();
 
@@ -111,8 +116,22 @@ impl Component for LibraryPageModel {
             });
         // The timeline widget is added to the body once the snapshot loads.
 
+        // Saved-words sphere (§52): Cairo/Pango widget on a 520×480 stage.
+        let sphere_ctrl = SavedWordsSphereModel::builder()
+            .launch(catalog.clone())
+            .forward(sender.input_sender(), |msg| {
+                match msg {
+                    SavedWordsSphereOut::OpenSavedWord { word } => {
+                        // Open the saved word's detail — handled by the
+                        // parent route (chat 13 owns the Saved words page).
+                        let _ = word;
+                    }
+                }
+            });
+
         let mut model = model;
         model.timeline_ctrl = Some(timeline_ctrl);
+        model.sphere_ctrl = Some(sphere_ctrl);
 
         request_snapshot(&model.service, &sender);
 
@@ -135,6 +154,17 @@ impl Component for LibraryPageModel {
                 if let Some(ctrl) = &self.timeline_ctrl {
                     let widget: gtk::Widget = ctrl.widget().clone().upcast();
                     widgets.body.insert_child_after(&widget, None as Option<&gtk::Widget>);
+                }
+                // Insert the saved-words sphere (§52) below the timeline.
+                if let Some(ctrl) = &self.sphere_ctrl {
+                    let widget: gtk::Widget = ctrl.widget().clone().upcast();
+                    widgets.body.append(&widget);
+                    // Attach the Cairo draw function once the widget is realised.
+                    let model = ctrl.model();
+                    setup_sphere_draw(
+                        &widget.downcast::<gtk::DrawingArea>().unwrap(),
+                        &*model,
+                    );
                 }
             }
             LibraryMsg::TimelineOpenBook { book_id } => {

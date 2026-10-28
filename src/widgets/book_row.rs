@@ -203,8 +203,18 @@ const AUTHOR_AREA_H: i32 = 18;
 const GAP: i32 = 6;
 pub const CARD_H: i32 = COVER_H + GAP + TITLE_AREA_H + AUTHOR_AREA_H;
 
-/// Column count used by the library grid (uniform cells).
-const DEFAULT_GRID_COLS: i32 = 6;
+/// Column count for a grid of `width` pixels, per `library-spec.md` §47:
+/// 4 at 640, 8 at 1280, 12 at 1920 (and wider).
+pub fn grid_cols_for(width: i32) -> i32 {
+    if width <= 640 {
+        4
+    } else if width <= 1280 {
+        8
+    } else {
+        12
+    }
+}
+
 const COL_SPACING: u32 = 16;
 const ROW_SPACING: u32 = 20;
 
@@ -349,12 +359,12 @@ fn windowed_grid_enabled_for(disable: Option<&std::ffi::OsStr>) -> bool {
     }
 }
 
-/// How many rows of cards a library needs.
-fn row_count(books: usize) -> i32 {
+/// How many rows of cards a library needs, given `cols` columns.
+fn row_count(books: usize, cols: i32) -> i32 {
     if books == 0 {
         return 0;
     }
-    ((books as i32) + DEFAULT_GRID_COLS - 1) / DEFAULT_GRID_COLS
+    ((books as i32) + cols - 1) / cols
 }
 
 /// Height in pixels of one row, including the gap beneath it.
@@ -404,18 +414,18 @@ fn visible_rows(scroll_top: f64, viewport_h: f64, total_rows: i32) -> (i32, i32)
 /// a `GtkGrid` derive its own height from its children, and since the whole
 /// point is to remove most of those children, the height changed as the user
 /// scrolled -- that was the jumping scrollbar.
-fn grid_height(books: usize) -> i32 {
-    let rows = row_count(books);
+fn grid_height(books: usize, cols: i32) -> i32 {
+    let rows = row_count(books, cols);
     if rows <= 0 {
         return 0;
     }
     rows * ROW_PITCH - ROW_SPACING as i32
 }
 
-/// Where card `index` sits, in pixels from the grid's top-left.
-fn card_position(index: usize) -> (i32, i32) {
-    let col = (index as i32) % DEFAULT_GRID_COLS;
-    let row = (index as i32) / DEFAULT_GRID_COLS;
+/// Where card `index` sits, in pixels from the grid's top-left, given `cols`.
+fn card_position(index: usize, cols: i32) -> (i32, i32) {
+    let col = (index as i32) % cols;
+    let row = (index as i32) / cols;
     (col * (CARD_W + COL_SPACING as i32), row * ROW_PITCH)
 }
 
@@ -441,11 +451,11 @@ fn card_position(index: usize) -> (i32, i32) {
 /// once from the book count. Positions therefore do not depend on which cards
 /// happen to be mounted, which is precisely the property this needs.
 ///
-/// Layout maths matches the old grid exactly — same `DEFAULT_GRID_COLS`,
-/// same spacings, same card size — so the result is pixel-identical to what
-/// the user sees today.
+/// Layout maths matches `library-spec.md` §47 — `grid_cols_for(width)`
+/// columns, same spacings, same card size.
 fn build_windowed_grid(
     books: &[Book],
+    cols: i32,
     click_hint: &'static str,
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
@@ -466,14 +476,14 @@ fn build_windowed_grid(
 
     crate::timing::span("grid_build");
 
-    let total_rows = row_count(books.len());
+    let total_rows = row_count(books.len(), cols);
 
     // Ask for the exact size the full grid would occupy, once, from the book
     // count alone. Nothing here depends on which cards are mounted, so the
     // scrollbar cannot change length while scrolling.
     if total_rows > 0 {
-        let full_w = DEFAULT_GRID_COLS * CARD_W + (DEFAULT_GRID_COLS - 1) * COL_SPACING as i32;
-        grid.set_size_request(full_w, grid_height(books.len()));
+        let full_w = cols * CARD_W + (cols - 1) * COL_SPACING as i32;
+        grid.set_size_request(full_w, grid_height(books.len(), cols));
     }
 
     // Cards currently in the grid, by book index, so a scroll can tell what to
@@ -496,8 +506,8 @@ fn build_windowed_grid(
                 return;
             }
 
-            let want_from = (first as usize) * DEFAULT_GRID_COLS as usize;
-            let want_to = (((last + 1) as usize) * DEFAULT_GRID_COLS as usize).min(books.len());
+            let want_from = (first as usize) * cols as usize;
+            let want_to = (((last + 1) as usize) * cols as usize).min(books.len());
 
             let mut mounted = mounted.borrow_mut();
 
@@ -531,7 +541,7 @@ fn build_windowed_grid(
                 cell.set_halign(gtk::Align::Start);
                 cell.append(&card);
 
-                let (x, y) = card_position(i);
+                let (x, y) = card_position(i, TEST_COLS);
                 grid.put(&cell, x as f64, y as f64);
                 mounted.insert(i, cell);
                 added.push(i);
@@ -609,14 +619,16 @@ fn enclosing_scroller(widget: &impl IsA<gtk::Widget>) -> Option<gtk::ScrolledWin
 /// Uniform grid of fixed-size cards (same cell width for every book).
 pub fn build_book_grid(
     books: &[Book],
+    cols: i32,
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
 ) -> gtk::Box {
-    build_book_grid_hinted(books, CLICK_HINT_LIBRARY, on_full, on_float)
+    build_book_grid_hinted(books, cols, CLICK_HINT_LIBRARY, on_full, on_float)
 }
 
 fn build_book_grid_hinted(
     books: &[Book],
+    cols: i32,
     click_hint: &'static str,
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
@@ -625,7 +637,7 @@ fn build_book_grid_hinted(
     // see `build_windowed_grid`. `KALAM_NO_WINDOWED_GRID=1` restores the old
     // build-every-card behaviour.
     if windowed_grid_enabled() {
-        return build_windowed_grid(books, click_hint, on_full, on_float);
+        return build_windowed_grid(books, cols, click_hint, on_full, on_float);
     }
 
     // GtkGrid with homogeneous columns = true grid view.
@@ -666,8 +678,8 @@ fn build_book_grid_hinted(
         cell.set_halign(gtk::Align::Start);
         cell.append(&card);
 
-        let col = (i as i32) % DEFAULT_GRID_COLS;
-        let row = (i as i32) / DEFAULT_GRID_COLS;
+        let col = (i as i32) % cols;
+        let row = (i as i32) / cols;
         grid.attach(&cell, col, row, 1, 1);
     }
 
@@ -721,6 +733,7 @@ pub fn build_book_card_selectable(
 
 fn build_windowed_grid_selectable(
     books: &[Book],
+    cols: i32,
     is_selected: impl Fn(i64) -> bool + Clone + 'static,
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
@@ -741,11 +754,11 @@ fn build_windowed_grid_selectable(
 
     crate::timing::span("grid_build");
 
-    let total_rows = row_count(books.len());
+    let total_rows = row_count(books.len(), cols);
 
     if total_rows > 0 {
-        let full_w = DEFAULT_GRID_COLS * CARD_W + (DEFAULT_GRID_COLS - 1) * COL_SPACING as i32;
-        grid.set_size_request(full_w, grid_height(books.len()));
+        let full_w = cols * CARD_W + (cols - 1) * COL_SPACING as i32;
+        grid.set_size_request(full_w, grid_height(books.len(), cols));
     }
 
     let mounted: Rc<RefCell<HashMap<usize, gtk::Box>>> = Rc::new(RefCell::new(HashMap::new()));
@@ -764,8 +777,8 @@ fn build_windowed_grid_selectable(
                 return;
             }
 
-            let want_from = (first as usize) * DEFAULT_GRID_COLS as usize;
-            let want_to = (((last + 1) as usize) * DEFAULT_GRID_COLS as usize).min(books.len());
+            let want_from = (first as usize) * cols as usize;
+            let want_to = (((last + 1) as usize) * cols as usize).min(books.len());
 
             let mut mounted = mounted.borrow_mut();
 
@@ -796,7 +809,7 @@ fn build_windowed_grid_selectable(
                 cell.set_halign(gtk::Align::Start);
                 cell.append(&card);
 
-                let (x, y) = card_position(i);
+                let (x, y) = card_position(i, TEST_COLS);
                 grid.put(&cell, x as f64, y as f64);
                 mounted.insert(i, cell);
                 added.push(i);
@@ -843,12 +856,13 @@ fn build_windowed_grid_selectable(
 
 pub fn build_book_grid_selectable(
     books: &[Book],
+    cols: i32,
     is_selected: impl Fn(i64) -> bool + Clone + 'static,
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
 ) -> gtk::Box {
     if windowed_grid_enabled() {
-        return build_windowed_grid_selectable(books, is_selected, on_full, on_float);
+        return build_windowed_grid_selectable(books, cols, is_selected, on_full, on_float);
     }
 
     let grid = gtk::Grid::new();
@@ -884,8 +898,8 @@ pub fn build_book_grid_selectable(
         cell.set_halign(gtk::Align::Start);
         cell.append(&card);
 
-        let col = (i as i32) % DEFAULT_GRID_COLS;
-        let row = (i as i32) / DEFAULT_GRID_COLS;
+        let col = (i as i32) % cols;
+        let row = (i as i32) / cols;
         grid.attach(&cell, col, row, 1, 1);
     }
 
@@ -1201,6 +1215,9 @@ fn build_picture(texture: &gtk::gdk::Texture, w: i32, h: i32) -> gtk::Picture {
 mod tests {
     use super::*;
 
+    /// Column count used by tests that pinned the old 6-column layout.
+    const TEST_COLS: i32 = 6;
+
     fn key(name: &str) -> CoverKey {
         (name.to_string(), COVER_W, COVER_H)
     }
@@ -1311,14 +1328,14 @@ mod tests {
         if last < first {
             return 0;
         }
-        (last - first + 1) * DEFAULT_GRID_COLS
+        (last - first + 1) * TEST_COLS
     }
 
     #[test]
     fn a_full_library_builds_a_screenful_not_the_whole_thing() {
         // The entire point of the change. 2,000 books is 334 rows; at the top
         // of a 1000px window we must build a few dozen cards, not 2,000.
-        let total = row_count(2000);
+        let total = row_count(2000, TEST_COLS);
         assert_eq!(total, 334, "334 rows of 6 covers 2,000 books");
 
         let built = cards_in(visible_rows(0.0, 1000.0, total));
@@ -1339,7 +1356,7 @@ mod tests {
         // Every row the user can actually see must be built, or there are
         // holes in the grid. Checked across the full scroll range rather than
         // at one position, because an off-by-one only shows at some offsets.
-        let total = row_count(2000);
+        let total = row_count(2000, TEST_COLS);
         let viewport = 1000.0;
         let mut top = 0.0;
         while top < (total * ROW_PITCH) as f64 {
@@ -1365,7 +1382,7 @@ mod tests {
     fn scrolling_never_skips_a_row() {
         // Consecutive scroll positions must overlap or touch. A gap means a
         // fast scroll could land on rows nobody ever built.
-        let total = row_count(2000);
+        let total = row_count(2000, TEST_COLS);
         let mut previous: Option<(i32, i32)> = None;
         let mut top = 0.0;
         while top < (total * ROW_PITCH) as f64 {
@@ -1384,7 +1401,7 @@ mod tests {
 
     #[test]
     fn the_edges_of_the_scroll_range_stay_in_bounds() {
-        let total = row_count(2000);
+        let total = row_count(2000, TEST_COLS);
 
         // Overscroll bounce can hand us a negative offset.
         assert_eq!(visible_rows(-500.0, 1000.0, total).0, 0);
@@ -1423,7 +1440,7 @@ mod tests {
         // GTK reports a page size of 0 before the first layout. Treating that
         // as "nothing is visible" would leave the page blank until the user
         // scrolled -- which looks exactly like a broken page.
-        let total = row_count(2000);
+        let total = row_count(2000, TEST_COLS);
         let built = cards_in(visible_rows(0.0, 0.0, total));
         assert!(
             built > 0,
@@ -1453,7 +1470,7 @@ mod tests {
     /// GtkGrid does it: N rows of cards with N-1 gaps between them. The
     /// windowed grid must match this exactly, or the scrollbar is a lie.
     fn plain_grid_height(books: usize) -> i32 {
-        let rows = row_count(books);
+        let rows = row_count(books, TEST_COLS);
         if rows <= 0 {
             return 0;
         }
@@ -1468,13 +1485,13 @@ mod tests {
         // the rows above it.
         for books in [1, 6, 7, 144, 139, 2000] {
             assert_eq!(
-                grid_height(books),
-                plain_grid_height(books),
+                grid_height(books, TEST_COLS),
+                plain_grid_height(books, TEST_COLS),
                 "{books} books: windowed grid is {} px but the normal grid is \
                  {} px. A grid that is too long scrolls into blank space; too \
                  short and the last books are unreachable.",
-                grid_height(books),
-                plain_grid_height(books)
+                grid_height(books, TEST_COLS),
+                plain_grid_height(books, TEST_COLS)
             );
         }
     }
@@ -1483,8 +1500,8 @@ mod tests {
     fn a_small_library_does_not_reserve_room_for_a_big_one() {
         // The user's actual complaint: 144 books, but the page scrolled as if
         // there were far more. Height must follow the real book count.
-        let small = grid_height(144);
-        let big = grid_height(2000);
+        let small = grid_height(144, TEST_COLS);
+        let big = grid_height(2000, TEST_COLS);
         assert!(
             small < big / 10,
             "144 books reserved {small} px and 2,000 books {big} px -- a small \
@@ -1499,9 +1516,9 @@ mod tests {
         // the last row and the book belonging there had nowhere to go. Check
         // every card lands inside the reserved area.
         for books in [1, 6, 7, 144, 2000] {
-            let height = grid_height(books);
+            let height = grid_height(books, TEST_COLS);
             for i in 0..books {
-                let (x, y) = card_position(i);
+                let (x, y) = card_position(i, TEST_COLS);
                 assert!(
                     y + CARD_H <= height,
                     "{books} books: book {i} ends at {} px but the page is only \
@@ -1534,8 +1551,8 @@ mod tests {
         // went. The height must depend only on the book count -- never on how
         // many cards happen to be on screen.
         let books = 2000;
-        let expected = grid_height(books);
-        let total = row_count(books);
+        let expected = grid_height(books, TEST_COLS);
+        let total = row_count(books, TEST_COLS);
         let mut top = 0.0;
         while top < (total * ROW_PITCH) as f64 {
             // Whatever is mounted at this scroll offset...
@@ -1543,7 +1560,7 @@ mod tests {
             assert!(first >= 0 && last < total);
             // ...the page is still exactly as tall as it was.
             assert_eq!(
-                grid_height(books),
+                grid_height(books, TEST_COLS),
                 expected,
                 "page height changed at scroll offset {top}"
             );
@@ -1559,19 +1576,19 @@ mod tests {
         // Second card: one card width plus one column gap to the right.
         assert_eq!(card_position(1), (CARD_W + COL_SPACING as i32, 0));
         // First card of the second row: back to x=0, down one row pitch.
-        assert_eq!(card_position(DEFAULT_GRID_COLS as usize), (0, ROW_PITCH));
+        assert_eq!(card_position(TEST_COLS as usize), (0, ROW_PITCH));
         // Last column, then wrap.
-        let last_col = (DEFAULT_GRID_COLS - 1) as usize;
+        let last_col = (TEST_COLS - 1) as usize;
         assert_eq!(card_position(last_col).1, 0, "row 0 must not wrap early");
         assert_eq!(
             card_position(last_col + 1).0,
             0,
-            "column {DEFAULT_GRID_COLS} must wrap to the next row"
+            "column {TEST_COLS} must wrap to the next row"
         );
     }
 
     #[test]
     fn an_empty_library_reserves_no_space() {
-        assert_eq!(grid_height(0), 0, "an empty library must not scroll at all");
+        assert_eq!(grid_height(0, TEST_COLS), 0, "an empty library must not scroll at all");
     }
 }

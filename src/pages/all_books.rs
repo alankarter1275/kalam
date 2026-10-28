@@ -1,12 +1,14 @@
 use crate::db::{BulkMetadataEdit, Catalog, SortKey};
 use crate::models::Book;
 use crate::service::{AllBooksSnapshot, LibraryService};
-use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable, invalidate_cover_cache};
+use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable, grid_cols_for, invalidate_cover_cache};
 use crate::widgets::in_app_dialog;
 use crate::widgets::menu::{menu_popover, MenuWidth};
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::cell::Cell;
 use std::collections::HashSet;
+use std::rc::Rc;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -67,6 +69,8 @@ pub enum AllBooksMsg {
     GroupChanged(GroupBy),
     /// Switch between Grid and List view (§47 toolbar: Grid / List).
     ViewModeChanged(ViewMode),
+    /// The viewport width changed, so the column count changed (§47).
+    GridColsChanged(i32),
     SearchModeChanged(SearchMode),
     SortChanged(SortKey),
     PickFiles,
@@ -257,6 +261,8 @@ pub struct AllBooksModel {
     group_by: GroupBy,
     /// Grid or List view (§47 toolbar: Grid / List).
     view_mode: ViewMode,
+    /// Column count for the grid, from `grid_cols_for(viewport width)` (§47).
+    grid_cols: i32,
 }
 
 #[relm4::component(pub)]
@@ -598,6 +604,7 @@ impl Component for AllBooksModel {
             filter_chips: Vec::new(),
             group_by: GroupBy::None,
             view_mode: ViewMode::Grid,
+            grid_cols: 8,
         };
         let widgets = view_output!();
         widgets.mode_content_btn.set_group(Some(&widgets.mode_meta_btn));
@@ -636,7 +643,22 @@ impl Component for AllBooksModel {
             model.selection_mode,
             &model.selected_books,
             &sender,
+            model.grid_cols,
         );
+
+        // Resize handler: when the viewport width changes enough to change the
+        // column count (4 at 640, 8 at 1280, 12 at 1920+ per §47), rebuild the
+        // grid with the new column count.
+        let s = sender.clone();
+        let last_cols = Rc::new(Cell::new(model.grid_cols));
+        widgets.list.connect_size_allocate(move |_widget, alloc| {
+            let width = alloc.width();
+            let new_cols = crate::widgets::book_row::grid_cols_for(width);
+            let prev = last_cols.replace(new_cols);
+            if prev != new_cols {
+                let _ = s.input(AllBooksMsg::GridColsChanged(new_cols));
+            }
+        });
 
         ComponentParts { model, widgets }
     }
@@ -764,6 +786,10 @@ impl Component for AllBooksModel {
             }
             AllBooksMsg::ViewModeChanged(mode) => {
                 self.view_mode = mode;
+            }
+            AllBooksMsg::GridColsChanged(cols) => {
+                self.grid_cols = cols;
+                self.reload(&sender);
             }
             AllBooksMsg::SetQuery(q) => {
                 // Setting the entry text fires search-changed, which
@@ -1302,6 +1328,7 @@ impl Component for AllBooksModel {
                 self.selection_mode,
                 &self.selected_books,
                 &sender,
+                self.grid_cols,
             );
         }
         self.update_view(widgets, sender);
@@ -1417,6 +1444,7 @@ fn rebuild_list(
     selection_mode: bool,
     selected_books: &HashSet<i64>,
     sender: &ComponentSender<AllBooksModel>,
+    cols: i32,
 ) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
@@ -1443,6 +1471,7 @@ fn rebuild_list(
         let sel_set = selected_books.clone();
         let grid = build_book_grid_selectable(
             books,
+            cols,
             move |id| sel_set.contains(&id),
             move |id| {
                 s.input(AllBooksMsg::ToggleSelectBook(id));
@@ -1462,6 +1491,7 @@ fn rebuild_list(
         let cm = cm_rc.clone();
         let grid = build_book_grid(
             books,
+            cols,
             move |id| {
                 if let Some(Some(ser)) = cm.get(&id) {
                     s.output(AllBooksOut::ComicSeries { series_name: ser.clone() }).ok();

@@ -138,7 +138,7 @@ impl Component for LibraryPageModel {
                 }
             }
             LibraryMsg::TimelineOpenBook { book_id } => {
-                sender.output(LibraryOut::Book { book_id });
+                sender.output(LibraryOut::Book { book_id }).ok();
             }
         }
         self.update_view(widgets, sender);

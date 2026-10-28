@@ -22,11 +22,13 @@ const SEGMENT_HEIGHT: f64 = 7.0;
 const LINE_THICKNESS: f64 = 1.5;
 const TODAY_LINE_THICKNESS: f64 = 1.0;
 const MIN_TIMELINE_WIDTH: i32 = 900;
+#[allow(dead_code)]
 const DEFAULT_HEIGHT: i32 = 320;
 const SEGMENT_MIN_WIDTH: f64 = 6.0;
 const SEGMENT_MAX_WIDTH: f64 = 40.0;
 const HEADER_SPACE: f64 = 40.0; // space below axis labels before lanes start
 
+#[allow(dead_code)]
 const HIGHLIGHT_CSS_CLASSES: [&str; 5] = [
     "kalam_hl_yellow",
     "kalam_hl_green",
@@ -43,6 +45,7 @@ struct TimelineDrawState {
 
 #[derive(Debug)]
 pub enum ReadingTimelineOut {
+    #[allow(dead_code)]
     OpenBook { book_id: i64 },
 }
 
@@ -51,6 +54,7 @@ pub enum ReadingTimelineMsg {
     SessionClicked { book_id: i64 },
 }
 
+#[allow(dead_code)]
 pub struct ReadingTimelineModel {
     catalog: Arc<Catalog>,
     lanes: Vec<TimelineLane>,
@@ -462,6 +466,7 @@ fn date_to_day_num(date: &str) -> Option<i64> {
 }
 
 /// Convert a day number to a short label ("Oct 28", "Today", etc.).
+#[allow(dead_code)]
 fn day_num_to_label(day: i64) -> String {
     let today = today_day_num();
     if day == today {
@@ -476,6 +481,7 @@ fn day_num_to_label(day: i64) -> String {
 }
 
 /// Inverse of date_to_day_num: days since epoch → (year, month, day).
+#[allow(dead_code)]
 fn civil_from_days(z: i64) -> (i32, u32, u32) {
     let z = z + 719468;
     let era = if z >= 0 { z } else { z - 146096 } / 146097;
@@ -490,6 +496,8 @@ fn civil_from_days(z: i64) -> (i32, u32, u32) {
 }
 
 /// Draw the complete timeline on the Cairo context.
+#[allow(clippy::too_many_arguments)]
+#[allow(unused_must_use)]
 fn draw_timeline(
     cr: &gtk::cairo::Context,
     width: f64,
@@ -510,7 +518,7 @@ fn draw_timeline(
     hl_colours: &[gtk::gdk::RGBA],
 ) {
     // Background.
-    set_source(cr, bg.clone(), 1.0);
+    set_source(cr, *bg, 1.0);
     cr.paint();
 
     if lanes.is_empty() {
@@ -524,7 +532,7 @@ fn draw_timeline(
     // ── Today vertical line ───────────────────────────────────────────
     if today_day >= day_min && today_day <= day_max {
         let today_x = axis_x + (today_day - day_min) as f64 * x_scale;
-        set_source(cr, accent.clone(), 1.0);
+        set_source(cr, *accent, 1.0);
         cr.set_line_width(TODAY_LINE_THICKNESS);
         cr.move_to(today_x, 30.0);
         cr.line_to(today_x, height);
@@ -543,14 +551,14 @@ fn draw_timeline(
         // Lane background when open or hovered.
         if is_open || is_hovered {
             let hover_bg = if is_open { accent } else { border };
-            set_source(cr, hover_bg.clone(), if is_open { 0.15 } else { 0.08 });
+            set_source(cr, *hover_bg, if is_open { 0.15 } else { 0.08 });
             cr.rectangle(0.0, lane_y - 22.0, width, LANE_HEIGHT as f64);
             cr.fill();
         }
 
         // Lane line.
         let line_alpha = if is_open || is_hovered { 0.8 } else { 0.4 };
-        set_source(cr, border.clone(), line_alpha);
+        set_source(cr, *border, line_alpha);
         cr.set_line_width(LINE_THICKNESS);
         cr.move_to(axis_x, lane_y);
         cr.line_to(axis_x + plot_width, lane_y);
@@ -574,11 +582,11 @@ fn draw_timeline(
                     SEGMENT_HEIGHT / 2.0,
                 );
                 let seg_alpha = if is_open || is_hovered { 0.9 } else { 0.6 };
-                set_source(cr, hl_colour.clone(), seg_alpha);
+                set_source(cr, *hl_colour, seg_alpha);
                 cr.fill();
 
                 // Outline.
-                set_source(cr, hl_colour.clone(), 1.0);
+                set_source(cr, *hl_colour, 1.0);
                 cr.set_line_width(1.0);
                 cr.stroke();
             }
@@ -587,7 +595,7 @@ fn draw_timeline(
         // Progress indicator at end of lane.
         if lane.progress > 0 {
             let prog_x = axis_x + _day_span * x_scale;
-            set_source(cr, accent.clone(), 1.0);
+            set_source(cr, *accent, 1.0);
             cr.set_line_width(2.0);
             cr.move_to(prog_x, lane_y - 8.0);
             cr.line_to(prog_x, lane_y + 8.0);

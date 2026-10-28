@@ -11,6 +11,7 @@ use pango::{FontDescription, Layout, Weight};
 
 use relm4::prelude::*;
 use std::cell::RefCell;
+use std::cmp::Reverse;
 use std::f64::consts::PI;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -308,7 +309,6 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
         }
 
         let mut order: Vec<usize> = (0..positions.len()).collect();
-        #[allow(clippy::sort_key)]
         order.sort_by(|a, b| {
             positions[*a]
                 .rz
@@ -393,7 +393,7 @@ fn build_sphere_words(terms: &[(String, i64)]) -> Vec<SphereWord> {
         });
     }
 
-    words.sort_by(|a, b| b.count.cmp(&a.count));
+    words.sort_by_key(|w| Reverse(w.count));
     words
 }
 

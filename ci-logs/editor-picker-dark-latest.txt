@@ -1,2 +1,173 @@
-(no editor-picker-dark report produced)
---- run 40661739542 ---
+=== kalam screenshot run ===
+books=20 out=ci-shots-editor-picker-dark settle=20 output=1600x1200
+config home: /home/runner/work/kalam/kalam/ci-shots-editor-picker-dark/config-home
+binary: 74746520 bytes
+
+=== seeding 20 books ===
+seed-library: 20 books, 18 covers -> /tmp/kalam-ci-data/kalam
+
+=== starting headless sway ===
+sway binary: /usr/bin/sway sway version 1.11
+SWAYSOCK=/run/user/1001/sway-ipc.1001.10157.sock
+sway up: {
+  "human_readable": "1.11",
+  "variant": "sway",
+  "major": 1,
+  "minor": 11,
+  "patch": 0,
+  "loaded_config_file_name
+WAYLAND_DISPLAY=wayland-1
+
+=== launching kalam ===
+requested route: editor
+requested theme: terracotta-dark
+requested dialog: <none>
+requested series view: <remembered>
+requested settings pane: <default>
+requested reader action: <none>
+requested comic action: <none>
+requested PDF action: <none>
+settings fixture: 0 empty-dicts=0
+windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
+readiness: min=2s max=30s stable_max_changed=0.5%
+readiness: route and window seen after 1s
+toplevel windows seen: 1
+  shot: 01-editor (127392 bytes)
+focused: 1
+  shot: 02-editor-settling (127392 bytes)
+  shot: 03-editor-settled (stable after 3s)
+navigation: app accepted route 'editor'
+navigation: 'editor' is not a grid page; no grid_build expected
+readiness: Home seen after 1s
+  shot: 04-home-for-comparison (79629 bytes)
+readiness: Home stable after 3s
+navigation: 'editor' differs from Home -- the page really did change
+navigation: OK -- the images below are 'editor'
+
+=== timing lines from the app ===
+  [timing] startup_fonts           4.2 ms
+  [timing] startup_gtk_init       78.7 ms
+  [timing] startup_splash_show      1.8 ms
+  [timing] icons_write             0.2 ms
+  [timing] icons_theme             0.1 ms
+  [timing] icons_init              0.3 ms
+  [timing] startup_splash_pump    123.2 ms
+  [timing] startup_libraries       0.4 ms
+  [timing] startup_db_open        10.5 ms
+  [timing] startup_theme          95.8 ms
+  [timing] pre_run               314.8 ms
+  [timing] route_open:home         0.4 ms
+  [timing] startup_first_page      0.4 ms
+  [timing] service_home            2.4 ms
+  [timing] init_done             351.2 ms
+  [timing] window_shown          353.7 ms
+  [timing] covers_queued            11
+  [timing] home_fill               2.2 ms
+  [timing] page_cache_miss           1
+  [timing] route_open:editor       0.8 ms
+  [timing] render_backend     GskCairoRenderer
+  [timing] frame_after:startup_fonts    362.3 ms
+  [timing] frame_after:startup_gtk_init    283.6 ms
+  [timing] frame_after:startup_splash_show    281.7 ms
+  [timing] frame_after:icons_write    277.1 ms
+  [timing] frame_after:icons_theme    277.0 ms
+  [timing] frame_after:icons_init    277.0 ms
+  [timing] frame_after:startup_splash_pump    158.5 ms
+  [timing] frame_after:startup_libraries    158.1 ms
+  [timing] frame_after:startup_db_open    147.6 ms
+  [timing] frame_after:startup_theme     51.7 ms
+  [timing] frame_after:pre_run     51.7 ms
+  [timing] frame_after:route_open:home     50.6 ms
+  [timing] frame_after:startup_first_page     50.6 ms
+  [timing] frame_after:service_home     48.1 ms
+  [timing] frame_after:init_done     15.3 ms
+  [timing] frame_after:window_shown     12.8 ms
+  [timing] frame_after:home_fill      9.8 ms
+  [timing] frame_after:route_open:editor      8.7 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      0.3 ms
+  [timing] frame_after:covers_gap      0.3 ms
+  [timing] frame_after:covers_land      0.3 ms
+  [timing] frame_after:covers_gap      0.3 ms
+  [timing] frame_after:covers_land      0.2 ms
+  [timing] frame_after:covers_gap      0.2 ms
+  [timing] frame_after:covers_land      0.2 ms
+  [timing] frame_after:covers_gap      0.2 ms
+  [timing] frame_after:covers_land      0.1 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      0.7 ms
+  [timing] frame_after:covers_gap      0.7 ms
+  [timing] frame_after:covers_land      0.6 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_decoded           11
+  [timing] covers_thumb              2
+  [timing] covers_full               9
+  [timing] covers_decode          74.5 ms
+  [timing] covers_decode_max      10.3 ms
+  [timing] covers_land             0.1 ms
+  [timing] thumbs_backfilled        18
+  [timing] frame_after:covers_land     78.4 ms
+  [timing] frame_after:covers_land     66.8 ms
+  [timing] frame_after:covers_land     60.7 ms
+  [timing] frame_after:covers_decode     54.5 ms
+  [timing] frame_after:covers_decode_max     54.5 ms
+  [timing] frame_after:covers_land     54.4 ms
+  [timing] thumbs_backfill_done       18
+  [timing] startup_dicts        1776.9 ms
+
+=== main-thread stalls (roadmap 7.1 watchdog) ===
+  (none -- no UI-loop block over ~100 ms was detected)
+
+=== screenshot pixel sample ===
+  low colour is a cover warning only on a seeded library-grid route.
+  01-editor.png: 1600x1200  coloured=0.1%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
+  02-editor-settling.png: 1600x1200  coloured=0.1%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
+  03-editor-settled.png: 1600x1200  coloured=0.1%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
+  04-home-for-comparison.png: 1600x1200  coloured=20.8%  lit=100.0%
+  (numbers only -- no threshold is enforced yet; see the docstring)
+
+=== screenshot fingerprints ===
+  41995ace31a870b4397c62f46b544c8b  ci-shots-editor-picker-dark/01-editor.png
+  41995ace31a870b4397c62f46b544c8b  ci-shots-editor-picker-dark/02-editor-settling.png
+  41995ace31a870b4397c62f46b544c8b  ci-shots-editor-picker-dark/03-editor-settled.png
+  e03f09bbe4b015ee1a193679bd911207  ci-shots-editor-picker-dark/04-home-for-comparison.png
+
+=== app stderr (non-timing lines) ===
+  
+  (process:10213): Gtk-WARNING **: 09:21:53.851: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  kalam: KALAM_THEME=terracotta-dark — applying terracotta-dark for this run (not saved)
+  kalam: KALAM_ROUTE=editor — navigating
+
+=== peak memory ===
+books=20 peak_rss_kb=183776 peak_rss_mb=179
+
+=== shutting down ===
+
+=== artifacts ===
+  total 508
+  drwxr-xr-x  3 runner runner   4096 Oct 28 09:21 .
+  drwxr-xr-x 35 runner runner   4096 Oct 28 09:21 ..
+  -rw-r--r--  1 runner runner 127392 Oct 28 09:21 01-editor.png
+  -rw-r--r--  1 runner runner 127392 Oct 28 09:21 02-editor-settling.png
+  -rw-r--r--  1 runner runner 127392 Oct 28 09:21 03-editor-settled.png
+  -rw-r--r--  1 runner runner  79629 Oct 28 09:21 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner   4096 Oct 28 09:21 config-home
+  -rw-r--r--  1 runner runner      0 Oct 28 09:21 grim.log
+  -rw-r--r--  1 runner runner   6338 Oct 28 09:21 kalam-home.log
+  -rw-r--r--  1 runner runner   3896 Oct 28 09:21 kalam.log
+  -rw-r--r--  1 runner runner   6848 Oct 28 09:22 report.txt
+  -rw-r--r--  1 runner runner     88 Oct 28 09:21 sway.log
+  -rw-r--r--  1 runner runner   7185 Oct 28 09:21 tree.json
+--- run 40662206708 ---

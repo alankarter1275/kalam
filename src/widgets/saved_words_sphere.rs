@@ -298,7 +298,6 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
         let state = draw_state.borrow();
         let positions = &state.positions;
         let hovered = state.hovered_word;
-        drop(state);
 
         set_source(cr, bg, 1.0);
         cr.paint();
@@ -448,7 +447,7 @@ fn draw_word(
         }
     };
     desc.set_weight(w);
-    layout.set_font_description(Some(&desc));
+    pango::LayoutExt::set_font_description(&layout, Some(&desc));
     layout.set_text(&word.word, -1);
 
     let (w_pix, h_pix) = layout.pixel_size();
@@ -468,7 +467,7 @@ fn draw_word(
     let b = if is_hovered { accent.blue() } else { text.blue() };
     cr.set_source_rgba(r, g, b, alpha);
 
-    show_layout(cr, &layout);
+    pangocairo::functions::show_layout(cr, &layout);
 
     cr.restore();
 }

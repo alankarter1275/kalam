@@ -16,17 +16,17 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/all_books.rs:609:28: [1m[91merror[E0308][0m: mismatched types: expected `&MenuButton`, found `&AllBooksModelWidgets`
-src/pages/all_books.rs:612:27: [1m[91merror[E0308][0m: mismatched types: expected `&MenuButton`, found `&AllBooksModelWidgets`
-src/pages/all_books.rs:615:30: [1m[91merror[E0308][0m: mismatched types: expected `&Box`, found `AllBooksModelWidgets`
-src/pages/all_books.rs:724:38: [1m[91merror[E0308][0m: mismatched types: expected `&Box`, found `&mut AllBooksModelWidgets`
-src/pages/all_books.rs:739:38: [1m[91merror[E0308][0m: mismatched types: expected `&Box`, found `&mut AllBooksModelWidgets`
-src/pages/all_books.rs:754:38: [1m[91merror[E0308][0m: mismatched types: expected `&Box`, found `&mut AllBooksModelWidgets`
-src/pages/all_books.rs:761:38: [1m[91merror[E0308][0m: mismatched types: expected `&Box`, found `&mut AllBooksModelWidgets`
-src/pages/all_books.rs:1563:21: [1m[91merror[E0507][0m: cannot move out of `name`, a captured variable in an `Fn` closure: `name` is moved here
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+src/pages/all_books.rs:712:48: [1m[91merror[0m: unused variable: `shelf_id`: help: try ignoring the field: `shelf_id: _`
+src/pages/all_books.rs:59:5: [1m[91merror[0m: variant `FilterToggle` is never constructed
+src/pages/all_books.rs:1562:17: [1m[91merror[0m: this let-binding has unit value
+src/pages/all_books.rs:1584:17: [1m[91merror[0m: this let-binding has unit value
+src/pages/all_books.rs:1605:9: [1m[91merror[0m: this let-binding has unit value
+src/pages/all_books.rs:1610:9: [1m[91merror[0m: this let-binding has unit value
+src/pages/all_books.rs:1615:9: [1m[91merror[0m: this let-binding has unit value
+src/pages/all_books.rs:1647:17: [1m[91merror[0m: this let-binding has unit value
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 8 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 8 previous errors

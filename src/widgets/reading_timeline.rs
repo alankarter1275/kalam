@@ -7,7 +7,8 @@
 //! The open card is a Gtk.Revealer below the canvas; clicking a session
 //! reveals it with that book's details.
 
-use crate::db::{Catalog, TimelineLane, TimelineSession};
+use crate::db::history::{TimelineLane, TimelineSession};
+use crate::db::Catalog;
 use crate::widgets::paint::{color_probe, probe_color, rounded_rect, set_source};
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -60,6 +61,17 @@ pub struct ReadingTimelineModel {
     x_scale: f64,
     open_book: Option<i64>,
     draw_state: Rc<RefCell<TimelineDrawState>>,
+}
+
+/// Colour probes that must live in the widget tree so their resolved
+/// colours can be read back by the Cairo draw function.
+struct TimelineProbes {
+    accent: gtk::Label,
+    border: gtk::Label,
+    text: gtk::Label,
+    text_dim: gtk::Label,
+    bg: gtk::Label,
+    hl: [gtk::Label; 5],
 }
 
 #[relm4::component(pub)]
@@ -160,7 +172,40 @@ impl Component for ReadingTimelineModel {
         };
         let widgets = view_output!();
 
-        setup_canvas(&widgets.canvas, &model, draw_state);
+        // Colour probes must be in the widget tree for their resolved
+        // colours to be readable by the Cairo draw function. Add them as
+        // hidden labels on the root box.
+        let probes = TimelineProbes {
+            accent: color_probe("kalam-ui-token-accent"),
+            border: color_probe("kalam-ui-token-border"),
+            text: color_probe("kalam-ui-token-text"),
+            text_dim: color_probe("kalam-ui-token-text-dim"),
+            bg: color_probe("kalam-ui-token-bg"),
+            hl: [
+                color_probe("kalam_hl_yellow"),
+                color_probe("kalam_hl_green"),
+                color_probe("kalam_hl_blue"),
+                color_probe("kalam_hl_pink"),
+                color_probe("kalam_hl_orange"),
+            ],
+        };
+        let all_probes: Vec<&gtk::Label> = vec![
+            &probes.accent,
+            &probes.border,
+            &probes.text,
+            &probes.text_dim,
+            &probes.bg,
+            &probes.hl[0],
+            &probes.hl[1],
+            &probes.hl[2],
+            &probes.hl[3],
+            &probes.hl[4],
+        ];
+        for probe in all_probes {
+            _root.append(probe);
+        }
+
+        setup_canvas(&widgets.canvas, &model, &probes, draw_state);
         setup_interactions(&widgets.canvas, &model, &sender, draw_state);
 
         ComponentParts { model, widgets }
@@ -192,29 +237,9 @@ impl Component for ReadingTimelineModel {
 fn setup_canvas(
     canvas: &gtk::DrawingArea,
     model: &ReadingTimelineModel,
+    probes: &TimelineProbes,
     draw_state: Rc<RefCell<TimelineDrawState>>,
 ) {
-    // Colour probes must live in the same widget tree as the drawing.
-    let accent_probe = color_probe("kalam-ui-token-accent");
-    let border_probe = color_probe("kalam-ui-token-border");
-    let text_probe = color_probe("kalam-ui-token-text");
-    let text_dim_probe = color_probe("kalam-ui-token-text-dim");
-    let bg_probe = color_probe("kalam-ui-token-bg");
-    canvas.add_overlay(&accent_probe);
-    canvas.add_overlay(&border_probe);
-    canvas.add_overlay(&text_probe);
-    canvas.add_overlay(&text_dim_probe);
-    canvas.add_overlay(&bg_probe);
-
-    // One probe per highlight colour for the five timeline line colours.
-    let hl_probes: Vec<gtk::Label> = HIGHLIGHT_CSS_CLASSES
-        .iter()
-        .map(|cls| color_probe(cls))
-        .collect();
-    for probe in &hl_probes {
-        canvas.add_overlay(probe);
-    }
-
     let lanes = model.lanes.clone();
     let day_min = model.day_min;
     let day_max = model.day_max;
@@ -227,13 +252,13 @@ fn setup_canvas(
             return;
         }
 
-        let accent = probe_color(&accent_probe);
-        let border = probe_color(&border_probe);
-        let text = probe_color(&text_probe);
-        let text_dim = probe_color(&text_dim_probe);
-        let bg = probe_color(&bg_probe);
+        let accent = probe_color(&probes.accent);
+        let border = probe_color(&probes.border);
+        let text = probe_color(&probes.text);
+        let text_dim = probe_color(&probes.text_dim);
+        let bg = probe_color(&probes.bg);
 
-        let hl_colours: Vec<gtk::gdk::RGBA> = hl_probes.iter().map(probe_color).collect();
+        let hl_colours: Vec<gtk::gdk::RGBA> = probes.hl.iter().map(probe_color).collect();
 
         let state = draw_state.borrow();
         let offset = state.scroll_offset;
@@ -325,18 +350,16 @@ fn setup_interactions(
     let s = sender.clone();
     let ds = draw_state.clone();
     key.connect_key_pressed(move |_controller, keyval, _keycode, _state| {
-        use gdk::enums::key::*;
-        let activated = matches!(keyval, Return | KP_Enter);
+        let activated = keyval == gtk::gdk::Key::Return
+            || keyval == gtk::gdk::Key::KP_Enter;
         if activated {
             let state = ds.borrow();
             if let Some(book_id) = state.hovered_book {
                 drop(state);
                 s.input(ReadingTimelineMsg::SessionClicked { book_id }).ok();
-            } else {
-                drop(state);
             }
         }
-        gtk::Inhibit(false)
+        false
     });
     canvas.add_controller(key);
 }
@@ -356,8 +379,7 @@ fn hit_test_lane(
     let axis_x = AXIS_WIDTH as f64;
     let day_span = (day_max - day_min).max(1) as f64;
 
-    for lane in lanes.iter() {
-        let lane_index = lanes.iter().position(|l| l.book_id == lane.book_id).unwrap_or(0);
+    for (lane_index, lane) in lanes.iter().enumerate() {
         let lane_y = (lane_index as f64) * (LANE_HEIGHT + LANE_GAP) as f64
             + LANE_GAP as f64
             + HEADER_SPACE;
@@ -481,24 +503,8 @@ fn draw_timeline(
     }
 
     let axis_x = AXIS_WIDTH as f64 + scroll_offset;
-    let plot_width = width - axis_x - scroll_offset;
+    let plot_width = (width as f64) - axis_x - scroll_offset;
     let day_span = (day_max - day_min).max(1) as f64;
-
-    // ── Vertical date axis labels ─────────────────────────────────────
-    cr.set_font_size(11.0);
-    set_source(cr, text_dim.clone(), 1.0);
-
-    // Draw day ticks at regular intervals.
-    let tick_count = 8;
-    for i in 0..=tick_count {
-        let frac = i as f64 / tick_count as f64;
-        let day = day_min as f64 + frac * day_span;
-        let x = axis_x + frac * plot_width;
-        let label = day_num_to_label(day as i64);
-
-        cr.move_to(x, 18.0);
-        cr.show_text(&label);
-    }
 
     // ── Today vertical line ───────────────────────────────────────────
     if today_day >= day_min && today_day <= day_max {
@@ -506,7 +512,7 @@ fn draw_timeline(
         set_source(cr, accent.clone(), 1.0);
         cr.set_line_width(TODAY_LINE_THICKNESS);
         cr.move_to(today_x, 30.0);
-        cr.line_to(today_x, height);
+        cr.line_to(today_x, height as f64);
         cr.stroke();
     }
 
@@ -519,32 +525,11 @@ fn draw_timeline(
         let is_open = open_book == Some(lane.book_id);
         let is_hovered = hovered_book == Some(lane.book_id);
 
-        // Lane label (book title + authors) on the axis side.
-        cr.set_font_size(12.0);
-        set_source(cr, text.clone(), 1.0);
-        cr.move_to(8.0, lane_y + SEGMENT_HEIGHT / 2.0 + 4.0);
-        let title = if lane.title.len() > 28 {
-            format!("{}…", &lane.title[..28])
-        } else {
-            lane.title.clone()
-        };
-        cr.show_text(&title);
-
-        cr.set_font_size(10.0);
-        set_source(cr, text_dim.clone(), 1.0);
-        cr.move_to(8.0, lane_y + SEGMENT_HEIGHT / 2.0 + 15.0);
-        let authors = if lane.authors.len() > 24 {
-            format!("{}…", &lane.authors[..24])
-        } else {
-            lane.authors.clone()
-        };
-        cr.show_text(&authors);
-
         // Lane background when open or hovered.
         if is_open || is_hovered {
             let hover_bg = if is_open { accent } else { border };
             set_source(cr, hover_bg.clone(), if is_open { 0.15 } else { 0.08 });
-            cr.rectangle(0.0, lane_y - 22.0, width, LANE_HEIGHT as f64);
+            cr.rectangle(0.0, lane_y - 22.0, width as f64, LANE_HEIGHT as f64);
             cr.fill();
         }
 

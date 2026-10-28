@@ -127,7 +127,8 @@ impl Component for LibraryPageModel {
                 // child of the body, right after the header that
                 // apply_snapshot just built.
                 if let Some(ctrl) = &self.timeline_ctrl {
-                    widgets.body.insert_child_after(&ctrl.widget(), None);
+                    let widget = ctrl.widget().upcast::<gtk::Widget>();
+                    widgets.body.insert_child_after(&widget, None);
                 }
             }
             LibraryMsg::TimelineOpenBook { book_id } => {

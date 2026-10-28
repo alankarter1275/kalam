@@ -346,15 +346,15 @@ fn setup_interactions(
     // Horizontal drag to scroll.
     let drag = gtk::GestureDrag::new();
     let ds = draw_state.clone();
-    let canvas_for_draw = canvas.clone();
-    drag.connect_update(move |offset_x, offset_y| {
+    drag.connect_update(move |_gesture, offset_x, offset_y| {
         let _ = offset_y;
         let mut state = ds.borrow_mut();
         state.scroll_offset += offset_x;
         let max_scroll = ((MIN_TIMELINE_WIDTH as f64) * 0.5).max(0.0);
         state.scroll_offset = state.scroll_offset.clamp(-max_scroll, 0.0);
         drop(state);
-        canvas_for_draw.queue_draw();
+        let widget = _gesture.widget().unwrap();
+        widget.queue_draw();
     });
     canvas.add_controller(drag);
 

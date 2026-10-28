@@ -420,7 +420,6 @@ impl Component for AllBooksModel {
             }
 
             // Floating bulk bar (§49): bottom centre, 48 high, 32 up from bottom.
-            #[name = "selection_bar"]
             add_overlay = &gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_spacing: 8,
@@ -1166,7 +1165,6 @@ impl Component for AllBooksModel {
         if self.search_mode == SearchMode::Content {
             widgets.sort_box.set_visible(false);
             widgets.select_btn.set_visible(false);
-            widgets.selection_bar.set_visible(false);
             widgets.search.set_placeholder_text(Some("Search inside book contents (phrases, quotes, names)…"));
             widgets.mode_meta_btn.set_active(false);
             widgets.mode_content_btn.set_active(true);
@@ -1174,7 +1172,6 @@ impl Component for AllBooksModel {
         } else {
             widgets.sort_box.set_visible(true);
             widgets.select_btn.set_visible(true);
-            widgets.selection_bar.set_visible(self.selection_mode);
             widgets.search.set_placeholder_text(Some("Search title, author, tag:fantasy, status:unread, rating:>3…"));
             widgets.mode_meta_btn.set_active(true);
             widgets.mode_content_btn.set_active(false);

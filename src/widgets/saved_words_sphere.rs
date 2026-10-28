@@ -295,7 +295,7 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
 
         let state = draw_state.borrow();
         let hovered = state.hovered_word;
-        let positions = &state.positions;
+        let positions = state.positions.clone();
         drop(state);
 
         set_source(cr, bg, 1.0);

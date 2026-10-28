@@ -336,8 +336,13 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
             let b = if is_hovered { accent.blue() } else { text.blue() };
             cr.set_source_rgba(r, g, b, alpha);
 
-            crate::widgets::paint::rounded_rect(cr, 0.0, 0.0, w_pix, h_pix, 2.0);
-            cr.clip();
+            cr.new_sub_path();
+            cr.move_to(0.0, 0.0);
+            cr.line_to(w_pix, 0.0);
+            cr.line_to(w_pix, h_pix);
+            cr.line_to(0.0, h_pix);
+            cr.close_path();
+            let _ = cr.fill();
             cr.paint();
 
             cr.restore();

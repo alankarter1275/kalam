@@ -16,11 +16,7 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/all_books.rs:1619:1: [1m[91merror[0m: this function has too many arguments (9/7)
-src/widgets/book_row.rs:1076:16: [1m[91merror[0m: manual implementation of `.is_multiple_of()`: help: replace with: `!rating.is_multiple_of(2)`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 13.97s

@@ -542,14 +542,6 @@ button.kalam-author-link-reader:hover {
     filter: brightness(1.08);
 }
 
-/* Label inside the All Books "+ Import EPUB" MenuButton — styled to match
-   the filled primary pill. */
-.kalam-primary-btn-label {
-    color: @kalam_bg;
-    font-weight: 700;
-    font-size: 0.9rem;
-}
-
 .kalam-secondary-btn {
     background: @kalam_surface_2;
     color: @kalam_text;

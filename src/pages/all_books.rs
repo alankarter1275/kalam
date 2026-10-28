@@ -323,21 +323,12 @@ impl Component for AllBooksModel {
 
                 #[name = "add_btn"]
                 gtk::MenuButton {
-                    set_child: Some(&gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 6,
-                        set_halign: gtk::Align::Center,
-                        set_valign: gtk::Align::Center,
-                        gtk::Label {
-                            #[watch]
-                            set_label: if model.importing {
-                                "Importing…"
-                            } else {
-                                "+ Import EPUB"
-                            },
-                            add_css_class: "kalam-primary-btn-label",
-                        },
-                    }),
+                    #[watch]
+                    set_label: if model.importing {
+                        "Importing…"
+                    } else {
+                        "+ Import EPUB"
+                    },
                     add_css_class: "kalam-primary-btn",
                     set_always_show_arrow: false,
                     #[watch]
@@ -806,11 +797,12 @@ impl Component for AllBooksModel {
             AllBooksMsg::ShelvesPopoverShelfSelected(name) => {
                 let chip = format!("shelf:{name}");
                 if !self.filter_chips.contains(&chip) {
+                    let chip_clone = chip.clone();
                     self.filter_chips.push(chip);
                     self.query = if self.query.trim().is_empty() {
-                        chip.clone()
+                        chip_clone
                     } else {
-                        format!("{} {}", self.query, chip)
+                        format!("{} {}", self.query, chip_clone)
                     };
                     self.reload(&sender);
                 }
@@ -1722,9 +1714,10 @@ fn build_shelves_popover(
     model: &AllBooksModel,
 ) {
     let menu = menu_popover(MenuWidth::Wide);
+    let s = sender.clone();
 
     menu.add_item("All books", move || {
-        let _ = sender.input(AllBooksMsg::ShelvesPopoverShelfSelected("All books".to_string()));
+        let _ = s.input(AllBooksMsg::ShelvesPopoverShelfSelected("All books".to_string()));
     });
 
     // Shelves section with Manual/Smart sub-groups and counts.
@@ -1749,10 +1742,10 @@ fn build_shelves_popover(
 
     menu.add_separator();
     menu.add_item("Manage shelves…", move || {
-        let _ = sender.input(AllBooksMsg::ShelvesPopoverManageShelves);
+        let _ = s.input(AllBooksMsg::ShelvesPopoverManageShelves);
     });
     menu.add_item("New shelf…", move || {
-        let _ = sender.input(AllBooksMsg::ShelvesPopoverNewShelf);
+        let _ = s.input(AllBooksMsg::ShelvesPopoverNewShelf);
     });
 
     title_btn.set_popover(Some(&menu.popover()));

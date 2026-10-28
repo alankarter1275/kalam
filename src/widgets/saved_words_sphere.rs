@@ -5,8 +5,9 @@
 //! with inertia, slow automatic drift, and a hover popover for each word.
 
 use crate::db::Catalog;
-use crate::widgets::paint::color_probe;
+use crate::widgets::paint::{color_probe, probe_color, set_source};
 use gtk::prelude::*;
+use pango::{FontDescription, Layout, Weight};
 
 use relm4::prelude::*;
 use std::cell::RefCell;
@@ -280,14 +281,77 @@ impl Component for SavedWordsSphereModel {
 /// Attach the Cairo draw function to the sphere canvas. Called by the
 /// parent after launch, once the widget is realised.
 pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
-    let _draw_state = model.draw_state.clone();
-    let _words = model.words.clone();
-    let _probes = model.probes.clone();
+    let pc = canvas.pango_context();
+    let draw_state = model.draw_state.clone();
+    let words = model.words.clone();
+    let probes = model.probes.clone();
 
     canvas.set_draw_func(move |_area, cr, width, height| {
-        let _ = cr;
-        let _ = width;
-        let _ = height;
+        if width <= 0 || height <= 0 {
+            return;
+        }
+
+        let accent = probe_color(&probes.accent);
+        let text = probe_color(&probes.text);
+        let bg = probe_color(&probes.bg);
+
+        compute_positions(&words, &draw_state, STAGE_W, STAGE_H);
+
+        let state = draw_state.borrow();
+        let hovered = state.hovered_word;
+        let positions = state.positions.clone();
+        drop(state);
+
+        set_source(cr, bg, 1.0);
+
+        if words.is_empty() {
+            return;
+        }
+
+        let mut order: Vec<usize> = (0..positions.len()).collect();
+        order.sort_by(|a, b| {
+            positions[*a]
+                .rz
+                .partial_cmp(&positions[*b].rz)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        for &idx in &order {
+            if idx >= words.len() || idx >= positions.len() {
+                continue;
+            }
+            let is_hovered = hovered == Some(idx);
+            let word = &words[idx];
+            let pos = &positions[idx];
+
+            cr.translate(pos.px - pos.size / 2.0, pos.py - pos.size / 2.0);
+
+            let layout = Layout::new(&pc);
+            let mut desc = FontDescription::from_string("Playfair Display");
+            let size = if is_hovered { 24.0 } else { pos.size };
+            let pango_size = (size * 1024.0) as i32;
+            desc.set_size(pango_size);
+            let w = if is_hovered {
+                Weight::Bold
+            } else {
+                match word.weight {
+                    400 => Weight::Normal,
+                    500 => Weight::Medium,
+                    _ => Weight::Bold,
+                }
+            };
+            desc.set_weight(w);
+            layout.set_font_description(Some(&desc));
+            layout.set_text(&word.word);
+
+            let word_color = if is_hovered { accent } else { text };
+            set_source(cr, word_color, pos.alpha);
+
+            pangocairo::functions::update_layout(cr, &layout);
+            pangocairo::functions::show_layout(cr, &layout);
+
+            cr.translate(-pos.px + pos.size / 2.0, -pos.py + pos.size / 2.0);
+        }
     });
 }
 

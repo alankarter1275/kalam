@@ -447,8 +447,8 @@ fn draw_word(
         }
     };
     desc.set_weight(w);
-    pango::LayoutExt::set_font_description(&layout, Some(&desc));
-    layout.set_text(&word.word, -1);
+    layout.set_font_description(Some(&desc));
+    layout.set_text(&word.word);
 
     let (w_pix, h_pix) = layout.pixel_size();
     let w_pix = w_pix as f64;
@@ -467,7 +467,7 @@ fn draw_word(
     let b = if is_hovered { accent.blue() } else { text.blue() };
     cr.set_source_rgba(r, g, b, alpha);
 
-    pangocairo::functions::show_layout(cr, &layout);
+    show_layout(cr, &layout);
 
     cr.restore();
 }

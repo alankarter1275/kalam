@@ -76,8 +76,6 @@ pub enum AllBooksMsg {
     /// "Import a folder…" from the import menu.
     ImportMenuImportFolder,
     SearchModeChanged(SearchMode),
-    ImportMenuImportFolder,
-    SearchModeChanged(SearchMode),
     SortChanged(SortKey),
     PickFiles,
     FilesChosen(Vec<PathBuf>),

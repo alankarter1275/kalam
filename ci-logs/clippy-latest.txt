@@ -1,6 +1,4 @@
-src/pages/all_books.rs:265:53: [1m[91merror[E0599][0m: no variant, associated function, or constant named `OpenShelves` found for enum `pages::all_books::AllBooksMsg` in the current scope: variant, associated function, or constant not found in `pages::all_books::AllBooksMsg`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -18,19 +16,16 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
 [1m[92m    Checking[0m unicode-width v0.2.3
 [1m[92m    Checking[0m upon v0.10.0
-[1m[92m    Checking[0m epub-builder v0.8.3
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
+[1m[92m    Checking[0m epub-builder v0.8.3
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/all_books.rs:265:53: [1m[91merror[E0599][0m: no variant, associated function, or constant named `OpenShelves` found for enum `pages::all_books::AllBooksMsg` in the current scope: variant, associated function, or constant not found in `pages::all_books::AllBooksMsg`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
---- run 40649046664 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 14.97s
+--- run 40649662310 ---

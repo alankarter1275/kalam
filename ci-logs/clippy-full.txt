@@ -19,15 +19,9 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/widgets/book_row.rs:949:43: [1m[91merror[E0277][0m: the trait `glib::object::IsA<gio::ListModel>` is not implemented for `&gio::ListStore`: requires `&gio::ListStore` to be a GObject that can be statically cast to `gio::ListModel`
-src/widgets/book_row.rs:953:37: [1m[91merror[E0277][0m: the trait `glib::object::IsA<gtk4::SelectionModel>` is not implemented for `&gtk4::NoSelection`: requires `&gtk4::NoSelection` to be a GObject that can be statically cast to `gtk4::SelectionModel`
-src/widgets/book_row.rs:964:22: [1m[91merror[E0061][0m: this function takes 2 arguments but 0 arguments were supplied
-src/widgets/book_row.rs:965:26: [1m[91merror[E0308][0m: mismatched types: expected `Option<&str>`, found `&str`
-src/widgets/book_row.rs:967:16: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::TreeView>` is not implemented for `gtk4::ColumnViewColumn`: requires `gtk4::ColumnViewColumn` to be a GObject that can be statically cast to `gtk4::TreeView`
-src/widgets/book_row.rs:980:16: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::ListBoxRow>` is not implemented for `gtk4::ColumnViewColumn`: requires `gtk4::ColumnViewColumn` to be a GObject that can be statically cast to `gtk4::ListBoxRow`
-src/widgets/book_row.rs:1029:41: [1m[91merror[E0308][0m: mismatched types: expected `&i64`, found `Ref<'_, i64>`
-src/pages/all_books.rs:1661:13: [1m[91merror[E0382][0m: use of moved value: `s`: value used here after move
-src/pages/all_books.rs:1664:13: [1m[91merror[E0382][0m: use of moved value: `s`: value used here after move
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 9 previous errors
+src/pages/all_books.rs:1656:40: [1m[91merror[E0382][0m: use of moved value: `s`: value used here after move
+src/pages/all_books.rs:1659:31: [1m[91merror[E0382][0m: use of moved value: `s`: value used here after move
+src/widgets/book_row.rs:990:61: [1m[91merror[E0716][0m: temporary value dropped while borrowed: creates a temporary value which is freed while still in use
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 9 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors

@@ -1,25 +1,17 @@
-src/widgets/book_row.rs:544:47: [1m[91merror[E0425][0m: cannot find value `TEST_COLS` in this scope: not found in this scope
-src/widgets/book_row.rs:812:47: [1m[91merror[E0425][0m: cannot find value `TEST_COLS` in this scope: not found in this scope
-src/pages/all_books.rs:4:77: [1m[91merror[0m: unused import: `grid_cols_for`
-src/pages/all_books.rs:654:22: [1m[91merror[E0599][0m: no method named `connect_size_allocate` found for struct `gtk4::Box` in the current scope
-src/pages/comics.rs:1010:28: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
-src/pages/comics.rs:1036:28: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
-src/pages/shelf_detail.rs:342:20: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
-src/pages/tags.rs:672:16: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
+src/pages/all_books.rs:8:5: [1m[91merror[E0432][0m: unresolved import `gtk::WidgetExt`
+src/pages/all_books.rs:655:22: [1m[91merror[E0599][0m: no method named `connect_size_allocate` found for struct `gtk4::Box` in the current scope
 src/widgets/book_row.rs:1422:20: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1423:55: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1427:21: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1432:21: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
-src/widgets/book_row.rs:1489:17: [1m[91merror[E0061][0m: this function takes 1 argument but 2 arguments were supplied
-src/widgets/book_row.rs:1494:17: [1m[91merror[E0061][0m: this function takes 1 argument but 2 arguments were supplied
 src/widgets/book_row.rs:1539:23: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1575:20: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1577:20: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1579:20: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1582:20: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1584:13: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 8 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 20 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 12 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -43,27 +35,19 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/widgets/book_row.rs:544:47: [1m[91merror[E0425][0m: cannot find value `TEST_COLS` in this scope: not found in this scope
-src/widgets/book_row.rs:812:47: [1m[91merror[E0425][0m: cannot find value `TEST_COLS` in this scope: not found in this scope
-src/pages/all_books.rs:4:77: [1m[91merror[0m: unused import: `grid_cols_for`
-src/pages/all_books.rs:654:22: [1m[91merror[E0599][0m: no method named `connect_size_allocate` found for struct `gtk4::Box` in the current scope
-src/pages/comics.rs:1010:28: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
-src/pages/comics.rs:1036:28: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
-src/pages/shelf_detail.rs:342:20: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
-src/pages/tags.rs:672:16: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
+src/pages/all_books.rs:8:5: [1m[91merror[E0432][0m: unresolved import `gtk::WidgetExt`
+src/pages/all_books.rs:655:22: [1m[91merror[E0599][0m: no method named `connect_size_allocate` found for struct `gtk4::Box` in the current scope
 src/widgets/book_row.rs:1422:20: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1423:55: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1427:21: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1432:21: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
-src/widgets/book_row.rs:1489:17: [1m[91merror[E0061][0m: this function takes 1 argument but 2 arguments were supplied
-src/widgets/book_row.rs:1494:17: [1m[91merror[E0061][0m: this function takes 1 argument but 2 arguments were supplied
 src/widgets/book_row.rs:1539:23: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1575:20: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1577:20: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1579:20: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1582:20: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
 src/widgets/book_row.rs:1584:13: [1m[91merror[E0061][0m: this function takes 2 arguments but 1 argument was supplied
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 8 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 20 previous errors
---- run 40668980560 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 12 previous errors
+--- run 40669592063 ---

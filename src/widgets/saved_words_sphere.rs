@@ -244,7 +244,7 @@ impl Component for SavedWordsSphereModel {
             }
             drop(state);
             stage_clone.queue_draw();
-            true
+            glib::ControlFlow::Continue
         });
 
         ComponentParts { model, widgets }
@@ -437,19 +437,19 @@ fn draw_word(
     let layout = Layout::new(pc);
     let desc = FontDescription::from_string("Playfair Display");
     let size = if is_hovered { 24.0 } else { pos.size };
-    desc.set_size((size * 1024.0) as i32);
+    let pango_size = (size * 1024.0) as i32;
+    desc.set_size(pango_size);
     let w = if is_hovered {
         Weight::Bold
     } else {
         match word.weight {
             400 => Weight::Normal,
             500 => Weight::Medium,
-            600 => Weight::SemiBold,
             _ => Weight::Bold,
         }
     };
     desc.set_weight(w);
-    layout.set_font_description(Some(&desc));
+    layout.set_font_description(Some(desc));
     layout.set_text(&word.word, -1);
 
     let (w_pix, h_pix) = layout.pixel_size();
@@ -464,9 +464,9 @@ fn draw_word(
     }
 
     let alpha = if is_hovered { 1.0 } else { pos.alpha };
-    let r = if is_hovered { accent.red } else { text.red };
-    let g = if is_hovered { accent.green } else { text.green };
-    let b = if is_hovered { accent.blue } else { text.blue };
+    let r = if is_hovered { accent.red() } else { text.red() };
+    let g = if is_hovered { accent.green() } else { text.green() };
+    let b = if is_hovered { accent.blue() } else { text.blue() };
     cr.set_source_rgba(r, g, b, alpha);
 
     show_layout(cr, &layout);

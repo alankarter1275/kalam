@@ -104,6 +104,18 @@ impl Component for LibraryPageModel {
         loading.set_halign(gtk::Align::Start);
         widgets.body.append(&loading);
 
+        // Saved-words sphere (§52): Cairo/Pango widget on a 520×480 stage.
+        // Launched before the timeline so `catalog` can be cloned first.
+        let sphere_ctrl = SavedWordsSphereModel::builder()
+            .launch(catalog.clone())
+            .forward(sender.input_sender(), |msg| {
+                match msg {
+                    SavedWordsSphereOut::OpenSavedWord { word } => {
+                        LibraryMsg::OpenSavedWord { word }
+                    }
+                }
+            });
+
         // Reading timeline (§51): Cairo-drawn widget with its own catalog
         // read on the UI thread (synchronous, like the history page's first
         // read). Forward clicks to open the book.
@@ -117,17 +129,6 @@ impl Component for LibraryPageModel {
                 }
             });
         // The timeline widget is added to the body once the snapshot loads.
-
-        // Saved-words sphere (§52): Cairo/Pango widget on a 520×480 stage.
-        let sphere_ctrl = SavedWordsSphereModel::builder()
-            .launch(catalog.clone())
-            .forward(sender.input_sender(), |msg| {
-                match msg {
-                    SavedWordsSphereOut::OpenSavedWord { word } => {
-                        LibraryMsg::OpenSavedWord { word }
-                    }
-                }
-            });
 
         let mut model = model;
         model.timeline_ctrl = Some(timeline_ctrl);

@@ -281,7 +281,7 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
     let words = model.words.clone();
     let probes = model.probes.clone();
 
-    canvas.set_draw_func(move |_area, cr, width, height| {
+    canvas.set_draw_func(move |_area, cr: &gtk::cairo::Context, width, height| {
         if width <= 0 || height <= 0 {
             return;
         }
@@ -336,13 +336,7 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
             let b = if is_hovered { accent.blue() } else { text.blue() };
             cr.set_source_rgba(r, g, b, alpha);
 
-            cr.new_sub_path();
-            cr.move_to(0.0, 0.0);
-            cr.line_to(w_pix, 0.0);
-            cr.line_to(w_pix, h_pix);
-            cr.line_to(0.0, h_pix);
-            cr.close_path();
-            let _ = cr.fill();
+            cr.paint();
             cr.paint();
 
             cr.restore();

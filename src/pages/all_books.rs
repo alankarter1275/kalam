@@ -1741,11 +1741,13 @@ fn build_shelves_popover(
     }
 
     menu.add_separator();
+    let s2 = s.clone();
     menu.add_item("Manage shelves…", move || {
-        let _ = s.input(AllBooksMsg::ShelvesPopoverManageShelves);
+        let _ = s2.input(AllBooksMsg::ShelvesPopoverManageShelves);
     });
+    let s3 = s.clone();
     menu.add_item("New shelf…", move || {
-        let _ = s.input(AllBooksMsg::ShelvesPopoverNewShelf);
+        let _ = s3.input(AllBooksMsg::ShelvesPopoverNewShelf);
     });
 
     title_btn.set_popover(Some(&menu.popover()));

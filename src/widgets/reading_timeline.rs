@@ -346,7 +346,7 @@ fn setup_interactions(
     // Horizontal drag to scroll.
     let drag = gtk::GestureDrag::new();
     let ds = draw_state.clone();
-    drag.connect_update(move |_gesture, offset_x, offset_y| {
+    drag.connect_drag_update(move |_gesture, offset_x, offset_y| {
         let _ = offset_y;
         let mut state = ds.borrow_mut();
         state.scroll_offset += offset_x;

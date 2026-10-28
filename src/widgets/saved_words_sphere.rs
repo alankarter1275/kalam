@@ -281,7 +281,7 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
     let words = model.words.clone();
     let probes = model.probes.clone();
 
-    canvas.set_draw_func(move |_area, cr, width, height| {
+    canvas.set_draw_func(move |_area, cr: &gtk::cairo::Context, width, height| {
         if width <= 0 || height <= 0 {
             return;
         }

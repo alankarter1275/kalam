@@ -204,7 +204,7 @@ impl Component for ReadingTimelineModel {
             root.append(probe);
         }
 
-        setup_canvas(&widgets.canvas, &model, &probes, draw_state);
+        setup_canvas(&widgets.canvas, &model, &probes, draw_state.clone());
         setup_interactions(&widgets.canvas, &model, &sender, draw_state);
 
         ComponentParts { model, widgets }

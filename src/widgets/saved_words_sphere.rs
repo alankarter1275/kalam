@@ -323,7 +323,7 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
             let w_pix = size * 0.6 * word.word.len() as f64;
             let h_pix = size;
 
-            cr.save();
+            let _ = cr.save();
             cr.translate(pos.px - w_pix / 2.0, pos.py - h_pix / 2.0);
 
             if word.vertical {
@@ -336,7 +336,7 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
             let b = if is_hovered { accent.blue() } else { text.blue() };
             cr.set_source_rgba(r, g, b, alpha);
 
-            cr.restore();
+            let _ = cr.restore();
         }
     });
 }

@@ -8,7 +8,7 @@ use crate::db::Catalog;
 use crate::widgets::paint::{color_probe, probe_color, set_source};
 use gtk::cairo::Context as CairoContext;
 use gtk::gdk::RGBA;
-use gtk::pango::{FontDescription, Layout, Weight};
+use pango::{FontDescription, Layout, Weight};
 use gtk::prelude::*;
 use pangocairo::functions::show_layout;
 
@@ -429,7 +429,7 @@ fn draw_word(
     cr: &CairoContext,
     word: &SphereWord,
     pos: &WordPosition,
-    pc: &gtk::pango::Context,
+    pc: &pango::Context,
     is_hovered: bool,
     accent: &RGBA,
     text: &RGBA,

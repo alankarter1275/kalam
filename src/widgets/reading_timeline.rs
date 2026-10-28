@@ -246,18 +246,32 @@ fn setup_canvas(
     let x_scale = model.x_scale;
     let open_book = model.open_book;
 
+    // Clone probes into the closure (GTK objects are ref-counted, cheap).
+    let accent_probe = probes.accent.clone();
+    let border_probe = probes.border.clone();
+    let text_probe = probes.text.clone();
+    let text_dim_probe = probes.text_dim.clone();
+    let bg_probe = probes.bg.clone();
+    let hl_probes: [gtk::Label; 5] = [
+        probes.hl[0].clone(),
+        probes.hl[1].clone(),
+        probes.hl[2].clone(),
+        probes.hl[3].clone(),
+        probes.hl[4].clone(),
+    ];
+
     canvas.set_draw_func(move |_area, cr, width, height| {
         if width <= 0 || height <= 0 {
             return;
         }
 
-        let accent = probe_color(&probes.accent);
-        let border = probe_color(&probes.border);
-        let text = probe_color(&probes.text);
-        let text_dim = probe_color(&probes.text_dim);
-        let bg = probe_color(&probes.bg);
+        let accent = probe_color(&accent_probe);
+        let border = probe_color(&border_probe);
+        let text = probe_color(&text_probe);
+        let text_dim = probe_color(&text_dim_probe);
+        let bg = probe_color(&bg_probe);
 
-        let hl_colours: Vec<gtk::gdk::RGBA> = probes.hl.iter().map(probe_color).collect();
+        let hl_colours: Vec<gtk::gdk::RGBA> = hl_probes.iter().map(probe_color).collect();
 
         let state = draw_state.borrow();
         let offset = state.scroll_offset;
@@ -332,15 +346,15 @@ fn setup_interactions(
     // Horizontal drag to scroll.
     let drag = gtk::GestureDrag::new();
     let ds = draw_state.clone();
-    drag.connect_update(move |_gesture, _sequence, offset_x, offset_y| {
+    let canvas_for_draw = canvas.clone();
+    drag.connect_update(move |offset_x, offset_y| {
         let _ = offset_y;
         let mut state = ds.borrow_mut();
         state.scroll_offset += offset_x;
         let max_scroll = ((MIN_TIMELINE_WIDTH as f64) * 0.5).max(0.0);
         state.scroll_offset = state.scroll_offset.clamp(-max_scroll, 0.0);
         drop(state);
-        let widget = _gesture.widget().unwrap();
-        widget.queue_draw();
+        canvas_for_draw.queue_draw();
     });
     canvas.add_controller(drag);
 
@@ -358,7 +372,7 @@ fn setup_interactions(
                 s.input(ReadingTimelineMsg::SessionClicked { book_id });
             }
         }
-        true
+        glib::Propagation::Proceed
     });
     canvas.add_controller(key);
 }

@@ -133,7 +133,7 @@ impl Component for LibraryPageModel {
                 // child of the body, right after the header that
                 // apply_snapshot just built.
                 if let Some(ctrl) = &self.timeline_ctrl {
-                    let widget: gtk::Widget = ctrl.widget().upcast();
+                    let widget: gtk::Widget = ctrl.widget().clone().upcast();
                     widgets.body.insert_child_after(&widget, None as Option<&gtk::Widget>);
                 }
             }

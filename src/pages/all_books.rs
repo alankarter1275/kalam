@@ -1714,10 +1714,12 @@ fn build_shelves_popover(
     model: &AllBooksModel,
 ) {
     let menu = menu_popover(MenuWidth::Wide);
-    let s = sender.clone();
+    let s_all = sender.clone();
+    let s_manage = sender.clone();
+    let s_new = sender.clone();
 
     menu.add_item("All books", move || {
-        let _ = s.input(AllBooksMsg::ShelvesPopoverShelfSelected("All books".to_string()));
+        let _ = s_all.input(AllBooksMsg::ShelvesPopoverShelfSelected("All books".to_string()));
     });
 
     // Shelves section with Manual/Smart sub-groups and counts.
@@ -1737,18 +1739,16 @@ fn build_shelves_popover(
                 },
             );
         }
-        menu.add_submenu("Shelves", shelf_menu);
-    }
 
     menu.add_separator();
-    let s2 = s.clone();
     menu.add_item("Manage shelves…", move || {
-        let _ = s2.input(AllBooksMsg::ShelvesPopoverManageShelves);
+        let _ = s_manage.input(AllBooksMsg::ShelvesPopoverManageShelves);
     });
-    let s3 = s.clone();
     menu.add_item("New shelf…", move || {
-        let _ = s3.input(AllBooksMsg::ShelvesPopoverNewShelf);
+        let _ = s_new.input(AllBooksMsg::ShelvesPopoverNewShelf);
     });
+        menu.add_submenu("Shelves", shelf_menu);
+    }
 
     title_btn.set_popover(Some(&menu.popover()));
 }

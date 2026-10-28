@@ -1650,14 +1650,17 @@ fn rebuild_list(
 
     if view_mode == ViewMode::List {
         let sel_set = selected_books.clone();
+        let s_open = s.clone();
+        let s_toggle = s.clone();
+        let s_sort = s.clone();
         let on_open = Rc::new(move |id| {
-            s.output(AllBooksOut::OpenBook { book_id: id }).ok();
+            s_open.output(AllBooksOut::OpenBook { book_id: id }).ok();
         });
         let on_toggle_select = Rc::new(move |id| {
-            s.input(AllBooksMsg::ToggleSelectBook(id));
+            s_toggle.input(AllBooksMsg::ToggleSelectBook(id));
         });
         let on_sort = Rc::new(move |col| {
-            s.input(AllBooksMsg::ListSortChanged(col));
+            s_sort.input(AllBooksMsg::ListSortChanged(col));
         });
         let list_view = build_book_list(
             books,

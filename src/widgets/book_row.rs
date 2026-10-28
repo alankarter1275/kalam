@@ -987,10 +987,18 @@ pub fn build_book_list(
                         .ok()
                         .map(|m| m.len())
                         .unwrap_or(0);
-                    text_cell(if bytes == 0 { "—" } else { &format_size(bytes) })
+                    let size = if bytes == 0 {
+                        "—".to_string()
+                    } else {
+                        format_size(bytes)
+                    };
+                    text_cell(&size)
                 }
                 ListColumn::Added => text_cell(&book.added_at),
-                ListColumn::Rating => text_cell(&rating_text(book.rating)),
+                ListColumn::Rating => {
+                    let rating = rating_text(book.rating);
+                    text_cell(&rating)
+                }
                 ListColumn::Status => progress_cell(book.progress),
             };
             row.append(&cell);

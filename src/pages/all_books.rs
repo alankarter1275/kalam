@@ -18,6 +18,7 @@ pub enum AllBooksOut {
     OpenReader { book_id: i64, chapter: Option<usize> },
     ComicSeries { series_name: String },
     /// The "All books" title button opens the shelves menu (§47).
+    #[allow(dead_code)]
     OpenShelves,
 }
 
@@ -123,6 +124,7 @@ pub enum AllBooksMsg {
     SelectAll,
     DeselectAll,
     /// Switch between Grid and List view (§47 toolbar: Grid / List).
+    #[allow(dead_code)]
     ViewModeChanged(ViewMode),
     /// Toggle one list-view column's visibility (§50 Columns menu).
     ListColumnToggled(ListColumn),

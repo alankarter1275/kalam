@@ -1,19 +1,4 @@
-src/widgets/saved_words_sphere.rs:19:7: [1m[91merror[0m: constant `STAGE_W` is never used
-src/widgets/saved_words_sphere.rs:20:7: [1m[91merror[0m: constant `STAGE_H` is never used
-src/widgets/saved_words_sphere.rs:26:7: [1m[91merror[0m: constant `MIN_SIZE` is never used
-src/widgets/saved_words_sphere.rs:28:7: [1m[91merror[0m: constant `MAX_SIZE` is never used
-src/widgets/saved_words_sphere.rs:31:7: [1m[91merror[0m: constant `DEPTH_SCALE_MIN` is never used
-src/widgets/saved_words_sphere.rs:32:7: [1m[91merror[0m: constant `DEPTH_SCALE_MAX` is never used
-src/widgets/saved_words_sphere.rs:35:7: [1m[91merror[0m: constant `OPACITY_BACK` is never used
-src/widgets/saved_words_sphere.rs:36:7: [1m[91merror[0m: constant `OPACITY_FRONT` is never used
-src/widgets/saved_words_sphere.rs:44:5: [1m[91merror[0m: fields `word`, `sx`, `sy`, `sz`, and `weight` are never read
-src/widgets/saved_words_sphere.rs:70:5: [1m[91merror[0m: field `positions` is never read
-src/widgets/saved_words_sphere.rs:76:5: [1m[91merror[0m: fields `px`, `py`, `size`, `alpha`, and `rz` are never read
-src/widgets/saved_words_sphere.rs:337:4: [1m[91merror[0m: function `compute_positions` is never used
-src/widgets/saved_words_sphere.rs:377:4: [1m[91merror[0m: function `rotate_point` is never used
-src/widgets/saved_words_sphere.rs:44:5: [1m[91merror[0m: field `word` is never read
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 13 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 12 previous errors
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -37,21 +22,5 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/widgets/saved_words_sphere.rs:19:7: [1m[91merror[0m: constant `STAGE_W` is never used
-src/widgets/saved_words_sphere.rs:20:7: [1m[91merror[0m: constant `STAGE_H` is never used
-src/widgets/saved_words_sphere.rs:26:7: [1m[91merror[0m: constant `MIN_SIZE` is never used
-src/widgets/saved_words_sphere.rs:28:7: [1m[91merror[0m: constant `MAX_SIZE` is never used
-src/widgets/saved_words_sphere.rs:31:7: [1m[91merror[0m: constant `DEPTH_SCALE_MIN` is never used
-src/widgets/saved_words_sphere.rs:32:7: [1m[91merror[0m: constant `DEPTH_SCALE_MAX` is never used
-src/widgets/saved_words_sphere.rs:35:7: [1m[91merror[0m: constant `OPACITY_BACK` is never used
-src/widgets/saved_words_sphere.rs:36:7: [1m[91merror[0m: constant `OPACITY_FRONT` is never used
-src/widgets/saved_words_sphere.rs:44:5: [1m[91merror[0m: fields `word`, `sx`, `sy`, `sz`, and `weight` are never read
-src/widgets/saved_words_sphere.rs:70:5: [1m[91merror[0m: field `positions` is never read
-src/widgets/saved_words_sphere.rs:76:5: [1m[91merror[0m: fields `px`, `py`, `size`, `alpha`, and `rz` are never read
-src/widgets/saved_words_sphere.rs:337:4: [1m[91merror[0m: function `compute_positions` is never used
-src/widgets/saved_words_sphere.rs:377:4: [1m[91merror[0m: function `rotate_point` is never used
-src/widgets/saved_words_sphere.rs:44:5: [1m[91merror[0m: field `word` is never read
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 13 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 12 previous errors
---- run 40770272304 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 24.31s
+--- run 40771238587 ---

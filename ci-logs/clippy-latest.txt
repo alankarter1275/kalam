@@ -1,6 +1,10 @@
-src/widgets/saved_words_sphere.rs:299:14: [1m[91merror[E0505][0m: cannot move out of `state` because it is borrowed: move out of `state` occurs here
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+src/widgets/saved_words_sphere.rs:53:5: [1m[91merror[0m: field `vertical` is never read
+src/widgets/saved_words_sphere.rs:93:5: [1m[91merror[0m: variant `OpenSavedWord` is never constructed
+src/widgets/saved_words_sphere.rs:108:5: [1m[91merror[0m: field `catalog` is never read
+src/widgets/saved_words_sphere.rs:392:5: [1m[91merror[0m: consider using `sort_by_key`
+src/widgets/saved_words_sphere.rs:412:18: [1m[91merror[0m: casting to the same type is unnecessary (`f64` -> `f64`): help: try: `(stage_w.min(stage_h) * 0.42)`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -21,11 +25,15 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/widgets/saved_words_sphere.rs:299:14: [1m[91merror[E0505][0m: cannot move out of `state` because it is borrowed: move out of `state` occurs here
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+src/widgets/saved_words_sphere.rs:53:5: [1m[91merror[0m: field `vertical` is never read
+src/widgets/saved_words_sphere.rs:93:5: [1m[91merror[0m: variant `OpenSavedWord` is never constructed
+src/widgets/saved_words_sphere.rs:108:5: [1m[91merror[0m: field `catalog` is never read
+src/widgets/saved_words_sphere.rs:392:5: [1m[91merror[0m: consider using `sort_by_key`
+src/widgets/saved_words_sphere.rs:412:18: [1m[91merror[0m: casting to the same type is unnecessary (`f64` -> `f64`): help: try: `(stage_w.min(stage_h) * 0.42)`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
---- run 40764251912 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
+--- run 40764895159 ---

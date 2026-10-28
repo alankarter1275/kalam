@@ -416,20 +416,14 @@ jobs:
       # palette's own bg now, so the two frames also prove the page
       # follows the app theme rather than a reading theme.
       - name: open a book with its chrome up (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'epub'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=139 OUT=ci-shots-reader-chrome-light SETTLE=25 ROUTE=read-1 \
             READER_ACTION=chrome THEME=terracotta-light \
             docs/ci/screenshot.sh
 
       - name: open a book with its chrome up (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'epub'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=139 OUT=ci-shots-reader-chrome-dark SETTLE=25 ROUTE=read-1 \
             READER_ACTION=chrome THEME=terracotta-dark \
@@ -441,30 +435,21 @@ jobs:
       # empty state rather than items; the Settings frame proves the
       # This-book card, the preview and the inset sections.
       - name: open the contents panel (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'epub'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=139 OUT=ci-shots-reader-contents SETTLE=25 ROUTE=read-1 \
             READER_ACTION=contents THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
       - name: open the notes panel (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'epub'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=139 OUT=ci-shots-reader-notes SETTLE=25 ROUTE=read-1 \
             READER_ACTION=notes THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
       - name: open the reader settings panel (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'epub'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=139 OUT=ci-shots-reader-settings SETTLE=25 ROUTE=read-1 \
             READER_ACTION=settings THEME=terracotta-dark \
@@ -475,20 +460,14 @@ jobs:
       # synthetic selection report; the annotation frame makes a real
       # highlight on the opening chapter and taps it.
       - name: raise the selection chip (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'epub'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=139 OUT=ci-shots-reader-chip SETTLE=25 ROUTE=read-1 \
             READER_ACTION=chip THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
       - name: open the annotation popover (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'epub'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=139 OUT=ci-shots-reader-annotation SETTLE=25 ROUTE=read-1 \
             READER_ACTION=annotation THEME=terracotta-dark \
@@ -499,26 +478,19 @@ jobs:
       # install after the snapshot; the missing frame looks up "riv"
       # so the did-you-mean chips do the talking.
       - name: open the dictionary card (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'epub'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=139 OUT=ci-shots-reader-dict SETTLE=25 ROUTE=read-1 \
             READER_ACTION=dict READER_FIXTURE=1 THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
       - name: open the dictionary card missing (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'epub'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=139 OUT=ci-shots-reader-dict-missing SETTLE=25 ROUTE=read-1 \
             READER_ACTION=dict-missing READER_FIXTURE=1 THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
-<<<<<<< Updated upstream
       # EPUB search (decision 34): the floating pill over a query
       # with chapter matches, and the accent no-match state.
       - name: open reader search (dark) and report
@@ -964,8 +936,6 @@ jobs:
             PDF_ACTION=open-state THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
-=======
->>>>>>> Stashed changes
       # The task manager's whole job is showing state that only exists while
       # something is running, so a shot of it over a quiet library proves
       # little about the interesting case. What it does prove is the part no
@@ -985,20 +955,14 @@ jobs:
       # the "both modes" half of the artboard. Other palettes differ only
       # in token values (owner ruling), which the theme tests already pin.
       - name: open the component gallery (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-components-light SETTLE=20 ROUTE=components \
             THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=3400 \
             docs/ci/screenshot.sh
 
       - name: open the component gallery (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-components-dark SETTLE=20 ROUTE=components \
             THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=3400 \
@@ -1008,20 +972,14 @@ jobs:
       # real page at a plausible window size, both Terracotta modes.
       # Book 1 is the first seeded EPUB (AUTOINCREMENT from 1).
       - name: open the book page (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-book-light SETTLE=20 ROUTE=book-1 \
             THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open the book page (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-book-dark SETTLE=20 ROUTE=book-1 \
             THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
@@ -1034,40 +992,28 @@ jobs:
       # Annotations dialog photographs its empty states, which are the
       # states the seeder can honestly produce.
       - name: open the tag dialog (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-book-tags-light SETTLE=20 ROUTE=book-4 \
             DIALOG=tags THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open the tag dialog (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-book-tags-dark SETTLE=20 ROUTE=book-4 \
             DIALOG=tags THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open the annotations dialog (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-book-annotations-light SETTLE=20 ROUTE=book-1 \
             DIALOG=annotations THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open the annotations dialog (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-book-annotations-dark SETTLE=20 ROUTE=book-1 \
             DIALOG=annotations THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
@@ -1078,30 +1024,21 @@ jobs:
       # fixture Book 1 — id 21 after the 20 generic books — and the
       # seeded listing cache keeps the page off the network.
       - name: open the series page strip (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-series-light SETTLE=20 ROUTE=series-book-21 \
             SERIES_FIXTURE=1 THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open the series page strip (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-series-dark SETTLE=20 ROUTE=series-book-21 \
             SERIES_FIXTURE=1 THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open the series page list (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-series-list-light SETTLE=20 ROUTE=series-book-21 \
             SERIES_FIXTURE=1 SERIES_VIEW=list THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
@@ -1112,26 +1049,19 @@ jobs:
       # open-series panel, Create shelf and the author-scope Annotations
       # dialog. anchor book 21 is fixture Book 1, by Ada Meridian.
       - name: open the author page (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-author-light SETTLE=20 ROUTE=author-book-21 \
             SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open the author page (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-author-dark SETTLE=20 ROUTE=author-book-21 \
             SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
-<<<<<<< Updated upstream
       # Deep editor (E1): the picker and the workspace on a seeded book.
       - name: open the editor picker (light) and report
         if: matrix.group == 'pages'
@@ -1338,35 +1268,25 @@ jobs:
 
       - name: open the author open-series panel (light) and report
         if: matrix.group == 'pages'
-=======
-      - name: open the author open-series panel (light) and report
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-author-panel-light SETTLE=20 ROUTE=author-book-21 \
             SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=panel THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open the author create-shelf dialog (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-author-shelf-light SETTLE=20 ROUTE=author-book-21 \
             SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=shelf THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open the author annotations dialog (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'pages'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-author-annotations-dark SETTLE=20 ROUTE=author-book-21 \
             SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=annotations THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
-<<<<<<< Updated upstream
       - name: open the authors index (light) and report
         if: matrix.group == 'pages'
         run: |
@@ -1395,8 +1315,6 @@ jobs:
             SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=merge-author THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
-=======
->>>>>>> Stashed changes
       # Settings (decisions 144-158): every pane, plus the drawn states
       # a route alone cannot reach -- open dropdowns, the three
       # confirmations, populated/empty watch folders and dictionaries,
@@ -1407,236 +1325,166 @@ jobs:
       # same pane or state; Appearance gets both because its custom
       # palette cards are the point of the pane.
       - name: open settings appearance (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-a'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-appearance-light SETTLE=10 ROUTE=settings \
             SETTINGS_PANE=appearance THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings appearance (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-a'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-appearance-dark SETTLE=10 ROUTE=settings \
             SETTINGS_PANE=appearance THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings reading (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-a'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-reading-light SETTLE=10 ROUTE=settings \
             SETTINGS_PANE=reading THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings reading typeface dropdown (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-a'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-reading-dropdown-dark SETTLE=10 ROUTE=settings \
             SETTINGS_PANE=reading DIALOG=typeface-dropdown THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings libraries (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-a'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-libraries-light SETTLE=10 ROUTE=settings \
             SETTINGS_FIXTURE=1 SETTINGS_PANE=libraries THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings open-library dialog (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-a'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-libraries-open-dark SETTLE=10 ROUTE=settings \
             SETTINGS_FIXTURE=1 SETTINGS_PANE=libraries DIALOG=open-library THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings data and export (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-a'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-data-export-dark SETTLE=10 ROUTE=settings \
             SETTINGS_PANE=data-export THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings book files (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-a'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-book-files-light SETTLE=10 ROUTE=settings \
             SETTINGS_FIXTURE=1 SETTINGS_PANE=book-files THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings delete-backups dialog (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-a'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-book-files-delete-dark SETTLE=10 ROUTE=settings \
             SETTINGS_FIXTURE=1 SETTINGS_PANE=book-files DIALOG=delete-backups THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings watch folders (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-a'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-watch-light SETTLE=10 ROUTE=settings \
             SETTINGS_FIXTURE=1 SETTINGS_PANE=watch-folders THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings watch shelf dropdown (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-a'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-watch-dropdown-dark SETTLE=10 ROUTE=settings \
             SETTINGS_FIXTURE=1 SETTINGS_PANE=watch-folders DIALOG=watch-dropdown THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings watch folders empty (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-a'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-watch-empty-light SETTLE=10 ROUTE=settings \
             SETTINGS_PANE=watch-folders THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings dictionaries dragging (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-b'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-dictionaries-drag-light SETTLE=10 ROUTE=settings \
             SETTINGS_FIXTURE=1 SETTINGS_PANE=dictionaries DIALOG=dictionary-drag THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings remove-dictionary dialog (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-b'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-dictionaries-remove-dark SETTLE=10 ROUTE=settings \
             SETTINGS_FIXTURE=1 SETTINGS_PANE=dictionaries DIALOG=remove-dictionary THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings dictionaries empty (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-b'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-dictionaries-empty-light SETTLE=10 ROUTE=settings \
             SETTINGS_FIXTURE=1 SETTINGS_EMPTY_DICTS=1 SETTINGS_PANE=dictionaries THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings metadata rejected key (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-b'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-metadata-rejected-light SETTLE=10 ROUTE=settings \
             SETTINGS_FIXTURE=1 SETTINGS_PANE=metadata THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings integrations (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-b'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-integrations-dark SETTLE=10 ROUTE=settings \
             SETTINGS_PANE=integrations THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings shortcuts (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-b'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-shortcuts-light SETTLE=10 ROUTE=settings \
             SETTINGS_PANE=shortcuts THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings shortcuts recording conflict (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-b'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-shortcuts-recording-dark SETTLE=10 ROUTE=settings \
             SETTINGS_PANE=shortcuts DIALOG=shortcut-recording THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open settings about (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-b'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-about-light SETTLE=10 ROUTE=settings \
             SETTINGS_PANE=about THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open the notification panel with events (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-b'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-notifications-events-dark SETTLE=10 ROUTE=settings \
             SETTINGS_PANE=appearance DIALOG=notifications THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: open the notification panel empty (light) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-b'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-notifications-empty-light SETTLE=10 ROUTE=settings \
             SETTINGS_PANE=appearance DIALOG=notifications-empty THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
       - name: show the notification bell's unseen dot (dark) and report
-<<<<<<< Updated upstream
         if: matrix.group == 'settings-b'
-=======
->>>>>>> Stashed changes
         run: |
           BOOKS=20 OUT=ci-shots-settings-notifications-dot-dark SETTLE=10 ROUTE=settings \
             SETTINGS_PANE=appearance DIALOG=notifications-dot THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
             docs/ci/screenshot.sh
 
-<<<<<<< Updated upstream
       - name: Upload screenshot outputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -1671,8 +1519,6 @@ jobs:
           path: .
           merge-multiple: true
 
-=======
->>>>>>> Stashed changes
       # The Arena sandbox cannot download Actions artifacts -- the blob host is
       # unreachable from it, exactly like the Actions log host (which is why
       # clippy failures are committed to ci-logs/). The PNGs are for humans;
@@ -1713,15 +1559,12 @@ jobs:
           cp ci-shots-reader-dict-missing/report.txt ci-logs/reader-dict-missing-latest.txt 2>/dev/null \
             || echo "(no reader-dict-missing report produced)" > ci-logs/reader-dict-missing-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-dict-missing-latest.txt
-<<<<<<< Updated upstream
           cp ci-shots-reader-search/report.txt ci-logs/reader-search-latest.txt 2>/dev/null \
             || echo "(no reader-search report produced)" > ci-logs/reader-search-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-search-latest.txt
           cp ci-shots-reader-search-missing/report.txt ci-logs/reader-search-missing-latest.txt 2>/dev/null \
             || echo "(no reader-search-missing report produced)" > ci-logs/reader-search-missing-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-search-missing-latest.txt
-=======
->>>>>>> Stashed changes
           cp ci-shots-tasks/report.txt ci-logs/tasks-latest.txt 2>/dev/null \
             || echo "(no tasks report produced)" > ci-logs/tasks-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/tasks-latest.txt
@@ -1764,7 +1607,6 @@ jobs:
           cp ci-shots-author-dark/report.txt ci-logs/author-dark-latest.txt 2>/dev/null \
             || echo "(no author-dark report produced)" > ci-logs/author-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-dark-latest.txt
-<<<<<<< Updated upstream
           cp ci-shots-editor-picker-light/report.txt ci-logs/editor-picker-light-latest.txt 2>/dev/null \
             || echo "(no editor-picker-light report produced)" > ci-logs/editor-picker-light-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-picker-light-latest.txt
@@ -1852,8 +1694,6 @@ jobs:
           cp ci-shots-editor-dict-light/report.txt ci-logs/editor-dict-light-latest.txt 2>/dev/null \
             || echo "(no editor-dict-light report produced)" > ci-logs/editor-dict-light-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-dict-light-latest.txt
-=======
->>>>>>> Stashed changes
           cp ci-shots-author-panel-light/report.txt ci-logs/author-panel-light-latest.txt 2>/dev/null \
             || echo "(no author-panel-light report produced)" > ci-logs/author-panel-light-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-panel-light-latest.txt
@@ -1863,7 +1703,6 @@ jobs:
           cp ci-shots-author-annotations-dark/report.txt ci-logs/author-annotations-dark-latest.txt 2>/dev/null \
             || echo "(no author-annotations-dark report produced)" > ci-logs/author-annotations-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-annotations-dark-latest.txt
-<<<<<<< Updated upstream
           cp ci-shots-authors-light/report.txt ci-logs/authors-light-latest.txt 2>/dev/null \
             || echo "(no authors-light report produced)" > ci-logs/authors-light-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/authors-light-latest.txt
@@ -1876,8 +1715,6 @@ jobs:
           cp ci-shots-author-merge-dark/report.txt ci-logs/author-merge-dark-latest.txt 2>/dev/null \
             || echo "(no author-merge-dark report produced)" > ci-logs/author-merge-dark-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-merge-dark-latest.txt
-=======
->>>>>>> Stashed changes
           # Settings has enough panes and states that spelling out 23
           # report/PNG pairs would bury the publish step. The slug is
           # the OUT suffix and the published PNG name, so this loop is
@@ -1903,7 +1740,6 @@ jobs:
             cp "ci-shots-$shot/03-settings-settled.png" \
               "ci-logs/$shot.png" 2>/dev/null || true
           done
-<<<<<<< Updated upstream
           # The comics reader frames, by the same slug rule: the OUT
           # suffix is the published basename, and every frame settled
           # on the comic route.
@@ -1958,8 +1794,6 @@ jobs:
             cp "ci-shots-$shot/03-pdf-read-21-settled.png" \
               "ci-logs/$shot.png" 2>/dev/null || true
           done
-=======
->>>>>>> Stashed changes
           # The settled gallery/book/dialog frames are the one deliberate
           # exception to "PNGs stay in the job workspace": an artboard
           # nobody can see is not an artboard, and the agent cannot
@@ -1984,13 +1818,10 @@ jobs:
             ci-logs/reader-dict-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-reader-dict-missing/03-read-1-settled.png \
             ci-logs/reader-dict-missing-terracotta-dark.png 2>/dev/null || true
-<<<<<<< Updated upstream
           cp ci-shots-reader-search/03-read-1-settled.png \
             ci-logs/reader-search-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-reader-search-missing/03-read-1-settled.png \
             ci-logs/reader-search-missing-terracotta-dark.png 2>/dev/null || true
-=======
->>>>>>> Stashed changes
           cp ci-shots-components-light/03-components-settled.png \
             ci-logs/components-terracotta-light.png 2>/dev/null || true
           cp ci-shots-components-dark/03-components-settled.png \
@@ -2017,7 +1848,6 @@ jobs:
             ci-logs/author-terracotta-light.png 2>/dev/null || true
           cp ci-shots-author-dark/03-author-book-21-settled.png \
             ci-logs/author-terracotta-dark.png 2>/dev/null || true
-<<<<<<< Updated upstream
           cp ci-shots-editor-picker-light/03-editor-settled.png \
             ci-logs/editor-picker-terracotta-light.png 2>/dev/null || true
           cp ci-shots-editor-picker-dark/03-editor-settled.png \
@@ -2076,15 +1906,12 @@ jobs:
             ci-logs/editor-char-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-editor-dict-light/03-edit-book-1-settled.png \
             ci-logs/editor-dict-terracotta-light.png 2>/dev/null || true
-=======
->>>>>>> Stashed changes
           cp ci-shots-author-panel-light/03-author-book-21-settled.png \
             ci-logs/author-panel-terracotta-light.png 2>/dev/null || true
           cp ci-shots-author-shelf-light/03-author-book-21-settled.png \
             ci-logs/author-shelf-terracotta-light.png 2>/dev/null || true
           cp ci-shots-author-annotations-dark/03-author-book-21-settled.png \
             ci-logs/author-annotations-terracotta-dark.png 2>/dev/null || true
-<<<<<<< Updated upstream
           cp ci-shots-authors-light/03-authors-settled.png \
             ci-logs/authors-terracotta-light.png 2>/dev/null || true
           cp ci-shots-authors-dark/03-authors-settled.png \
@@ -2093,8 +1920,6 @@ jobs:
             ci-logs/author-edit-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-author-merge-dark/03-author-book-21-settled.png \
             ci-logs/author-merge-terracotta-dark.png 2>/dev/null || true
-=======
->>>>>>> Stashed changes
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add -f ci-logs/reader-latest.txt \
@@ -2107,11 +1932,8 @@ jobs:
             ci-logs/reader-annotation-latest.txt \
             ci-logs/reader-dict-latest.txt \
             ci-logs/reader-dict-missing-latest.txt \
-<<<<<<< Updated upstream
             ci-logs/reader-search-latest.txt \
             ci-logs/reader-search-missing-latest.txt \
-=======
->>>>>>> Stashed changes
             ci-logs/tasks-latest.txt \
             ci-logs/components-light-latest.txt ci-logs/components-dark-latest.txt \
             ci-logs/book-light-latest.txt ci-logs/book-dark-latest.txt \
@@ -2121,7 +1943,6 @@ jobs:
             ci-logs/series-list-light-latest.txt \
             ci-logs/author-light-latest.txt ci-logs/author-dark-latest.txt \
             ci-logs/author-panel-light-latest.txt ci-logs/author-shelf-light-latest.txt \
-<<<<<<< Updated upstream
             ci-logs/author-annotations-dark-latest.txt \
             ci-logs/authors-light-latest.txt ci-logs/authors-dark-latest.txt \
             ci-logs/author-edit-dark-latest.txt ci-logs/author-merge-dark-latest.txt \
@@ -2141,9 +1962,6 @@ jobs:
             ci-logs/editor-subset-light-latest.txt ci-logs/editor-embed-dark-latest.txt \
             ci-logs/editor-compress-light-latest.txt ci-logs/editor-links-dark-latest.txt \
             ci-logs/editor-char-dark-latest.txt ci-logs/editor-dict-light-latest.txt
-=======
-            ci-logs/author-annotations-dark-latest.txt
->>>>>>> Stashed changes
           for shot in settings-appearance-light settings-appearance-dark \
                       settings-reading-light settings-reading-dropdown-dark \
                       settings-libraries-light settings-libraries-open-dark \
@@ -2162,7 +1980,6 @@ jobs:
             git add -f "ci-logs/$shot-latest.txt"
             if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
           done
-<<<<<<< Updated upstream
           for shot in comics-chrome-light comics-chrome-dark \
                       comics-chapters-dark comics-pages-dark \
                       comics-reading-dark comics-reading-strip-dark \
@@ -2200,8 +2017,6 @@ jobs:
             git add -f "ci-logs/$shot-latest.txt"
             if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
           done
-=======
->>>>>>> Stashed changes
           for shot in ci-logs/reader-chrome-terracotta-light.png \
                       ci-logs/reader-chrome-terracotta-dark.png \
                       ci-logs/reader-contents-terracotta-dark.png \
@@ -2211,11 +2026,8 @@ jobs:
                       ci-logs/reader-annotation-terracotta-dark.png \
                       ci-logs/reader-dict-terracotta-dark.png \
                       ci-logs/reader-dict-missing-terracotta-dark.png \
-<<<<<<< Updated upstream
                       ci-logs/reader-search-terracotta-dark.png \
                       ci-logs/reader-search-missing-terracotta-dark.png \
-=======
->>>>>>> Stashed changes
                       ci-logs/components-terracotta-light.png \
                       ci-logs/components-terracotta-dark.png \
                       ci-logs/book-terracotta-light.png \
@@ -2231,7 +2043,6 @@ jobs:
                       ci-logs/author-terracotta-dark.png \
                       ci-logs/author-panel-terracotta-light.png \
                       ci-logs/author-shelf-terracotta-light.png \
-<<<<<<< Updated upstream
                       ci-logs/author-annotations-terracotta-dark.png \
                       ci-logs/authors-terracotta-light.png \
                       ci-logs/authors-terracotta-dark.png \
@@ -2266,9 +2077,6 @@ jobs:
                       ci-logs/editor-links-terracotta-dark.png \
                       ci-logs/editor-char-terracotta-dark.png \
                       ci-logs/editor-dict-terracotta-light.png; do
-=======
-                      ci-logs/author-annotations-terracotta-dark.png; do
->>>>>>> Stashed changes
             if [ -f "$shot" ]; then git add -f "$shot"; fi
           done
           git commit -m "ci: publish smoke-test report [skip ci]" || true

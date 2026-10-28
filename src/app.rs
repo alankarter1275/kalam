@@ -63,14 +63,6 @@ pub enum AppMsg {
         book_id: i64,
     },
     CloseBookDialog,
-<<<<<<< Updated upstream
-=======
-    /// Toggle the `w` task dialog.
-    ToggleTasksFloat,
-    /// Re-read the task registry: refreshes the sidebar badge and, when the
-    /// `w` dialog is open, its rows. One tick drives both.
-    TasksTick,
->>>>>>> Stashed changes
     /// Open the shelves checklist panel (in-app float).
     OpenShelvesFloat {
         book_id: i64,
@@ -200,12 +192,6 @@ enum Floating {
     Shelves {
         return_to: Option<i64>,
     },
-<<<<<<< Updated upstream
-=======
-    /// The `w` task dialog. Holds the box its rows are drawn into so the
-    /// app-wide tick can repaint it.
-    Tasks,
->>>>>>> Stashed changes
 }
 
 pub struct AppModel {
@@ -266,10 +252,7 @@ fn cache_key(route: &Route) -> Option<String> {
         | Route::TagBooks { .. }
         | Route::AuthorPage { .. }
         | Route::BookPage { .. }
-<<<<<<< Updated upstream
         | Route::EditorWorkspace { .. }
-=======
->>>>>>> Stashed changes
         | Route::SeriesPage { .. }
         | Route::ComicSeries { .. }
         | Route::Reader { .. }
@@ -1665,20 +1648,6 @@ impl Component for AppModel {
             }
         });
 
-<<<<<<< Updated upstream
-=======
-        // Above Settings, on the same end of the rail. Prepended rather than
-        // appended so the order is Tasks, then the bell, then Settings;
-        // `bottom_nav` holds nothing else since Downloads was hidden.
-        {
-            let btn = model.tasks_btn.clone();
-            let s = sender.clone();
-            btn.connect_clicked(move |_| s.input(AppMsg::Push(Route::LibrarySection(
-                LibrarySection::TaskManager,
-            ))));
-            widgets.bottom_nav.prepend(&btn);
-        }
->>>>>>> Stashed changes
         widgets.bottom_nav.append(&notifications.button());
 
         for item in NavItem::ALL {
@@ -1736,10 +1705,7 @@ impl Component for AppModel {
         if let Some(name) = std::env::var_os("KALAM_ROUTE") {
             let name = name.to_string_lossy().to_string();
             match series_route_for_book(&model.catalog, &name)
-<<<<<<< Updated upstream
                 .or_else(|| comic_series_route_for_book(&model.catalog, &name))
-=======
->>>>>>> Stashed changes
                 .or_else(|| author_route_for_book(&model.catalog, &name))
                 .or_else(|| route_by_name(&name))
             {
@@ -1864,7 +1830,6 @@ impl Component for AppModel {
                             &sender,
                         );
                     }
-<<<<<<< Updated upstream
                     ShortcutAction::GoEditor => {
                         self.close_floating();
                         self.swap_page(
@@ -1874,8 +1839,6 @@ impl Component for AppModel {
                             &sender,
                         );
                     }
-=======
->>>>>>> Stashed changes
                     ShortcutAction::OpenSettings => {
                         self.close_floating();
                         self.swap_page(
@@ -2292,11 +2255,7 @@ pub(crate) fn brand_texture(accent: &str) -> Option<gtk::gdk::Texture> {
 fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     // Icon only. The rail is too narrow for a readable caption, and the
     // tooltip already carries the page name.
-<<<<<<< Updated upstream
     let icon = crate::icons::symbolic_with_classes(item.icon(), 22, &["kalam-nav-icon"]);
-=======
-    let icon = crate::icons::symbolic_with_classes(item.icon(), 20, &["kalam-nav-icon"]);
->>>>>>> Stashed changes
     icon.set_halign(gtk::Align::Center);
     icon.set_valign(gtk::Align::Center);
 
@@ -2485,7 +2444,6 @@ fn series_route_for_book(catalog: &Catalog, name: &str) -> Option<Route> {
     })
 }
 
-<<<<<<< Updated upstream
 /// The comic-series route a `KALAM_ROUTE=comic-series-book-<id>` value
 /// refers to: the drawer for the series that chapter belongs to. The
 /// relational series wins; an unmigrated chapter falls back to the
@@ -2514,8 +2472,6 @@ fn comic_series_route_for_book(catalog: &Catalog, name: &str) -> Option<Route> {
     Some(Route::ComicSeries { series_name })
 }
 
-=======
->>>>>>> Stashed changes
 /// The author route a `KALAM_ROUTE=author-book-<id>` value refers to: the
 /// anchor book's first author, exactly what its own author link opens.
 /// Same catalog-dependent reasoning as [`series_route_for_book`].
@@ -2634,7 +2590,6 @@ fn known_route_names() -> Vec<&'static str> {
 
 /// The names that take an id, for the error message only. They are not in
 /// `known_route_names` because that list is asserted to resolve as it stands.
-<<<<<<< Updated upstream
 const ROUTE_ID_FORMS: [&str; 8] = [
     "book-<id>",
     "edit-book-<id>",
@@ -2643,12 +2598,6 @@ const ROUTE_ID_FORMS: [&str; 8] = [
     "comic-read-<id>",
     "series-book-<id>",
     "comic-series-book-<id>",
-=======
-const ROUTE_ID_FORMS: [&str; 4] = [
-    "book-<id>",
-    "read-<id>",
-    "series-book-<id>",
->>>>>>> Stashed changes
     "author-book-<id>",
 ];
 

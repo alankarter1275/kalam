@@ -515,7 +515,6 @@ impl Catalog {
         Ok(())
     }
 
-<<<<<<< Updated upstream
     /// Put a forgotten word back exactly as it was (decision 30's
     /// undo), review state included.
     pub fn restore_saved_word(&self, row: &SavedWord) -> Result<()> {
@@ -540,8 +539,6 @@ impl Catalog {
         Ok(())
     }
 
-=======
->>>>>>> Stashed changes
     /// The dictionary toggle's off stroke: forget every row this book
     /// holds for the word (one in practice — `saved_word_exists` is
     /// what the toggle reads, and it counts any row).

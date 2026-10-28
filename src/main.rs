@@ -26,10 +26,7 @@ mod text_diff;
 mod export;
 mod epub_writer;
 mod folders;
-<<<<<<< Updated upstream
 mod font_subset;
-=======
->>>>>>> Stashed changes
 mod fonts;
 mod frames;
 mod icons;

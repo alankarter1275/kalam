@@ -124,10 +124,7 @@ pub enum AllBooksMsg {
     SelectAll,
     DeselectAll,
     /// Switch between Grid and List view (§47 toolbar: Grid / List).
-<<<<<<< Updated upstream
     #[allow(dead_code)]
-=======
->>>>>>> Stashed changes
     ViewModeChanged(ViewMode),
     /// Toggle one list-view column's visibility (§50 Columns menu).
     ListColumnToggled(ListColumn),
@@ -306,25 +303,12 @@ impl Component for AllBooksModel {
         #[root]
         gtk::Overlay {
             // Main content area.
-<<<<<<< Updated upstream
             #[wrap(Some)]
             set_child = &gtk::Box {
-=======
-            gtk::Box {
->>>>>>> Stashed changes
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 12,
                 set_hexpand: true,
                 set_vexpand: true,
-<<<<<<< Updated upstream
-=======
-
-                gtk::Label {
-                    set_label: "All books",
-                    add_css_class: "kalam-page-title",
-                    set_halign: gtk::Align::Start,
-                },
->>>>>>> Stashed changes
 
                 gtk::Label {
                     set_label: "All books",
@@ -429,54 +413,11 @@ impl Component for AllBooksModel {
 
                 #[name = "list"]
                 gtk::Box {
-<<<<<<< Updated upstream
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 0,
                     set_halign: gtk::Align::Start,
                     set_hexpand: false,
                     set_vexpand: false,
-=======
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 4,
-                },
-
-                #[name = "columns_btn"]
-                gtk::MenuButton {
-                    set_child: Some(&crate::icons::labelled(
-                        "view-list-symbolic",
-                        16,
-                        "Columns",
-                        6,
-                    )),
-                    add_css_class: "kalam-toolbar-btn",
-                    set_always_show_arrow: false,
-                    set_tooltip_text: Some("Choose which list-view columns to show (§50)"),
-                },
-
-                #[name = "select_btn"]
-                gtk::Button {
-                    #[watch]
-                    set_label: if model.selection_mode {
-                        "Exit Select"
-                    } else {
-                        "Select Mode"
-                    },
-                    add_css_class: "kalam-secondary-btn",
-                    connect_clicked => AllBooksMsg::ToggleSelectionMode,
-                },
-
-                gtk::Button {
-                    #[watch]
-                    set_label: if model.importing {
-                        "Importing…"
-                    } else {
-                        "+ Import EPUB"
-                    },
-                    add_css_class: "kalam-primary-btn",
-                    #[watch]
-                    set_sensitive: !model.importing,
-                    connect_clicked => AllBooksMsg::PickFiles,
->>>>>>> Stashed changes
                 },
             },
 
@@ -537,86 +478,6 @@ impl Component for AllBooksModel {
                     },
                 },
             },
-<<<<<<< Updated upstream
-=======
-
-            #[name = "status_label"]
-            gtk::Label {
-                #[watch]
-                set_label: &model.status,
-                add_css_class: "kalam-muted",
-                set_halign: gtk::Align::Start,
-            },
-
-            #[name = "list"]
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 0,
-                set_halign: gtk::Align::Start,
-                set_hexpand: false,
-                set_vexpand: false,
-            },
-            }
-
-            // Floating bulk bar (§49): bottom centre, 48 high, 32 up from bottom.
-            #[name = "selection_bar"]
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 8,
-                set_halign: gtk::Align::Center,
-                set_valign: gtk::Align::End,
-                set_margin_bottom: 32,
-                add_css_class: "kalam-bulk-bar",
-                #[watch]
-                set_visible: model.selection_mode,
-
-                gtk::Label {
-                    #[watch]
-                    set_label: &format!(
-                        "{} book{} selected",
-                        model.selected_books.len(),
-                        if model.selected_books.len() == 1 { "" } else { "s" }
-                    ),
-                    add_css_class: "kalam-page-sub",
-                },
-
-                gtk::Button {
-                    set_label: "Select All",
-                    add_css_class: "kalam-secondary-btn",
-                    connect_clicked => AllBooksMsg::SelectAll,
-                },
-
-                gtk::Button {
-                    set_label: "Deselect All",
-                    add_css_class: "kalam-secondary-btn",
-                    connect_clicked => AllBooksMsg::DeselectAll,
-                },
-
-                gtk::Button {
-                    set_label: "Bulk Edit…",
-                    add_css_class: "kalam-primary-btn",
-                    #[watch]
-                    set_sensitive: !model.selected_books.is_empty(),
-                    connect_clicked[sender] => move |btn| {
-                        sender.input(AllBooksMsg::OpenBulkEditDialog(btn.clone().upcast()));
-                    },
-                },
-
-                // Deleting is the one selection action that cannot be undone,
-                // so it gets the danger style and a confirmation the others do
-                // not. It was simply missing: selection mode shipped with edit
-                // but no way to remove several books at once.
-                gtk::Button {
-                    set_label: "Delete",
-                    add_css_class: "kalam-btn-danger",
-                    #[watch]
-                    set_sensitive: !model.selected_books.is_empty(),
-                    connect_clicked[sender] => move |btn| {
-                        sender.input(AllBooksMsg::OpenDeleteConfirm(btn.clone().upcast()));
-                    },
-                },
-            },
->>>>>>> Stashed changes
         }
     }
 
@@ -1509,7 +1370,6 @@ fn rebuild_list(
 
     if view_mode == ViewMode::List {
         let sel_set = selected_books.clone();
-<<<<<<< Updated upstream
         let s_open = s.clone();
         let s_toggle = s.clone();
         let s_sort = s.clone();
@@ -1521,16 +1381,6 @@ fn rebuild_list(
         });
         let on_sort = Rc::new(move |col| {
             s_sort.input(AllBooksMsg::ListSortChanged(col));
-=======
-        let on_open = Rc::new(move |id| {
-            s.output(AllBooksOut::OpenBook { book_id: id }).ok();
-        });
-        let on_toggle_select = Rc::new(move |id| {
-            s.input(AllBooksMsg::ToggleSelectBook(id));
-        });
-        let on_sort = Rc::new(move |col| {
-            s.input(AllBooksMsg::ListSortChanged(col));
->>>>>>> Stashed changes
         });
         let list_view = build_book_list(
             books,

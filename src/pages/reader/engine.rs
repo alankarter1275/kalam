@@ -845,7 +845,6 @@ pub(crate) fn build_word_preview_tooltip(
         .build();
     scroll.set_child(Some(&senses_box));
     card.append(&scroll);
-<<<<<<< Updated upstream
 
     popover.set_child(Some(&card));
     Some(popover)
@@ -895,8 +894,6 @@ pub(crate) fn build_annotation_note_preview(
         .build();
     scroll.set_child(Some(&text));
     card.append(&scroll);
-=======
->>>>>>> Stashed changes
 
     popover.set_child(Some(&card));
     Some(popover)
@@ -1198,7 +1195,6 @@ fn append_definitions(body: &gtk::Box, card: &DictCard) {
             }
 
             let revealer = gtk::Revealer::new();
-<<<<<<< Updated upstream
             // SlideDown, not None: GTK measures a None/Crossfade
             // revealer at its child's full height even while hidden
             // (`get_child_size_scale` returns 1.0 for those types),
@@ -1207,9 +1203,6 @@ fn append_definitions(body: &gtk::Box, card: &DictCard) {
             // position, so the folded senses take no room at all.
             revealer.set_transition_type(gtk::RevealerTransitionType::SlideDown);
             revealer.set_transition_duration(180);
-=======
-            revealer.set_transition_type(gtk::RevealerTransitionType::None);
->>>>>>> Stashed changes
             revealer.set_reveal_child(false);
             revealer.set_child(Some(&hidden));
             defs_box.append(&revealer);

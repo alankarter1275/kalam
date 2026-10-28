@@ -1,10 +1,6 @@
 //! Immersive EPUB reader module.
 
-<<<<<<< Updated upstream
 pub(crate) mod book_settings;
-=======
-mod book_settings;
->>>>>>> Stashed changes
 mod chapter;
 mod chrome;
 pub(crate) mod engine;
@@ -1142,7 +1138,6 @@ impl Component for ReaderModel {
             let right_box = model.right_sidebar_box.clone();
             click.connect_pressed(move |gesture, _, x, y| {
                 let Some(widget) = gesture.widget() else { return };
-<<<<<<< Updated upstream
                 // `is_visible()` would be the wrong question here: a
                 // GtkRevealer conceals its child without clearing the
                 // child's (or its parents') visible flags, so a shut
@@ -1157,18 +1152,12 @@ impl Component for ReaderModel {
                 if !any_open {
                     return;
                 }
-=======
->>>>>>> Stashed changes
                 let point = gtk::graphene::Point::new(x as f32, y as f32);
                 let on_panel = [left_box.as_ref(), right_box.as_ref()]
                     .into_iter()
                     .flatten()
                     .any(|panel| {
-<<<<<<< Updated upstream
                         panel.is_mapped()
-=======
-                        panel.is_visible()
->>>>>>> Stashed changes
                             && widget
                                 .compute_point(panel, &point)
                                 .is_some_and(|p| {
@@ -1180,20 +1169,7 @@ impl Component for ReaderModel {
                     });
                 if !on_panel {
                     let _ = tx.send(ReaderMsg::CloseSidebars);
-<<<<<<< Updated upstream
                     gesture.set_state(gtk::EventSequenceState::Claimed);
-=======
-                    // Claim only when there was something to close: the
-                    // message handler reports through the model, so here
-                    // we claim only if a panel was visible at all.
-                    let any_visible = [left_box.as_ref(), right_box.as_ref()]
-                        .into_iter()
-                        .flatten()
-                        .any(|panel| panel.is_visible());
-                    if any_visible {
-                        gesture.set_state(gtk::EventSequenceState::Claimed);
-                    }
->>>>>>> Stashed changes
                 }
             });
             root.add_controller(click);
@@ -1312,7 +1288,6 @@ impl Component for ReaderModel {
                 return gtk::glib::Propagation::Stop;
             }
 
-<<<<<<< Updated upstream
             // The shell's "Undo the last delete" (Ctrl+Z by default)
             // is deliberately unclaimed out there; in the reader it
             // has a stack to answer with (decision 30). The typing
@@ -1324,8 +1299,6 @@ impl Component for ReaderModel {
                 return gtk::glib::Propagation::Stop;
             }
 
-=======
->>>>>>> Stashed changes
             // Roadmap 2.9: what a key does is the reader's to decide.
             match keys.borrow().action_for(keyval, ctrl) {
                 Some(action) => {
@@ -1437,7 +1410,6 @@ impl Component for ReaderModel {
                 let _ = tx.send(ReaderMsg::DictSearchSelect("riv".to_string()));
             });
         }
-<<<<<<< Updated upstream
         // The search frames (decision 34): raise the bar and type
         // into it the way a reader would, so the entry, the count
         // and the current-match jump are all the real ones. The
@@ -1459,8 +1431,6 @@ impl Component for ReaderModel {
                 entry.set_text("rver");
             });
         }
-=======
->>>>>>> Stashed changes
         if std::env::var("KALAM_READER_ACTION").is_ok_and(|v| v == "chip") {
             if let Some(view) = model.view.clone() {
                 let tx = sender.input_sender().clone();
@@ -1492,10 +1462,7 @@ impl Component for ReaderModel {
                     text: res.locator.quote.exact.clone(),
                     start: res.locator.clone(),
                     end,
-<<<<<<< Updated upstream
                     has_note: true,
-=======
->>>>>>> Stashed changes
                 };
                 let cfi = engine::range_to_json(&h.start, &h.end);
                 let id = model
@@ -2052,7 +2019,6 @@ impl Component for ReaderModel {
                     self.reload_annotations();
                     self.reload_bookmarks();
                     self.reload_saved_words();
-<<<<<<< Updated upstream
                     if self.search_active {
                         // Chapter scope is named for the chapter
                         // being read, so a manual turn into a new
@@ -2060,8 +2026,6 @@ impl Component for ReaderModel {
                         // never as a jump.
                         self.paint_search_matches(false);
                     }
-=======
->>>>>>> Stashed changes
                     refresh_notes = true;
                     refresh_toc = true;
                 }
@@ -2160,10 +2124,7 @@ impl Component for ReaderModel {
                             let eng = engine::engine_color(&color);
                             if let Some(view) = self.view.clone() {
                                 view.update_highlight(id, eng, style_val.as_str());
-<<<<<<< Updated upstream
                                 view.set_highlight_note(id, !note.trim().is_empty());
-=======
->>>>>>> Stashed changes
                             }
                             self.reload_annotations();
                             refresh_notes = true;
@@ -2201,10 +2162,7 @@ impl Component for ReaderModel {
                 if self.dict_popover.is_some()
                     || self.selection_chip.is_some()
                     || self.annotation_popover.is_some()
-<<<<<<< Updated upstream
                     || self.note_preview_popover.is_some()
-=======
->>>>>>> Stashed changes
                 {
                     return;
                 }
@@ -2476,7 +2434,6 @@ impl Component for ReaderModel {
                 }
                 self.reload_bookmarks();
                 refresh_notes = true;
-<<<<<<< Updated upstream
                 refresh_chrome = true;
             }
             ReaderMsg::DeleteSavedWord(id) => {
@@ -2489,19 +2446,10 @@ impl Component for ReaderModel {
                         self.remember_deleted(DeletedMark::SavedWords(vec![row]));
                     }
                 }
-=======
-            }
-            ReaderMsg::DeleteSavedWord(id) => {
-                crate::notify::report(
-                    self.service.catalog().delete_saved_word(id),
-                    "Could not forget the word",
-                );
->>>>>>> Stashed changes
                 // reload_saved_words re-pushes the word-memory set, so
                 // the dotted underline goes with the row.
                 self.reload_saved_words();
                 refresh_notes = true;
-<<<<<<< Updated upstream
             }
             ReaderMsg::UndoDelete => {
                 // Decision 30: deletions are direct because Ctrl+Z
@@ -2572,8 +2520,6 @@ impl Component for ReaderModel {
                         }
                     }
                 }
-=======
->>>>>>> Stashed changes
             }
             ReaderMsg::DictSearch(q) => {
                 self.dict_query = q.clone();
@@ -2614,7 +2560,6 @@ impl Component for ReaderModel {
                     let catalog = self.service.catalog();
                     let saved = catalog.saved_word_exists(&word, self.book_id).unwrap_or(false);
                     if saved {
-<<<<<<< Updated upstream
                         // Every row this stroke forgets, kept for
                         // Ctrl+Z (decisions 30, 31).
                         let rows: Vec<_> = self
@@ -2631,10 +2576,6 @@ impl Component for ReaderModel {
                                 if !rows.is_empty() {
                                     self.remember_deleted(DeletedMark::SavedWords(rows));
                                 }
-=======
-                        match catalog.delete_saved_word_for(&word, self.book_id) {
-                            Ok(()) => {
->>>>>>> Stashed changes
                                 crate::notify::compact("Word forgotten", &word);
                                 self.reload_saved_words();
                                 refresh_notes = true;
@@ -2686,7 +2627,6 @@ impl Component for ReaderModel {
                 // stays true underneath for when it is next opened.
                 if self.chapter_count > 0 {
                     if let Some(id) = self.bookmark_here_id() {
-<<<<<<< Updated upstream
                         let row = self.bookmarks.iter().find(|m| m.id == id).cloned();
                         match self.service.catalog().delete_reading_bookmark(id) {
                             Ok(()) => {
@@ -2698,13 +2638,6 @@ impl Component for ReaderModel {
                                 "Could not remove the bookmark",
                                 &e.to_string(),
                             ),
-=======
-                        if let Err(e) = self.service.catalog().delete_reading_bookmark(id) {
-                            crate::notify::error(
-                                "Could not remove the bookmark",
-                                &e.to_string(),
-                            );
->>>>>>> Stashed changes
                         }
                     } else {
                         let label = self.current_chapter_title().to_string();
@@ -3028,11 +2961,8 @@ impl ReaderModel {
     fn dismiss_chip_surfaces(&mut self) {
         engine::dismiss(self.selection_chip.take());
         engine::dismiss(self.annotation_popover.take());
-<<<<<<< Updated upstream
         engine::dismiss(self.note_preview_popover.take());
         self.note_preview_id = None;
-=======
->>>>>>> Stashed changes
     }
 
     /// Where the chip and the annotation popover last left the
@@ -3247,81 +3177,6 @@ impl ReaderModel {
             let res = &self.search_results[scoped[current_pos]];
             view.goto_locator(&res.locator, true);
         }
-<<<<<<< Updated upstream
-=======
-
-        let total = self.search_results.len();
-        if total == 0 {
-            badge_lbl.set_label("0 matches");
-            let empty_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
-            empty_box.set_margin_all(20);
-            empty_box.set_halign(gtk::Align::Center);
-
-            let empty_lbl = gtk::Label::new(Some(if self.search_query.trim().is_empty() {
-                "Type to search across the entire book"
-            } else {
-                "No matches found"
-            }));
-            empty_lbl.add_css_class("kalam-search-popover-badge");
-            empty_box.append(&empty_lbl);
-            list_box.append(&empty_box);
-            return;
-        }
-
-        badge_lbl.set_label(&format!("{} matches", total));
-
-        let display_limit = 100.min(total);
-        for idx in 0..display_limit {
-            let res = &self.search_results[idx];
-            let row = gtk::Box::new(gtk::Orientation::Vertical, 3);
-            row.add_css_class("kalam-search-snippet-row");
-            if idx == self.search_index {
-                row.add_css_class("active");
-            }
-
-            let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-            let ch_title = res.chapter_title.clone().unwrap_or_else(|| format!("Chapter {}", res.chapter + 1));
-            let ch_label = gtk::Label::new(Some(&ch_title));
-            ch_label.add_css_class("kalam-search-snippet-chapter");
-            ch_label.set_hexpand(true);
-            ch_label.set_halign(gtk::Align::Start);
-            ch_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-
-            let idx_label = gtk::Label::new(Some(&format!("#{}", idx + 1)));
-            idx_label.add_css_class("kalam-search-snippet-index");
-
-            top_row.append(&ch_label);
-            top_row.append(&idx_label);
-
-            let text_label = gtk::Label::new(None);
-            text_label.add_css_class("kalam-search-snippet-text");
-            text_label.set_use_markup(true);
-            text_label.set_markup(&format_search_snippet(&res.snippet, &self.search_query));
-            text_label.set_wrap(true);
-            text_label.set_wrap_mode(gtk::pango::WrapMode::Word);
-            text_label.set_halign(gtk::Align::Start);
-            text_label.set_xalign(0.0);
-
-            row.append(&top_row);
-            row.append(&text_label);
-
-            let gesture = gtk::GestureClick::new();
-            let s = sender.clone();
-            gesture.connect_released(move |_, _, _, _| {
-                s.input(ReaderMsg::JumpToSearchResult(idx));
-            });
-            row.add_controller(gesture);
-
-            list_box.append(&row);
-        }
-
-        if total > display_limit {
-            let more_lbl = gtk::Label::new(Some(&format!("+ {} more matches (use Next/Prev)", total - display_limit)));
-            more_lbl.add_css_class("kalam-search-snippet-index");
-            more_lbl.set_margin_all(8);
-            list_box.append(&more_lbl);
-        }
->>>>>>> Stashed changes
     }
 
     fn show_image_lightbox(&mut self, widgets: &mut <Self as relm4::Component>::Widgets, w: u32, h: u32, rgba: &[u8]) {

@@ -9,12 +9,8 @@ workflow.
 | Job | Required for success? | Purpose |
 |---|---:|---|
 | `build` | Yes | Format report, Clippy, workspace tests, release build and OCR diagnostic. |
-<<<<<<< Updated upstream
 | `screenshots` | No | Launch the release binary under headless Sway in six parallel groups and capture the reader, comics, PDF, page and Settings proof frames. |
 | `publish-screenshots` | No | Merge the screenshot groups' short-lived artifacts and commit their reports and settled redesign frames to `ci-logs/`. |
-=======
-| `screenshots` | No | Launch the release binary under headless Sway and report reader, tasks and component-gallery routes. |
->>>>>>> Stashed changes
 
 All jobs run on Ubuntu 26.04. The GTK4 bindings require GTK 4.16 or newer.
 
@@ -47,7 +43,6 @@ day. The smoke-test job downloads that binary rather than building it again.
 
 The `screenshots` job depends on a successful build and uses
 `continue-on-error: true`. A compositor or rendering problem therefore does
-<<<<<<< Updated upstream
 not block a correct code change. Its 93 captures run as six parallel
 matrix groups — EPUB, comics, PDF, general pages, and two halves of
 Settings — rather than as one serial list. Each group uploads its
@@ -60,18 +55,6 @@ list. In broad terms, the EPUB group uses the 139-book seed, the comics
 and PDF groups use their 20-book fixtures, the pages group covers
 tasks/components/book/series/author, and the Settings groups cover all
 23 pane and notification states.
-=======
-not block a correct code change. It runs `docs/ci/screenshot.sh` four times
-under headless Sway:
-
-- `ROUTE=read-1` opens the first of 139 seeded EPUBs.
-- `ROUTE=tasks` opens the task manager.
-- `ROUTE=components` twice, over a small 20-book seed, opens the hidden
-  redesign component gallery under Terracotta Light and Dark
-  (`THEME=terracotta-light` / `terracotta-dark`, applied by the app's
-  non-persisting `KALAM_THEME` startup override) on a tall 1600×3400
-  output, so the whole artboard fits in one frame.
->>>>>>> Stashed changes
 
 The seeder creates valid EPUB files in folders named with the same readable
 name and short id as the app. The seed database begins at schema version 1 and
@@ -87,15 +70,10 @@ same readiness treatment before it is used as the comparison negative.
 A route-accepted log line proves only that the route was parsed; it does not
 prove that the reader opened its book or that the UI is visually correct.
 
-<<<<<<< Updated upstream
 Screenshot groups upload only their reports and settled PNGs as
 short-lived artifacts for the publish job to merge; seeded config
 homes, compositor logs and intermediate candidate frames stay on the
 shard. The workflow commits the text summaries
-=======
-Screenshots and run logs are kept only in the Actions job workspace. The
-workflow does not upload PNG screenshots. It commits the text summaries
->>>>>>> Stashed changes
 to `ci-logs/*-latest.txt`, including on successful runs. The settled
 frames of the redesigned surfaces are the exception to the no-PNG rule:
 the component gallery, the book page and its dialogs, the series page,

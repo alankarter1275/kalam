@@ -1181,7 +1181,6 @@ fn rebuild_results(
                                         }
                                     }
                                 }
-<<<<<<< Updated upstream
                                 candidate_for_detail
                                     .detail_key
                                     .as_deref()
@@ -1194,14 +1193,6 @@ fn rebuild_results(
                                     desc_view.buffer().set_text(&text);
                                     status2
                                         .set_label("Description filled — review, then Save.");
-=======
-                                metadata::SourceId::GoogleBooks => {
-                                    Box::new(metadata::google_books::GoogleBooks {
-                                        api_key: String::new(),
-                                        country: metadata::google_books::detect_country(),
-                                        on_key_state: None,
-                                    })
->>>>>>> Stashed changes
                                 }
                             },
                         );

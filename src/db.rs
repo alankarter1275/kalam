@@ -91,7 +91,6 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v19 = the "underline" highlight *colour* retires into the underline
 ///          *style* (decision 28): colour='underline' rows become
 ///          style='underline' in the default yellow
-<<<<<<< Updated upstream
 /// · v20 = stable PDF page identities and page-anchored drawing objects
 ///          (decisions 66, 69 and 72)
 /// · v21 = hand-edited author fields, locked against metadata refresh
@@ -99,9 +98,6 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v22 = fetched comic-series metadata, its source link and cover,
 ///          and hand-edited field locks (decisions 46 and 48)
 pub const SCHEMA_VERSION: i64 = 22;
-=======
-pub const SCHEMA_VERSION: i64 = 19;
->>>>>>> Stashed changes
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {

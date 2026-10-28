@@ -3429,7 +3429,6 @@ fn set_google_chevron(button: &gtk::Button, expanded: bool) {
     button.update_property(&[gtk::accessible::Property::Label(label)]);
 }
 
-<<<<<<< Updated upstream
 fn set_credential_chevron(button: &gtk::Button, source_label: &str, expanded: bool) {
     let icon = gtk::Image::from_icon_name(if expanded {
         "pan-up-symbolic"
@@ -3469,24 +3468,6 @@ fn build_credential_source(
 ) {
     let source_label = source.label();
     let expanded = Rc::new(Cell::new(enabled));
-=======
-fn build_sources_pane(host: &gtk::Box, service: &LibraryService, snap: &SettingsSnapshot) {
-    use crate::metadata::{set_source_enabled, SourceId};
-
-    // The pane's callbacks outlive this builder, so they share one
-    // handle cloned out of the service here.
-    let catalog = service.catalog().clone();
-
-    let rows = pane_section(host, "Books");
-
-    let open_library = row_switch("Open Library", snap.source_open_library, {
-        let catalog = catalog.clone();
-        move |on| set_source_enabled(&catalog, SourceId::OpenLibrary, on)
-    });
-    pane_row_with(&rows, "Open Library", Some("No key needed"), &open_library);
-
-    let expanded = Rc::new(Cell::new(snap.source_google_books));
->>>>>>> Stashed changes
     let revealer = gtk::Revealer::new();
     revealer.set_transition_type(if crate::appearance::reduce_motion() {
         gtk::RevealerTransitionType::Crossfade
@@ -3499,41 +3480,26 @@ fn build_sources_pane(host: &gtk::Box, service: &LibraryService, snap: &Settings
     nested.add_css_class("kalam-settings-nested-rows");
     revealer.set_child(Some(&nested));
 
-<<<<<<< Updated upstream
     let row = pane_row(rows, source_label, None);
     let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     controls.set_valign(gtk::Align::Center);
     let needed_chip = settings_chip(needed_text, false);
     needed_chip.set_visible(value.trim().is_empty());
     controls.append(&needed_chip);
-=======
-    let google_row = pane_row(&rows, "Google Books", None);
-    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    controls.set_valign(gtk::Align::Center);
->>>>>>> Stashed changes
 
     let chevron = gtk::Button::new();
     chevron.add_css_class("kalam-settings-chevron");
     chevron.set_size_request(36, 36);
     chevron.set_valign(gtk::Align::Center);
-<<<<<<< Updated upstream
     chevron.set_sensitive(enabled);
     set_credential_chevron(&chevron, source_label, expanded.get());
 
     let source_switch = row_switch(source_label, enabled, {
         let service = service.clone();
-=======
-    chevron.set_sensitive(snap.source_google_books);
-    set_google_chevron(&chevron, expanded.get());
-
-    let google_switch = row_switch("Google Books", snap.source_google_books, {
-        let catalog = catalog.clone();
->>>>>>> Stashed changes
         let expanded_switch = expanded.clone();
         let revealer_switch = revealer.clone();
         let chevron_switch = chevron.clone();
         move |on| {
-<<<<<<< Updated upstream
             crate::metadata::set_source_enabled(service.catalog(), source, on);
             expanded_switch.set(on);
             revealer_switch.set_reveal_child(on);
@@ -3544,18 +3510,6 @@ fn build_sources_pane(host: &gtk::Box, service: &LibraryService, snap: &Settings
     controls.append(&source_switch);
     controls.append(&chevron);
     row.append(&controls);
-=======
-            set_source_enabled(&catalog, SourceId::GoogleBooks, on);
-            expanded_switch.set(on);
-            revealer_switch.set_reveal_child(on);
-            chevron_switch.set_sensitive(on);
-            set_google_chevron(&chevron_switch, on);
-        }
-    });
-    controls.append(&google_switch);
-    controls.append(&chevron);
-    google_row.append(&controls);
->>>>>>> Stashed changes
     rows.append(&revealer);
 
     {
@@ -3565,7 +3519,6 @@ fn build_sources_pane(host: &gtk::Box, service: &LibraryService, snap: &Settings
             let next = !expanded_chevron.get();
             expanded_chevron.set(next);
             revealer_chevron.set_reveal_child(next);
-<<<<<<< Updated upstream
             set_credential_chevron(button, source_label, next);
         });
     }
@@ -3697,12 +3650,6 @@ fn build_sources_pane(host: &gtk::Box, service: &LibraryService, snap: &Settings
         });
     }
 
-=======
-            set_google_chevron(button, next);
-        });
-    }
-
->>>>>>> Stashed changes
     // API key. Saving happens when the field is left, not on every
     // keystroke: a partly typed key must never replace a working one.
     let key_row = pane_row(&nested, "API key", None);
@@ -3815,7 +3762,6 @@ fn build_sources_pane(host: &gtk::Box, service: &LibraryService, snap: &Settings
     country_entry.add_controller(country_focus);
 
     let rows = pane_section(host, "Comics");
-<<<<<<< Updated upstream
     build_credential_source(
         &rows,
         service,
@@ -3844,17 +3790,6 @@ fn build_sources_pane(host: &gtk::Box, service: &LibraryService, snap: &Settings
         "Comic Vine rejected this API key.",
         "API key needed",
     );
-=======
-    for name in ["MyAnimeList", "Comic Vine"] {
-        let row = pane_row(&rows, name, None);
-        row.append(&settings_chip("Not available yet", false));
-        let sw = gtk::Switch::new();
-        sw.set_sensitive(false);
-        sw.set_valign(gtk::Align::Center);
-        sw.update_property(&[gtk::accessible::Property::Label(name)]);
-        row.append(&sw);
-    }
->>>>>>> Stashed changes
 }
 
 /// The app's pill switch. `on_toggle` fires only for user changes: the

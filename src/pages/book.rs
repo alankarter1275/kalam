@@ -123,11 +123,8 @@ pub enum BookPageMsg {
     ToggleDescription,
     /// Ask before removing the book (the ⋯ menu's destructive item).
     ConfirmDelete,
-<<<<<<< Updated upstream
     /// Open the deep editor on this book (the ⋯ menu's Edit book…).
     EditBook,
-=======
->>>>>>> Stashed changes
     /// Reveal the book's folder — the file footer's button, the ⋯ menu
     /// item, and the file-missing state's "Locate file" primary.
     LocateFile,
@@ -692,12 +689,9 @@ impl Component for BookPageModel {
                     open_in_file_manager(&book.file_path.clone());
                 }
             }
-<<<<<<< Updated upstream
             BookPageMsg::EditBook => {
                 let _ = sender.output(BookPageOut::EditBook);
             }
-=======
->>>>>>> Stashed changes
             BookPageMsg::SetShelf { shelf_id, member } => {
                 if let Some(book) = &self.book {
                     let catalog = self.service.catalog();
@@ -1527,15 +1521,12 @@ fn fill_actions(host: &gtk::Box, model: &BookPageModel, sender: &ComponentSender
 
     let menu = menu_popover(MenuWidth::Wide);
     menu.add_submenu("Shelves", shelves_menu);
-<<<<<<< Updated upstream
     if matches!(book.format, BookFormat::Epub) {
         let s = sender.clone();
         menu.add_item("Edit book…", move || {
             s.input(BookPageMsg::EditBook);
         });
     }
-=======
->>>>>>> Stashed changes
     if matches!(book.format, BookFormat::Cbz | BookFormat::Cbr) {
         let s = sender.clone();
         menu.add_item("Remaster…", move || {

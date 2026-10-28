@@ -404,7 +404,6 @@ pub trait MetadataSource: Send + Sync {
     }
 }
 
-<<<<<<< Updated upstream
 /// Settings shows a rejected-credential state on the Metadata sources
 /// pane; the flag is a pref so it survives restarts, and it is written
 /// only when it actually changes.
@@ -417,42 +416,6 @@ fn key_state_reporter(
         let want = if rejected { "1" } else { "0" };
         if catalog.get_pref(pref).as_deref() != Some(want) {
             catalog.set_pref(pref, want);
-=======
-/// Build the provider list, honouring which sources are enabled.
-pub fn enabled_sources(
-    catalog: &std::sync::Arc<crate::db::Catalog>,
-) -> Vec<Box<dyn MetadataSource>> {
-    let mut out: Vec<Box<dyn MetadataSource>> = Vec::new();
-    for id in SourceId::ALL {
-        if !source_enabled(catalog, *id) {
-            continue;
-        }
-        match id {
-            SourceId::OpenLibrary => out.push(Box::new(openlibrary::OpenLibrary)),
-            SourceId::GoogleBooks => out.push(Box::new(google_books::GoogleBooks {
-                api_key: catalog.get_pref("meta.googlebooks.key").unwrap_or_default(),
-                country: catalog
-                    .get_pref("meta.googlebooks.country")
-                    .filter(|c| !c.trim().is_empty())
-                    .unwrap_or_else(google_books::detect_country),
-                // Settings shows a rejected-key state on the Metadata
-                // sources pane; the flag is a pref so it survives restarts,
-                // and it is written only when it actually changes.
-                on_key_state: Some({
-                    let catalog = catalog.clone();
-                    std::sync::Arc::new(move |rejected: bool| {
-                        let want = if rejected { "1" } else { "0" };
-                        if catalog
-                            .get_pref("meta.googlebooks.key_rejected")
-                            .as_deref()
-                            != Some(want)
-                        {
-                            catalog.set_pref("meta.googlebooks.key_rejected", want);
-                        }
-                    })
-                }),
-            })),
->>>>>>> Stashed changes
         }
     })
 }

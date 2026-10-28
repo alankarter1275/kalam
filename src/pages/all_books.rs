@@ -53,8 +53,6 @@ pub enum AllBooksMsg {
     SetQuery(String),
     /// Put keyboard focus in the library search (the shell's Ctrl+F).
     FocusSearch,
-    /// The "All books" title button was clicked: open the shelves menu (§47).
-    OpenShelves,
     /// A shelf was chosen from the filter popover: add it as an active filter.
     FilterShelfSelected(String),
     /// A tag was chosen from the filter popover: add it as an active filter.
@@ -67,19 +65,17 @@ pub enum AllBooksMsg {
     GroupChanged(GroupBy),
     /// Switch between Grid and List view (§47 toolbar: Grid / List).
     ViewModeChanged(ViewMode),
-    /// The "All books" title button opened its popover; build it lazily.
-    ShelvesPopoverOpen,
     /// A shelf was chosen from the title popover: navigate to that shelf.
     ShelvesPopoverShelfSelected(String),
     /// "Manage shelves…" from the title popover.
     ShelvesPopoverManageShelves,
     /// "New shelf…" from the title popover.
     ShelvesPopoverNewShelf,
-    /// The "+ Import EPUB" pill opened its import menu.
-    ImportMenuOpen,
     /// "Import files…" from the import menu.
     ImportMenuImportFiles,
     /// "Import a folder…" from the import menu.
+    ImportMenuImportFolder,
+    SearchModeChanged(SearchMode),
     ImportMenuImportFolder,
     SearchModeChanged(SearchMode),
     SortChanged(SortKey),
@@ -724,9 +720,6 @@ impl Component for AllBooksModel {
                 widgets.search.grab_focus();
                 return;
             }
-            AllBooksMsg::OpenShelves => {
-                let _ = sender.output(AllBooksOut::OpenShelves);
-            }
             AllBooksMsg::FilterShelfSelected(name) => {
                 let chip = format!("shelf:{name}");
                 if !self.filter_chips.contains(&chip) {
@@ -789,11 +782,6 @@ impl Component for AllBooksModel {
             AllBooksMsg::ViewModeChanged(mode) => {
                 self.view_mode = mode;
             }
-            AllBooksMsg::ShelvesPopoverOpen => {
-                // Popover is built in init(); this just ensures it's shown.
-                // The popover is attached to the title_btn and auto-opens
-                // when the menu button is clicked.
-            }
             AllBooksMsg::ShelvesPopoverShelfSelected(name) => {
                 let chip = format!("shelf:{name}");
                 if !self.filter_chips.contains(&chip) {
@@ -815,9 +803,6 @@ impl Component for AllBooksModel {
             }
             AllBooksMsg::ShelvesPopoverNewShelf => {
                 crate::notify::info("New shelf", "Coming soon — shelf creation dialog.");
-            }
-            AllBooksMsg::ImportMenuOpen => {
-                // Import menu is built in init(); auto-opens on menu button click.
             }
             AllBooksMsg::ImportMenuImportFiles => {
                 sender.input(AllBooksMsg::PickFiles);
@@ -1719,7 +1704,7 @@ fn build_shelves_popover(
     let s_new = sender.clone();
 
     menu.add_item("All books", move || {
-        let _ = s_all.input(AllBooksMsg::ShelvesPopoverShelfSelected("All books".to_string()));
+        s_all.input(AllBooksMsg::ShelvesPopoverShelfSelected("All books".to_string()));
     });
 
     // Shelves section with Manual/Smart sub-groups and counts.
@@ -1735,17 +1720,17 @@ fn build_shelves_popover(
                 &format!("{} ({})", shelf.name, count),
                 count,
                 move || {
-                    let _ = s.input(AllBooksMsg::ShelvesPopoverShelfSelected(name.clone()));
+                    s.input(AllBooksMsg::ShelvesPopoverShelfSelected(name.clone()));
                 },
             );
         }
 
     menu.add_separator();
     menu.add_item("Manage shelves…", move || {
-        let _ = s_manage.input(AllBooksMsg::ShelvesPopoverManageShelves);
+        s_manage.input(AllBooksMsg::ShelvesPopoverManageShelves);
     });
     menu.add_item("New shelf…", move || {
-        let _ = s_new.input(AllBooksMsg::ShelvesPopoverNewShelf);
+        s_new.input(AllBooksMsg::ShelvesPopoverNewShelf);
     });
         menu.add_submenu("Shelves", shelf_menu);
     }
@@ -1763,12 +1748,12 @@ fn build_import_menu(
 
     let s = sender.clone();
     menu.add_item_with_hint("Import files…", "Ctrl+I", move || {
-        let _ = s.input(AllBooksMsg::ImportMenuImportFiles);
+        s.input(AllBooksMsg::ImportMenuImportFiles);
     });
 
     let s = sender.clone();
     menu.add_item_with_hint("Import a folder…", "Ctrl+Shift+I", move || {
-        let _ = s.input(AllBooksMsg::ImportMenuImportFolder);
+        s.input(AllBooksMsg::ImportMenuImportFolder);
     });
 
     menu.add_separator();

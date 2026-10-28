@@ -1616,6 +1616,7 @@ fn setup_columns_menu(
     button.set_popover(Some(&menu.popover()));
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rebuild_list(
     list: &gtk::Box,
     books: &[Book],

@@ -1073,7 +1073,7 @@ fn rating_text(rating: u8) -> String {
         return "—".to_string();
     }
     let full = (rating / 2) as usize;
-    let half = rating % 2 != 0;
+    let half = !rating.is_multiple_of(2);
     let mut s = String::with_capacity(5);
     for _ in 0..full.min(5) {
         s.push('★');

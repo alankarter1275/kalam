@@ -769,10 +769,6 @@ impl Component for AllBooksModel {
             AllBooksMsg::ViewModeChanged(mode) => {
                 self.view_mode = mode;
             }
-            AllBooksMsg::GridColsChanged(cols) => {
-                self.grid_cols = cols;
-                self.reload(&sender);
-            }
             AllBooksMsg::SetQuery(q) => {
                 // Setting the entry text fires search-changed, which
                 // arrives as SearchChanged and does the actual reload.

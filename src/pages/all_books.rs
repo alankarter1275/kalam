@@ -55,8 +55,6 @@ pub enum AllBooksMsg {
     FocusSearch,
     /// The "All books" title button was clicked: open the shelves menu (§47).
     OpenShelves,
-    /// Open/close the filter popover (§47 toolbar: Filter).
-    FilterToggle,
     /// A shelf was chosen from the filter popover: add it as an active filter.
     FilterShelfSelected { shelf_id: i64, name: String },
     /// A tag was chosen from the filter popover: add it as an active filter.
@@ -1559,8 +1557,8 @@ fn build_filter_popup(
             &format!("{} ({})", shelf.name, count),
             count,
             move || {
-                let _ = s.input(AllBooksMsg::FilterShelfSelected {
-                    shelf_id: sid,
+                s.input(AllBooksMsg::FilterShelfSelected {
+                    shelf_id: _,
                     name: name_for_closure.clone(),
                 });
             },
@@ -1581,7 +1579,7 @@ fn build_filter_popup(
             tag,
             *count as usize,
             move || {
-                let _ = s.input(AllBooksMsg::FilterTagSelected(t.clone()));
+                s.input(AllBooksMsg::FilterTagSelected(t.clone()));
             },
         );
     }
@@ -1602,17 +1600,17 @@ fn build_group_popup(
 
     let s = sender.clone();
     menu.add_item("None", move || {
-        let _ = s.input(AllBooksMsg::GroupChanged(GroupBy::None));
+        s.input(AllBooksMsg::GroupChanged(GroupBy::None));
     });
 
     let s = sender.clone();
     menu.add_item("Author", move || {
-        let _ = s.input(AllBooksMsg::GroupChanged(GroupBy::Author));
+        s.input(AllBooksMsg::GroupChanged(GroupBy::Author));
     });
 
     let s = sender.clone();
     menu.add_item("Series", move || {
-        let _ = s.input(AllBooksMsg::GroupChanged(GroupBy::Series));
+        s.input(AllBooksMsg::GroupChanged(GroupBy::Series));
     });
 
     group_btn.set_popover(Some(&menu.popover()));
@@ -1644,7 +1642,7 @@ fn rebuild_filter_chips(
             true,
             crate::widgets::chip::ChipSize::Standard,
             move |_active| {
-                let _ = s.input(AllBooksMsg::FilterChipRemoved(chip.clone()));
+                s.input(AllBooksMsg::FilterChipRemoved(chip.clone()));
             },
         );
         btn.set_tooltip_text(Some(&format!("Remove “{display}” filter")));

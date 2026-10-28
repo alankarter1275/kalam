@@ -1,9 +1,4 @@
-src/pages/all_books.rs:79:5: [1m[91merror[E0428][0m: the name `ImportMenuImportFolder` is defined multiple times: `ImportMenuImportFolder` redefined here
-src/pages/all_books.rs:80:5: [1m[91merror[E0428][0m: the name `SearchModeChanged` is defined multiple times: `SearchModeChanged` redefined here
-src/pages/all_books.rs:47:10: [1m[91merror[E0004][0m: non-exhaustive patterns: `&pages::all_books::AllBooksMsg::ImportMenuImportFolder` and `&pages::all_books::AllBooksMsg::SearchModeChanged(_)` not covered: patterns `&pages::all_books::AllBooksMsg::ImportMenuImportFolder` and `&pages::all_books::AllBooksMsg::SearchModeChanged(_)` not covered
-src/pages/all_books.rs:671:15: [1m[91merror[E0004][0m: non-exhaustive patterns: `pages::all_books::AllBooksMsg::ImportMenuImportFolder` and `pages::all_books::AllBooksMsg::SearchModeChanged(_)` not covered: patterns `pages::all_books::AllBooksMsg::ImportMenuImportFolder` and `pages::all_books::AllBooksMsg::SearchModeChanged(_)` not covered
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -24,14 +19,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/all_books.rs:79:5: [1m[91merror[E0428][0m: the name `ImportMenuImportFolder` is defined multiple times: `ImportMenuImportFolder` redefined here
-src/pages/all_books.rs:80:5: [1m[91merror[E0428][0m: the name `SearchModeChanged` is defined multiple times: `SearchModeChanged` redefined here
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/all_books.rs:47:10: [1m[91merror[E0004][0m: non-exhaustive patterns: `&pages::all_books::AllBooksMsg::ImportMenuImportFolder` and `&pages::all_books::AllBooksMsg::SearchModeChanged(_)` not covered: patterns `&pages::all_books::AllBooksMsg::ImportMenuImportFolder` and `&pages::all_books::AllBooksMsg::SearchModeChanged(_)` not covered
-src/pages/all_books.rs:671:15: [1m[91merror[E0004][0m: non-exhaustive patterns: `pages::all_books::AllBooksMsg::ImportMenuImportFolder` and `pages::all_books::AllBooksMsg::SearchModeChanged(_)` not covered: patterns `pages::all_books::AllBooksMsg::ImportMenuImportFolder` and `pages::all_books::AllBooksMsg::SearchModeChanged(_)` not covered
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
---- run 40676203505 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 15.27s
+--- run 40676634974 ---

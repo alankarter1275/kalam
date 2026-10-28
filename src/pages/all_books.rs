@@ -1,13 +1,16 @@
 use crate::db::{BulkMetadataEdit, Catalog, SortKey};
 use crate::models::Book;
 use crate::service::{AllBooksSnapshot, LibraryService};
-use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable, invalidate_cover_cache};
+use crate::widgets::book_row::{
+    build_book_grid, build_book_grid_selectable, build_book_list, invalidate_cover_cache,
+};
 use crate::widgets::in_app_dialog;
 use crate::widgets::menu::{menu_popover, MenuWidth};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -44,6 +47,56 @@ pub enum ViewMode {
     List,
 }
 
+/// A column that can be shown in the list view (§50). The order here is the
+/// default left-to-right order; the Columns menu toggles visibility and the
+/// view itself is reorderable by drag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListColumn {
+    Title,
+    Author,
+    Format,
+    Size,
+    Added,
+    Rating,
+    Status,
+}
+
+impl ListColumn {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Title => "Title",
+            Self::Author => "Author",
+            Self::Format => "Format",
+            Self::Size => "Size",
+            Self::Added => "Date added",
+            Self::Rating => "Rating",
+            Self::Status => "Status",
+        }
+    }
+
+    /// All columns in default order.
+    pub const ALL: [Self; 7] = [
+        Self::Title,
+        Self::Author,
+        Self::Format,
+        Self::Size,
+        Self::Added,
+        Self::Rating,
+        Self::Status,
+    ];
+
+    /// The columns shown by default.
+    pub fn default_visible() -> Vec<Self> {
+        vec![
+            Self::Title,
+            Self::Author,
+            Self::Format,
+            Self::Size,
+            Self::Added,
+        ]
+    }
+}
+
 #[derive(Debug)]
 pub enum AllBooksMsg {
     SearchChanged(String),
@@ -65,6 +118,10 @@ pub enum AllBooksMsg {
     GroupChanged(GroupBy),
     /// Switch between Grid and List view (§47 toolbar: Grid / List).
     ViewModeChanged(ViewMode),
+    /// Toggle one list-view column's visibility (§50 Columns menu).
+    ListColumnToggled(ListColumn),
+    /// Sort the list by one column; toggles direction on repeat click.
+    ListSortChanged(ListColumn),
     /// A shelf was chosen from the title popover: navigate to that shelf.
     ShelvesPopoverShelfSelected(String),
     /// "Manage shelves…" from the title popover.
@@ -267,6 +324,12 @@ pub struct AllBooksModel {
     view_mode: ViewMode,
     /// Column count for the grid, from `grid_cols_for(viewport width)` (§47).
     grid_cols: i32,
+    /// Which list-view columns are visible, in left-to-right order (§50).
+    list_columns: Vec<ListColumn>,
+    /// Current list sort column and direction (§50). `None` = keep the
+    /// database order (already sorted by the toolbar Sort key).
+    list_sort_column: Option<ListColumn>,
+    list_sort_desc: bool,
 }
 
 #[relm4::component(pub)]
@@ -461,6 +524,19 @@ impl Component for AllBooksModel {
                         set_spacing: 4,
                     },
 
+                    #[name = "columns_btn"]
+                    gtk::MenuButton {
+                        set_child: Some(&crate::icons::labelled(
+                            "view-list-symbolic",
+                            16,
+                            "Columns",
+                            6,
+                        )),
+                        add_css_class: "kalam-toolbar-btn",
+                        set_always_show_arrow: false,
+                        set_tooltip_text: Some("Choose which list-view columns to show (§50)"),
+                    },
+
                     #[name = "select_btn"]
                     gtk::Button {
                         #[watch]
@@ -616,6 +692,9 @@ impl Component for AllBooksModel {
             group_by: GroupBy::None,
             view_mode: ViewMode::Grid,
             grid_cols: 8,
+            list_columns: ListColumn::default_visible(),
+            list_sort_column: None,
+            list_sort_desc: false,
         };
         let widgets = view_output!();
         widgets.mode_content_btn.set_group(Some(&widgets.mode_meta_btn));
@@ -662,8 +741,12 @@ impl Component for AllBooksModel {
             model.selection_mode,
             &model.selected_books,
             &sender,
+            model.view_mode,
+            &model.list_columns,
             model.grid_cols,
         );
+
+        setup_columns_menu(&widgets.columns_btn, &sender, &model.list_columns);
 
         ComponentParts { model, widgets }
     }
@@ -788,6 +871,31 @@ impl Component for AllBooksModel {
             }
             AllBooksMsg::ViewModeChanged(mode) => {
                 self.view_mode = mode;
+                // Switching grid↔list rebuilds the page with the other layout.
+                self.reload(&sender);
+            }
+            AllBooksMsg::ListColumnToggled(col) => {
+                if let Some(pos) = self.list_columns.iter().position(|c| *c == col) {
+                    self.list_columns.remove(pos);
+                } else {
+                    // Insert preserving the default relative order.
+                    let insert_at = ListColumn::ALL
+                        .iter()
+                        .take_while(|c| **c != col)
+                        .filter(|c| self.list_columns.contains(c))
+                        .count();
+                    self.list_columns.insert(insert_at, col);
+                }
+                self.reload(&sender);
+            }
+            AllBooksMsg::ListSortChanged(col) => {
+                if self.list_sort_column == Some(col) {
+                    self.list_sort_desc = !self.list_sort_desc;
+                } else {
+                    self.list_sort_column = Some(col);
+                    self.list_sort_desc = false;
+                }
+                self.sort_books_in_place();
             }
             AllBooksMsg::ShelvesPopoverShelfSelected(name) => {
                 let chip = format!("shelf:{name}");
@@ -1354,6 +1462,8 @@ impl Component for AllBooksModel {
                 self.selection_mode,
                 &self.selected_books,
                 &sender,
+                self.view_mode,
+                &self.list_columns,
                 self.grid_cols,
             );
         }
@@ -1430,6 +1540,28 @@ impl AllBooksModel {
             },
         );
     }
+
+    /// Sort the already-loaded books in memory by the current list-view
+    /// sort column/direction (§50). The grid keeps `self.books` too, so this
+    /// is cheap and immediate — no round trip to the database.
+    fn sort_books_in_place(&mut self) {
+        let Some(col) = self.list_sort_column else {
+            return;
+        };
+        let desc = self.list_sort_desc;
+        self.books.sort_by(|a, b| {
+            let ord = match col {
+                ListColumn::Title => a.title.cmp(&b.title),
+                ListColumn::Author => a.authors.cmp(&b.authors),
+                ListColumn::Format => format!("{:?}", a.format).cmp(&format!("{:?}", b.format)),
+                ListColumn::Size => std::cmp::Ordering::Equal,
+                ListColumn::Added => a.added_at.cmp(&b.added_at),
+                ListColumn::Rating => b.rating.cmp(&a.rating),
+                ListColumn::Status => b.progress.cmp(&a.progress),
+            };
+            if desc { ord.reverse() } else { ord }
+        });
+    }
 }
 
 fn status_line(n: usize, query: &str) -> String {
@@ -1463,6 +1595,27 @@ fn group_toggles(box_: &gtk::Box) {
     }
 }
 
+/// Build (or rebuild) the §50 Columns popover on `columns_btn`, keeping the
+/// check items in sync with `list_columns`. Each check item toggles one
+/// column's visibility; toggling sends `ListColumnToggled`, which reloads the
+/// page so the list redraws with the new column set.
+fn setup_columns_menu(
+    button: &gtk::MenuButton,
+    sender: &ComponentSender<AllBooksModel>,
+    list_columns: &[ListColumn],
+) {
+    let menu = menu_popover(MenuWidth::Wide);
+    for col in ListColumn::ALL {
+        let checked = list_columns.contains(&col);
+        let c = col;
+        let s = sender.clone();
+        menu.add_check_item(col.label(), checked, move |_next| {
+            s.input(AllBooksMsg::ListColumnToggled(c));
+        });
+    }
+    button.set_popover(Some(&menu.popover()));
+}
+
 fn rebuild_list(
     list: &gtk::Box,
     books: &[Book],
@@ -1470,6 +1623,8 @@ fn rebuild_list(
     selection_mode: bool,
     selected_books: &HashSet<i64>,
     sender: &ComponentSender<AllBooksModel>,
+    view_mode: ViewMode,
+    list_columns: &[ListColumn],
     cols: i32,
 ) {
     while let Some(child) = list.first_child() {
@@ -1493,7 +1648,26 @@ fn rebuild_list(
     let s = sender.clone();
     let s2 = sender.clone();
 
-    if selection_mode {
+    if view_mode == ViewMode::List {
+        let sel_set = selected_books.clone();
+        let on_sort = Rc::new(move |col| {
+            s.input(AllBooksMsg::ListSortChanged(col));
+        });
+        let list_view = build_book_list(
+            books,
+            list_columns,
+            selection_mode,
+            &sel_set,
+            move |id| {
+                s.output(AllBooksOut::OpenBook { book_id: id }).ok();
+            },
+            move |id| {
+                s.input(AllBooksMsg::ToggleSelectBook(id));
+            },
+            on_sort,
+        );
+        list.append(&list_view);
+    } else if selection_mode {
         let sel_set = selected_books.clone();
         let grid = build_book_grid_selectable(
             books,

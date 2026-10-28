@@ -4,10 +4,14 @@
 //! Cover is 1.6:1 portrait; title + author sit below and ellipsize inside that width.
 
 use crate::models::Book;
+use crate::pages::all_books::ListColumn;
 use gtk::gdk::ModifierType;
+use gtk::glib::BoxedAnyObject;
+use gtk::gio::ListStore;
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -922,6 +926,218 @@ pub fn build_book_grid_selectable(
     crate::preload::warm_books(books, 0, COVER_W, COVER_H);
 
     shell
+}
+
+/// §50 list view: a `Gtk.ColumnView` with resizable, reorderable columns.
+/// Each visible column gets its own cell factory. Clicking a row opens the
+/// book; in selection mode clicking toggles the selection instead. Column
+/// headers are clickable to sort (`on_sort`).
+pub fn build_book_list(
+    books: &[Book],
+    columns: &[ListColumn],
+    selection_mode: bool,
+    selected_books: &HashSet<i64>,
+    on_open: impl Fn(i64) + 'static,
+    on_toggle_select: impl Fn(i64) + 'static,
+    on_sort: Rc<dyn Fn(ListColumn)>,
+) -> gtk::Widget {
+    let store = ListStore::new::<BoxedAnyObject>();
+    for book in books {
+        store.append(&BoxedAnyObject::new(book.id));
+    }
+
+    let selection = gtk::SingleSelection::new(Some(&store));
+    // Selection is driven by the page's `selected_books` set (kept in sync via
+    // `on_toggle_select`), not by GTK's own selection state.
+    selection.set_selection_mode(gtk::SelectionMode::None);
+
+    let view = gtk::ColumnView::new(Some(&selection));
+    view.add_css_class("kalam-book-list");
+    view.set_hexpand(true);
+    view.set_activate_on_single_click(true);
+
+    let books_rc = Rc::new(books.to_vec());
+    let selected_books = selected_books.clone();
+
+    for col in columns {
+        let column = gtk::ColumnViewColumn::new();
+        column.set_title(col.label());
+        column.set_resizable(true);
+        column.set_reorderable(true);
+
+        // Clickable header: sort by this column (§50).
+        let header = gtk::Button::with_label(col.label());
+        header.add_css_class("kalam-book-list-header");
+        header.set_hexpand(true);
+        header.set_halign(gtk::Align::Start);
+        header.set_valign(gtk::Align::Center);
+        let c = *col;
+        let sort = on_sort.clone();
+        header.connect_clicked(move |_| {
+            sort(c);
+        });
+        column.set_header(Some(&header));
+
+        let factory = gtk::SignalListItemFactory::new();
+        let kind = *col;
+        let books = books_rc.clone();
+        let sel = selected_books.clone();
+        factory.connect_setup(move |_, object| {
+            let Some(list_item) = object.downcast_ref::<gtk::ListItem>() else {
+                return;
+            };
+            list_item.set_activatable(false);
+            list_item.set_selectable(false);
+            list_item.set_focusable(false);
+
+            let cell: gtk::Widget = match kind {
+                ListColumn::Status => {
+                    let pb = gtk::ProgressBar::new();
+                    pb.set_hexpand(true);
+                    pb.set_valign(gtk::Align::Center);
+                    pb.set_margin_start(8);
+                    pb.upcast()
+                }
+                _ => {
+                    let lbl = gtk::Label::new(None);
+                    lbl.add_css_class("kalam-book-list-cell");
+                    lbl.set_hexpand(true);
+                    lbl.set_halign(gtk::Align::Start);
+                    lbl.set_valign(gtk::Align::Center);
+                    lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    lbl.set_margin_start(8);
+                    lbl.upcast()
+                }
+            };
+            list_item.set_child(Some(&cell));
+        });
+
+        factory.connect_bind(move |_, object| {
+            let Some(list_item) = object.downcast_ref::<gtk::ListItem>() else {
+                return;
+            };
+            let Some(boxed) = list_item.item().and_downcast::<BoxedAnyObject>() else {
+                return;
+            };
+            let Ok(id) = boxed.try_borrow::<i64>() else {
+                return;
+            };
+            let Some(book) = books.iter().find(|b| b.id == *id) else {
+                return;
+            };
+            let selected = sel.contains(id);
+            let cell = list_item.child();
+            match kind {
+                ListColumn::Title => {
+                    if let Some(lbl) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
+                        lbl.set_text(&book.title);
+                    }
+                }
+                ListColumn::Author => {
+                    if let Some(lbl) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
+                        lbl.set_text(book.authors_display());
+                    }
+                }
+                ListColumn::Format => {
+                    if let Some(lbl) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
+                        lbl.set_text(book.format.as_str());
+                    }
+                }
+                ListColumn::Size => {
+                    if let Some(lbl) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
+                        let bytes = std::fs::metadata(&book.file_path)
+                            .ok()
+                            .map(|m| m.len())
+                            .unwrap_or(0);
+                        lbl.set_text(if bytes == 0 { "—" } else { &format_size(bytes) });
+                    }
+                }
+                ListColumn::Added => {
+                    if let Some(lbl) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
+                        lbl.set_text(&book.added_at);
+                    }
+                }
+                ListColumn::Rating => {
+                    if let Some(lbl) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::Label>()) {
+                        lbl.set_text(&rating_text(book.rating));
+                    }
+                }
+                ListColumn::Status => {
+                    if let Some(pb) = cell.as_ref().and_then(|c| c.downcast_ref::<gtk::ProgressBar>()) {
+                        pb.set_fraction(book.progress as f64 / 100.0);
+                        pb.set_text(Some(&format!("{}%", book.progress)));
+                    }
+                }
+            }
+            if let Some(cell) = cell {
+                if selected {
+                    cell.add_css_class("selected");
+                } else {
+                    cell.remove_css_class("selected");
+                }
+            }
+        });
+
+        column.set_factory(Some(&factory));
+        view.append_column(&column);
+    }
+
+    let on_open_move = on_open;
+    let on_toggle_move = on_toggle_select;
+    view.connect_activate(move |_view, position| {
+        let Some(item) = selection.item(position) else {
+            return;
+        };
+        let Ok(boxed) = item.downcast::<BoxedAnyObject>() else {
+            return;
+        };
+        let Ok(id) = boxed.try_borrow::<i64>() else {
+            return;
+        };
+        if selection_mode {
+            on_toggle_move(*id);
+        } else {
+            on_open_move(*id);
+        }
+    });
+
+    view.upcast()
+}
+
+/// Human-readable file size.
+fn format_size(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    let mut size = bytes as f64;
+    let mut i = 0usize;
+    while size >= 1024.0 && i < UNITS.len() - 1 {
+        size /= 1024.0;
+        i += 1;
+    }
+    if i == 0 {
+        format!("{} {}", bytes, UNITS[i])
+    } else {
+        format!("{:.1} {}", size, UNITS[i])
+    }
+}
+
+/// Star text for a 0..=10 half-star rating (`0` = unrated).
+fn rating_text(rating: u8) -> String {
+    if rating == 0 {
+        return "—".to_string();
+    }
+    let full = (rating / 2) as usize;
+    let half = rating % 2 != 0;
+    let mut s = String::with_capacity(5);
+    for _ in 0..full.min(5) {
+        s.push('★');
+    }
+    if half && full < 5 {
+        s.push('✦');
+    }
+    while s.len() < 5 {
+        s.push('☆');
+    }
+    s
 }
 
 /// Fixed `w`×`h` cover (always the same size — with or without an image).

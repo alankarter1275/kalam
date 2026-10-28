@@ -97,44 +97,44 @@ impl Component for ReadingTimelineModel {
                 set_margin_end: 16,
 
                 gtk::Label {
-                    set_label: "Reading timeline";
-                    add_css_class: "kalam-section-label";
-                    set_halign: gtk::Align::Start;
-                    set_hexpand: true;
+                    set_label: "Reading timeline",
+                    add_css_class: "kalam-section-label",
+                    set_halign: gtk::Align::Start,
+                    set_hexpand: true,
                 },
                 gtk::Label {
-                    set_label: "Show all →";
-                    add_css_class: "kalam-show-all";
-                    set_halign: gtk::Align::End;
+                    set_label: "Show all →",
+                    add_css_class: "kalam-show-all",
+                    set_halign: gtk::Align::End,
                 },
             },
 
             gtk::ScrolledWindow {
-                set_hscrollbar_policy: gtk::PolicyType::Never;
-                set_vscrollbar_policy: gtk::PolicyType::Never;
-                set_hexpand: true;
+                set_hscrollbar_policy: gtk::PolicyType::Never,
+                set_vscrollbar_policy: gtk::PolicyType::Never,
+                set_hexpand: true,
 
                 #[name = "canvas"]
                 gtk::DrawingArea {
-                    add_css_class: "kalam-reading-timeline";
-                    set_hexpand: true;
-                    set_vexpand: false;
-                    set_content_height: 320;
-                    set_width_request: 900;
-                    set_focusable: true;
-                    set_cursor_from_name: Some("pointer");
+                    add_css_class: "kalam-reading-timeline",
+                    set_hexpand: true,
+                    set_vexpand: false,
+                    set_content_height: 320,
+                    set_width_request: 900,
+                    set_focusable: true,
+                    set_cursor_from_name: Some("pointer"),
                 },
             },
 
             #[name = "card_revealer"]
             gtk::Revealer {
-                set_reveal_child: false;
-                set_transition_type: gtk::RevealerTransitionType::SlideDown;
-                set_transition_duration: 200;
-                set_margin_top: 6;
-                set_margin_start: 16;
-                set_margin_end: 16;
-                set_hexpand: true;
+                set_reveal_child: false,
+                set_transition_type: gtk::RevealerTransitionType::SlideDown,
+                set_transition_duration: 200,
+                set_margin_top: 6,
+                set_margin_start: 16,
+                set_margin_end: 16,
+                set_hexpand: true,
             },
         }
     }

@@ -21,10 +21,6 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 src/pages/all_books.rs:423:13: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
 src/pages/all_books.rs:423:13: [1m[91merror[0m: expected `,`
-src/pages/all_books.rs:1168:21: [1m[91merror[E0609][0m: no field `selection_bar` on type `&mut pages::all_books::AllBooksModelWidgets`: unknown field
-src/pages/all_books.rs:1176:21: [1m[91merror[E0609][0m: no field `selection_bar` on type `&mut pages::all_books::AllBooksModelWidgets`: unknown field
-src/pages/comics.rs:1038:21: [1m[91merror[E0277][0m: expected an `Fn(i64)` closure, found `{integer}`: expected an `Fn(i64)` closure, found `{integer}`
-src/pages/comics.rs:1036:28: [1m[91merror[E0061][0m: this function takes 3 arguments but 4 arguments were supplied
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 6 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors

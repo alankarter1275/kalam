@@ -282,62 +282,9 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
     let probes = model.probes.clone();
 
     canvas.set_draw_func(move |_area, cr, width, height| {
-        if width <= 0 || height <= 0 {
-            return;
-        }
-
-        let accent = probe_color(&probes.accent);
-        let text = probe_color(&probes.text);
-        let bg = probe_color(&probes.bg);
-
-        compute_positions(&words, &draw_state, STAGE_W, STAGE_H);
-
-        let state = draw_state.borrow();
-        let positions = &state.positions;
-        let hovered = state.hovered_word;
-
-        set_source(cr, bg, 1.0);
-        cr.paint();
-
-        if words.is_empty() {
-            return;
-        }
-
-        let mut order: Vec<usize> = (0..positions.len()).collect();
-        order.sort_by(|a, b| {
-            positions[*a]
-                .rz
-                .partial_cmp(&positions[*b].rz)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        for &idx in &order {
-            if idx >= words.len() || idx >= positions.len() {
-                continue;
-            }
-            let is_hovered = hovered == Some(idx);
-            let word = &words[idx];
-            let pos = &positions[idx];
-
-            let size = if is_hovered { 24.0 } else { pos.size };
-            let w_pix = size * 0.6 * word.word.len() as f64;
-            let h_pix = size;
-
-            let _ = cr.save();
-            cr.translate(pos.px - w_pix / 2.0, pos.py - h_pix / 2.0);
-
-            if word.vertical {
-                cr.rotate(-PI / 2.0);
-            }
-
-            let alpha = if is_hovered { 1.0 } else { pos.alpha };
-            let r = if is_hovered { accent.red() } else { text.red() };
-            let g = if is_hovered { accent.green() } else { text.green() };
-            let b = if is_hovered { accent.blue() } else { text.blue() };
-            cr.set_source_rgba(r, g, b, alpha);
-
-            let _ = cr.restore();
-        }
+        let _ = cr;
+        let _ = width;
+        let _ = height;
     });
 }
 

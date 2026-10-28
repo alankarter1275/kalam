@@ -5,11 +5,8 @@ use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable, inva
 use crate::widgets::in_app_dialog;
 use crate::widgets::menu::{menu_popover, MenuWidth};
 use gtk::prelude::*;
-use gtk::WidgetExt;
 use relm4::prelude::*;
-use std::cell::Cell;
 use std::collections::HashSet;
-use std::rc::Rc;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -646,20 +643,6 @@ impl Component for AllBooksModel {
             &sender,
             model.grid_cols,
         );
-
-        // Resize handler: when the viewport width changes enough to change the
-        // column count (4 at 640, 8 at 1280, 12 at 1920+ per §47), rebuild the
-        // grid with the new column count.
-        let s = sender.clone();
-        let last_cols = Rc::new(Cell::new(model.grid_cols));
-        widgets.list.connect_size_allocate(move |_widget, alloc| {
-            let width = alloc.width();
-            let new_cols = crate::widgets::book_row::grid_cols_for(width);
-            let prev = last_cols.replace(new_cols);
-            if prev != new_cols {
-                let _ = s.input(AllBooksMsg::GridColsChanged(new_cols));
-            }
-        });
 
         ComponentParts { model, widgets }
     }

@@ -1419,17 +1419,17 @@ mod tests {
     #[test]
     fn a_library_smaller_than_one_screen_still_works() {
         // The small-library case is the one the user actually has.
-        assert_eq!(row_count(0), 0);
-        let (first, last) = visible_rows(0.0, 1000.0, row_count(0));
+        assert_eq!(row_count(0, TEST_COLS), 0);
+        let (first, last) = visible_rows(0.0, 1000.0, row_count(0, TEST_COLS));
         assert!(last < first, "empty library must build nothing");
 
         // 3 books is one row, and we must not build rows that do not exist.
-        let total = row_count(3);
+        let total = row_count(3, TEST_COLS);
         assert_eq!(total, 1);
         assert_eq!(visible_rows(0.0, 1000.0, total), (0, 0));
 
         // 139 books -- the user's real library.
-        let total = row_count(139);
+        let total = row_count(139, TEST_COLS);
         assert_eq!(total, 24);
         let (_, last) = visible_rows(0.0, 1000.0, total);
         assert!(last <= 23, "built row {last} of a 24-row library");
@@ -1536,7 +1536,7 @@ mod tests {
         // other, which also reads as a missing book.
         let mut seen = std::collections::HashSet::new();
         for i in 0..2000 {
-            let pos = card_position(i);
+            let pos = card_position(i, TEST_COLS);
             assert!(
                 seen.insert(pos),
                 "book {i} placed on top of another at {pos:?}"
@@ -1572,16 +1572,16 @@ mod tests {
     fn cards_line_up_in_the_same_columns_as_before() {
         // The layout must be pixel-identical to the grid the user already has,
         // since this is meant to be invisible.
-        assert_eq!(card_position(0), (0, 0));
+        assert_eq!(card_position(0, TEST_COLS), (0, 0));
         // Second card: one card width plus one column gap to the right.
-        assert_eq!(card_position(1), (CARD_W + COL_SPACING as i32, 0));
+        assert_eq!(card_position(1, TEST_COLS), (CARD_W + COL_SPACING as i32, 0));
         // First card of the second row: back to x=0, down one row pitch.
         assert_eq!(card_position(TEST_COLS as usize), (0, ROW_PITCH));
         // Last column, then wrap.
         let last_col = (TEST_COLS - 1) as usize;
-        assert_eq!(card_position(last_col).1, 0, "row 0 must not wrap early");
+        assert_eq!(card_position(last_col, TEST_COLS).1, 0, "row 0 must not wrap early");
         assert_eq!(
-            card_position(last_col + 1).0,
+            card_position(last_col + 1, TEST_COLS).0,
             0,
             "column {TEST_COLS} must wrap to the next row"
         );

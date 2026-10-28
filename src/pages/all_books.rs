@@ -35,6 +35,8 @@ pub enum AllBooksMsg {
     SetQuery(String),
     /// Put keyboard focus in the library search (the shell's Ctrl+F).
     FocusSearch,
+    /// The "All books" title button was clicked: open the shelves menu (§47).
+    OpenShelves,
     SearchModeChanged(SearchMode),
     SortChanged(SortKey),
     PickFiles,
@@ -565,6 +567,9 @@ impl Component for AllBooksModel {
             AllBooksMsg::FocusSearch => {
                 widgets.search.grab_focus();
                 return;
+            }
+            AllBooksMsg::OpenShelves => {
+                let _ = sender.output(AllBooksOut::OpenShelves);
             }
             AllBooksMsg::SetQuery(q) => {
                 // Setting the entry text fires search-changed, which

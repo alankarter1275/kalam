@@ -38,7 +38,8 @@ pub use dictionaries::{
 // build so it is not an unused import.
 #[cfg(test)]
 pub use dictionaries::Sense;
-pub use history::{LibrarySession, SessionRow, TimelineLane};
+#[allow(unused_imports)]
+pub use history::{LibrarySession, SessionRow, TimelineLane, TimelineSession};
 pub use lookup_history::DictLookup;
 #[allow(unused_imports)]
 pub use pronunciation::pronunciation_for;

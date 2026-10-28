@@ -6,7 +6,7 @@
 
 use crate::db::Catalog;
 use crate::widgets::paint::{color_probe, probe_color, set_source};
-use gtk::cairo::Context as CairoContext;
+use cairo::Context as CairoContext;
 use gtk::gdk::RGBA;
 use gtk::pango::{FontDescription, Layout, Weight};
 use gtk::prelude::*;
@@ -467,7 +467,7 @@ fn draw_word(
     let b = if is_hovered { accent.blue() } else { text.blue() };
     cr.set_source_rgba(r, g, b, alpha);
 
-    show_layout(&cr, &layout);
+    pangocairo::functions::show_layout(cr, &layout);
 
     cr.restore();
 }

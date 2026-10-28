@@ -11,7 +11,7 @@ use gtk::gdk::RGBA;
 use gtk::pango::{FontDescription, Layout, Weight};
 use gtk::prelude::*;
 
-// No pangocairo::show_layout — render via Pango extents + Cairo show_text below
+
 use relm4::prelude::*;
 use std::cell::RefCell;
 use std::f64::consts::PI;
@@ -468,8 +468,7 @@ fn draw_word(
     let b = if is_hovered { accent.blue() } else { text.blue() };
     cr.set_source_rgba(r, g, b, alpha);
 
-    cr.move_to(0.0, 0.0);
-    cr.show_text(&word.word);
+    pangocairo::functions::show_layout(cr, &layout);
 
     cr.restore();
 }

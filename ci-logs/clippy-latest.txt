@@ -1,156 +1,57 @@
-src/pages/epub_editor.rs:28:5: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:6330:13: [1m[91merror[E0433][0m: cannot find module or crate `pango` in this scope: use of unresolved module or unlinked crate `pango`
-src/pages/epub_editor.rs:6330:13: [1m[91merror[E0432][0m: unresolved import `pango::prelude::*`
-src/epub_tools.rs:683:18: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:156:18: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:494:25: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:732:25: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:771:25: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:798:14: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:816:18: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:865:18: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1135:25: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1151:21: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1190:9: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1191:9: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1247:9: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1248:9: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/font_subset.rs:472:22: [1m[91merror[E0433][0m: cannot find module or crate `fontdb` in this scope: use of unresolved module or unlinked crate `fontdb`
-src/font_subset.rs:507:22: [1m[91merror[E0433][0m: cannot find module or crate `fontdb` in this scope: use of unresolved module or unlinked crate `fontdb`
-src/pages/epub_editor.rs:3147:30: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3149:45: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3167:28: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:4320:13: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:4321:13: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:4350:17: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:4351:17: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:6040:17: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:6342:24: [1m[91merror[E0433][0m: cannot find module or crate `pangocairo` in this scope: use of unresolved module or unlinked crate `pangocairo`
-src/pages/epub_editor.rs:6358:17: [1m[91merror[E0433][0m: cannot find module or crate `pango` in this scope: use of unresolved module or unlinked crate `pango`
-src/pages/epub_editor.rs:6373:17: [1m[91merror[E0433][0m: cannot find module or crate `pangocairo` in this scope: use of unresolved module or unlinked crate `pangocairo`
-src/pages/epub_editor.rs:6374:17: [1m[91merror[E0433][0m: cannot find module or crate `pangocairo` in this scope: use of unresolved module or unlinked crate `pangocairo`
-src/pages/epub_editor.rs:13108:30: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:13109:28: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:13129:22: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:13131:20: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:14277:19: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/service.rs:2723:22: [1m[91merror[E0433][0m: cannot find module or crate `fontdb` in this scope: use of unresolved module or unlinked crate `fontdb`
-src/service.rs:2753:22: [1m[91merror[E0433][0m: cannot find module or crate `fontdb` in this scope: use of unresolved module or unlinked crate `fontdb`
-src/service.rs:2801:22: [1m[91merror[E0433][0m: cannot find module or crate `fontdb` in this scope: use of unresolved module or unlinked crate `fontdb`
-src/pages/epub_editor.rs:6356:26: [1m[91merror[E0433][0m: cannot find module or crate `pango` in this scope: use of unresolved module or unlinked crate `pango`
-src/service.rs:2811:17: [1m[91merror[E0433][0m: cannot find module or crate `fontdb` in this scope: use of unresolved module or unlinked crate `fontdb`
-src/epub_tools.rs:678:13: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_tools.rs:708:36: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_tools.rs:666:9: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/pages/epub_editor.rs:14275:37: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:13355:14: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/epub_structure.rs:497:40: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:774:40: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:870:31: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1252:46: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/pages/epub_editor.rs:341:20: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:344:18: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:483:17: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:484:17: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:485:18: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:486:18: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:488:15: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:489:15: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:490:23: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:491:23: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3131:16: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3132:16: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3461:39: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3465:37: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3472:38: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:4308:52: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:5562:40: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:6117:18: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:6131:26: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:6353:31: [1m[91merror[E0433][0m: cannot find module or crate `pango` in this scope: use of unresolved module or unlinked crate `pango`
-src/pages/epub_editor.rs:13334:25: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 69 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 71 previous errors
+src/widgets/saved_words_sphere.rs:19:7: [1m[91merror[0m: constant `STAGE_W` is never used
+src/widgets/saved_words_sphere.rs:20:7: [1m[91merror[0m: constant `STAGE_H` is never used
+src/widgets/saved_words_sphere.rs:26:7: [1m[91merror[0m: constant `MIN_SIZE` is never used
+src/widgets/saved_words_sphere.rs:28:7: [1m[91merror[0m: constant `MAX_SIZE` is never used
+src/widgets/saved_words_sphere.rs:31:7: [1m[91merror[0m: constant `DEPTH_SCALE_MIN` is never used
+src/widgets/saved_words_sphere.rs:32:7: [1m[91merror[0m: constant `DEPTH_SCALE_MAX` is never used
+src/widgets/saved_words_sphere.rs:35:7: [1m[91merror[0m: constant `OPACITY_BACK` is never used
+src/widgets/saved_words_sphere.rs:36:7: [1m[91merror[0m: constant `OPACITY_FRONT` is never used
+src/widgets/saved_words_sphere.rs:44:5: [1m[91merror[0m: fields `word`, `sx`, `sy`, `sz`, and `weight` are never read
+src/widgets/saved_words_sphere.rs:70:5: [1m[91merror[0m: field `positions` is never read
+src/widgets/saved_words_sphere.rs:76:5: [1m[91merror[0m: fields `px`, `py`, `size`, `alpha`, and `rz` are never read
+src/widgets/saved_words_sphere.rs:337:4: [1m[91merror[0m: function `compute_positions` is never used
+src/widgets/saved_words_sphere.rs:377:4: [1m[91merror[0m: function `rotate_point` is never used
+src/widgets/saved_words_sphere.rs:44:5: [1m[91merror[0m: field `word` is never read
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 13 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 12 previous errors
 
 === last 80 lines of the raw log ===
+--- system libraries (the agent cannot read Actions logs, and
+--- kalam-reader's gtk4 v4_16 feature needs system GTK >= 4.16) ---
+gtk4: 4.22.4
+gdk4: Package gdk4 was not found in the pkg-config search path.
+Perhaps you should add the directory containing `gdk4.pc'
+to the PKG_CONFIG_PATH environment variable
+Package 'gdk4' not found
+not found
+libadwaita-1: 1.9.1
+glib-2.0: 2.88.0
+[1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
+[1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
+[1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
+[1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
+[1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/epub_editor.rs:28:5: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:6330:13: [1m[91merror[E0433][0m: cannot find module or crate `pango` in this scope: use of unresolved module or unlinked crate `pango`
-src/pages/epub_editor.rs:6330:13: [1m[91merror[E0432][0m: unresolved import `pango::prelude::*`
-src/epub_tools.rs:683:18: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:156:18: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:494:25: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:732:25: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:771:25: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:798:14: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:816:18: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:865:18: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1135:25: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1151:21: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1190:9: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1191:9: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1247:9: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1248:9: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/font_subset.rs:472:22: [1m[91merror[E0433][0m: cannot find module or crate `fontdb` in this scope: use of unresolved module or unlinked crate `fontdb`
-src/font_subset.rs:507:22: [1m[91merror[E0433][0m: cannot find module or crate `fontdb` in this scope: use of unresolved module or unlinked crate `fontdb`
-src/pages/epub_editor.rs:3147:30: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3149:45: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3167:28: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:4320:13: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:4321:13: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:4350:17: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:4351:17: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:6040:17: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:6342:24: [1m[91merror[E0433][0m: cannot find module or crate `pangocairo` in this scope: use of unresolved module or unlinked crate `pangocairo`
-src/pages/epub_editor.rs:6358:17: [1m[91merror[E0433][0m: cannot find module or crate `pango` in this scope: use of unresolved module or unlinked crate `pango`
-src/pages/epub_editor.rs:6373:17: [1m[91merror[E0433][0m: cannot find module or crate `pangocairo` in this scope: use of unresolved module or unlinked crate `pangocairo`
-src/pages/epub_editor.rs:6374:17: [1m[91merror[E0433][0m: cannot find module or crate `pangocairo` in this scope: use of unresolved module or unlinked crate `pangocairo`
-src/pages/epub_editor.rs:13108:30: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:13109:28: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:13129:22: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:13131:20: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:14277:19: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/service.rs:2723:22: [1m[91merror[E0433][0m: cannot find module or crate `fontdb` in this scope: use of unresolved module or unlinked crate `fontdb`
-src/service.rs:2753:22: [1m[91merror[E0433][0m: cannot find module or crate `fontdb` in this scope: use of unresolved module or unlinked crate `fontdb`
-src/service.rs:2801:22: [1m[91merror[E0433][0m: cannot find module or crate `fontdb` in this scope: use of unresolved module or unlinked crate `fontdb`
-src/pages/epub_editor.rs:6356:26: [1m[91merror[E0433][0m: cannot find module or crate `pango` in this scope: use of unresolved module or unlinked crate `pango`
-src/service.rs:2811:17: [1m[91merror[E0433][0m: cannot find module or crate `fontdb` in this scope: use of unresolved module or unlinked crate `fontdb`
-src/epub_tools.rs:678:13: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_tools.rs:708:36: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_tools.rs:666:9: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/pages/epub_editor.rs:14275:37: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:13355:14: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/epub_structure.rs:497:40: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:774:40: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:870:31: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/epub_structure.rs:1252:46: [1m[91merror[E0433][0m: cannot find module or crate `regex` in this scope: use of unresolved module or unlinked crate `regex`
-src/pages/epub_editor.rs:341:20: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:344:18: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:483:17: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:484:17: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:485:18: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:486:18: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:488:15: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:489:15: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:490:23: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:491:23: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3131:16: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3132:16: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3461:39: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3465:37: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:3472:38: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:4308:52: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:5562:40: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:6117:18: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:6131:26: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-src/pages/epub_editor.rs:6353:31: [1m[91merror[E0433][0m: cannot find module or crate `pango` in this scope: use of unresolved module or unlinked crate `pango`
-src/pages/epub_editor.rs:13334:25: [1m[91merror[E0433][0m: cannot find module or crate `sourceview5` in this scope: use of unresolved module or unlinked crate `sourceview5`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 69 previous errors
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+src/widgets/saved_words_sphere.rs:19:7: [1m[91merror[0m: constant `STAGE_W` is never used
+src/widgets/saved_words_sphere.rs:20:7: [1m[91merror[0m: constant `STAGE_H` is never used
+src/widgets/saved_words_sphere.rs:26:7: [1m[91merror[0m: constant `MIN_SIZE` is never used
+src/widgets/saved_words_sphere.rs:28:7: [1m[91merror[0m: constant `MAX_SIZE` is never used
+src/widgets/saved_words_sphere.rs:31:7: [1m[91merror[0m: constant `DEPTH_SCALE_MIN` is never used
+src/widgets/saved_words_sphere.rs:32:7: [1m[91merror[0m: constant `DEPTH_SCALE_MAX` is never used
+src/widgets/saved_words_sphere.rs:35:7: [1m[91merror[0m: constant `OPACITY_BACK` is never used
+src/widgets/saved_words_sphere.rs:36:7: [1m[91merror[0m: constant `OPACITY_FRONT` is never used
+src/widgets/saved_words_sphere.rs:44:5: [1m[91merror[0m: fields `word`, `sx`, `sy`, `sz`, and `weight` are never read
+src/widgets/saved_words_sphere.rs:70:5: [1m[91merror[0m: field `positions` is never read
+src/widgets/saved_words_sphere.rs:76:5: [1m[91merror[0m: fields `px`, `py`, `size`, `alpha`, and `rz` are never read
+src/widgets/saved_words_sphere.rs:337:4: [1m[91merror[0m: function `compute_positions` is never used
+src/widgets/saved_words_sphere.rs:377:4: [1m[91merror[0m: function `rotate_point` is never used
+src/widgets/saved_words_sphere.rs:44:5: [1m[91merror[0m: field `word` is never read
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 13 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 71 previous errors
---- run 40769274295 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 12 previous errors
+--- run 40770272304 ---

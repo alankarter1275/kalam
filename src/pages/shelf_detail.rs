@@ -341,6 +341,7 @@ impl ShelfDetailModel {
         let cm = std::rc::Rc::new(comics_map);
         let grid = build_book_grid(
             &self.books,
+            8,
             move |id| {
                 if let Some(Some(ser)) = cm.get(&id) {
                     s1.output(ShelfDetailOut::ComicSeries {

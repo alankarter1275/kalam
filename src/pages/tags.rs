@@ -671,6 +671,7 @@ fn rebuild_books(list: &gtk::Box, books: &[Book], sender: &ComponentSender<TagBo
     let cm = std::rc::Rc::new(comics_map);
     let grid = build_book_grid(
         books,
+        8,
         move |id| {
             if let Some(Some(ser)) = cm.get(&id) {
                 s1.output(TagBooksOut::ComicSeries {

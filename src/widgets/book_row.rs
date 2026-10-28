@@ -541,7 +541,7 @@ fn build_windowed_grid(
                 cell.set_halign(gtk::Align::Start);
                 cell.append(&card);
 
-                let (x, y) = card_position(i, TEST_COLS);
+                let (x, y) = card_position(i, cols);
                 grid.put(&cell, x as f64, y as f64);
                 mounted.insert(i, cell);
                 added.push(i);
@@ -809,7 +809,7 @@ fn build_windowed_grid_selectable(
                 cell.set_halign(gtk::Align::Start);
                 cell.append(&card);
 
-                let (x, y) = card_position(i, TEST_COLS);
+                let (x, y) = card_position(i, cols);
                 grid.put(&cell, x as f64, y as f64);
                 mounted.insert(i, cell);
                 added.push(i);
@@ -1486,12 +1486,12 @@ mod tests {
         for books in [1, 6, 7, 144, 139, 2000] {
             assert_eq!(
                 grid_height(books, TEST_COLS),
-                plain_grid_height(books, TEST_COLS),
+                plain_grid_height(books),
                 "{books} books: windowed grid is {} px but the normal grid is \
                  {} px. A grid that is too long scrolls into blank space; too \
                  short and the last books are unreachable.",
                 grid_height(books, TEST_COLS),
-                plain_grid_height(books, TEST_COLS)
+                plain_grid_height(books)
             );
         }
     }

@@ -1,10 +1,11 @@
 use crate::db::{BulkMetadataEdit, Catalog, SortKey};
 use crate::models::Book;
 use crate::service::{AllBooksSnapshot, LibraryService};
-use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable, grid_cols_for, invalidate_cover_cache};
+use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable, invalidate_cover_cache};
 use crate::widgets::in_app_dialog;
 use crate::widgets::menu::{menu_popover, MenuWidth};
 use gtk::prelude::*;
+use gtk::WidgetExt;
 use relm4::prelude::*;
 use std::cell::Cell;
 use std::collections::HashSet;

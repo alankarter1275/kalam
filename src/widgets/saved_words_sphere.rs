@@ -337,7 +337,8 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
             cr.set_source_rgba(r, g, b, alpha);
 
             crate::widgets::paint::rounded_rect(cr, 0.0, 0.0, w_pix, h_pix, 2.0);
-            cr.fill();
+            cr.clip();
+            cr.paint();
 
             cr.restore();
         }

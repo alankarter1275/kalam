@@ -131,8 +131,8 @@ impl Component for SavedWordsSphereModel {
             gtk::DrawingArea {
                 set_hexpand: true,
                 set_vexpand: true,
-                set_width_request: STAGE_W as i32,
-                set_height_request: STAGE_H as i32,
+                set_width_request: 520,
+                set_height_request: 480,
                 set_can_focus: true,
                 set_focusable: true,
                 set_cursor_from_name: Some("pointer"),
@@ -209,7 +209,6 @@ impl Component for SavedWordsSphereModel {
             let _ = state;
             drop(state);
             s_m.input(SavedWordsSphereMsg::HoverWord(None));
-            glib::Propagation::Proceed
         });
         widgets.stage.add_controller(motion);
 
@@ -245,7 +244,7 @@ impl Component for SavedWordsSphereModel {
             }
             drop(state);
             stage_clone.queue_draw();
-            glib::Continue(true)
+            true
         });
 
         ComponentParts { model, widgets }
@@ -267,6 +266,9 @@ impl Component for SavedWordsSphereModel {
             }
             SavedWordsSphereMsg::ClickWord(idx) => {
                 let _ = idx;
+            }
+            SavedWordsSphereMsg::WordsReady(_) => {
+                // Data is loaded in init; keep for future dynamic updates.
             }
         }
         self.update_view(widgets, _sender);
@@ -357,7 +359,7 @@ fn build_sphere_words(terms: &[(String, i64)]) -> Vec<SphereWord> {
         let sy = theta.sin() * radius_xy;
         let sz = z;
 
-        let bucket = ((count as f64 / max_count) * 3.0).floor().clamp(0.0, 3.0) as i32;
+        let bucket = ((*count as f64 / max_count) * 3.0).floor().clamp(0.0, 3.0) as i32;
         let weight = [400, 500, 600, 700][bucket as usize];
         let vertical = i % VERTICAL_EVERY == 0;
 
@@ -381,7 +383,7 @@ fn compute_positions(
     stage_w: f64,
     stage_h: f64,
 ) {
-    let mut st = state.borrow_mut();
+    let st = state.borrow_mut();
     let yaw = st.yaw + st.drift;
     let pitch = st.pitch;
     drop(st);
@@ -411,8 +413,7 @@ fn compute_positions(
         positions.push(WordPosition { px, py, size, alpha, rz });
     }
 
-    let mut st = state.borrow_mut();
-    st.positions = positions;
+    state.borrow_mut().positions = positions;
 }
 
 /// Rotate a unit-sphere point by yaw then pitch.
@@ -436,11 +437,16 @@ fn draw_word(
     let layout = Layout::new(pc);
     let desc = FontDescription::from_string("Playfair Display");
     let size = if is_hovered { 24.0 } else { pos.size };
-    desc.set_size((size * pango::SCALE as f64) as i32);
+    desc.set_size((size * 1024.0) as i32);
     let w = if is_hovered {
         Weight::Bold
     } else {
-        Weight::from_u32(word.weight as u32)
+        match word.weight {
+            400 => Weight::Normal,
+            500 => Weight::Medium,
+            600 => Weight::SemiBold,
+            _ => Weight::Bold,
+        }
     };
     desc.set_weight(w);
     layout.set_font_description(Some(&desc));
@@ -458,9 +464,9 @@ fn draw_word(
     }
 
     let alpha = if is_hovered { 1.0 } else { pos.alpha };
-    let r = if is_hovered { accent.red() } else { text.red() };
-    let g = if is_hovered { accent.green() } else { text.green() };
-    let b = if is_hovered { accent.blue() } else { text.blue() };
+    let r = if is_hovered { accent.red } else { text.red };
+    let g = if is_hovered { accent.green } else { text.green };
+    let b = if is_hovered { accent.blue } else { text.blue };
     cr.set_source_rgba(r, g, b, alpha);
 
     show_layout(cr, &layout);
@@ -480,7 +486,7 @@ mod tests {
         let words = build_sphere_words(&terms);
         assert_eq!(words.len(), 50);
         for w in &words {
-            let len = (w.sx * w.sx + w.sy * w.sy + w.sz * w.sz).sqrt();
+            let len: f64 = (w.sx * w.sx + w.sy * w.sy + w.sz * w.sz).sqrt();
             assert!((len - 1.0).abs() < 1e-6, "point not on unit sphere: {len}");
         }
     }
@@ -504,7 +510,7 @@ mod tests {
 
     #[test]
     fn rotate_point_preserves_length() {
-        let (x, y, z) = (0.6, 0.4, 0.7);
+        let (x, y, z) = (0.6_f64, 0.4_f64, 0.7_f64);
         let len0 = (x * x + y * y + z * z).sqrt();
         let (rx, ry, rz) = rotate_point(x, y, z, 1.0, 0.0, 1.0, 0.0);
         let len1 = (rx * rx + ry * ry + rz * rz).sqrt();

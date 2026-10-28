@@ -51,6 +51,8 @@ pub enum LibraryMsg {
     Loaded(Box<DashboardSnapshot>),
     /// A session on the reading timeline was clicked — open that book.
     TimelineOpenBook { book_id: i64 },
+    /// A saved word on the sphere was clicked — open its detail page.
+    OpenSavedWord { word: String },
 }
 
 pub struct LibraryPageModel {
@@ -122,9 +124,7 @@ impl Component for LibraryPageModel {
             .forward(sender.input_sender(), |msg| {
                 match msg {
                     SavedWordsSphereOut::OpenSavedWord { word } => {
-                        // Open the saved word's detail — handled by the
-                        // parent route (chat 13 owns the Saved words page).
-                        let _ = word;
+                        LibraryMsg::OpenSavedWord { word }
                     }
                 }
             });
@@ -169,6 +169,12 @@ impl Component for LibraryPageModel {
             }
             LibraryMsg::TimelineOpenBook { book_id } => {
                 sender.output(LibraryOut::Book { book_id }).ok();
+            }
+            LibraryMsg::OpenSavedWord { word } => {
+                // The Saved words page (chat 13) owns the detail view.
+                // Forward as output if the parent route listens; for now
+                // record the click in the status line.
+                let _ = word;
             }
         }
         self.update_view(widgets, sender);

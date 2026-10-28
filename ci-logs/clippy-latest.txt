@@ -3,10 +3,10 @@ src/widgets/reading_timeline.rs:106:44: [1m[91merror[0m: expected `,`. Did yo
 src/widgets/reading_timeline.rs:113:62: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
 src/widgets/reading_timeline.rs:119:60: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
 src/widgets/reading_timeline.rs:131:40: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
-src/db.rs:41:61: [1m[91merror[0m: unused import: `TimelineSession`
+src/widgets/reading_timeline.rs:663:9: [1m[91merror[E0432][0m: unresolved import `crate::db::TimelineSession`
 src/widgets/reading_timeline.rs:395:9: [1m[91merror[0m: unused variable: `day_span`: help: if this is intentional, prefix it with an underscore: `_day_span`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 6 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -35,9 +35,9 @@ src/widgets/reading_timeline.rs:106:44: [1m[91merror[0m: expected `,`. Did yo
 src/widgets/reading_timeline.rs:113:62: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
 src/widgets/reading_timeline.rs:119:60: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
 src/widgets/reading_timeline.rs:131:40: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
-src/db.rs:41:61: [1m[91merror[0m: unused import: `TimelineSession`
+src/widgets/reading_timeline.rs:663:9: [1m[91merror[E0432][0m: unresolved import `crate::db::TimelineSession`
 src/widgets/reading_timeline.rs:395:9: [1m[91merror[0m: unused variable: `day_span`: help: if this is intentional, prefix it with an underscore: `_day_span`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 6 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
---- run 40716480834 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
+--- run 40717331603 ---

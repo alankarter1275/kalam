@@ -708,12 +708,17 @@ fn build_book_grid_hinted(
 pub fn build_book_card_selectable(
     book: &Book,
     is_selected: bool,
+    selection_mode: bool,
     on_full: impl Fn() + 'static,
     on_float: impl Fn() + 'static,
 ) -> gtk::Box {
     // Selection mode is the library page's own, so its cards keep the
     // library's two-gesture hint.
     let card = build_book_card(book, CLICK_HINT_LIBRARY, on_full, on_float);
+    if selection_mode {
+        // Outline circles on unselected cards (§49).
+        card.add_css_class("selection-mode");
+    }
     if is_selected {
         card.add_css_class("kalam-card-selected");
         let check = gtk::Label::new(Some("✓ Selected"));
@@ -738,6 +743,7 @@ pub fn build_book_card_selectable(
 fn build_windowed_grid_selectable(
     books: &[Book],
     cols: i32,
+    selection_mode: bool,
     is_selected: impl Fn(i64) -> bool + Clone + 'static,
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
@@ -773,6 +779,7 @@ fn build_windowed_grid_selectable(
         let mounted = mounted.clone();
         let books = books_owned.clone();
         let is_selected = is_selected.clone();
+        let selection_mode = selection_mode.clone();
         let on_full = on_full.clone();
         let on_float = on_float.clone();
         Rc::new(move |scroll_top: f64, viewport_h: f64| {
@@ -804,7 +811,7 @@ fn build_windowed_grid_selectable(
                 let f1 = on_full.clone();
                 let f2 = on_float.clone();
                 let sel = is_selected(id);
-                let card = build_book_card_selectable(book, sel, move || f1(id), move || f2(id));
+                let card = build_book_card_selectable(book, sel, selection_mode, move || f1(id), move || f2(id));
 
                 let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
                 cell.set_size_request(CARD_W, CARD_H);
@@ -861,12 +868,13 @@ fn build_windowed_grid_selectable(
 pub fn build_book_grid_selectable(
     books: &[Book],
     cols: i32,
+    selection_mode: bool,
     is_selected: impl Fn(i64) -> bool + Clone + 'static,
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
 ) -> gtk::Box {
     if windowed_grid_enabled() {
-        return build_windowed_grid_selectable(books, cols, is_selected, on_full, on_float);
+        return build_windowed_grid_selectable(books, cols, selection_mode, is_selected, on_full, on_float);
     }
 
     let grid = gtk::Grid::new();
@@ -893,7 +901,7 @@ pub fn build_book_grid_selectable(
         let id = book.id;
         let f1 = on_full.clone();
         let f2 = on_float.clone();
-        let card = build_book_card_selectable(book, is_selected(id), move || f1(id), move || f2(id));
+        let card = build_book_card_selectable(book, is_selected(id), selection_mode, move || f1(id), move || f2(id));
 
         let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
         cell.set_size_request(CARD_W, CARD_H);

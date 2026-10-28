@@ -278,223 +278,249 @@ impl Component for AllBooksModel {
 
     view! {
         #[root]
-        gtk::Box {
-            set_orientation: gtk::Orientation::Vertical,
-            set_spacing: 12,
-            set_hexpand: true,
-
-            // Title row (§47): "Library" label, the "All books" title button
-            // which opens the shelves menu, and the filled Add books pill.
+        gtk::Overlay {
+            // Main content area.
             gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 8,
-                set_halign: gtk::Align::Fill,
-                set_valign: gtk::Align::Center,
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 12,
+                set_hexpand: true,
+                set_vexpand: true,
 
-                gtk::Label {
-                    set_label: "Library",
-                    add_css_class: "kalam-library-label",
-                    set_halign: gtk::Align::Start,
-                    set_valign: gtk::Align::Center,
-                },
-
-                #[name = "title_btn"]
-                gtk::MenuButton {
-                    set_child: Some(&crate::icons::labelled(
-                        "pan-down-symbolic",
-                        16,
-                        "All books",
-                        6,
-                    )),
-                    add_css_class: "kalam-title-btn",
-                    set_always_show_arrow: false,
-                    set_tooltip_text: Some("Open the shelves menu"),
-                },
-
-                gtk::Box {
-                    set_hexpand: true,
-                },
-
-                #[name = "add_btn"]
-                gtk::MenuButton {
-                    #[watch]
-                    set_label: if model.importing {
-                        "Importing…"
-                    } else {
-                        "+ Import EPUB"
-                    },
-                    add_css_class: "kalam-primary-btn",
-                    set_always_show_arrow: false,
-                    #[watch]
-                    set_sensitive: !model.importing,
-                },
-            },
-
-            // Search row (§47): pill field with the ? help icon at the right.
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 8,
-                set_halign: gtk::Align::Fill,
-                set_valign: gtk::Align::Center,
-
-                #[name = "search"]
-                gtk::SearchEntry {
-                    set_hexpand: true,
-                    set_placeholder_text: Some("Search title, author, tag:fantasy, status:unread, rating:>3…"),
-                    connect_search_changed[sender] => move |entry| {
-                        sender.input(AllBooksMsg::SearchChanged(entry.text().to_string()));
-                    },
-                },
-
-                #[name = "search_help_btn"]
-                gtk::Button {
-                    set_child: Some(&crate::icons::symbolic("dialog-question-symbolic", 18)),
-                    set_halign: gtk::Align::Center,
-                    set_valign: gtk::Align::Center,
-                    set_tooltip_text: Some("Search syntax help"),
-                },
-            },
-
-            // Toolbar (§47): Filter + chips + Clear filters (left);
-            // count, Group, Sort, Select, Grid/List (right).
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 8,
-                set_halign: gtk::Align::Fill,
-                set_valign: gtk::Align::Center,
-
-                // LEFT: search mode, filter, chips, clear filters
-                #[name = "mode_box"]
+                // Title row (§47): "Library" label, the "All books" title button
+                // which opens the shelves menu, and the filled Add books pill.
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
-                    add_css_class: "linked",
-
-                    #[name = "mode_meta_btn"]
-                    gtk::ToggleButton {
-                        set_label: "Titles & Authors",
-                        set_active: true,
-                        set_tooltip_text: Some("Filter library by title, author, tag, reading status, or rating"),
-                        connect_toggled[sender] => move |btn| {
-                            if btn.is_active() {
-                                sender.input(AllBooksMsg::SearchModeChanged(SearchMode::Metadata));
-                            }
-                        },
-                    },
-
-                    #[name = "mode_content_btn"]
-                    gtk::ToggleButton {
-                        set_label: "Book Content",
-                        set_tooltip_text: Some("Deep search inside the full text of all books in your library"),
-                        connect_toggled[sender] => move |btn| {
-                            if btn.is_active() {
-                                sender.input(AllBooksMsg::SearchModeChanged(SearchMode::Content));
-                            }
-                        },
-                    },
-                },
-
-                #[name = "filter_btn"]
-                gtk::MenuButton {
-                    set_child: Some(&crate::icons::labelled(
-                        "edit-find-symbolic",
-                        16,
-                        "Filter",
-                        6,
-                    )),
-                    add_css_class: "kalam-toolbar-btn",
-                    set_always_show_arrow: false,
-                    set_tooltip_text: Some("Filter by shelf, tag, status, or rating"),
-                },
-
-                #[name = "filter_chips"]
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 4,
-                },
-
-                #[name = "clear_filters_btn"]
-                gtk::Button {
-                    set_label: "Clear filters",
-                    add_css_class: "kalam-secondary-btn",
-                    #[watch]
-                    set_visible: !model.filter_chips.is_empty(),
-                    connect_clicked => AllBooksMsg::ClearFilters,
-                },
-
-                gtk::Box {
-                    set_hexpand: true,
-                },
-
-                // RIGHT: count, Group, Sort, Select, Grid/List
-                #[name = "count_label"]
-                gtk::Label {
-                    #[watch]
-                    set_label: &format!(
-                        "{} book{}",
-                        model.books.len(),
-                        if model.books.len() == 1 { "" } else { "s" }
-                    ),
-                    add_css_class: "kalam-page-sub",
-                    set_halign: gtk::Align::Center,
+                    set_spacing: 8,
+                    set_halign: gtk::Align::Fill,
                     set_valign: gtk::Align::Center,
-                },
 
-                #[name = "group_btn"]
-                gtk::MenuButton {
-                    set_child: Some(&crate::icons::labelled(
-                        "object-select-symbolic",
-                        16,
-                        "Group",
-                        6,
-                    )),
-                    add_css_class: "kalam-toolbar-btn",
-                    set_always_show_arrow: false,
-                    set_tooltip_text: Some("Group books by author, series, or none"),
-                },
-
-                #[name = "sort_box"]
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 4,
-                },
-
-                #[name = "select_btn"]
-                gtk::Button {
-                    #[watch]
-                    set_label: if model.selection_mode {
-                        "Exit Select"
-                    } else {
-                        "Select Mode"
+                    gtk::Label {
+                        set_label: "Library",
+                        add_css_class: "kalam-library-label",
+                        set_halign: gtk::Align::Start,
+                        set_valign: gtk::Align::Center,
                     },
-                    add_css_class: "kalam-secondary-btn",
-                    connect_clicked => AllBooksMsg::ToggleSelectionMode,
-                },
 
-                #[name = "view_btn"]
-                gtk::ToggleButton {
-                    #[watch]
-                    set_label: if model.view_mode == ViewMode::Grid {
-                        "Grid"
-                    } else {
-                        "List"
+                    #[name = "title_btn"]
+                    gtk::MenuButton {
+                        set_child: Some(&crate::icons::labelled(
+                            "pan-down-symbolic",
+                            16,
+                            "All books",
+                            6,
+                        )),
+                        add_css_class: "kalam-title-btn",
+                        set_always_show_arrow: false,
+                        set_tooltip_text: Some("Open the shelves menu"),
                     },
-                    add_css_class: "kalam-secondary-btn",
-                    set_tooltip_text: Some("Switch between grid and list view"),
-                    connect_toggled[sender] => move |btn| {
-                        let mode = if btn.is_active() {
-                            ViewMode::List
+
+                    gtk::Box {
+                        set_hexpand: true,
+                    },
+
+                    #[name = "add_btn"]
+                    gtk::MenuButton {
+                        #[watch]
+                        set_label: if model.importing {
+                            "Importing…"
                         } else {
-                            ViewMode::Grid
-                        };
-                        sender.input(AllBooksMsg::ViewModeChanged(mode));
+                            "+ Import EPUB"
+                        },
+                        add_css_class: "kalam-primary-btn",
+                        set_always_show_arrow: false,
+                        #[watch]
+                        set_sensitive: !model.importing,
                     },
                 },
-            },
 
+                // Search row (§47): pill field with the ? help icon at the right.
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 8,
+                    set_halign: gtk::Align::Fill,
+                    set_valign: gtk::Align::Center,
+
+                    #[name = "search"]
+                    gtk::SearchEntry {
+                        set_hexpand: true,
+                        set_placeholder_text: Some("Search title, author, tag:fantasy, status:unread, rating:>3…"),
+                        connect_search_changed[sender] => move |entry| {
+                            sender.input(AllBooksMsg::SearchChanged(entry.text().to_string()));
+                        },
+                    },
+
+                    #[name = "search_help_btn"]
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic("dialog-question-symbolic", 18)),
+                        set_halign: gtk::Align::Center,
+                        set_valign: gtk::Align::Center,
+                        set_tooltip_text: Some("Search syntax help"),
+                    },
+                },
+
+                // Toolbar (§47): Filter + chips + Clear filters (left);
+                // count, Group, Sort, Select, Grid/List (right).
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 8,
+                    set_halign: gtk::Align::Fill,
+                    set_valign: gtk::Align::Center,
+
+                    // LEFT: search mode, filter, chips, clear filters
+                    #[name = "mode_box"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        add_css_class: "linked",
+
+                        #[name = "mode_meta_btn"]
+                        gtk::ToggleButton {
+                            set_label: "Titles & Authors",
+                            set_active: true,
+                            set_tooltip_text: Some("Filter library by title, author, tag, reading status, or rating"),
+                            connect_toggled[sender] => move |btn| {
+                                if btn.is_active() {
+                                    sender.input(AllBooksMsg::SearchModeChanged(SearchMode::Metadata));
+                                }
+                            },
+                        },
+
+                        #[name = "mode_content_btn"]
+                        gtk::ToggleButton {
+                            set_label: "Book Content",
+                            set_tooltip_text: Some("Deep search inside the full text of all books in your library"),
+                            connect_toggled[sender] => move |btn| {
+                                if btn.is_active() {
+                                    sender.input(AllBooksMsg::SearchModeChanged(SearchMode::Content));
+                                }
+                            },
+                        },
+                    },
+
+                    #[name = "filter_btn"]
+                    gtk::MenuButton {
+                        set_child: Some(&crate::icons::labelled(
+                            "edit-find-symbolic",
+                            16,
+                            "Filter",
+                            6,
+                        )),
+                        add_css_class: "kalam-toolbar-btn",
+                        set_always_show_arrow: false,
+                        set_tooltip_text: Some("Filter by shelf, tag, status, or rating"),
+                    },
+
+                    #[name = "filter_chips"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 4,
+                    },
+
+                    #[name = "clear_filters_btn"]
+                    gtk::Button {
+                        set_label: "Clear filters",
+                        add_css_class: "kalam-secondary-btn",
+                        #[watch]
+                        set_visible: !model.filter_chips.is_empty(),
+                        connect_clicked => AllBooksMsg::ClearFilters,
+                    },
+
+                    gtk::Box {
+                        set_hexpand: true,
+                    },
+
+                    // RIGHT: count, Group, Sort, Select, Grid/List
+                    #[name = "count_label"]
+                    gtk::Label {
+                        #[watch]
+                        set_label: &format!(
+                            "{} book{}",
+                            model.books.len(),
+                            if model.books.len() == 1 { "" } else { "s" }
+                        ),
+                        add_css_class: "kalam-page-sub",
+                        set_halign: gtk::Align::Center,
+                        set_valign: gtk::Align::Center,
+                    },
+
+                    #[name = "group_btn"]
+                    gtk::MenuButton {
+                        set_child: Some(&crate::icons::labelled(
+                            "object-select-symbolic",
+                            16,
+                            "Group",
+                            6,
+                        )),
+                        add_css_class: "kalam-toolbar-btn",
+                        set_always_show_arrow: false,
+                        set_tooltip_text: Some("Group books by author, series, or none"),
+                    },
+
+                    #[name = "sort_box"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 4,
+                    },
+
+                    #[name = "select_btn"]
+                    gtk::Button {
+                        #[watch]
+                        set_label: if model.selection_mode {
+                            "Exit Select"
+                        } else {
+                            "Select Mode"
+                        },
+                        add_css_class: "kalam-secondary-btn",
+                        connect_clicked => AllBooksMsg::ToggleSelectionMode,
+                    },
+
+                    #[name = "view_btn"]
+                    gtk::ToggleButton {
+                        #[watch]
+                        set_label: if model.view_mode == ViewMode::Grid {
+                            "Grid"
+                        } else {
+                            "List"
+                        },
+                        add_css_class: "kalam-secondary-btn",
+                        set_tooltip_text: Some("Switch between grid and list view"),
+                        connect_toggled[sender] => move |btn| {
+                            let mode = if btn.is_active() {
+                                ViewMode::List
+                            } else {
+                                ViewMode::Grid
+                            };
+                            sender.input(AllBooksMsg::ViewModeChanged(mode));
+                        },
+                    },
+                },
+
+                #[name = "status_label"]
+                gtk::Label {
+                    #[watch]
+                    set_label: &model.status,
+                    add_css_class: "kalam-muted",
+                    set_halign: gtk::Align::Start,
+                },
+
+                #[name = "list"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 0,
+                    set_halign: gtk::Align::Start,
+                    set_hexpand: false,
+                    set_vexpand: false,
+                },
+            }
+
+            // Floating bulk bar (§49): bottom centre, 48 high, 32 up from bottom.
             #[name = "selection_bar"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_spacing: 8,
+                set_halign: gtk::Align::Center,
+                set_valign: gtk::Align::End,
+                set_margin_bottom: 32,
+                add_css_class: "kalam-bulk-bar",
                 #[watch]
                 set_visible: model.selection_mode,
 
@@ -543,23 +569,6 @@ impl Component for AllBooksModel {
                         sender.input(AllBooksMsg::OpenDeleteConfirm(btn.clone().upcast()));
                     },
                 },
-            },
-
-            #[name = "status_label"]
-            gtk::Label {
-                #[watch]
-                set_label: &model.status,
-                add_css_class: "kalam-muted",
-                set_halign: gtk::Align::Start,
-            },
-
-            #[name = "list"]
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 0,
-                set_halign: gtk::Align::Start,
-                set_hexpand: false,
-                set_vexpand: false,
             },
         }
     }
@@ -1489,6 +1498,7 @@ fn rebuild_list(
         let grid = build_book_grid_selectable(
             books,
             cols,
+            selection_mode,
             move |id| sel_set.contains(&id),
             move |id| {
                 s.input(AllBooksMsg::ToggleSelectBook(id));

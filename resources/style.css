@@ -376,6 +376,30 @@ button.kalam-notify-clear:focus-visible {
     padding: 2px 8px;
 }
 
+/* ── selection mode (§49) ────────────────────────────── */
+/* Outline circles on unselected cards when selection mode is on. */
+.kalam-card.selection-mode {
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+}
+
+/* Accent outline on selected cards. */
+.kalam-card.kalam-card-selected {
+    border: 2px solid @kalam_accent;
+    border-radius: 10px;
+    background: @kalam_surface_2;
+}
+
+/* Floating bulk bar at bottom centre (§49: 48 high, 32 up). */
+.kalam-bulk-bar {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    padding: 8px 16px;
+    min-height: 48px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
 /* ── hub tiles inside My Library ────────────────────── */
 .kalam-hub-grid {
     margin-top: 8px;

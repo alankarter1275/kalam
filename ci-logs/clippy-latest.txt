@@ -1,4 +1,21 @@
-(no lines matched; last 100 lines of output)
+src/pages/all_books.rs:421:13: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
+src/pages/all_books.rs:421:13: [1m[91merror[0m: expected `,`
+src/app.rs:426:38: [1m[91merror[E0599][0m: no variant, associated function, or constant named `OpenShelves` found for enum `pages::all_books::AllBooksOut` in the current scope: variant, associated function, or constant not found in `pages::all_books::AllBooksOut`
+src/db/history.rs:336:22: [1m[91merror[E0308][0m: mismatched types: expected `&Option<&str>`, found `Option<&str>`
+src/pages/all_books.rs:1166:21: [1m[91merror[E0609][0m: no field `selection_bar` on type `&mut pages::all_books::AllBooksModelWidgets`: unknown field
+src/pages/all_books.rs:1174:21: [1m[91merror[E0609][0m: no field `selection_bar` on type `&mut pages::all_books::AllBooksModelWidgets`: unknown field
+src/pages/comics.rs:1012:21: [1m[91merror[E0277][0m: expected an `Fn(i64)` closure, found `{integer}`: expected an `Fn(i64)` closure, found `{integer}`
+src/pages/comics.rs:1010:28: [1m[91merror[E0061][0m: this function takes 3 arguments but 4 arguments were supplied
+src/pages/comics.rs:1039:21: [1m[91merror[E0277][0m: expected an `Fn(i64)` closure, found `{integer}`: expected an `Fn(i64)` closure, found `{integer}`
+src/pages/comics.rs:1037:28: [1m[91merror[E0061][0m: this function takes 3 arguments but 4 arguments were supplied
+src/pages/shelf_detail.rs:344:13: [1m[91merror[E0277][0m: expected an `Fn(i64)` closure, found `{integer}`: expected an `Fn(i64)` closure, found `{integer}`
+src/pages/shelf_detail.rs:342:20: [1m[91merror[E0061][0m: this function takes 3 arguments but 4 arguments were supplied
+src/pages/tags.rs:674:9: [1m[91merror[E0277][0m: expected an `Fn(i64)` closure, found `{integer}`: expected an `Fn(i64)` closure, found `{integer}`
+src/pages/tags.rs:672:16: [1m[91merror[E0061][0m: this function takes 3 arguments but 4 arguments were supplied
+src/pages/all_books.rs:1374:40: [1m[91merror[E0382][0m: use of moved value: `s`: value used here after move
+src/pages/all_books.rs:1377:31: [1m[91merror[E0382][0m: use of moved value: `s`: value used here after move
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 16 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 16 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -19,8 +36,26 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 13.97s
---- run 40691906680 ---
+[1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+src/pages/all_books.rs:421:13: [1m[91merror[0m: expected `,`. Did you confuse `=` with`:`?
+src/pages/all_books.rs:421:13: [1m[91merror[0m: expected `,`
+src/app.rs:426:38: [1m[91merror[E0599][0m: no variant, associated function, or constant named `OpenShelves` found for enum `pages::all_books::AllBooksOut` in the current scope: variant, associated function, or constant not found in `pages::all_books::AllBooksOut`
+src/db/history.rs:336:22: [1m[91merror[E0308][0m: mismatched types: expected `&Option<&str>`, found `Option<&str>`
+src/pages/all_books.rs:1166:21: [1m[91merror[E0609][0m: no field `selection_bar` on type `&mut pages::all_books::AllBooksModelWidgets`: unknown field
+src/pages/all_books.rs:1174:21: [1m[91merror[E0609][0m: no field `selection_bar` on type `&mut pages::all_books::AllBooksModelWidgets`: unknown field
+src/pages/comics.rs:1012:21: [1m[91merror[E0277][0m: expected an `Fn(i64)` closure, found `{integer}`: expected an `Fn(i64)` closure, found `{integer}`
+src/pages/comics.rs:1010:28: [1m[91merror[E0061][0m: this function takes 3 arguments but 4 arguments were supplied
+src/pages/comics.rs:1039:21: [1m[91merror[E0277][0m: expected an `Fn(i64)` closure, found `{integer}`: expected an `Fn(i64)` closure, found `{integer}`
+src/pages/comics.rs:1037:28: [1m[91merror[E0061][0m: this function takes 3 arguments but 4 arguments were supplied
+src/pages/shelf_detail.rs:344:13: [1m[91merror[E0277][0m: expected an `Fn(i64)` closure, found `{integer}`: expected an `Fn(i64)` closure, found `{integer}`
+src/pages/shelf_detail.rs:342:20: [1m[91merror[E0061][0m: this function takes 3 arguments but 4 arguments were supplied
+src/pages/tags.rs:674:9: [1m[91merror[E0277][0m: expected an `Fn(i64)` closure, found `{integer}`: expected an `Fn(i64)` closure, found `{integer}`
+src/pages/tags.rs:672:16: [1m[91merror[E0061][0m: this function takes 3 arguments but 4 arguments were supplied
+src/pages/all_books.rs:1374:40: [1m[91merror[E0382][0m: use of moved value: `s`: value used here after move
+src/pages/all_books.rs:1377:31: [1m[91merror[E0382][0m: use of moved value: `s`: value used here after move
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 16 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 16 previous errors
+--- run 40698742024 ---

@@ -703,11 +703,7 @@ impl Component for AllBooksModel {
             AllBooksMsg::OpenShelves => {
                 let _ = sender.output(AllBooksOut::OpenShelves);
             }
-            AllBooksMsg::FilterToggle => {
-                let is_active = widgets.filter_btn.is_active();
-                widgets.filter_btn.set_active(!is_active);
-            }
-            AllBooksMsg::FilterShelfSelected { shelf_id, name } => {
+            AllBooksMsg::FilterShelfSelected { shelf_id: _, name } => {
                 let chip = format!("shelf:{name}");
                 if !self.filter_chips.contains(&chip) {
                     self.filter_chips.push(chip);
@@ -1558,7 +1554,7 @@ fn build_filter_popup(
             count,
             move || {
                 s.input(AllBooksMsg::FilterShelfSelected {
-                    shelf_id: _,
+                    shelf_id: sid,
                     name: name_for_closure.clone(),
                 });
             },

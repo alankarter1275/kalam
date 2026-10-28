@@ -19,12 +19,9 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/widgets/saved_words_sphere.rs:289:21: [1m[91merror[E0308][0m: mismatched types: expected `i32`, found floating-point number
-src/widgets/saved_words_sphere.rs:289:38: [1m[91merror[E0308][0m: mismatched types: expected `i32`, found floating-point number
-src/widgets/saved_words_sphere.rs:452:38: [1m[91merror[E0308][0m: mismatched types: expected `&FontDescription`, found `FontDescription`
-src/widgets/saved_words_sphere.rs:453:12: [1m[91merror[E0061][0m: this method takes 1 argument but 2 arguments were supplied
-src/widgets/saved_words_sphere.rs:470:8: [1m[91merror[E0308][0m: arguments to this method are incorrect
-src/widgets/saved_words_sphere.rs:225:22: [1m[91merror[E0507][0m: cannot move out of `s_c`, a captured variable in an `Fn` closure: `s_c` is moved here
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 6 previous errors
+src/widgets/saved_words_sphere.rs:452:12: [1m[91merror[E0061][0m: this method takes 1 argument but 2 arguments were supplied
+src/widgets/saved_words_sphere.rs:469:8: [1m[91merror[E0308][0m: arguments to this method are incorrect
+src/widgets/saved_words_sphere.rs:301:14: [1m[91merror[E0505][0m: cannot move out of `state` because it is borrowed: move out of `state` occurs here
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors

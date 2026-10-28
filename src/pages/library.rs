@@ -164,7 +164,7 @@ impl Component for LibraryPageModel {
                     let model = ctrl.model();
                     setup_sphere_draw(
                         &widget.downcast::<gtk::DrawingArea>().unwrap(),
-                        &*model,
+                        &model,
                     );
                 }
             }

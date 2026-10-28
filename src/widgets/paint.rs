@@ -84,8 +84,3 @@ pub fn rounded_rect(
     );
     cr.close_path();
 }
-
-/// Fill the current Cairo path, discarding the result.
-pub fn fill_path(cr: &gtk::cairo::Context) {
-    let _ = cr.fill();
-}

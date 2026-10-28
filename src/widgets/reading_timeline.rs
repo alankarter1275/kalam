@@ -326,8 +326,9 @@ fn setup_interactions(
         let book_id = hit_test_lane(x, y, &lanes_click, day_min, day_max, x_scale);
         if book_id != 0 {
             ds.borrow_mut().hovered_book = Some(book_id);
-            let widget = gesture.widget().unwrap();
-            widget.queue_draw();
+            if let Some(widget) = gesture.widget() {
+                widget.queue_draw();
+            }
             s.input(ReadingTimelineMsg::SessionClicked { book_id });
         }
     });
@@ -343,8 +344,9 @@ fn setup_interactions(
         if state.hovered_book != Some(book_id) {
             state.hovered_book = if book_id != 0 { Some(book_id) } else { None };
             drop(state);
-            let widget = _controller.widget().unwrap();
-            widget.queue_draw();
+            if let Some(widget) = _controller.widget() {
+                widget.queue_draw();
+            }
         }
     });
     canvas.add_controller(motion);
@@ -359,8 +361,9 @@ fn setup_interactions(
         let max_scroll = ((MIN_TIMELINE_WIDTH as f64) * 0.5).max(0.0);
         state.scroll_offset = state.scroll_offset.clamp(-max_scroll, 0.0);
         drop(state);
-        let widget = _gesture.widget().unwrap();
-        widget.queue_draw();
+        if let Some(widget) = _gesture.widget() {
+            widget.queue_draw();
+        }
     });
     canvas.add_controller(drag);
 

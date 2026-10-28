@@ -322,6 +322,25 @@ button.kalam-notify-clear:focus-visible {
     margin-bottom: 18px;
 }
 
+/* ── All Books title row (§47) ──────────────────────── */
+.kalam-library-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: @kalam_accent;
+}
+
+.kalam-title-btn {
+    background: transparent;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 6px;
+    color: @kalam_text;
+}
+
+.kalam-title-btn:hover {
+    background: @kalam_surface_2;
+}
+
 /* ── cards (shelves grid, book cards, hub tiles) ─────── */
 .kalam-card {
     background: @kalam_surface;

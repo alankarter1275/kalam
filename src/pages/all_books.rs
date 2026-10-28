@@ -15,6 +15,8 @@ pub enum AllBooksOut {
     OpenBookDialog { book_id: i64 },
     OpenReader { book_id: i64, chapter: Option<usize> },
     ComicSeries { series_name: String },
+    /// The "All books" title button opens the shelves menu (§47).
+    OpenShelves,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -233,15 +235,61 @@ impl Component for AllBooksModel {
             set_spacing: 12,
             set_hexpand: true,
 
-            gtk::Label {
-                set_label: "All books",
-                add_css_class: "kalam-page-title",
-                set_halign: gtk::Align::Start,
-            },
-
+            // Title row (§47): "Library" label, the "All books" title button
+            // which opens the shelves menu, and the filled Add books pill.
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_spacing: 8,
+                set_halign: gtk::Align::Fill,
+                set_valign: gtk::Align::Center,
+
+                gtk::Label {
+                    set_label: "Library",
+                    add_css_class: "kalam-library-label",
+                    set_halign: gtk::Align::Start,
+                    set_valign: gtk::Align::Center,
+                },
+
+                #[name = "title_btn"]
+                gtk::Button {
+                    set_child: Some(&crate::icons::labelled(
+                        "pan-down-symbolic",
+                        16,
+                        "All books",
+                        6,
+                    )),
+                    add_css_class: "kalam-title-btn",
+                    set_halign: gtk::Align::Start,
+                    set_valign: gtk::Align::Center,
+                    set_tooltip_text: Some("Open the shelves menu"),
+                    connect_clicked => AllBooksMsg::OpenShelves,
+                },
+
+                gtk::Box {
+                    set_hexpand: true,
+                },
+
+                #[name = "add_btn"]
+                gtk::Button {
+                    #[watch]
+                    set_label: if model.importing {
+                        "Importing…"
+                    } else {
+                        "+ Import EPUB"
+                    },
+                    add_css_class: "kalam-primary-btn",
+                    #[watch]
+                    set_sensitive: !model.importing,
+                    connect_clicked => AllBooksMsg::PickFiles,
+                },
+            },
+
+            // Search row (§47): pill field with the ? help icon at the right.
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 8,
+                set_halign: gtk::Align::Fill,
+                set_valign: gtk::Align::Center,
 
                 #[name = "search"]
                 gtk::SearchEntry {
@@ -251,6 +299,19 @@ impl Component for AllBooksModel {
                         sender.input(AllBooksMsg::SearchChanged(entry.text().to_string()));
                     },
                 },
+
+                #[name = "search_help_btn"]
+                gtk::Button {
+                    set_child: Some(&crate::icons::symbolic("dialog-question-symbolic", 18)),
+                    set_halign: gtk::Align::Center,
+                    set_valign: gtk::Align::Center,
+                    set_tooltip_text: Some("Search syntax help"),
+                },
+            },
+
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 8,
 
                 #[name = "mode_box"]
                 gtk::Box {
@@ -297,19 +358,6 @@ impl Component for AllBooksModel {
                     },
                     add_css_class: "kalam-secondary-btn",
                     connect_clicked => AllBooksMsg::ToggleSelectionMode,
-                },
-
-                gtk::Button {
-                    #[watch]
-                    set_label: if model.importing {
-                        "Importing…"
-                    } else {
-                        "+ Import EPUB"
-                    },
-                    add_css_class: "kalam-primary-btn",
-                    #[watch]
-                    set_sensitive: !model.importing,
-                    connect_clicked => AllBooksMsg::PickFiles,
                 },
             },
 

@@ -423,6 +423,7 @@ impl AppModel {
                         AllBooksOut::ComicSeries { series_name } => {
                             AppMsg::Push(Route::ComicSeries { series_name })
                         }
+                        AllBooksOut::OpenShelves => AppMsg::Push(Route::ShelvesGrid),
                     },
                 );
                 PageSlot::AllBooks(ctrl)

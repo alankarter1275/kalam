@@ -18,14 +18,11 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
+src/pages/all_books.rs:79:5: [1m[91merror[E0428][0m: the name `ImportMenuImportFolder` is defined multiple times: `ImportMenuImportFolder` redefined here
+src/pages/all_books.rs:80:5: [1m[91merror[E0428][0m: the name `SearchModeChanged` is defined multiple times: `SearchModeChanged` redefined here
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/all_books.rs:57:5: [1m[91merror[0m: variants `OpenShelves`, `ShelvesPopoverOpen`, and `ImportMenuOpen` are never constructed
-src/pages/all_books.rs:1722:9: [1m[91merror[0m: this let-binding has unit value
-src/pages/all_books.rs:1738:21: [1m[91merror[0m: this let-binding has unit value
-src/pages/all_books.rs:1745:9: [1m[91merror[0m: this let-binding has unit value
-src/pages/all_books.rs:1748:9: [1m[91merror[0m: this let-binding has unit value
-src/pages/all_books.rs:1766:9: [1m[91merror[0m: this let-binding has unit value
-src/pages/all_books.rs:1771:9: [1m[91merror[0m: this let-binding has unit value
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
+src/pages/all_books.rs:47:10: [1m[91merror[E0004][0m: non-exhaustive patterns: `&pages::all_books::AllBooksMsg::ImportMenuImportFolder` and `&pages::all_books::AllBooksMsg::SearchModeChanged(_)` not covered: patterns `&pages::all_books::AllBooksMsg::ImportMenuImportFolder` and `&pages::all_books::AllBooksMsg::SearchModeChanged(_)` not covered
+src/pages/all_books.rs:671:15: [1m[91merror[E0004][0m: non-exhaustive patterns: `pages::all_books::AllBooksMsg::ImportMenuImportFolder` and `pages::all_books::AllBooksMsg::SearchModeChanged(_)` not covered: patterns `pages::all_books::AllBooksMsg::ImportMenuImportFolder` and `pages::all_books::AllBooksMsg::SearchModeChanged(_)` not covered
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors

@@ -82,6 +82,7 @@ pub struct HomePageModel {
     search_focused: bool,
     search_inside_books: bool,
     search_history: Rc<RefCell<Vec<String>>>,
+    search_results: SearchResults,
     search_count_lbl: gtk::Label,
     search_entry: gtk::Entry,
     search_picker_btn: gtk::MenuButton,
@@ -427,7 +428,7 @@ impl Component for HomePageModel {
         // "N results" count label: clicking opens the full search page.
         let count = widgets.search_count_lbl.clone();
         let s_count = sender.clone();
-        let click = gtk::EventControllerClick::new();
+        let click = gtk::GestureClick::new();
         click.connect_released(move |_, _, _, _| {
             if !count.text().is_empty() && count.text() != "0 results" {
                 let _ = s_count.output(HomeOut::Search {
@@ -585,21 +586,6 @@ impl Component for HomePageModel {
         switch_widget.connect_active_notify(move |sw| {
             s_switch.input(HomeMsg::SearchInsideBooksToggled(sw.is_active()));
         });
-
-        // Show bottom fade when scrollable content overflows.
-        let fade = model.search_fade.clone();
-        let content = model.search_scroll_content.clone();
-        if let Some(adj) = model.search_scroll.vadjustment() {
-            adj.connect_value_changed(move |adj| {
-                let at_bottom = adj.get_value() + adj.get_page_size() >= adj.get_upper() - 1.0;
-                let has_content = content.first_child().is_some();
-                fade.set_visible(has_content && !at_bottom);
-            });
-            // Initial fade state.
-            let at_bottom = adj.get_value() + adj.get_page_size() >= adj.get_upper() - 1.0;
-            let has_content = content.first_child().is_some();
-            fade.set_visible(has_content && !at_bottom);
-        }
 
         request_snapshot(&model.service, &sender);
 
@@ -770,16 +756,13 @@ impl Component for HomePageModel {
             let hist = self.search_history.borrow();
             for query in hist.iter() {
                 let q = query.clone();
-                let row = gtk::Box::builder()
-                    .orientation(gtk::Orientation::Horizontal)
-                    .spacing(8)
-                    .margin_start(12)
-                    .margin_end(12)
-                    .margin_top(6)
-                    .margin_bottom(6)
-                    .valign(gtk::Align::Center)
-                    .hexpand(true)
-                    .build();
+                let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                row.set_margin_start(12);
+                row.set_margin_end(12);
+                row.set_margin_top(6);
+                row.set_margin_bottom(6);
+                row.set_valign(gtk::Align::Center);
+                row.set_hexpand(true);
                 row.add_css_class("kalam-home-search-history-row");
 
                 let lbl = gtk::Label::builder()
@@ -893,7 +876,6 @@ fn render_book_group(
 
     for book in display {
         let row = result_row(
-            widgets,
             &book.title,
             if book.authors.is_empty() { None } else { Some(&book.authors) },
         );
@@ -929,7 +911,7 @@ fn render_string_group<T: ToString>(
     widgets.search_history_host.append(&h);
 
     for item in display {
-        let row = result_row(widgets, item.to_string().as_str(), None);
+        let row = result_row(item.to_string().as_str(), None);
         widgets.search_history_host.append(&row);
     }
 
@@ -961,11 +943,7 @@ fn render_quote_group(
 
     for (anno, book) in display {
         let subtitle = book.as_ref().map(|b| b.title.as_str());
-        let row = result_row(
-            widgets,
-            anno.text_excerpt.as_str(),
-            subtitle,
-        );
+        let row = result_row(anno.text_excerpt.as_str(), subtitle);
         widgets.search_history_host.append(&row);
     }
 
@@ -976,21 +954,14 @@ fn render_quote_group(
 }
 
 /// Build a single result row: title at the left, optional subtitle at the right.
-fn result_row(
-    widgets: &mut HomePageModelWidgets,
-    title: &str,
-    subtitle: Option<&str>,
-) -> gtk::Box {
-    let row = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(8)
-        .margin_start(12)
-        .margin_end(12)
-        .margin_top(2)
-        .margin_bottom(2)
-        .valign(gtk::Align::Center)
-        .hexpand(true)
-        .build();
+fn result_row(title: &str, subtitle: Option<&str>) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row.set_margin_start(12);
+    row.set_margin_end(12);
+    row.set_margin_top(2);
+    row.set_margin_bottom(2);
+    row.set_valign(gtk::Align::Center);
+    row.set_hexpand(true);
     row.add_css_class("kalam-home-search-result-row");
 
     let title_lbl = gtk::Label::builder()
@@ -1110,15 +1081,12 @@ fn clear_box(host: &gtk::Box) {
 
 /// Build a state card (§64, decision 194): dashed border, title, message.
 fn state_card(title: &str, message: &str) -> gtk::Box {
-    let card = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(8)
-        .halign(gtk::Align::Center)
-        .hexpand(false)
-        .vexpand(false)
-        .margin_top(24)
-        .margin_bottom(24)
-        .build();
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    card.set_halign(gtk::Align::Center);
+    card.set_hexpand(false);
+    card.set_vexpand(false);
+    card.set_margin_top(24);
+    card.set_margin_bottom(24);
     card.add_css_class("kalam-home-state-card");
 
     let title_lbl = gtk::Label::builder()
@@ -1211,24 +1179,20 @@ fn apply_snapshot(
 
         let limit = snap.reading_list.len().min(4);
         for entry in snap.reading_list.iter().take(limit) {
-            let row = gtk::Box::builder()
-                .orientation(gtk::Orientation::Horizontal)
-                .spacing(8)
-                .halign(gtk::Align::Start)
-                .hexpand(false)
-                .margin_top(4)
-                .margin_bottom(4)
-                .build();
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            row.set_halign(gtk::Align::Start);
+            row.set_hexpand(false);
+            row.set_margin_top(4);
+            row.set_margin_bottom(4);
             row.add_css_class("kalam-home-update-row");
 
-            let dot = gtk::Box::builder()
-                .size_request(6, 6)
-                .build();
+            let dot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+            dot.set_size_request(6, 6);
             dot.add_css_class("kalam-home-update-dot");
             row.append(&dot);
 
             let lbl = gtk::Label::builder()
-                .label(&entry.book_title)
+                .label(&entry.book.title)
                 .halign(gtk::Align::Start)
                 .hexpand(false)
                 .build();
@@ -1256,10 +1220,7 @@ fn apply_snapshot(
 /// Build the Home book widget (§60, decision 188): cover page, reading page
 /// with ribbon, play button, pager of 5 dots.
 fn build_home_book(book: &Book) -> gtk::Box {
-    let host = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(0)
-        .build();
+    let host = gtk::Box::new(gtk::Orientation::Vertical, 0);
     host.add_css_class("kalam-home-book");
 
     let heading = gtk::Label::builder()
@@ -1271,10 +1232,7 @@ fn build_home_book(book: &Book) -> gtk::Box {
     host.append(&heading);
 
     // Book spread: cover + reading page.
-    let spread = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(0)
-        .build();
+    let spread = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     spread.add_css_class("kalam-home-book-spread");
 
     // Cover page.
@@ -1304,13 +1262,10 @@ fn build_home_book(book: &Book) -> gtk::Box {
     host.append(&spread);
 
     // Ribbon + play button + pager.
-    let controls = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(12)
-        .halign(gtk::Align::Center)
-        .set_margin_top(8)
-        .set_margin_bottom(8)
-        .build();
+    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    controls.set_halign(gtk::Align::Center);
+    controls.set_margin_top(8);
+    controls.set_margin_bottom(8);
     controls.add_css_class("kalam-home-book-controls");
 
     // Ribbon indicator.
@@ -1329,15 +1284,11 @@ fn build_home_book(book: &Book) -> gtk::Box {
     controls.append(&play);
 
     // Pager dots (5 dots, first two active).
-    let pager = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(4)
-        .build();
+    let pager = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     pager.add_css_class("kalam-home-book-pager");
     for i in 0..5 {
-        let dot = gtk::Box::builder()
-            .size_request(8, 8)
-            .build();
+        let dot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        dot.set_size_request(8, 8);
         dot.add_css_class("kalam-home-book-pager-dot");
         if i < 2 {
             dot.add_css_class("active");
@@ -1355,12 +1306,9 @@ fn build_home_book(book: &Book) -> gtk::Box {
 /// bars per book, elastic date ruler, Today ring. Drawn with Cairo/Pango in a
 /// Gtk.DrawingArea.
 fn build_home_shelf(books: &[&Book]) -> gtk::Box {
-    let host = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(0)
-        .halign(gtk::Align::Start)
-        .hexpand(false)
-        .build();
+    let host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    host.set_halign(gtk::Align::Start);
+    host.set_hexpand(false);
     host.add_css_class("kalam-home-shelf");
 
     let heading = gtk::Label::builder()

@@ -166,7 +166,7 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/rustfmt-latest.diff
+          git add -f ci-logs/rustfmt-latest.diff ci-logs/fmt-error.txt
           git commit -m "ci: publish rustfmt diff [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true

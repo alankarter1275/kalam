@@ -16,21 +16,15 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/app.rs:1073:13: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::TextView>` is not implemented for `gtk4::Window`: requires `gtk4::Window` to be a GObject that can be statically cast to `gtk4::TextView`
-src/notify.rs:357:5: [1m[91merror[E0061][0m: this function takes 8 arguments but 7 arguments were supplied
-src/notify.rs:651:9: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/notify.rs:652:9: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/notify.rs:664:13: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/notify.rs:698:13: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/notify.rs:722:9: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+src/notify.rs:357:5: [1m[91merror[E0308][0m: arguments to this function are incorrect
+src/notify.rs:699:13: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
 src/notify.rs:723:9: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/notify.rs:738:9: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/pages/home.rs:441:9: [1m[91merror[E0382][0m: borrow of moved value: `count`: value borrowed here after move
-src/pages/home.rs:1338:5: [1m[91merror[E0521][0m: borrowed data escapes outside of function: `books` escapes the function body here, argument requires that `'1` must outlive `'static`
-src/pages/home.rs:1365:17: [1m[91merror[0m: unused variable: `book`: help: if this is intentional, prefix it with an underscore: `_book`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
+src/notify.rs:724:9: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
+src/notify.rs:739:9: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
+src/pages/home.rs:1338:60: [1m[91merror[E0599][0m: the method `as_ref` exists for reference `&&models::Book`, but its trait bounds were not satisfied: method cannot be called on `&&models::Book` due to unsatisfied trait bounds
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 12 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors

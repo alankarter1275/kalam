@@ -1,19 +1,12 @@
-src/pages/home.rs:80:1: [1m[91merror[E0201][0m: duplicate definitions with name `update_view`:: duplicate definition
-src/pages/home.rs:322:35: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
-src/pages/home.rs:325:37: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
-src/pages/home.rs:339:29: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
-src/pages/home.rs:341:31: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
+src/pages/home.rs:207:35: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
+src/pages/home.rs:210:37: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
+src/pages/home.rs:224:29: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
+src/pages/home.rs:226:31: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
 src/app.rs:391:43: [1m[91merror[0m: this pattern is unneeded as the `..` pattern can match that element: help: remove it
-src/pages/home.rs:5:32: [1m[91merror[0m: unused imports: `CARD_H`, `CARD_W`, `COVER_H`, and `COVER_W`
-src/pages/home.rs:566:9: [1m[91merror[E0053][0m: method `update_view` has an incompatible type for trait: types differ in mutability
-src/pages/home.rs:171:52: [1m[91merror[E0308][0m: mismatched types: expected `Option<&str>`, found `&str`
-src/pages/home.rs:143:25: [1m[91merror[E0599][0m: no method named `set_popover` found for struct `gtk4::Button` in the current scope: method not found in `gtk4::Button`
-src/pages/home.rs:104:17: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::Button>` is not implemented for `gtk4::Box`: requires `gtk4::Box` to be a GObject that can be statically cast to `gtk4::Button`
-src/pages/home.rs:429:16: [1m[91merror[E0599][0m: no method named `connect_active` found for struct `gtk4::Switch` in the current scope
-src/pages/home.rs:475:15: [1m[91merror[E0004][0m: non-exhaustive patterns: `pages::home::HomeMsg::AddBooks` and `pages::home::HomeMsg::FilesChosen(_)` not covered: patterns `pages::home::HomeMsg::AddBooks` and `pages::home::HomeMsg::FilesChosen(_)` not covered
-src/pages/home.rs:600:5: [1m[91merror[0m: unused variable: `sender`: help: if this is intentional, prefix it with an underscore: `_sender`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 14 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 14 previous errors
+src/pages/home.rs:101:17: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::Button>` is not implemented for `gtk4::Box`: requires `gtk4::Box` to be a GObject that can be statically cast to `gtk4::Button`
+src/pages/home.rs:354:15: [1m[91merror[E0004][0m: non-exhaustive patterns: `pages::home::HomeMsg::AddBooks` and `pages::home::HomeMsg::FilesChosen(_)` not covered: patterns `pages::home::HomeMsg::AddBooks` and `pages::home::HomeMsg::FilesChosen(_)` not covered
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -34,24 +27,17 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/home.rs:80:1: [1m[91merror[E0201][0m: duplicate definitions with name `update_view`:: duplicate definition
-src/pages/home.rs:322:35: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
-src/pages/home.rs:325:37: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
-src/pages/home.rs:339:29: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
-src/pages/home.rs:341:31: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
+src/pages/home.rs:207:35: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
+src/pages/home.rs:210:37: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
+src/pages/home.rs:224:29: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
+src/pages/home.rs:226:31: [1m[91merror[E0424][0m: cannot find value `self` in this scope: `self` value is a keyword only available in methods with a `self` parameter
 src/app.rs:391:43: [1m[91merror[0m: this pattern is unneeded as the `..` pattern can match that element: help: remove it
-src/pages/home.rs:5:32: [1m[91merror[0m: unused imports: `CARD_H`, `CARD_W`, `COVER_H`, and `COVER_W`
-src/pages/home.rs:566:9: [1m[91merror[E0053][0m: method `update_view` has an incompatible type for trait: types differ in mutability
-src/pages/home.rs:171:52: [1m[91merror[E0308][0m: mismatched types: expected `Option<&str>`, found `&str`
-src/pages/home.rs:143:25: [1m[91merror[E0599][0m: no method named `set_popover` found for struct `gtk4::Button` in the current scope: method not found in `gtk4::Button`
-src/pages/home.rs:104:17: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::Button>` is not implemented for `gtk4::Box`: requires `gtk4::Box` to be a GObject that can be statically cast to `gtk4::Button`
-src/pages/home.rs:429:16: [1m[91merror[E0599][0m: no method named `connect_active` found for struct `gtk4::Switch` in the current scope
-src/pages/home.rs:475:15: [1m[91merror[E0004][0m: non-exhaustive patterns: `pages::home::HomeMsg::AddBooks` and `pages::home::HomeMsg::FilesChosen(_)` not covered: patterns `pages::home::HomeMsg::AddBooks` and `pages::home::HomeMsg::FilesChosen(_)` not covered
-src/pages/home.rs:600:5: [1m[91merror[0m: unused variable: `sender`: help: if this is intentional, prefix it with an underscore: `_sender`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 14 previous errors
+src/pages/home.rs:101:17: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::Button>` is not implemented for `gtk4::Box`: requires `gtk4::Box` to be a GObject that can be statically cast to `gtk4::Button`
+src/pages/home.rs:354:15: [1m[91merror[E0004][0m: non-exhaustive patterns: `pages::home::HomeMsg::AddBooks` and `pages::home::HomeMsg::FilesChosen(_)` not covered: patterns `pages::home::HomeMsg::AddBooks` and `pages::home::HomeMsg::FilesChosen(_)` not covered
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 7 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 14 previous errors
---- run 40830256559 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 7 previous errors
+--- run 40830547963 ---

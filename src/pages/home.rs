@@ -78,6 +78,7 @@ pub enum HomeMsg {
 #[allow(dead_code)]
 pub struct HomePageModel {
     service: LibraryService,
+    #[allow(dead_code)]
     importing: bool,
     status: String,
     search_query: String,
@@ -93,6 +94,7 @@ pub struct HomePageModel {
     search_scroll_content: gtk::Box,
     search_scroll: gtk::ScrolledWindow,
     search_fade: gtk::Box,
+    home_greeting: gtk::Label,
     home_quote: gtk::Label,
     home_quote_source: gtk::Label,
     home_book_host: gtk::Box,
@@ -236,95 +238,93 @@ impl Component for HomePageModel {
                 },
             },
 
+            // ── Two columns: left (greeting, quote, shelf) | right (home book, updates) ──
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 12,
+                set_hexpand: true,
+                set_vexpand: false,
 
-                gtk::Label {
-                    set_label: "Home",
-                    add_css_class: "kalam-page-title",
-                    set_halign: gtk::Align::Start,
-                    set_hexpand: true,
+                // Left column: 470 wide, 56 from the rail (§1)
+                #[name = "left_column"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_hexpand: false,
+                    set_width_request: 470,
+                    set_margin_start: 56,
+
+                    // Greeting (two lines, Display)
+                    #[name = "home_greeting"]
+                    gtk::Label {
+                        add_css_class: "kalam-home-greeting",
+                        set_halign: gtk::Align::Start,
+                        set_hexpand: false,
+                        set_label: "Hello, Harvey",
+                    },
+
+                    // ── Home quote (§63, decision 187) ──
+                    #[name = "home_quote"]
+                    gtk::Label {
+                        add_css_class: "kalam-home-quote",
+                        set_label: "“There is no friend as loyal as a book.”",
+                        set_halign: gtk::Align::Start,
+                        set_hexpand: false,
+                        set_wrap: true,
+                        set_max_width_chars: 70,
+                        set_margin_top: 28,
+                    },
+
+                    #[name = "home_quote_source"]
+                    gtk::Label {
+                        add_css_class: "kalam-home-quote-source",
+                        set_label: "— Ernest Hemingway",
+                        set_halign: gtk::Align::Start,
+                        set_hexpand: false,
+                    },
+
+                    // ── Home shelf (§61, decisions 190-193) ──
+                    #[name = "home_shelf_host"]
+                    gtk::Box {
+                        add_css_class: "kalam-home-shelf",
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 0,
+                        set_halign: gtk::Align::Start,
+                        set_hexpand: false,
+                        set_margin_top: 24,
+                        set_margin_bottom: 16,
+                    },
                 },
 
-                #[name = "all_books_btn"]
-                gtk::Button {
-                    set_label: "All books",
-                    add_css_class: "kalam-secondary-btn",
-                    set_tooltip_text: Some("Browse, search and sort every book in your library"),
-                    connect_clicked => HomeMsg::AllBooks,
+                // Right column: 600 wide, 52 below search row, nudged 24 past right margin (§1)
+                #[name = "right_column"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_hexpand: false,
+                    set_width_request: 600,
+                    set_margin_top: 52,
+                    set_margin_start: 24,
+
+                    // ── Home book (§60, decision 188) ──
+                    #[name = "home_book_host"]
+                    gtk::Box {
+                        add_css_class: "kalam-home-book",
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 0,
+                        set_halign: gtk::Align::Start,
+                        set_hexpand: false,
+                    },
+
+                    // ── Home updates (§62, decision 189) ──
+                    #[name = "home_updates_host"]
+                    gtk::Box {
+                        add_css_class: "kalam-home-updates",
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 0,
+                        set_halign: gtk::Align::Start,
+                        set_hexpand: false,
+                        set_margin_top: 36,
+                        set_margin_bottom: 16,
+                    },
                 },
-
-                #[name = "add_btn"]
-                gtk::Button {
-                    set_label: "+ Add books",
-                    add_css_class: "kalam-primary-btn",
-                    connect_clicked => HomeMsg::AddBooks,
-                },
-            },
-
-            gtk::Label {
-                set_label:
-                    "Continue reading and recently added · click = float · Ctrl+click = full page",
-                add_css_class: "kalam-page-sub",
-                set_halign: gtk::Align::Start,
-            },
-
-            // ── Home quote (§63, decision 187) ──
-            #[name = "home_quote"]
-            gtk::Label {
-                add_css_class: "kalam-home-quote",
-                set_label: "“There is no friend as loyal as a book.”",
-                set_halign: gtk::Align::Start,
-                set_hexpand: false,
-                set_wrap: true,
-                set_max_width_chars: 70,
-            },
-
-            #[name = "home_quote_source"]
-            gtk::Label {
-                add_css_class: "kalam-home-quote-source",
-                set_label: "— Ernest Hemingway",
-                set_halign: gtk::Align::Start,
-                set_hexpand: false,
-            },
-
-            // ── Home book (§60, decision 188) ──
-            #[name = "home_book_host"]
-            gtk::Box {
-                add_css_class: "kalam-home-book",
-                set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 0,
-                set_halign: gtk::Align::Start,
-                set_hexpand: false,
-                set_margin_start: 12,
-                set_margin_top: 24,
-                set_margin_bottom: 16,
-            },
-
-            // ── Home updates (§62, decision 189) ──
-            #[name = "home_updates_host"]
-            gtk::Box {
-                add_css_class: "kalam-home-updates",
-                set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 0,
-                set_halign: gtk::Align::Start,
-                set_hexpand: false,
-                set_margin_start: 12,
-                set_margin_bottom: 16,
-            },
-
-            // ── Home shelf (§61, decisions 190-193) ──
-            #[name = "home_shelf_host"]
-            gtk::Box {
-                add_css_class: "kalam-home-shelf",
-                set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 0,
-                set_halign: gtk::Align::Start,
-                set_hexpand: false,
-                set_margin_start: 12,
-                set_margin_top: 24,
-                set_margin_bottom: 16,
             },
 
             #[name = "status_label"]
@@ -341,57 +341,6 @@ impl Component for HomePageModel {
                 set_spacing: 12,
                 set_homogeneous: true,
                 set_margin_bottom: 4,
-            },
-
-            gtk::Label {
-                set_label: "CONTINUE",
-                add_css_class: "kalam-section-label",
-                set_halign: gtk::Align::Start,
-            },
-
-            #[name = "continue_host"]
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 16,
-                set_halign: gtk::Align::Start,
-                set_valign: gtk::Align::Start,
-                set_hexpand: true,
-                set_vexpand: false,
-                set_margin_bottom: 8,
-
-                gtk::Label {
-                    set_label: "Loading your library…",
-                    add_css_class: "kalam-muted",
-                    set_halign: gtk::Align::Start,
-                },
-            },
-
-            gtk::Label {
-                set_label: "UP NEXT",
-                add_css_class: "kalam-section-label",
-                set_halign: gtk::Align::Start,
-            },
-
-            #[name = "tbr_host"]
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 6,
-                set_margin_bottom: 8,
-            },
-
-            gtk::Label {
-                set_label: "RECENTLY ADDED",
-                add_css_class: "kalam-section-label",
-                set_halign: gtk::Align::Start,
-            },
-
-            #[name = "recent_host"]
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                set_halign: gtk::Align::Fill,
-                set_hexpand: true,
-                set_vexpand: false,
-                set_spacing: 0,
             },
         }
     }
@@ -463,6 +412,7 @@ impl Component for HomePageModel {
             search_scroll_content: widgets.search_scroll_content.clone(),
             search_scroll: widgets.search_scroll.clone(),
             search_fade: widgets.search_fade.clone(),
+            home_greeting: widgets.home_greeting.clone(),
             home_quote: widgets.home_quote.clone(),
             home_quote_source: widgets.home_quote_source.clone(),
             home_book_host: widgets.home_book_host.clone(),
@@ -734,13 +684,6 @@ impl Component for HomePageModel {
             }
         }
 
-        // Import button / status (no #[watch] — updated explicitly here).
-        widgets.add_btn.set_label(if self.importing {
-            "Importing…"
-        } else {
-            "+ Add books"
-        });
-        widgets.add_btn.set_sensitive(!self.importing);
         widgets.status_label.set_label(&self.status);
         widgets.status_label.set_visible(!self.status.is_empty());
 
@@ -1145,9 +1088,6 @@ fn apply_snapshot(
     }
 
     clear_box(&widgets.counts_host);
-    clear_box(&widgets.continue_host);
-    clear_box(&widgets.tbr_host);
-    clear_box(&widgets.recent_host);
     clear_box(&widgets.home_book_host);
     clear_box(&widgets.home_updates_host);
     clear_box(&widgets.home_shelf_host);
@@ -1167,6 +1107,9 @@ fn apply_snapshot(
         );
         widgets.counts_host.append(&card);
     } else {
+        // Greeting (§1): two lines, Display font.
+        widgets.home_greeting.set_label("Hello, Harvey\nWhat would you like to read today?");
+
         // Home book from continue_reading (§60, decision 188).
         if let Some(book) = snap.continue_reading.first() {
             let book_widget = build_home_book(book);

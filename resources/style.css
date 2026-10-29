@@ -595,6 +595,17 @@ button.kalam-notify-clear:focus-visible {
     background: @kalam_bg;
 }
 
+/* ── Home greeting (§1) ──
+   Two lines, Display font (Playfair Display). */
+.kalam-home-greeting {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-weight: 500;
+    font-size: 20px;
+    line-height: 1.2;
+    color: @kalam_text;
+    margin-bottom: 8px;
+}
+
 /* ── Home book (§60, decision 188) ──
    Cover page, reading page, ribbon, play button, pager of 5 dots. */
 .kalam-home-book-heading {

@@ -1,11 +1,11 @@
-src/notify.rs:357:5: [1m[91merror[E0308][0m: arguments to this function are incorrect
-src/notify.rs:699:13: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/notify.rs:723:9: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/notify.rs:724:9: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/notify.rs:739:9: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/pages/home.rs:1338:60: [1m[91merror[E0599][0m: the method `as_ref` exists for reference `&&models::Book`, but its trait bounds were not satisfied: method cannot be called on `&&models::Book` due to unsatisfied trait bounds
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+src/pages/home.rs:30:9: [1m[91merror[0m: fields `query` and `inside_books` are never read
+src/pages/home.rs:25:5: [1m[91merror[0m: variant `ComicSeries` is never constructed
+src/pages/home.rs:48:5: [1m[91merror[0m: variants `FilesChosen`, `ImportStep`, `ImportFinished`, and `SearchHistoryItem` are never constructed
+src/pages/home.rs:86:5: [1m[91merror[0m: multiple fields are never read
+src/service.rs:95:9: [1m[91merror[0m: field `stats` is never read
+src/notify.rs:267:1: [1m[91merror[0m: this function has too many arguments (8/7)
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 6 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -29,13 +29,13 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/notify.rs:357:5: [1m[91merror[E0308][0m: arguments to this function are incorrect
-src/notify.rs:699:13: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/notify.rs:723:9: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/notify.rs:724:9: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/notify.rs:739:9: [1m[91merror[E0061][0m: this function takes 5 arguments but 4 arguments were supplied
-src/pages/home.rs:1338:60: [1m[91merror[E0599][0m: the method `as_ref` exists for reference `&&models::Book`, but its trait bounds were not satisfied: method cannot be called on `&&models::Book` due to unsatisfied trait bounds
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+src/pages/home.rs:30:9: [1m[91merror[0m: fields `query` and `inside_books` are never read
+src/pages/home.rs:25:5: [1m[91merror[0m: variant `ComicSeries` is never constructed
+src/pages/home.rs:48:5: [1m[91merror[0m: variants `FilesChosen`, `ImportStep`, `ImportFinished`, and `SearchHistoryItem` are never constructed
+src/pages/home.rs:86:5: [1m[91merror[0m: multiple fields are never read
+src/service.rs:95:9: [1m[91merror[0m: field `stats` is never read
+src/notify.rs:267:1: [1m[91merror[0m: this function has too many arguments (8/7)
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 6 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
---- run 40850240447 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
+--- run 40850751519 ---

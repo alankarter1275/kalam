@@ -147,13 +147,6 @@ fn with_history<R>(f: impl FnOnce(&mut VecDeque<Entry>) -> R) -> R {
 /// Attach the overlay's toast container. Called once from the app shell.
 pub fn attach(host: gtk::Box) {
     HOST.with(|h| *h.borrow_mut() = Some(host));
-}
-
-/// Register the action to run when a toast's "View" link is clicked —
-/// opens the notification panel from the app shell (decision 184).
-pub fn set_view_action(action: ViewAction) {
-    VIEW_ACTION.with(|v| *v.borrow_mut() = Some(action));
-}
     // Flush anything raised during startup.
     let queued: Vec<Entry> = PENDING.with(|p| std::mem::take(&mut *p.borrow_mut()));
     for entry in queued {
@@ -163,6 +156,12 @@ pub fn set_view_action(action: ViewAction) {
     // listener registration order in `init`; announce once more so the
     // dot and list agree with the history they were flushed from.
     notify_history_changed();
+}
+
+/// Register the action to run when a toast's "View" link is clicked —
+/// opens the notification panel from the app shell (decision 184).
+pub fn set_view_action(action: ViewAction) {
+    VIEW_ACTION.with(|v| *v.borrow_mut() = Some(action));
 }
 
 pub fn success(title: &str, detail: &str) {

@@ -24,8 +24,6 @@ impl NavItem {
     ///
     /// * `Authors` — dropped from the rail by decision 179; the authors
     ///   index and author pages still exist, they just have no rail entry.
-    /// * `Shelves` — shelves live in My Library, so the rail does not
-    ///   spend one of its few slots on a second way into them.
     /// * `Downloads` — the queue page works, but nothing ever registers a
     ///   `Source`, so it can only ever read "0 downloads tracked". Online
     ///   sources are a future track in `ROADMAP.md`; until one exists the
@@ -39,6 +37,7 @@ impl NavItem {
     pub const ALL: &'static [NavItem] = &[
         NavItem::Home,
         NavItem::Library,
+        NavItem::Shelves,
         NavItem::Comics,
         NavItem::Editor,
         NavItem::Settings,

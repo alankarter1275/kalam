@@ -2,6 +2,7 @@
 
 use crate::db::Catalog;
 use crate::models::{LibrarySection, NavItem, Route};
+use crate::shortcuts::ShortcutAction;
 use crate::pages::{downloads::DownloadsModel, 
     all_books::{AllBooksModel, AllBooksMsg, AllBooksOut},
     analytics::AnalyticsModel,
@@ -2222,9 +2223,9 @@ fn collect_shortcut_import_files(root: std::path::PathBuf) -> Vec<std::path::Pat
 /// for free, but `icons::init` is deferred to idle for its theme-rescan
 /// cost, and the rail is on screen before that runs.)
 fn brand_logo(accent: &str) -> gtk::Image {
-    // design-system §5: the loop is a hairline, so check it at 32px. The
+    // design-system §5: the loop is a hairline, so check it at 38px. The
     // 68px rail is drawn around this size.
-    const LOGO_PX: i32 = 32;
+    const LOGO_PX: i32 = 38;
 
     let image = gtk::Image::new();
     if let Some(texture) = brand_texture(accent) {
@@ -2252,6 +2253,17 @@ pub(crate) fn brand_texture(accent: &str) -> Option<gtk::gdk::Texture> {
     gtk::gdk::Texture::from_bytes(&bytes).ok()
 }
 
+/// Map a rail entry to its global shortcut action, if any.
+fn nav_shortcut(item: NavItem) -> Option<ShortcutAction> {
+    match item {
+        NavItem::Home => Some(ShortcutAction::GoHome),
+        NavItem::Library => Some(ShortcutAction::GoLibrary),
+        NavItem::Editor => Some(ShortcutAction::GoEditor),
+        NavItem::Settings => Some(ShortcutAction::OpenSettings),
+        _ => None,
+    }
+}
+
 fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     // Icon only. The rail is too narrow for a readable caption, and the
     // tooltip already carries the page name.
@@ -2267,7 +2279,13 @@ fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     if active {
         btn.add_css_class("active");
     }
-    btn.set_tooltip_text(Some(item.label()));
+    let mut tip = item.label().to_string();
+    if let Some(action) = nav_shortcut(item) {
+        if let Some(label) = action.shortcut_label() {
+            tip.push_str(&format!(" ({label})"));
+        }
+    }
+    btn.set_tooltip_text(Some(&tip));
     btn.set_focus_on_click(false);
     btn
 }

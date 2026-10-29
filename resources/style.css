@@ -101,14 +101,15 @@ scrollbar slider:active {
     background-color: @kalam_accent;
 }
 
-/* ── nav rail (design-system §4) ────────────────────── */
-/* 68 wide, 44 circular items, the active item filled with accent-fill
-   carrying a white glyph (decision 49: white sits only on accent-fill,
-   never on plain accent). The rail's entries stay as they are — their
-   final composition is still a draft (decision 3). */
+/* ── nav rail (design-system §4, §56) ────────────────────── */
+/* 68 wide, 44 circular items. Per decision 179/180:
+   * default: transparent bg, dim text
+   * hover: @kalam_border fill, @kalam_text text
+   * active: @kalam_accent_fill circle, icon drawn in @kalam_bg (cut-out look)
+   * focus: 2px @kalam_accent ring, 2px offset */
 .kalam-sidebar {
     background: @kalam_sidebar;
-    border-right: 1px solid @kalam_border;
+    position: relative;
     /* Icon-only rail: 44px disc + 12px either side. */
     min-width: 68px;
     padding: 12px 0;
@@ -142,13 +143,13 @@ scrollbar slider:active {
 }
 
 .kalam-nav-btn:hover {
-    background: @kalam_hover;
+    background: @kalam_border;
     color: @kalam_text;
 }
 
 .kalam-nav-btn.active {
     background: @kalam_accent_fill;
-    color: white;
+    color: @kalam_bg;
 }
 
 .kalam-nav-btn.active:hover {
@@ -160,6 +161,20 @@ scrollbar slider:active {
     outline-offset: 2px;
 }
 
+/* Divider between rail and page: 2px line in @kalam_border, inset
+   28px from top / 24px from bottom, never full height (§56). */
+.kalam-sidebar::after {
+    content: "";
+    position: absolute;
+    inset-inline-start: 100%;
+    inset-block-start: 28px;
+    inset-block-end: 24px;
+    border-inline-start: 2px solid @kalam_border;
+    width: 0;
+}
+
+/* Nav icon inherits the button's text colour — @kalam_bg on active
+   gives the cut-out glyph look against accent-fill. */
 .kalam-nav-icon {
     color: inherit;
     -gtk-icon-size: 20px;
@@ -180,7 +195,7 @@ scrollbar slider:active {
 
 .kalam-nav-btn.open {
     background: @kalam_accent_fill;
-    color: white;
+    color: @kalam_bg;
 }
 
 .kalam-nav-btn.open:hover {

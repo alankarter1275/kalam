@@ -150,9 +150,9 @@ impl Route {
             Route::ComponentPreview => NavItem::Settings,
             Route::ComicSeries { .. } => NavItem::Comics,
             Route::LibrarySection(_) => NavItem::Library,
-            // Shelves live under My Library now, so that rail item is
-            // the one that stays lit while browsing them.
-            Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Library,
+            // Shelves now has its own rail entry (§56), so its routes
+            // light up the Shelves item rather than Library.
+            Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
             Route::TagBooks { .. } => NavItem::Library,
             Route::AuthorsIndex | Route::AuthorPage { .. } => NavItem::Authors,
             Route::EditorWorkspace { .. } => NavItem::Editor,

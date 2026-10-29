@@ -2733,15 +2733,14 @@ mod tests {
     }
 
     #[test]
-    fn shelves_live_under_my_library_not_the_rail() {
-        // The shelves page and its diagnostic route stay available, but
-        // the rail must not spend a slot on them; My Library is the
-        // entry point and the item that stays active there.
-        assert!(!NavItem::ALL.contains(&NavItem::Shelves));
-        assert_eq!(Route::ShelvesGrid.sidebar_item(), NavItem::Library);
+    fn shelves_live_on_the_rail() {
+        // Per §56, Shelves is a rail entry alongside Home/Library/Comics/Editor;
+        // My Library remains the entry point for shelf detail pages.
+        assert!(NavItem::ALL.contains(&NavItem::Shelves));
+        assert_eq!(Route::ShelvesGrid.sidebar_item(), NavItem::Shelves);
         assert_eq!(
             Route::ShelfDetail { shelf_id: 1 }.sidebar_item(),
-            NavItem::Library
+            NavItem::Shelves
         );
         assert_eq!(route_by_name("shelves"), Some(Route::ShelvesGrid));
     }

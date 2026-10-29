@@ -1561,24 +1561,6 @@ impl Component for AppModel {
             notifications_for_view.toggle();
         }));
 
-        // §65 Window controls (decision 181).
-        let win = widgets.main_window.clone();
-        widgets.win_min_btn.connect_clicked(move |_| {
-            win.minimize();
-        });
-        let win = widgets.main_window.clone();
-        widgets.win_max_btn.connect_clicked(move |_| {
-            if win.is_maximized() {
-                win.unmaximize();
-            } else {
-                win.maximize();
-            }
-        });
-        let win = widgets.main_window.clone();
-        widgets.win_close_btn.connect_clicked(move |_| {
-            win.close();
-        });
-
         // CI screenshot states for the rail bell: no route reaches the
         // floating panel, and a fresh seeded launch has no history to
         // show. `notifications` seeds ordinary events (Today and

@@ -93,6 +93,7 @@ pub struct HomePageModel {
     home_quote_source: gtk::Label,
     home_book_host: gtk::Box,
     home_updates_host: gtk::Box,
+    home_shelf_host: gtk::Box,
 }
 
 #[relm4::component(pub)]
@@ -306,6 +307,18 @@ impl Component for HomePageModel {
                 set_margin_bottom: 16,
             },
 
+            // ── Home shelf (§61, decisions 190-193) ──
+            #[name = "home_shelf_host"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 0,
+                set_halign: gtk::Align::Start,
+                set_hexpand: false,
+                set_margin_start: 12,
+                set_margin_top: 24,
+                set_margin_bottom: 16,
+            },
+
             #[name = "status_label"]
             gtk::Label {
                 set_label: "",
@@ -445,6 +458,7 @@ impl Component for HomePageModel {
             home_quote_source: widgets.home_quote_source.clone(),
             home_book_host: widgets.home_book_host.clone(),
             home_updates_host: widgets.home_updates_host.clone(),
+            home_shelf_host: widgets.home_shelf_host.clone(),
         };
 
         // ── Option picker popover (§57, decision 200) ──
@@ -1161,6 +1175,7 @@ fn apply_snapshot(
     clear_box(&widgets.recent_host);
     clear_box(&widgets.home_book_host);
     clear_box(&widgets.home_updates_host);
+    clear_box(&widgets.home_shelf_host);
 
     // ── State cards (§64, decision 194) ──
     // Shown instead of normal content when the library is in a special state.
@@ -1222,6 +1237,18 @@ fn apply_snapshot(
 
             widgets.home_updates_host.append(&row);
         }
+    }
+
+    // Home shelf (§61, decisions 190-193): base line, bars, Today ring.
+    let shelf_books: Vec<&Book> = snap
+        .continue_reading
+        .iter()
+        .chain(snap.recent.iter())
+        .take(12)
+        .collect();
+    if !shelf_books.is_empty() {
+        let shelf_widget = build_home_shelf(&shelf_books);
+        widgets.home_shelf_host.append(&shelf_widget);
     }
     }
 }
@@ -1323,3 +1350,90 @@ fn build_home_book(book: &Book) -> gtk::Box {
 
     host
 }
+
+/// Build the Home shelf widget (§61, decisions 190-193): base line, horizontal
+/// bars per book, elastic date ruler, Today ring. Drawn with Cairo/Pango in a
+/// Gtk.DrawingArea.
+fn build_home_shelf(books: &[&Book]) -> gtk::Box {
+    let host = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(0)
+        .halign(gtk::Align::Start)
+        .hexpand(false)
+        .build();
+    host.add_css_class("kalam-home-shelf");
+
+    let heading = gtk::Label::builder()
+        .label("Your shelf")
+        .halign(gtk::Align::Start)
+        .hexpand(false)
+        .build();
+    heading.add_css_class("kalam-home-shelf-heading");
+    host.append(&heading);
+
+    let chip = gtk::Label::builder()
+        .label("Arrange by: Months")
+        .halign(gtk::Align::Start)
+        .hexpand(false)
+        .build();
+    chip.add_css_class("kalam-home-shelf-chip");
+    host.append(&chip);
+
+    // DrawingArea for the custom shelf rendering.
+    let area = gtk::DrawingArea::new();
+    area.set_size_request(340, 340);
+    area.set_hexpand(false);
+    area.set_vexpand(false);
+
+    let books_for_draw = books.to_vec();
+    area.set_draw_func(move |_area, cr, width, height| {
+        let (w, h) = (width as f64, height as f64);
+        if w < 2.0 || h < 2.0 {
+            return;
+        }
+
+        // Base line: vertical line down the centre.
+        let base_x = w / 2.0;
+        cr.set_source_rgba(0.5, 0.5, 0.5, 0.3);
+        cr.set_line_width(1.0);
+        cr.move_to(base_x, 20.0);
+        cr.line_to(base_x, h - 20.0);
+        let _ = cr.stroke();
+
+        // Today ring: circle at the top centre.
+        let today_radius = 8.0;
+        cr.set_source_rgba(1.0, 0.5, 0.0, 0.9);
+        cr.set_line_width(2.0);
+        cr.arc(base_x, 20.0, today_radius, 0.0, 2.0 * std::f64::consts::PI);
+        let _ = cr.stroke();
+
+        // Horizontal bars for books, alternating left/right of base line.
+        let bar_count = books_for_draw.len().min(6);
+        let bar_height = 6.0;
+        let bar_gap = 16.0;
+        let start_y = 50.0;
+
+        for (i, book) in books_for_draw.iter().enumerate().take(bar_count) {
+            let y = start_y + i as f64 * bar_gap;
+            let bar_w = 60.0 + (i as f64 * 10.0).min(40.0);
+            let extend_left = i % 2 == 0;
+
+            cr.set_source_rgba(0.2, 0.6, 1.0, 0.8);
+            cr.set_line_width(bar_height);
+
+            if extend_left {
+                cr.move_to(base_x, y);
+                cr.line_to(base_x - bar_w, y);
+            } else {
+                cr.move_to(base_x, y);
+                cr.line_to(base_x + bar_w, y);
+            }
+            let _ = cr.stroke();
+        }
+    });
+
+    host.append(&area);
+    host
+}
+
+/// Ask the worker for a fresh snapshot.

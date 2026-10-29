@@ -602,6 +602,10 @@ button.kalam-notify-clear:focus-visible {
     margin-bottom: 8;
 }
 
+.kalam-home-shelf drawingarea {
+    background: @kalam_bg;
+}
+
 /* ── Home book (§60, decision 188) ──
    Cover page, reading page, ribbon, play button, pager of 5 dots. */
 .kalam-home-book-heading {

@@ -553,8 +553,71 @@ button.kalam-notify-clear:focus-visible {
     padding: 8px 12px;
 }
 
-/* ── cards (shelves grid, book cards, hub tiles) ─────── */
-.kalam-card {
+/* ── Home quote (§63, decision 187) ──
+   Large quote in Playfair Display/Literata italic, with an accent rule. */
+.kalam-home-quote {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 18px;
+    font-style: italic;
+    line-height: 1.8;
+    color: @kalam_text;
+    margin-start: 12;
+    margin-end: 12;
+    margin-top: 16;
+    margin-bottom: 8;
+    padding-start: 12;
+    border-start: 3px solid @kalam_accent;
+}
+
+.kalam-home-quote-source {
+    font-size: 0.78rem;
+    color: @kalam_text_dim;
+    margin-start: 12;
+    margin-end: 12;
+    margin-bottom: 16;
+}
+
+/* ── Home shelf (§61, decisions 190-193) ──
+   Custom-drawn widget placeholder styled as a card area. */
+.kalam-home-shelf {
+    margin-start: 12;
+    margin-end: 12;
+    margin-bottom: 16;
+    min-height: 340px;
+}
+
+.kalam-home-shelf-heading {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: @kalam_text_2;
+    margin-start: 12;
+    margin-top: 16;
+    margin-bottom: 8;
+}
+
+.kalam-home-shelf-chip {
+    font-size: 0.78rem;
+    color: @kalam_text_dim;
+    margin-start: 12;
+    margin-bottom: 8;
+}
+
+/* ── Home updates (§62, decision 189) ──
+   Thin vertical timeline, four rows visible. */
+.kalam-home-updates {
+    margin-start: 12;
+    margin-end: 12;
+    margin-bottom: 16;
+}
+
+.kalam-home-updates-heading {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: @kalam_text_2;
+    margin-start: 0;
+    margin-top: 16;
+    margin-bottom: 8;
+}
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 14px;

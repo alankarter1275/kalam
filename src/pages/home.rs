@@ -89,6 +89,8 @@ pub struct HomePageModel {
     search_scroll_content: gtk::Box,
     search_scroll: gtk::ScrolledWindow,
     search_fade: gtk::Box,
+    home_quote: gtk::Label,
+    home_quote_source: gtk::Label,
 }
 
 #[relm4::component(pub)]
@@ -260,6 +262,25 @@ impl Component for HomePageModel {
                 set_halign: gtk::Align::Start,
             },
 
+            // ── Home quote (§63, decision 187) ──
+            #[name = "home_quote"]
+            gtk::Label {
+                add_css_class: "kalam-home-quote",
+                set_label: "“There is no friend as loyal as a book.”",
+                set_halign: gtk::Align::Start,
+                set_hexpand: false,
+                set_wrap: true,
+                set_max_width_chars: 70,
+            },
+
+            #[name = "home_quote_source"]
+            gtk::Label {
+                add_css_class: "kalam-home-quote-source",
+                set_label: "— Ernest Hemingway",
+                set_halign: gtk::Align::Start,
+                set_hexpand: false,
+            },
+
             #[name = "status_label"]
             gtk::Label {
                 set_label: "",
@@ -395,6 +416,8 @@ impl Component for HomePageModel {
             search_scroll_content: widgets.search_scroll_content.clone(),
             search_scroll: widgets.search_scroll.clone(),
             search_fade: widgets.search_fade.clone(),
+            home_quote: widgets.home_quote.clone(),
+            home_quote_source: widgets.home_quote_source.clone(),
         };
 
         // ── Option picker popover (§57, decision 200) ──

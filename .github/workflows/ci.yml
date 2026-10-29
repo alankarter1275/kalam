@@ -154,6 +154,7 @@ jobs:
           # Publish captured rustfmt output for offline diagnosis (sandbox
           # cannot read Actions logs).
           cp /tmp/fmt.txt ci-logs/fmt-error.txt || true
+          echo "fmt_exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           # Restore, so clippy and the build see the committed source rather
           # than a locally reformatted copy.
           git checkout -- .
@@ -161,7 +162,7 @@ jobs:
       # Runs on clean runs too, so the published file always describes the
       # latest run rather than the last untidy one.
       - name: publish the rustfmt diff
-        if: steps.fmt.outputs.dirty == '1'
+        if: steps.fmt.outputs.dirty == '1' || steps.fmt.outputs.fmt_exit != '0'
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"

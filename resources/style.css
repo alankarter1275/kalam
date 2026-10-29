@@ -681,6 +681,23 @@ button.kalam-notify-clear:focus-visible {
     margin-top: 16;
     margin-bottom: 8;
 }
+
+.kalam-home-update-row {
+    orientation: horizontal;
+    spacing: 8;
+}
+
+.kalam-home-update-dot {
+    min-width: 6px;
+    min-height: 6px;
+    border-radius: 3px;
+    background: @kalam_border;
+}
+
+.kalam-home-update-label {
+    font-size: 0.82rem;
+    color: @kalam_text;
+}
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 14px;

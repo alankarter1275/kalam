@@ -92,6 +92,7 @@ pub struct HomePageModel {
     home_quote: gtk::Label,
     home_quote_source: gtk::Label,
     home_book_host: gtk::Box,
+    home_updates_host: gtk::Box,
 }
 
 #[relm4::component(pub)]
@@ -294,6 +295,17 @@ impl Component for HomePageModel {
                 set_margin_bottom: 16,
             },
 
+            // ── Home updates (§62, decision 189) ──
+            #[name = "home_updates_host"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 0,
+                set_halign: gtk::Align::Start,
+                set_hexpand: false,
+                set_margin_start: 12,
+                set_margin_bottom: 16,
+            },
+
             #[name = "status_label"]
             gtk::Label {
                 set_label: "",
@@ -432,6 +444,7 @@ impl Component for HomePageModel {
             home_quote: widgets.home_quote.clone(),
             home_quote_source: widgets.home_quote_source.clone(),
             home_book_host: widgets.home_book_host.clone(),
+            home_updates_host: widgets.home_updates_host.clone(),
         };
 
         // ── Option picker popover (§57, decision 200) ──
@@ -1113,11 +1126,53 @@ fn apply_snapshot(
     clear_box(&widgets.tbr_host);
     clear_box(&widgets.recent_host);
     clear_box(&widgets.home_book_host);
+    clear_box(&widgets.home_updates_host);
 
     // Home book from continue_reading (§60, decision 188).
     if let Some(book) = snap.continue_reading.first() {
         let book_widget = build_home_book(book);
         widgets.home_book_host.append(&book_widget);
+    }
+
+    // Home updates (§62, decision 189): thin vertical timeline, four rows
+    // visible, scrolls. Shown only when there is a saved source.
+    if !snap.reading_list.is_empty() {
+        let heading = gtk::Label::builder()
+            .label("Updates")
+            .halign(gtk::Align::Start)
+            .hexpand(false)
+            .build();
+        heading.add_css_class("kalam-home-updates-heading");
+        widgets.home_updates_host.append(&heading);
+
+        let limit = snap.reading_list.len().min(4);
+        for entry in snap.reading_list.iter().take(limit) {
+            let row = gtk::Box::builder()
+                .orientation(gtk::Orientation::Horizontal)
+                .spacing(8)
+                .halign(gtk::Align::Start)
+                .hexpand(false)
+                .margin_top(4)
+                .margin_bottom(4)
+                .build();
+            row.add_css_class("kalam-home-update-row");
+
+            let dot = gtk::Box::builder()
+                .size_request(6, 6)
+                .build();
+            dot.add_css_class("kalam-home-update-dot");
+            row.append(&dot);
+
+            let lbl = gtk::Label::builder()
+                .label(&entry.book_title)
+                .halign(gtk::Align::Start)
+                .hexpand(false)
+                .build();
+            lbl.add_css_class("kalam-home-update-label");
+            row.append(&lbl);
+
+            widgets.home_updates_host.append(&row);
+        }
     }
 }
 

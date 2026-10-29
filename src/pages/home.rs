@@ -63,6 +63,8 @@ pub enum HomeMsg {
     SearchActivate,
     /// Recent search item chosen: run that search.
     SearchHistoryItem { query: String },
+    /// Recent search item deleted from history.
+    SearchHistoryDelete { query: String },
     /// Clear all recent searches.
     SearchClear,
     /// Search inside books switch toggled.
@@ -84,6 +86,9 @@ pub struct HomePageModel {
     search_entry: gtk::Entry,
     search_picker_btn: gtk::MenuButton,
     search_box_host: gtk::Box,
+    search_scroll_content: gtk::Box,
+    search_scroll: gtk::ScrolledWindow,
+    search_fade: gtk::Box,
 }
 
 #[relm4::component(pub)]
@@ -157,40 +162,66 @@ impl Component for HomePageModel {
             #[name = "search_box_host"]
             gtk::Box {
                 add_css_class: "kalam-home-search-box",
+                set_orientation: gtk::Orientation::Vertical,
                 set_hexpand: false,
                 set_width_request: 520,
                 set_valign: gtk::Align::Start,
                 set_visible: false,
                 set_margin_top: -1,
 
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 0,
+                // Scrollable content with bottom fade.
+                gtk::Overlay {
+                    set_hexpand: true,
+                    set_vexpand: false,
 
-                    #[name = "search_history_heading"]
-                    gtk::Label {
-                        add_css_class: "kalam-home-search-heading",
-                        set_label: "Recent searches",
-                        set_halign: gtk::Align::Start,
-                        set_hexpand: false,
-                        set_margin_start: 12,
-                        set_margin_top: 8,
+                    #[name = "search_scroll"]
+                    gtk::ScrolledWindow {
+                        set_policy: (gtk::PolicyType::Never, gtk::PolicyType::External),
+                        set_hexpand: true,
+                        set_vexpand: false,
+                        set_overlay_scrolling: true,
+
+                        #[name = "search_scroll_content"]
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 0,
+
+                            #[name = "search_history_heading"]
+                            gtk::Label {
+                                add_css_class: "kalam-home-search-heading",
+                                set_label: "Recent searches",
+                                set_halign: gtk::Align::Start,
+                                set_hexpand: false,
+                                set_margin_start: 12,
+                                set_margin_top: 8,
+                            },
+
+                            #[name = "search_history_host"]
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_spacing: 0,
+                            },
+
+                            #[name = "search_clear_btn"]
+                            gtk::Button {
+                                add_css_class: "kalam-home-search-clear",
+                                set_label: "Clear",
+                                set_halign: gtk::Align::Start,
+                                set_margin_start: 12,
+                                set_margin_top: 8,
+                                set_margin_bottom: 8,
+                                set_visible: false,
+                            },
+                        },
                     },
 
-                    #[name = "search_history_host"]
+                    // Bottom fade gradient — indicates scrollable content.
+                    #[name = "search_fade"]
                     gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 0,
-                    },
-
-                    #[name = "search_clear_btn"]
-                    gtk::Button {
-                        add_css_class: "kalam-home-search-clear",
-                        set_label: "Clear",
-                        set_halign: gtk::Align::Start,
-                        set_margin_start: 12,
-                        set_margin_top: 8,
-                        set_margin_bottom: 8,
+                        add_css_class: "k-fade-bottom",
+                        set_valign: gtk::Align::End,
+                        set_hexpand: true,
+                        set_size_request: (-1, 16),
                         set_visible: false,
                     },
                 },
@@ -347,6 +378,9 @@ impl Component for HomePageModel {
             search_entry,
             search_picker_btn: widgets.search_picker_btn.clone(),
             search_box_host: widgets.search_box_host.clone(),
+            search_scroll_content: widgets.search_scroll_content.clone(),
+            search_scroll: widgets.search_scroll.clone(),
+            search_fade: widgets.search_fade.clone(),
         };
 
         // ── Option picker popover (§57, decision 200) ──
@@ -474,6 +508,21 @@ impl Component for HomePageModel {
             s_switch.input(HomeMsg::SearchInsideBooksToggled(sw.is_active()));
         });
 
+        // Show bottom fade when scrollable content overflows.
+        let fade = model.search_fade.clone();
+        let content = model.search_scroll_content.clone();
+        if let Some(adj) = model.search_scroll.vadjustment() {
+            adj.connect_value_changed(move |adj| {
+                let at_bottom = adj.get_value() + adj.get_page_size() >= adj.get_upper() - 1.0;
+                let has_content = content.first_child().is_some();
+                fade.set_visible(has_content && !at_bottom);
+            });
+            // Initial fade state.
+            let at_bottom = adj.get_value() + adj.get_page_size() >= adj.get_upper() - 1.0;
+            let has_content = content.first_child().is_some();
+            fade.set_visible(has_content && !at_bottom);
+        }
+
         request_snapshot(&model.service, &sender);
 
         ComponentParts { model, widgets }
@@ -550,7 +599,30 @@ impl Component for HomePageModel {
                 }
             }
             HomeMsg::SearchActivate => {
-                if !self.search_query.is_empty() {
+                if self.search_query.is_empty() {
+                    return;
+                }
+                // Enter opens the first result if any, otherwise the full
+                // search page. "First result" = first book in the Books
+                // group, else first author, else first series, else first
+                // saved quote.
+                if let Some(book) = self.search_results.books.first() {
+                    sender.output(HomeOut::Book { book_id: book.id }).ok();
+                } else if let Some(author) = self.search_results.authors.first() {
+                    sender.output(HomeOut::Search {
+                        query: author.clone(),
+                        inside_books: false,
+                    }).ok();
+                } else if let Some(series) = self.search_results.series.first() {
+                    sender.output(HomeOut::Search {
+                        query: series.clone(),
+                        inside_books: false,
+                    }).ok();
+                } else if let Some((anno, _)) = self.search_results.quotes.first() {
+                    sender.output(HomeOut::BookDialog {
+                        book_id: anno.book_id,
+                    }).ok();
+                } else {
                     sender.output(HomeOut::Search {
                         query: self.search_query.clone(),
                         inside_books: self.search_inside_books,
@@ -573,6 +645,9 @@ impl Component for HomePageModel {
                     query,
                     inside_books: self.search_inside_books,
                 }).ok();
+            }
+            HomeMsg::SearchHistoryDelete { query } => {
+                self.search_history.borrow_mut().retain(|q| q != &query);
             }
             HomeMsg::SearchClear => {
                 self.search_history.borrow_mut().clear();
@@ -646,7 +721,7 @@ impl Component for HomePageModel {
                     .build();
                 let s_hist = sender.clone();
                 cross.connect_clicked(move |_| {
-                    s_hist.input(HomeMsg::SearchHistoryItem { query: q.clone() });
+                    s_hist.input(HomeMsg::SearchHistoryDelete { query: q.clone() });
                 });
                 row.append(&cross);
 

@@ -91,6 +91,7 @@ pub struct HomePageModel {
     search_fade: gtk::Box,
     home_quote: gtk::Label,
     home_quote_source: gtk::Label,
+    home_book_host: gtk::Box,
 }
 
 #[relm4::component(pub)]
@@ -281,6 +282,18 @@ impl Component for HomePageModel {
                 set_hexpand: false,
             },
 
+            // ── Home book (§60, decision 188) ──
+            #[name = "home_book_host"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 0,
+                set_halign: gtk::Align::Start,
+                set_hexpand: false,
+                set_margin_start: 12,
+                set_margin_top: 24,
+                set_margin_bottom: 16,
+            },
+
             #[name = "status_label"]
             gtk::Label {
                 set_label: "",
@@ -418,6 +431,7 @@ impl Component for HomePageModel {
             search_fade: widgets.search_fade.clone(),
             home_quote: widgets.home_quote.clone(),
             home_quote_source: widgets.home_quote_source.clone(),
+            home_book_host: widgets.home_book_host.clone(),
         };
 
         // ── Option picker popover (§57, decision 200) ──
@@ -1098,4 +1112,109 @@ fn apply_snapshot(
     clear_box(&widgets.continue_host);
     clear_box(&widgets.tbr_host);
     clear_box(&widgets.recent_host);
+    clear_box(&widgets.home_book_host);
+
+    // Home book from continue_reading (§60, decision 188).
+    if let Some(book) = snap.continue_reading.first() {
+        let book_widget = build_home_book(book);
+        widgets.home_book_host.append(&book_widget);
+    }
+}
+
+/// Build the Home book widget (§60, decision 188): cover page, reading page
+/// with ribbon, play button, pager of 5 dots.
+fn build_home_book(book: &Book) -> gtk::Box {
+    let host = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(0)
+        .build();
+    host.add_css_class("kalam-home-book");
+
+    let heading = gtk::Label::builder()
+        .label("Continue reading")
+        .halign(gtk::Align::Start)
+        .hexpand(false)
+        .build();
+    heading.add_css_class("kalam-home-book-heading");
+    host.append(&heading);
+
+    // Book spread: cover + reading page.
+    let spread = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(0)
+        .build();
+    spread.add_css_class("kalam-home-book-spread");
+
+    // Cover page.
+    let cover = gtk::Picture::builder()
+        .halign(gtk::Align::Start)
+        .valign(gtk::Align::Start)
+        .build();
+    cover.add_css_class("kalam-home-book-cover");
+    cover.set_size_request(200, 300);
+    if let Some(cover_path) = &book.cover_path {
+        cover.set_filename(Some(cover_path));
+    }
+    spread.append(&cover);
+
+    // Reading page.
+    let page = gtk::Picture::builder()
+        .halign(gtk::Align::Start)
+        .valign(gtk::Align::Start)
+        .build();
+    page.add_css_class("kalam-home-book-page");
+    page.set_size_request(200, 300);
+    if let Some(cover_path) = &book.cover_path {
+        page.set_filename(Some(cover_path));
+    }
+    spread.append(&page);
+
+    host.append(&spread);
+
+    // Ribbon + play button + pager.
+    let controls = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(12)
+        .halign(gtk::Align::Center)
+        .set_margin_top(8)
+        .set_margin_bottom(8)
+        .build();
+    controls.add_css_class("kalam-home-book-controls");
+
+    // Ribbon indicator.
+    let ribbon = gtk::Image::builder()
+        .icon_name("emblem-bookmarks-symbolic")
+        .pixel_size(16)
+        .build();
+    ribbon.add_css_class("kalam-home-book-ribbon");
+    controls.append(&ribbon);
+
+    // Play button.
+    let play = gtk::Button::builder()
+        .label("Play")
+        .build();
+    play.add_css_class("kalam-home-book-play");
+    controls.append(&play);
+
+    // Pager dots (5 dots, first two active).
+    let pager = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(4)
+        .build();
+    pager.add_css_class("kalam-home-book-pager");
+    for i in 0..5 {
+        let dot = gtk::Box::builder()
+            .size_request(8, 8)
+            .build();
+        dot.add_css_class("kalam-home-book-pager-dot");
+        if i < 2 {
+            dot.add_css_class("active");
+        }
+        pager.append(&dot);
+    }
+    controls.append(&pager);
+
+    host.append(&controls);
+
+    host
 }

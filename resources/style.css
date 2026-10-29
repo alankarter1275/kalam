@@ -602,6 +602,69 @@ button.kalam-notify-clear:focus-visible {
     margin-bottom: 8;
 }
 
+/* ── Home book (§60, decision 188) ──
+   Cover page, reading page, ribbon, play button, pager of 5 dots. */
+.kalam-home-book-heading {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: @kalam_text_2;
+    margin-start: 0;
+    margin-bottom: 8;
+}
+
+.kalam-home-book-spread {
+    orientation: horizontal;
+    spacing: 0;
+}
+
+.kalam-home-book-cover,
+.kalam-home-book-page {
+    border-radius: 10px;
+    background: @kalam_surface;
+}
+
+.kalam-home-book-cover {
+    margin-end: -16px;
+}
+
+.kalam-home-book-page {
+    margin-start: -16px;
+    opacity: 0.85;
+}
+
+.kalam-home-book-ribbon {
+    color: @kalam_accent;
+}
+
+.kalam-home-book-play {
+    font-size: 0.82rem;
+    color: @kalam_accent;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    padding: 6px 12px;
+}
+
+.kalam-home-book-play:hover {
+    background: @kalam_hover;
+}
+
+.kalam-home-book-pager {
+    orientation: horizontal;
+    spacing: 4;
+}
+
+.kalam-home-book-pager-dot {
+    min-width: 8px;
+    min-height: 8px;
+    border-radius: 4px;
+    background: @kalam_border;
+}
+
+.kalam-home-book-pager-dot.active {
+    background: @kalam_accent;
+}
+
 /* ── Home updates (§62, decision 189) ──
    Thin vertical timeline, four rows visible. */
 .kalam-home-updates {

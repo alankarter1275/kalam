@@ -94,6 +94,9 @@ struct SphereProbes {
 pub enum SavedWordsSphereOut {
     #[allow(dead_code)]
     OpenSavedWord { word: String },
+    /// The "All words ›" link was clicked — open the full saved-words list.
+    #[allow(dead_code)]
+    OpenAllWords,
 }
 
 /// Input messages.
@@ -104,6 +107,8 @@ pub enum SavedWordsSphereMsg {
     WordsReady(Vec<(String, i64)>),
     HoverWord(Option<usize>),
     ClickWord(usize),
+    /// The "All words ›" link was clicked.
+    OpenAllWords,
 }
 
 /// The model.
@@ -248,6 +253,16 @@ impl Component for SavedWordsSphereModel {
             glib::ControlFlow::Continue
         });
 
+        // "All words ›" link — opens the full saved-words list.
+        let s_a = sender.clone();
+        let all_click = gtk::GestureClick::new();
+        all_click.set_button(1);
+        all_click.connect_released(move |_gesture, _n_press, _x, _y| {
+            s_a.input(SavedWordsSphereMsg::OpenAllWords);
+        });
+        widgets.all_words_link.add_controller(all_click);
+        widgets.all_words_link.set_cursor_from_name(Some("pointer"));
+
         ComponentParts { model, widgets }
     }
 
@@ -271,6 +286,9 @@ impl Component for SavedWordsSphereModel {
                         word: word.word.clone(),
                     });
                 }
+            }
+            SavedWordsSphereMsg::OpenAllWords => {
+                let _ = _sender.output(SavedWordsSphereOut::OpenAllWords);
             }
             SavedWordsSphereMsg::WordsReady(_) => {
                 // Data is loaded in init; keep for future dynamic updates.

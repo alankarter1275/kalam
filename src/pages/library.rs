@@ -113,6 +113,9 @@ impl Component for LibraryPageModel {
                     SavedWordsSphereOut::OpenSavedWord { word } => {
                         LibraryMsg::OpenSavedWord { word }
                     }
+                    SavedWordsSphereOut::OpenAllWords => {
+                        LibraryMsg::OpenSavedWord { word: String::new() }
+                    }
                 }
             });
 

@@ -1,8 +1,9 @@
-src/pages/home.rs:207:35: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-src/pages/home.rs:210:37: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-src/pages/home.rs:224:29: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-src/pages/home.rs:226:31: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+src/pages/home.rs:29:9: [1m[91merror[0m: fields `query` and `inside_books` are never read
+src/pages/home.rs:15:5: [1m[91merror[0m: variants `Book`, `BookDialog`, and `ComicSeries` are never constructed
+src/pages/home.rs:38:5: [1m[91merror[0m: variants `FilesChosen`, `ImportStep`, `ImportFinished`, and `SearchInsideBooksToggled` are never constructed
+src/pages/home.rs:71:5: [1m[91merror[0m: fields `search_count_lbl`, `search_entry`, and `search_box_host` are never read
+src/service.rs:95:9: [1m[91merror[0m: fields `stats`, `recent`, `continue_reading`, and `reading_list` are never read
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
 
 === last 80 lines of the raw log ===
@@ -24,14 +25,15 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
-[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/home.rs:207:35: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-src/pages/home.rs:210:37: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-src/pages/home.rs:224:29: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-src/pages/home.rs:226:31: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
+src/pages/home.rs:29:9: [1m[91merror[0m: fields `query` and `inside_books` are never read
+src/pages/home.rs:15:5: [1m[91merror[0m: variants `Book`, `BookDialog`, and `ComicSeries` are never constructed
+src/pages/home.rs:38:5: [1m[91merror[0m: variants `FilesChosen`, `ImportStep`, `ImportFinished`, and `SearchInsideBooksToggled` are never constructed
+src/pages/home.rs:71:5: [1m[91merror[0m: fields `search_count_lbl`, `search_entry`, and `search_box_host` are never read
+src/service.rs:95:9: [1m[91merror[0m: fields `stats`, `recent`, `continue_reading`, and `reading_list` are never read
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
---- run 40831203792 ---
+--- run 40831614722 ---

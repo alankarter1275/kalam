@@ -1335,7 +1335,7 @@ fn build_home_shelf(books: &[&Book]) -> gtk::Box {
     area.set_hexpand(false);
     area.set_vexpand(false);
 
-    let books_for_draw: Vec<Book> = books.iter().map(|b| b.as_ref().clone()).collect();
+    let books_for_draw: Vec<Book> = books.iter().map(|b| (*b).clone()).collect();
     area.set_draw_func(move |_area, cr, width, height| {
         let (w, h) = (width as f64, height as f64);
         if w < 2.0 || h < 2.0 {

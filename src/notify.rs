@@ -359,9 +359,9 @@ pub fn seed_screenshot_history() {
         "Cleaned up reader cache",
         "Freed 18 MB",
         false,
+        false,
         "09:12".to_string(),
         "2000-01-01".to_string(),
-        false,
         false,
     );
     success("Imported 3 books", "Added to New arrivals.");
@@ -696,7 +696,7 @@ mod tests {
         // ended. Raise from a worker, read from here.
         clear_history();
         std::thread::spawn(|| {
-            push(Kind::Error, "from a worker", "disk full", false);
+            push(Kind::Error, "from a worker", "disk full", false, false);
         })
         .join()
         .expect("worker thread finished");
@@ -720,8 +720,8 @@ mod tests {
         assert_eq!(unseen_count(), 0);
         assert!(!has_unseen());
 
-        push(Kind::Info, "one", "", false);
-        push(Kind::Error, "two", "", false);
+        push(Kind::Info, "one", "", false, false);
+        push(Kind::Error, "two", "", false, false);
         assert_eq!(unseen_count(), 2);
         assert!(has_unseen());
 
@@ -736,7 +736,7 @@ mod tests {
         assert_eq!(history().len(), 2);
 
         // Clear history empties both.
-        push(Kind::Info, "three", "", false);
+        push(Kind::Info, "three", "", false, false);
         assert_eq!(unseen_count(), 1);
         clear_history();
         assert_eq!(unseen_count(), 0);

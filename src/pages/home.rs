@@ -1,9 +1,8 @@
 use crate::db::Catalog;
 use crate::service::HomeSnapshot;
-use crate::models::BookFormat;
-use crate::pages::all_books::{import_summary, spawn_import, ImportTally};
+use crate::pages::all_books::{import_summary, ImportTally};
 use crate::service::LibraryService;
-use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W, COVER_H, COVER_W};
+use crate::widgets::book_row::{CARD_H, CARD_W, COVER_H, COVER_W};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::cell::RefCell;
@@ -110,7 +109,7 @@ impl Component for HomePageModel {
 
                     gtk::Image {
                         add_css_class: "kalam-home-search-magnifier",
-                        set_from_icon_name: Some("edit-find-symbolic"),
+                        set_icon_name: Some("edit-find-symbolic"),
                         set_pixel_size: 18,
                     },
 
@@ -133,11 +132,12 @@ impl Component for HomePageModel {
                     #[name = "search_picker_btn"]
                     gtk::Button {
                         add_css_class: "kalam-home-search-picker-btn",
-                        set_child: Some(&gtk::Image {
+                        #[wrap(Some)]
+                        set_child = &gtk::Image {
                             add_css_class: "kalam-home-search-picker-icon",
-                            set_from_icon_name: Some("emblem-system-symbolic"),
+                            set_icon_name: Some("emblem-system-symbolic"),
                             set_pixel_size: 20,
-                        }),
+                        },
                         set_tooltip_text: Some("Search options"),
                         #[wrap(Some)]
                         set_popover = &gtk::Popover {
@@ -319,10 +319,10 @@ impl Component for HomePageModel {
                 #[name = "add_btn"]
                 gtk::Button {
                     #[watch]
-                    set_label: if model.importing { "Importing…" } else { "+ Add books" },
+                    set_label: if self.importing { "Importing…" } else { "+ Add books" },
                     add_css_class: "kalam-primary-btn",
                     #[watch]
-                    set_sensitive: !model.importing,
+                    set_sensitive: !self.importing,
                     connect_clicked => HomeMsg::AddBooks,
                 },
             },
@@ -336,9 +336,9 @@ impl Component for HomePageModel {
             #[name = "status_label"]
             gtk::Label {
                 #[watch]
-                set_label: &model.status,
+                set_label: &self.status,
                 #[watch]
-                set_visible: !model.status.is_empty(),
+                set_visible: !self.status.is_empty(),
                 add_css_class: "kalam-muted",
                 set_halign: gtk::Align::Start,
             },
@@ -470,7 +470,7 @@ impl Component for HomePageModel {
         widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
-        root: &Self::Root,
+        _root: &Self::Root,
     ) {
         match msg {
             HomeMsg::ImportStep { done, total, title } => {
@@ -548,6 +548,8 @@ impl Component for HomePageModel {
             }
             HomeMsg::SearchClear => {
                 self.search_history.borrow_mut().clear();
+                widgets.search_clear_btn.set_visible(false);
+                clear_box(&widgets.search_history_host);
             }
             HomeMsg::SearchPickerToggle => {
                 // Popover is auto-managed by GTK (set_autohide: true).
@@ -558,6 +560,16 @@ impl Component for HomePageModel {
         }
 
         self.update_view(widgets, sender);
+    }
+
+    fn update_view(
+        &mut self,
+        widgets: &mut Self::Widgets,
+        _sender: ComponentSender<Self>,
+    ) {
+        // Clear button visibility (updated when history changes).
+        let has_history = !self.search_history.borrow().is_empty();
+        widgets.search_clear_btn.set_visible(has_history);
     }
 }
 

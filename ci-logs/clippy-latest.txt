@@ -1,4 +1,21 @@
-src/pages/home.rs:405:26: [1m[91merror[E0433][0m: cannot find `EventControllerClick` in `gtk`: could not find `EventControllerClick` in `gtk`
+src/pages/home.rs:417:26: [1m[91merror[E0433][0m: cannot find `EventControllerClick` in `gtk`: could not find `EventControllerClick` in `gtk`
+src/pages/home.rs:436:5: [1m[91merror[E0560][0m: struct `pages::home::HomePageModel` has no field named `search_results`: `pages::home::HomePageModel` does not have this field
+src/pages/home.rs:578:16: [1m[91merror[E0308][0m: mismatched types: expected `Adjustment`, found `Option<_>`
+src/pages/home.rs:652:26: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:656:26: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:673:42: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:675:51: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:680:51: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:685:54: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:725:22: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:747:23: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:1210:18: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::Widget>` is not implemented for `gtk4::builders::BoxBuilder`: requires `gtk4::builders::BoxBuilder` to be a GObject that can be statically cast to `gtk4::Widget`
+src/pages/home.rs:1216:31: [1m[91merror[E0609][0m: no field `book_title` on type `&db::ReadingListEntry`: unknown field
+src/pages/home.rs:1284:10: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::Widget>` is not implemented for `gtk4::builders::BoxBuilder`: requires `gtk4::builders::BoxBuilder` to be a GObject that can be statically cast to `gtk4::Widget`
+src/pages/home.rs:1312:14: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::Widget>` is not implemented for `gtk4::builders::BoxBuilder`: requires `gtk4::builders::BoxBuilder` to be a GObject that can be statically cast to `gtk4::Widget`
+src/pages/home.rs:966:5: [1m[91merror[0m: unused variable: `widgets`: help: if this is intentional, prefix it with an underscore: `_widgets`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 16 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 16 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -22,5 +39,23 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/home.rs:405:26: [1m[91merror[E0433][0m: cannot find `EventControllerClick` in `gtk`: could not find `EventControllerClick` in `gtk`
---- run 40834926289 ---
+src/pages/home.rs:417:26: [1m[91merror[E0433][0m: cannot find `EventControllerClick` in `gtk`: could not find `EventControllerClick` in `gtk`
+src/pages/home.rs:436:5: [1m[91merror[E0560][0m: struct `pages::home::HomePageModel` has no field named `search_results`: `pages::home::HomePageModel` does not have this field
+src/pages/home.rs:578:16: [1m[91merror[E0308][0m: mismatched types: expected `Adjustment`, found `Option<_>`
+src/pages/home.rs:652:26: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:656:26: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:673:42: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:675:51: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:680:51: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:685:54: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:725:22: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:747:23: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:1210:18: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::Widget>` is not implemented for `gtk4::builders::BoxBuilder`: requires `gtk4::builders::BoxBuilder` to be a GObject that can be statically cast to `gtk4::Widget`
+src/pages/home.rs:1216:31: [1m[91merror[E0609][0m: no field `book_title` on type `&db::ReadingListEntry`: unknown field
+src/pages/home.rs:1284:10: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::Widget>` is not implemented for `gtk4::builders::BoxBuilder`: requires `gtk4::builders::BoxBuilder` to be a GObject that can be statically cast to `gtk4::Widget`
+src/pages/home.rs:1312:14: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::Widget>` is not implemented for `gtk4::builders::BoxBuilder`: requires `gtk4::builders::BoxBuilder` to be a GObject that can be statically cast to `gtk4::Widget`
+src/pages/home.rs:966:5: [1m[91merror[0m: unused variable: `widgets`: help: if this is intentional, prefix it with an underscore: `_widgets`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 16 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 16 previous errors
+--- run 40835247471 ---

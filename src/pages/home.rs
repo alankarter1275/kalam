@@ -365,6 +365,20 @@ impl Component for HomePageModel {
             s_clear.input(HomeMsg::SearchClear);
         });
 
+        // "N results" count label: clicking opens the full search page.
+        let count = widgets.search_count_lbl.clone();
+        let s_count = sender.clone();
+        let click = gtk::EventControllerClick::new();
+        click.connect_released(move |_, _, _, _| {
+            if !count.text().is_empty() && count.text() != "0 results" {
+                let _ = s_count.output(HomeOut::Search {
+                    query: String::new(),
+                    inside_books: false,
+                });
+            }
+        });
+        count.add_controller(click);
+
         let model = HomePageModel {
             service: LibraryService::new(catalog),
             importing: false,

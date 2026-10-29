@@ -261,7 +261,8 @@ impl Component for HomePageModel {
             },
 
             gtk::Label {
-                set_label: "Continue reading and recently added · click = float · Ctrl+click = full page",
+                set_label:
+                    "Continue reading and recently added · click = float · Ctrl+click = full page",
                 add_css_class: "kalam-page-sub",
                 set_halign: gtk::Align::Start,
             },

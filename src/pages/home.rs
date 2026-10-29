@@ -128,8 +128,9 @@ impl Component for HomePageModel {
                     },
 
                     #[name = "search_picker_btn"]
-                    gtk::Button {
+                    gtk::MenuButton {
                         add_css_class: "kalam-home-search-picker-btn",
+                        set_always_show_arrow: false,
                         #[wrap(Some)]
                         set_child = &gtk::Image {
                             add_css_class: "kalam-home-search-picker-icon",
@@ -334,6 +335,131 @@ impl Component for HomePageModel {
             search_picker_btn: widgets.search_picker_btn.clone(),
             search_box_host: widgets.search_box_host.clone(),
         };
+
+        // ── Option picker popover (§57, decision 200) ──
+        let picker_popover = gtk::Popover::new();
+        picker_popover.add_css_class("kalam-home-search-picker");
+        picker_popover.set_has_arrow(false);
+        picker_popover.set_position(gtk::PositionType::Bottom);
+        picker_popover.set_autohide(true);
+
+        let picker_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        picker_list.set_hexpand(true);
+
+        // "Search in" heading.
+        let search_in_heading = gtk::Label::new(Some("Search in"));
+        search_in_heading.add_css_class("kalam-home-search-picker-heading");
+        search_in_heading.set_halign(gtk::Align::Start);
+        search_in_heading.set_margin_start(12);
+        search_in_heading.set_margin_top(8);
+        search_in_heading.set_margin_bottom(4);
+        picker_list.append(&search_in_heading);
+
+        // Library row (ticked — always the active choice; online sites are
+        // disabled until Part 2, decision 8).
+        let library_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        library_row.set_hexpand(true);
+        library_row.set_valign(gtk::Align::Center);
+        library_row.set_margin_start(12);
+        library_row.set_margin_end(12);
+        library_row.set_margin_top(6);
+        library_row.set_margin_bottom(6);
+
+        let library_lbl = gtk::Label::new(Some("Library"));
+        library_lbl.set_halign(gtk::Align::Start);
+        library_lbl.set_hexpand(true);
+        library_row.append(&library_lbl);
+
+        let library_tick = gtk::Label::new(Some("✓"));
+        library_tick.add_css_class("kalam-ui-menu-check");
+        library_tick.add_css_class("checked");
+        library_tick.set_size_request(22, 22);
+        library_tick.set_halign(gtk::Align::Center);
+        library_row.append(&library_tick);
+
+        let library_btn = gtk::Button::new();
+        library_btn.add_css_class("kalam-ui-menu-item");
+        library_btn.set_hexpand(true);
+        library_btn.set_can_focus(true);
+        library_btn.set_child(Some(&library_row));
+        picker_list.append(&library_btn);
+
+        // "Online · not available yet" sub-heading (dimmed).
+        let online_heading = gtk::Label::new(Some("Online · not available yet"));
+        online_heading.add_css_class("kalam-home-search-picker-dim");
+        online_heading.set_halign(gtk::Align::Start);
+        online_heading.set_margin_start(12);
+        online_heading.set_margin_top(8);
+        online_heading.set_margin_bottom(4);
+        picker_list.append(&online_heading);
+
+        // Four online sites, dimmed and disabled (Part 2).
+        for site in ["AO3", "Fanfiction.net", "Royal Road", "MangaDex"] {
+            let site_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            site_row.set_hexpand(true);
+            site_row.set_valign(gtk::Align::Center);
+            site_row.set_margin_start(12);
+            site_row.set_margin_end(12);
+            site_row.set_margin_top(4);
+            site_row.set_margin_bottom(4);
+
+            let site_lbl = gtk::Label::new(Some(site));
+            site_lbl.add_css_class("kalam-home-search-picker-dim");
+            site_lbl.set_halign(gtk::Align::Start);
+            site_lbl.set_hexpand(true);
+            site_row.append(&site_lbl);
+
+            let site_btn = gtk::Button::new();
+            site_btn.add_css_class("kalam-ui-menu-item");
+            site_btn.set_sensitive(false);
+            site_btn.set_hexpand(true);
+            site_btn.set_can_focus(false);
+            site_btn.set_child(Some(&site_row));
+            picker_list.append(&site_btn);
+        }
+
+        // Divider.
+        let divider = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        divider.add_css_class("kalam-home-search-picker-divider");
+        divider.set_size_request(-1, 1);
+        picker_list.append(&divider);
+
+        // "Search inside books" switch row (off by default, decision 199).
+        let switch_row = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        switch_row.add_css_class("kalam-home-search-switch-row");
+        switch_row.set_hexpand(true);
+        switch_row.set_margin_start(12);
+        switch_row.set_margin_end(12);
+        switch_row.set_margin_top(8);
+        switch_row.set_margin_bottom(8);
+
+        let switch_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        let switch_lbl = gtk::Label::new(Some("Search inside books"));
+        switch_lbl.set_hexpand(true);
+        switch_lbl.set_halign(gtk::Align::Start);
+        let switch_widget = gtk::Switch::new();
+        switch_widget.set_active(model.search_inside_books);
+        switch_box.append(&switch_lbl);
+        switch_box.append(&switch_widget);
+        switch_row.append(&switch_box);
+
+        let switch_caption =
+            gtk::Label::new(Some("Looks through the full text. Slower."));
+        switch_caption.add_css_class("kalam-home-search-switch-caption");
+        switch_caption.set_halign(gtk::Align::Start);
+        switch_caption.set_margin_top(2);
+        switch_row.append(&switch_caption);
+
+        picker_list.append(&switch_row);
+
+        picker_popover.set_child(Some(&picker_list));
+        widgets.search_picker_btn.set_popover(Some(&picker_popover));
+
+        // Switch toggle → SearchInsideBooksToggled.
+        let s_switch = sender.clone();
+        switch_widget.connect_active_notify(move |sw| {
+            s_switch.input(HomeMsg::SearchInsideBooksToggled(sw.is_active()));
+        });
 
         request_snapshot(&model.service, &sender);
 

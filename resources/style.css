@@ -511,6 +511,11 @@ button.kalam-notify-clear:focus-visible {
     margin-top: 2px;
 }
 
+/* Dimmed site rows inside the option picker (online search, Part 2). */
+.kalam-home-search-picker-dim {
+    color: @kalam_text_dim;
+}
+
 /* ── cards (shelves grid, book cards, hub tiles) ─────── */
 .kalam-card {
     background: @kalam_surface;

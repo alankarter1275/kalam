@@ -388,6 +388,10 @@ impl AppModel {
                         HomeOut::ComicSeries { series_name } => {
                             AppMsg::Push(Route::ComicSeries { series_name })
                         }
+                        HomeOut::Search { query, .. } => {
+                            // Open the full search page (All Books) with the query.
+                            AppMsg::Push(Route::LibrarySection(LibrarySection::AllBooks))
+                        }
                     },
                 );
                 PageSlot::Home(ctrl)

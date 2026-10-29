@@ -1201,7 +1201,7 @@ fn apply_snapshot(
 
             widgets.home_updates_host.append(&row);
         }
-    }
+        }
 
     // Home shelf (§61, decisions 190-193): base line, bars, Today ring.
     let shelf_books: Vec<&Book> = snap

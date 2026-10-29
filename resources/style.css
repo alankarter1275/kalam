@@ -18,6 +18,36 @@ window.kalam-window {
     background: @kalam_bg;
 }
 
+/* §65 Window controls (decision 181): three round icon buttons at top-right,
+   quiet until hovered. */
+.kalam-win-control {
+    border-radius: 16px;
+    border: none;
+    background: transparent;
+    color: @kalam_text_dim;
+    min-width: 32px;
+    min-height: 32px;
+}
+
+.kalam-win-control:hover {
+    background: @kalam_border;
+    color: @kalam_text;
+}
+
+.kalam-win-control-close {
+    border-radius: 16px;
+    border: none;
+    background: transparent;
+    color: @kalam_text_dim;
+    min-width: 32px;
+    min-height: 32px;
+}
+
+.kalam-win-control-close:hover {
+    background: alpha(@kalam_text, 0.1);
+    color: @kalam_accent;
+}
+
 /* ── scrollbars ─────────────────────────────────────── */
 /*  ⚠  READ src/style.rs's header before touching this block.  ⚠
  *  ⚠  See also docs/pitfalls.md §5 — this trap has been walked into twice. ⚠
@@ -3175,6 +3205,23 @@ entry.kalam-reader-search > text {
 
 .kalam-toast-progress .kalam-toast-icon {
     color: @kalam_info;
+}
+
+/* §66 Toast "View" link (decision 184). */
+.kalam-toast-view {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: @kalam_accent;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    padding: 4px 10px;
+    min-width: 0;
+}
+
+.kalam-toast-view:hover {
+    background: @kalam_hover;
+    color: @kalam_accent;
 }
 
 /* ── theme picker (P5.5 v2: family blocks + mini UI previews) ── */

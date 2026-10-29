@@ -88,11 +88,18 @@ pub struct Entry {
     /// Slimmer card, shorter life. For things that recur mid-read and would
     /// otherwise nag.
     pub compact: bool,
+    /// Whether this toast carries a "View" link that opens the notification
+    /// panel (decision 184).
+    pub view_link: bool,
 }
 
 /// A callback run on the main thread whenever the history or its
 /// unseen count changes; see [`on_history_changed`].
 pub type HistoryListener = Rc<dyn Fn()>;
+
+/// A callback run when a toast's "View" link is clicked — opens the
+/// notification panel from app shell.
+pub type ViewAction = Rc<dyn Fn()>;
 
 thread_local! {
     /// The stack toasts are appended to, once the main window exists.
@@ -104,6 +111,9 @@ thread_local! {
     /// widgets, so they may only ever run where they were registered.
     static HISTORY_LISTENERS: RefCell<Vec<HistoryListener>> =
         const { RefCell::new(Vec::new()) };
+    /// The action to run when a toast's "View" link is clicked — opens the
+    /// notification panel. Registered by the app shell at attach time.
+    static VIEW_ACTION: RefCell<Option<ViewAction>> = const { RefCell::new(None) };
 }
 
 /// Entries raised since the bell panel was last opened. Process-wide
@@ -137,6 +147,13 @@ fn with_history<R>(f: impl FnOnce(&mut VecDeque<Entry>) -> R) -> R {
 /// Attach the overlay's toast container. Called once from the app shell.
 pub fn attach(host: gtk::Box) {
     HOST.with(|h| *h.borrow_mut() = Some(host));
+}
+
+/// Register the action to run when a toast's "View" link is clicked —
+/// opens the notification panel from the app shell (decision 184).
+pub fn set_view_action(action: ViewAction) {
+    VIEW_ACTION.with(|v| *v.borrow_mut() = Some(action));
+}
     // Flush anything raised during startup.
     let queued: Vec<Entry> = PENDING.with(|p| std::mem::take(&mut *p.borrow_mut()));
     for entry in queued {
@@ -149,26 +166,26 @@ pub fn attach(host: gtk::Box) {
 }
 
 pub fn success(title: &str, detail: &str) {
-    push(Kind::Success, title, detail, false);
+    push(Kind::Success, title, detail, false, false);
 }
 
 pub fn error(title: &str, detail: &str) {
-    push(Kind::Error, title, detail, false);
+    push(Kind::Error, title, detail, false, true);
 }
 
 pub fn info(title: &str, detail: &str) {
-    push(Kind::Info, title, detail, false);
+    push(Kind::Info, title, detail, false, false);
 }
 
 pub fn activity(title: &str, detail: &str) {
-    push(Kind::Progress, title, detail, false);
+    push(Kind::Progress, title, detail, false, false);
 }
 
 /// A small, brief confirmation. Highlighting and saving quotes happen many
 /// times in a sitting, so those get a slim card that clears itself quickly
 /// rather than a full-sized toast parked over the page.
 pub fn compact(title: &str, detail: &str) {
-    push(Kind::Success, title, detail, true);
+    push(Kind::Success, title, detail, true, false);
 }
 
 /// Report a `Result`'s error, if it has one. Returns whether it was Ok, so
@@ -240,8 +257,8 @@ pub fn outcome_info<T, E: std::fmt::Display>(
     }
 }
 
-fn push(kind: Kind, title: &str, detail: &str, compact: bool) {
-    push_at(kind, title, detail, compact, clock_now(), day_now(), true);
+fn push(kind: Kind, title: &str, detail: &str, compact: bool, view_link: bool) {
+    push_at(kind, title, detail, compact, view_link, clock_now(), day_now(), true);
 }
 
 /// Record an entry with an explicit clock/day, optionally without
@@ -253,6 +270,7 @@ fn push_at(
     title: &str,
     detail: &str,
     compact: bool,
+    view_link: bool,
     at: String,
     day: String,
     present: bool,
@@ -264,6 +282,7 @@ fn push_at(
         at,
         day,
         compact,
+        view_link,
     };
 
     with_history(|h| {
@@ -540,6 +559,25 @@ fn build_card(entry: &Entry) -> gtk::Box {
 
     body.append(&text);
     card.append(&body);
+
+    // §66 Toast "View" link (decision 184): error toasts can carry a View
+    // link that opens the notification panel.
+    if entry.view_link {
+        let view_btn = gtk::Button::builder()
+            .label("View")
+            .halign(gtk::Align::End)
+            .valign(gtk::Align::Center)
+            .margin_end(8)
+            .build();
+        view_btn.add_css_class("kalam-toast-view");
+        let view_action = VIEW_ACTION.with(|v| v.borrow().clone());
+        view_btn.connect_clicked(move |_| {
+            if let Some(action) = &view_action {
+                action();
+            }
+        });
+        card.append(&view_btn);
+    }
 
     // Click to dismiss early.
     let click = gtk::GestureClick::new();

@@ -37,6 +37,7 @@ use crate::pages::{downloads::DownloadsModel,
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::rc::Rc;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -1067,6 +1068,53 @@ impl Component for AppModel {
             // window controls. The page runs edge to edge; Alt+F4 closes.
             set_decorated: false,
 
+            // §65 Window controls (decision 181): three round icon buttons at
+            // top-right over the page, quiet until hovered.
+            add_overlay = &gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 8,
+                set_halign: gtk::Align::End,
+                set_valign: gtk::Align::Start,
+                set_margin_top: 8,
+                set_margin_end: 8,
+
+                #[name = "win_min_btn"]
+                gtk::Button {
+                    add_css_class: "kalam-win-control",
+                    set_size_request: (32, 32),
+                    set_tooltip_text: Some("Minimise"),
+                    #[wrap(Some)]
+                    set_child = &gtk::Image {
+                        set_icon_name: Some("window-minimize-symbolic"),
+                        set_pixel_size: 14,
+                    },
+                },
+
+                #[name = "win_max_btn"]
+                gtk::Button {
+                    add_css_class: "kalam-win-control",
+                    set_size_request: (32, 32),
+                    set_tooltip_text: Some("Maximise"),
+                    #[wrap(Some)]
+                    set_child = &gtk::Image {
+                        set_icon_name: Some("window-maximize-symbolic"),
+                        set_pixel_size: 14,
+                    },
+                },
+
+                #[name = "win_close_btn"]
+                gtk::Button {
+                    add_css_class: "kalam-win-control-close",
+                    set_size_request: (32, 32),
+                    set_tooltip_text: Some("Close"),
+                    #[wrap(Some)]
+                    set_child = &gtk::Image {
+                        set_icon_name: Some("window-close-symbolic"),
+                        set_pixel_size: 14,
+                    },
+                },
+            },
+
             // A0 step 4: tell background tasks to stop before the window goes.
             // Cancellation is cooperative, so this only sets a flag — short
             // tasks finish anyway, but a long one (the thumbnail backfill on a
@@ -1552,6 +1600,31 @@ impl Component for AppModel {
 
         // From here on, any notify::* call lands on screen.
         crate::notify::attach(widgets.toast_host.clone());
+
+        // §66 Toast "View" link (decision 184): error toasts can carry a View
+        // link that opens the notification panel.
+        let notifications_for_view = notifications.clone();
+        crate::notify::set_view_action(Rc::new(move || {
+            notifications_for_view.toggle();
+        }));
+
+        // §65 Window controls (decision 181).
+        let win = widgets.main_window.clone();
+        widgets.win_min_btn.connect_clicked(move |_| {
+            win.minimize();
+        });
+        let win = widgets.main_window.clone();
+        widgets.win_max_btn.connect_clicked(move |_| {
+            if win.is_maximized() {
+                win.unmaximize();
+            } else {
+                win.maximize();
+            }
+        });
+        let win = widgets.main_window.clone();
+        widgets.win_close_btn.connect_clicked(move |_| {
+            win.close();
+        });
 
         // CI screenshot states for the rail bell: no route reaches the
         // floating panel, and a fresh seeded launch has no history to

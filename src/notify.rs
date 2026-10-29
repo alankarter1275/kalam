@@ -362,6 +362,7 @@ pub fn seed_screenshot_history() {
         "09:12".to_string(),
         "2000-01-01".to_string(),
         false,
+        false,
     );
     success("Imported 3 books", "Added to New arrivals.");
     info("Library backed up", "kalam-backup.db");
@@ -648,8 +649,8 @@ mod tests {
     fn history_keeps_newest_first() {
         let _guard = history_guard();
         clear_history();
-        push(Kind::Info, "first", "", false);
-        push(Kind::Info, "second", "", false);
+        push(Kind::Info, "first", "", false, false);
+        push(Kind::Info, "second", "", false, false);
         let h = history();
         assert_eq!(h[0].title, "second");
         assert_eq!(h[1].title, "first");
@@ -661,7 +662,7 @@ mod tests {
         let _guard = history_guard();
         clear_history();
         for i in 0..(MAX_HISTORY + 25) {
-            push(Kind::Info, &format!("n{i}"), "", false);
+            push(Kind::Info, &format!("n{i}"), "", false, false);
         }
         assert_eq!(history().len(), MAX_HISTORY);
         clear_history();

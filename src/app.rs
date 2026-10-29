@@ -1068,53 +1068,6 @@ impl Component for AppModel {
             // window controls. The page runs edge to edge; Alt+F4 closes.
             set_decorated: false,
 
-            // §65 Window controls (decision 181): three round icon buttons at
-            // top-right over the page, quiet until hovered.
-            add_overlay = &gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 8,
-                set_halign: gtk::Align::End,
-                set_valign: gtk::Align::Start,
-                set_margin_top: 8,
-                set_margin_end: 8,
-
-                #[name = "win_min_btn"]
-                gtk::Button {
-                    add_css_class: "kalam-win-control",
-                    set_size_request: (32, 32),
-                    set_tooltip_text: Some("Minimise"),
-                    #[wrap(Some)]
-                    set_child = &gtk::Image {
-                        set_icon_name: Some("window-minimize-symbolic"),
-                        set_pixel_size: 14,
-                    },
-                },
-
-                #[name = "win_max_btn"]
-                gtk::Button {
-                    add_css_class: "kalam-win-control",
-                    set_size_request: (32, 32),
-                    set_tooltip_text: Some("Maximise"),
-                    #[wrap(Some)]
-                    set_child = &gtk::Image {
-                        set_icon_name: Some("window-maximize-symbolic"),
-                        set_pixel_size: 14,
-                    },
-                },
-
-                #[name = "win_close_btn"]
-                gtk::Button {
-                    add_css_class: "kalam-win-control-close",
-                    set_size_request: (32, 32),
-                    set_tooltip_text: Some("Close"),
-                    #[wrap(Some)]
-                    set_child = &gtk::Image {
-                        set_icon_name: Some("window-close-symbolic"),
-                        set_pixel_size: 14,
-                    },
-                },
-            },
-
             // A0 step 4: tell background tasks to stop before the window goes.
             // Cancellation is cooperative, so this only sets a flag — short
             // tasks finish anyway, but a long one (the thumbnail backfill on a
@@ -1153,6 +1106,53 @@ impl Component for AppModel {
                         set_spacing: 8,
                         set_halign: gtk::Align::End,
                         set_valign: gtk::Align::End,
+                    },
+                },
+
+                // §65 Window controls (decision 181): three round icon buttons at
+                // top-right over the page, quiet until hovered.
+                add_overlay = &gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 8,
+                    set_halign: gtk::Align::End,
+                    set_valign: gtk::Align::Start,
+                    set_margin_top: 8,
+                    set_margin_end: 8,
+
+                    #[name = "win_min_btn"]
+                    gtk::Button {
+                        add_css_class: "kalam-win-control",
+                        set_size_request: (32, 32),
+                        set_tooltip_text: Some("Minimise"),
+                        #[wrap(Some)]
+                        set_child = &gtk::Image {
+                            set_icon_name: Some("window-minimize-symbolic"),
+                            set_pixel_size: 14,
+                        },
+                    },
+
+                    #[name = "win_max_btn"]
+                    gtk::Button {
+                        add_css_class: "kalam-win-control",
+                        set_size_request: (32, 32),
+                        set_tooltip_text: Some("Maximise"),
+                        #[wrap(Some)]
+                        set_child = &gtk::Image {
+                            set_icon_name: Some("window-maximize-symbolic"),
+                            set_pixel_size: 14,
+                        },
+                    },
+
+                    #[name = "win_close_btn"]
+                    gtk::Button {
+                        add_css_class: "kalam-win-control-close",
+                        set_size_request: (32, 32),
+                        set_tooltip_text: Some("Close"),
+                        #[wrap(Some)]
+                        set_child = &gtk::Image {
+                            set_icon_name: Some("window-close-symbolic"),
+                            set_pixel_size: 14,
+                        },
                     },
                 },
 

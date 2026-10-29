@@ -430,8 +430,9 @@ impl Component for HomePageModel {
         let count = widgets.search_count_lbl.clone();
         let s_count = sender.clone();
         let click = gtk::GestureClick::new();
+        let count_for_click = count.clone();
         click.connect_released(move |_, _, _, _| {
-            if !count.text().is_empty() && count.text() != "0 results" {
+            if !count_for_click.text().is_empty() && count_for_click.text() != "0 results" {
                 let _ = s_count.output(HomeOut::Search {
                     query: String::new(),
                     inside_books: false,
@@ -1334,7 +1335,7 @@ fn build_home_shelf(books: &[&Book]) -> gtk::Box {
     area.set_hexpand(false);
     area.set_vexpand(false);
 
-    let books_for_draw = books.to_vec();
+    let books_for_draw: Vec<Book> = books.iter().map(|b| b.as_ref().clone()).collect();
     area.set_draw_func(move |_area, cr, width, height| {
         let (w, h) = (width as f64, height as f64);
         if w < 2.0 || h < 2.0 {
@@ -1362,7 +1363,7 @@ fn build_home_shelf(books: &[&Book]) -> gtk::Box {
         let bar_gap = 16.0;
         let start_y = 50.0;
 
-        for (i, book) in books_for_draw.iter().enumerate().take(bar_count) {
+        for (i, _) in books_for_draw.iter().enumerate().take(bar_count) {
             let y = start_y + i as f64 * bar_gap;
             let bar_w = 60.0 + (i as f64 * 10.0).min(40.0);
             let extend_left = i % 2 == 0;

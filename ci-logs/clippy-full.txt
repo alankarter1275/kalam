@@ -19,12 +19,18 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/home.rs:345:5: [1m[91merror[E0560][0m: struct `pages::home::HomePageModel` has no field named `search_results`: `pages::home::HomePageModel` does not have this field
-src/pages/home.rs:539:26: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
-src/pages/home.rs:543:26: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
-src/pages/home.rs:586:22: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
-src/pages/home.rs:608:23: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
-src/pages/home.rs:827:5: [1m[91merror[0m: unused variable: `widgets`: help: if this is intentional, prefix it with an underscore: `_widgets`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 6 previous errors
+src/pages/home.rs:392:26: [1m[91merror[E0433][0m: cannot find `EventControllerClick` in `gtk`: could not find `EventControllerClick` in `gtk`
+src/pages/home.rs:411:5: [1m[91merror[E0560][0m: struct `pages::home::HomePageModel` has no field named `search_results`: `pages::home::HomePageModel` does not have this field
+src/pages/home.rs:551:16: [1m[91merror[E0308][0m: mismatched types: expected `Adjustment`, found `Option<_>`
+src/pages/home.rs:625:26: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:629:26: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:646:42: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:648:51: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:653:51: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:658:54: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:698:22: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:720:23: [1m[91merror[E0609][0m: no field `search_results` on type `&mut pages::home::HomePageModel`: unknown field
+src/pages/home.rs:939:5: [1m[91merror[0m: unused variable: `widgets`: help: if this is intentional, prefix it with an underscore: `_widgets`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 12 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 12 previous errors

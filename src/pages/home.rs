@@ -64,6 +64,7 @@ pub struct HomePageModel {
     importing: bool,
     status: String,
     search_query: String,
+    #[allow(dead_code)]
     search_focused: bool,
     search_inside_books: bool,
     search_history: Rc<RefCell<Vec<String>>>,
@@ -203,11 +204,8 @@ impl Component for HomePageModel {
 
                 #[name = "add_btn"]
                 gtk::Button {
-                    #[watch]
-                    set_label: if model.importing { "Importing…" } else { "+ Add books" },
+                    set_label: "+ Add books",
                     add_css_class: "kalam-primary-btn",
-                    #[watch]
-                    set_sensitive: !model.importing,
                     connect_clicked => HomeMsg::AddBooks,
                 },
             },
@@ -220,12 +218,10 @@ impl Component for HomePageModel {
 
             #[name = "status_label"]
             gtk::Label {
-                #[watch]
-                set_label: &model.status,
-                #[watch]
-                set_visible: !model.status.is_empty(),
+                set_label: "",
                 add_css_class: "kalam-muted",
                 set_halign: gtk::Align::Start,
+                set_visible: false,
             },
 
             #[name = "counts_host"]
@@ -440,6 +436,16 @@ impl Component for HomePageModel {
                 self.search_inside_books = enabled;
             }
         }
+
+        // Import button / status (no #[watch] — updated explicitly here).
+        widgets.add_btn.set_label(if self.importing {
+            "Importing…"
+        } else {
+            "+ Add books"
+        });
+        widgets.add_btn.set_sensitive(!self.importing);
+        widgets.status_label.set_label(&self.status);
+        widgets.status_label.set_visible(!self.status.is_empty());
 
         // Update history rows.
         let has_history = !self.search_history.borrow().is_empty();

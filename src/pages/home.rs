@@ -1384,5 +1384,3 @@ fn build_home_shelf(books: &[&Book]) -> gtk::Box {
     host.append(&area);
     host
 }
-
-/// Ask the worker for a fresh snapshot.

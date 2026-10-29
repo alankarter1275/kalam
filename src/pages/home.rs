@@ -204,10 +204,10 @@ impl Component for HomePageModel {
                 #[name = "add_btn"]
                 gtk::Button {
                     #[watch]
-                    set_label: if self.importing { "Importing…" } else { "+ Add books" },
+                    set_label: if model.importing { "Importing…" } else { "+ Add books" },
                     add_css_class: "kalam-primary-btn",
                     #[watch]
-                    set_sensitive: !self.importing,
+                    set_sensitive: !model.importing,
                     connect_clicked => HomeMsg::AddBooks,
                 },
             },
@@ -221,9 +221,9 @@ impl Component for HomePageModel {
             #[name = "status_label"]
             gtk::Label {
                 #[watch]
-                set_label: &self.status,
+                set_label: &model.status,
                 #[watch]
-                set_visible: !self.status.is_empty(),
+                set_visible: !model.status.is_empty(),
                 add_css_class: "kalam-muted",
                 set_halign: gtk::Align::Start,
             },

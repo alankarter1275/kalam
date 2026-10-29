@@ -19,33 +19,24 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
-src/pages/home.rs:188:35: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-src/pages/home.rs:191:37: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-src/pages/home.rs:205:29: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-src/pages/home.rs:207:31: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-src/pages/home.rs:496:38: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-src/pages/home.rs:500:31: [1m[91merror[E0425][0m: cannot find function, tuple struct or tuple variant `Continue` in crate `glib`: not found in `glib`
-src/pages/home.rs:503:17: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
-src/pages/home.rs:131:25: [1m[91merror[E0599][0m: no method named `set_from_icon_name` found for struct `gtk4::Image` in the current scope
-src/pages/home.rs:154:29: [1m[91merror[E0560][0m: struct `gtk4::Image` has no field named `add_css_class`: `gtk4::Image` does not have this field
-src/pages/home.rs:155:29: [1m[91merror[E0560][0m: struct `gtk4::Image` has no field named `set_from_icon_name`: `gtk4::Image` does not have this field
-src/pages/home.rs:156:29: [1m[91merror[E0560][0m: struct `gtk4::Image` has no field named `set_pixel_size`: `gtk4::Image` does not have this field
-src/pages/home.rs:123:17: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::Button>` is not implemented for `gtk4::Box`: requires `gtk4::Box` to be a GObject that can be statically cast to `gtk4::Button`
-src/pages/home.rs:298:30: [1m[91merror[E0609][0m: no field `search_inside_books_switch` on type `pages::home::HomePageModelWidgets`: unknown field
-src/pages/home.rs:306:30: [1m[91merror[E0599][0m: no method named `connect_focus_in` found for struct `gtk4::Entry` in the current scope
-src/pages/home.rs:310:30: [1m[91merror[E0599][0m: no method named `connect_focus_out` found for struct `gtk4::Entry` in the current scope
-src/pages/home.rs:326:14: [1m[91merror[E0599][0m: no method named `margin_all` found for struct `gtk4::builders::BoxBuilder` in the current scope
-src/pages/home.rs:400:27: [1m[91merror[E0277][0m: the trait bound `glib::GString: std::convert::From<std::option::Option<&str>>` is not satisfied: the trait `std::convert::From<std::option::Option<&str>>` is not implemented for `glib::GString`
-src/pages/home.rs:417:35: [1m[91merror[E0599][0m: no method named `set_popover` found for struct `gtk4::Button` in the current scope: method not found in `gtk4::Button`
-src/pages/home.rs:421:23: [1m[91merror[E0599][0m: no method named `connect_active` found for struct `gtk4::Switch` in the current scope
-src/pages/home.rs:492:22: [1m[91merror[E0599][0m: no method named `show_search_box` found for mutable reference `&mut pages::home::HomePageModel` in the current scope: method not found in `&mut pages::home::HomePageModel`
-src/pages/home.rs:661:29: [1m[91merror[E0308][0m: mismatched types: expected `&_`, found `Option<&Entry>`
-src/pages/home.rs:662:39: [1m[91merror[E0308][0m: mismatched types: expected `&Rectangle`, found `&Entry`
-src/pages/home.rs:672:29: [1m[91merror[E0599][0m: no variant, associated function, or constant named `Top` found for enum `gtk4::Align` in the current scope: variant, associated function, or constant not found in `gtk4::Align`
-src/pages/home.rs:726:22: [1m[91merror[E0599][0m: no method named `from_icon_name` found for struct `gtk4::builders::ImageBuilder` in the current scope
-src/pages/home.rs:761:21: [1m[91merror[E0308][0m: mismatched types: expected `&_`, found `Option<&Entry>`
-src/pages/home.rs:762:31: [1m[91merror[E0308][0m: mismatched types: expected `&Rectangle`, found `&Entry`
-src/app.rs:382:33: [1m[91merror[E0004][0m: non-exhaustive patterns: `pages::home::HomeOut::Search { .. }` not covered: pattern `pages::home::HomeOut::Search { .. }` not covered
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 27 previous errors
+src/pages/home.rs:322:35: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
+src/pages/home.rs:325:37: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
+src/pages/home.rs:339:29: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
+src/pages/home.rs:341:31: [1m[91merror[E0425][0m: cannot find value `model` in this scope: not found in this scope
+src/pages/home.rs:3:5: [1m[91merror[0m: unused import: `crate::models::BookFormat`
+src/pages/home.rs:4:47: [1m[91merror[0m: unused import: `spawn_import`
+src/pages/home.rs:6:32: [1m[91merror[0m: unused imports: `CARD_H`, `CARD_W`, `COVER_H`, `COVER_W`, and `build_book_card`
+src/pages/home.rs:113:25: [1m[91merror[E0599][0m: no method named `set_from_icon_name` found for struct `gtk4::Image` in the current scope
+src/pages/home.rs:137:29: [1m[91merror[E0560][0m: struct `gtk4::Image` has no field named `add_css_class`: `gtk4::Image` does not have this field
+src/pages/home.rs:138:29: [1m[91merror[E0560][0m: struct `gtk4::Image` has no field named `set_from_icon_name`: `gtk4::Image` does not have this field
+src/pages/home.rs:139:29: [1m[91merror[E0560][0m: struct `gtk4::Image` has no field named `set_pixel_size`: `gtk4::Image` does not have this field
+src/pages/home.rs:171:52: [1m[91merror[E0308][0m: mismatched types: expected `Option<&str>`, found `&str`
+src/pages/home.rs:143:25: [1m[91merror[E0599][0m: no method named `set_popover` found for struct `gtk4::Button` in the current scope: method not found in `gtk4::Button`
+src/pages/home.rs:105:17: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::Button>` is not implemented for `gtk4::Box`: requires `gtk4::Box` to be a GObject that can be statically cast to `gtk4::Button`
+src/pages/home.rs:429:16: [1m[91merror[E0599][0m: no method named `connect_active` found for struct `gtk4::Switch` in the current scope
+src/app.rs:391:43: [1m[91merror[0m: unused variable: `query`: help: try ignoring the field: `query: _`
+src/pages/home.rs:475:15: [1m[91merror[E0004][0m: non-exhaustive patterns: `pages::home::HomeMsg::AddBooks` and `pages::home::HomeMsg::FilesChosen(_)` not covered: patterns `pages::home::HomeMsg::AddBooks` and `pages::home::HomeMsg::FilesChosen(_)` not covered
+src/pages/home.rs:588:5: [1m[91merror[0m: unused variable: `sender`: help: if this is intentional, prefix it with an underscore: `_sender`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 18 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 27 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 18 previous errors

@@ -516,6 +516,43 @@ button.kalam-notify-clear:focus-visible {
     color: @kalam_text_dim;
 }
 
+/* Result group rows shown in the search box while typing. */
+.kalam-home-search-result-row {
+    padding: 4px 12px;
+    border-radius: 8px;
+    color: @kalam_text;
+}
+
+.kalam-home-search-result-row:hover {
+    background: @kalam_hover;
+}
+
+.kalam-home-search-result-sub {
+    font-size: 0.78rem;
+    color: @kalam_text_dim;
+}
+
+/* "See all N" button under a group. */
+.kalam-home-search-see-all {
+    border: none;
+    background: transparent;
+    color: @kalam_accent;
+    font-size: 0.82rem;
+    border-radius: 8px;
+    min-width: 0;
+}
+
+.kalam-home-search-see-all:hover {
+    background: @kalam_hover;
+}
+
+/* Quiet notice when a search returns no results. */
+.kalam-home-search-no-results {
+    font-size: 0.82rem;
+    color: @kalam_text_dim;
+    padding: 8px 12px;
+}
+
 /* ── cards (shelves grid, book cards, hub tiles) ─────── */
 .kalam-card {
     background: @kalam_surface;

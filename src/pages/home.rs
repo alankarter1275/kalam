@@ -1,4 +1,5 @@
-use crate::db::Catalog;
+use crate::db::{Annotation, Catalog, SortKey};
+use crate::models::Book;
 use crate::service::HomeSnapshot;
 use crate::pages::all_books::{import_summary, ImportTally};
 use crate::service::LibraryService;
@@ -31,6 +32,15 @@ pub enum HomeOut {
     },
 }
 
+/// Grouped search results shown in the search box while typing.
+#[derive(Debug, Clone, Default)]
+pub struct SearchResults {
+    pub books: Vec<Book>,
+    pub authors: Vec<String>,
+    pub series: Vec<String>,
+    pub quotes: Vec<(Annotation, Option<Book>)>,
+}
+
 #[derive(Debug)]
 pub enum HomeMsg {
     AddBooks,
@@ -57,6 +67,8 @@ pub enum HomeMsg {
     SearchClear,
     /// Search inside books switch toggled.
     SearchInsideBooksToggled(bool),
+    /// Search results for the current query, grouped by type.
+    SearchResults(SearchResults),
 }
 
 pub struct HomePageModel {
@@ -70,8 +82,7 @@ pub struct HomePageModel {
     search_history: Rc<RefCell<Vec<String>>>,
     search_count_lbl: gtk::Label,
     search_entry: gtk::Entry,
-    #[allow(dead_code)]
-    search_picker_btn: gtk::Button,
+    search_picker_btn: gtk::MenuButton,
     search_box_host: gtk::Box,
 }
 
@@ -156,6 +167,7 @@ impl Component for HomePageModel {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 0,
 
+                    #[name = "search_history_heading"]
                     gtk::Label {
                         add_css_class: "kalam-home-search-heading",
                         set_label: "Recent searches",
@@ -329,8 +341,9 @@ impl Component for HomePageModel {
             search_query: String::new(),
             search_focused: false,
             search_inside_books: false,
-            search_history: Rc::new(RefCell::new(Vec::new())),
-            search_count_lbl: widgets.search_count_lbl.clone(),
+    search_history: Rc::new(RefCell::new(Vec::new())),
+    search_results: SearchResults::default(),
+    search_count_lbl: widgets.search_count_lbl.clone(),
             search_entry,
             search_picker_btn: widgets.search_picker_btn.clone(),
             search_box_host: widgets.search_box_host.clone(),
@@ -523,9 +536,17 @@ impl Component for HomePageModel {
                 if query.is_empty() {
                     widgets.search_count_lbl.set_visible(false);
                     widgets.search_count_lbl.set_label("0 results");
+                    self.search_results = SearchResults::default();
                 } else {
                     widgets.search_count_lbl.set_visible(true);
                     widgets.search_count_lbl.set_label(&format!("{query} results"));
+                    self.search_results = SearchResults::default();
+                    search_library(
+                        self.service.catalog().clone(),
+                        query.clone(),
+                        self.search_inside_books,
+                        &sender,
+                    );
                 }
             }
             HomeMsg::SearchActivate => {
@@ -561,6 +582,9 @@ impl Component for HomePageModel {
             HomeMsg::SearchInsideBooksToggled(enabled) => {
                 self.search_inside_books = enabled;
             }
+            HomeMsg::SearchResults(results) => {
+                self.search_results = results;
+            }
         }
 
         // Import button / status (no #[watch] — updated explicitly here).
@@ -573,49 +597,356 @@ impl Component for HomePageModel {
         widgets.status_label.set_label(&self.status);
         widgets.status_label.set_visible(!self.status.is_empty());
 
-        // Update history rows.
-        let has_history = !self.search_history.borrow().is_empty();
-        widgets.search_clear_btn.set_visible(has_history);
-        clear_box(&widgets.search_history_host);
-        let hist = self.search_history.borrow();
-        for query in hist.iter() {
-            let q = query.clone();
-            let row = gtk::Box::builder()
-                .orientation(gtk::Orientation::Horizontal)
-                .spacing(8)
-                .margin_start(12)
-                .margin_end(12)
-                .margin_top(6)
-                .margin_bottom(6)
-                .valign(gtk::Align::Center)
-                .hexpand(true)
-                .build();
-            row.add_css_class("kalam-home-search-history-row");
+        // When there's a query, show result groups instead of recent searches.
+        let has_query = !self.search_query.is_empty();
+        widgets.search_history_heading.set_visible(!has_query);
+        if has_query {
+            widgets.search_clear_btn.set_visible(false);
+            render_search_results(
+                widgets,
+                &sender,
+                &self.search_results,
+                &self.search_query,
+                self.search_inside_books,
+            );
+        } else {
+            // Update history rows.
+            let has_history = !self.search_history.borrow().is_empty();
+            widgets.search_clear_btn.set_visible(has_history);
+            clear_box(&widgets.search_history_host);
+            let hist = self.search_history.borrow();
+            for query in hist.iter() {
+                let q = query.clone();
+                let row = gtk::Box::builder()
+                    .orientation(gtk::Orientation::Horizontal)
+                    .spacing(8)
+                    .margin_start(12)
+                    .margin_end(12)
+                    .margin_top(6)
+                    .margin_bottom(6)
+                    .valign(gtk::Align::Center)
+                    .hexpand(true)
+                    .build();
+                row.add_css_class("kalam-home-search-history-row");
 
-            let lbl = gtk::Label::builder()
-                .label(&q)
-                .halign(gtk::Align::Start)
-                .hexpand(true)
-                .build();
-            row.append(&lbl);
+                let lbl = gtk::Label::builder()
+                    .label(&q)
+                    .halign(gtk::Align::Start)
+                    .hexpand(true)
+                    .build();
+                row.append(&lbl);
 
-            let cross = gtk::Button::builder()
-                .child(&gtk::Image::builder()
-                    .icon_name("edit-delete-symbolic")
-                    .pixel_size(14)
-                    .build())
-                .css_classes(["kalam-home-search-history-cross"])
-                .halign(gtk::Align::End)
-                .build();
-            let s_hist = sender.clone();
-            cross.connect_clicked(move |_| {
-                s_hist.input(HomeMsg::SearchHistoryItem { query: q.clone() });
-            });
-            row.append(&cross);
+                let cross = gtk::Button::builder()
+                    .child(&gtk::Image::builder()
+                        .icon_name("edit-delete-symbolic")
+                        .pixel_size(14)
+                        .build())
+                    .css_classes(["kalam-home-search-history-cross"])
+                    .halign(gtk::Align::End)
+                    .build();
+                let s_hist = sender.clone();
+                cross.connect_clicked(move |_| {
+                    s_hist.input(HomeMsg::SearchHistoryItem { query: q.clone() });
+                });
+                row.append(&cross);
 
-            widgets.search_history_host.append(&row);
+                widgets.search_history_host.append(&row);
+            }
         }
     }
+}
+
+/// Render grouped search results in the search box history host.
+/// Render grouped search results in the search box history host.
+/// Shows top 3 of each group with a "See all N" row.
+fn render_search_results(
+    widgets: &mut HomePageModelWidgets,
+    sender: &ComponentSender<HomePageModel>,
+    results: &SearchResults,
+    query: &str,
+    inside_books: bool,
+) {
+    clear_box(&widgets.search_history_host);
+
+    if results.books.is_empty()
+        && results.authors.is_empty()
+        && results.series.is_empty()
+        && results.quotes.is_empty()
+    {
+        // No results — show a quiet notice.
+        let notice = gtk::Label::new(Some("No results"));
+        notice.add_css_class("kalam-home-search-no-results");
+        notice.set_halign(gtk::Align::Start);
+        notice.set_margin_start(12);
+        notice.set_margin_top(6);
+        widgets.search_history_host.append(&notice);
+        return;
+    }
+
+    // Books group.
+    if !results.books.is_empty() {
+        render_book_group(widgets, sender, &results.books, query, inside_books);
+    }
+
+    // Authors group.
+    if !results.authors.is_empty() {
+        render_string_group(
+            widgets,
+            sender,
+            "Authors",
+            &results.authors,
+            query,
+            inside_books,
+        );
+    }
+
+    // Series group.
+    if !results.series.is_empty() {
+        render_string_group(
+            widgets,
+            sender,
+            "Series",
+            &results.series,
+            query,
+            inside_books,
+        );
+    }
+
+    // Saved quotes group.
+    if !results.quotes.is_empty() {
+        render_quote_group(widgets, sender, &results.quotes, query, inside_books);
+    }
+}
+
+/// Render the books group: heading, up to 3 rows, "See all N" if more.
+fn render_book_group(
+    widgets: &mut HomePageModelWidgets,
+    sender: &ComponentSender<HomePageModel>,
+    books: &[Book],
+    query: &str,
+    inside_books: bool,
+) {
+    let total = books.len();
+    let show_all = total <= 3;
+    let display: &[Book] = if show_all { books } else { &books[..3] };
+
+    let h = gtk::Label::new(Some(&format!("Books · {total}")));
+    h.add_css_class("kalam-home-search-heading");
+    h.set_halign(gtk::Align::Start);
+    h.set_margin_start(12);
+    h.set_margin_top(6);
+    h.set_margin_bottom(2);
+    widgets.search_history_host.append(&h);
+
+    for book in display {
+        let row = result_row(
+            widgets,
+            &book.title,
+            if book.authors.is_empty() { None } else { Some(&book.authors) },
+        );
+        widgets.search_history_host.append(&row);
+    }
+
+    if !show_all {
+        let see_all = see_all_button(sender, &format!("See all {total}"), query, inside_books);
+        widgets.search_history_host.append(&see_all);
+    }
+}
+
+/// Render a group of plain strings (authors, series): heading, up to 3 rows,
+/// "See all N" if more.
+fn render_string_group<T: ToString>(
+    widgets: &mut HomePageModelWidgets,
+    sender: &ComponentSender<HomePageModel>,
+    label: &str,
+    items: &[T],
+    query: &str,
+    inside_books: bool,
+) {
+    let total = items.len();
+    let show_all = total <= 3;
+    let display: &[T] = if show_all { items } else { &items[..3] };
+
+    let h = gtk::Label::new(Some(&format!("{label} · {total}")));
+    h.add_css_class("kalam-home-search-heading");
+    h.set_halign(gtk::Align::Start);
+    h.set_margin_start(12);
+    h.set_margin_top(6);
+    h.set_margin_bottom(2);
+    widgets.search_history_host.append(&h);
+
+    for item in display {
+        let row = result_row(widgets, item.to_string().as_str(), None);
+        widgets.search_history_host.append(&row);
+    }
+
+    if !show_all {
+        let see_all = see_all_button(sender, &format!("See all {total}"), query, inside_books);
+        widgets.search_history_host.append(&see_all);
+    }
+}
+
+/// Render the saved quotes group.
+fn render_quote_group(
+    widgets: &mut HomePageModelWidgets,
+    sender: &ComponentSender<HomePageModel>,
+    quotes: &[(Annotation, Option<Book>)],
+    query: &str,
+    inside_books: bool,
+) {
+    let total = quotes.len();
+    let show_all = total <= 3;
+    let display: &[(Annotation, Option<Book>)] = if show_all { quotes } else { &quotes[..3] };
+
+    let h = gtk::Label::new(Some(&format!("Saved quotes · {total}")));
+    h.add_css_class("kalam-home-search-heading");
+    h.set_halign(gtk::Align::Start);
+    h.set_margin_start(12);
+    h.set_margin_top(6);
+    h.set_margin_bottom(2);
+    widgets.search_history_host.append(&h);
+
+    for (anno, book) in display {
+        let subtitle = book.as_ref().map(|b| b.title.as_str());
+        let row = result_row(
+            widgets,
+            anno.text_excerpt.as_str(),
+            subtitle,
+        );
+        widgets.search_history_host.append(&row);
+    }
+
+    if !show_all {
+        let see_all = see_all_button(sender, &format!("See all {total}"), query, inside_books);
+        widgets.search_history_host.append(&see_all);
+    }
+}
+
+/// Build a single result row: title at the left, optional subtitle at the right.
+fn result_row(
+    widgets: &mut HomePageModelWidgets,
+    title: &str,
+    subtitle: Option<&str>,
+) -> gtk::Box {
+    let row = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(8)
+        .margin_start(12)
+        .margin_end(12)
+        .margin_top(2)
+        .margin_bottom(2)
+        .valign(gtk::Align::Center)
+        .hexpand(true)
+        .build();
+    row.add_css_class("kalam-home-search-result-row");
+
+    let title_lbl = gtk::Label::builder()
+        .label(title)
+        .halign(gtk::Align::Start)
+        .hexpand(true)
+        .build();
+    row.append(&title_lbl);
+
+    if let Some(sub) = subtitle {
+        let sub_lbl = gtk::Label::builder()
+            .label(sub)
+            .halign(gtk::Align::Start)
+            .hexpand(false)
+            .build();
+        sub_lbl.add_css_class("kalam-home-search-result-sub");
+        row.append(&sub_lbl);
+    }
+
+    row
+}
+
+/// "See all N" button for a result group. Clicking opens the full search page
+/// with the current query.
+fn see_all_button(
+    sender: &ComponentSender<HomePageModel>,
+    label: &str,
+    query: &str,
+    inside_books: bool,
+) -> gtk::Button {
+    let btn = gtk::Button::builder()
+        .label(label)
+        .halign(gtk::Align::Start)
+        .hexpand(false)
+        .margin_start(12)
+        .margin_top(6)
+        .margin_bottom(8)
+        .build();
+    btn.add_css_class("kalam-home-search-see-all");
+    let s = sender.clone();
+    let q = query.to_string();
+    btn.connect_clicked(move |_| {
+        let _ = s.output(HomeOut::Search {
+            query: q.clone(),
+            inside_books,
+        });
+    });
+    btn
+}
+
+/// Search the library for the given query, grouped by type.
+fn search_library(
+    catalog: Arc<Catalog>,
+    query: String,
+    inside_books: bool,
+    sender: &ComponentSender<HomePageModel>,
+) {
+    let service = LibraryService::new(catalog);
+    let s = sender.input_sender().clone();
+    crate::tasks::spawn_internal(
+        "Home search",
+        move |_reporter| {
+            let mut results = SearchResults::default();
+
+            if inside_books {
+                let snap = service.search_content(&query);
+                results.books = snap
+                    .results
+                    .into_iter()
+                    .map(|r| r.book)
+                    .collect();
+            } else {
+                let snap = service.all_books(SortKey::Title, &query);
+                results.books = snap.books;
+            }
+
+            // Extract distinct authors from books.
+            let mut authors: Vec<String> = results
+                .books
+                .iter()
+                .flat_map(|b| b.authors.split(','))
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            authors.sort();
+            authors.dedup();
+
+            // Extract distinct series from books.
+            let mut series: Vec<String> = results
+                .books
+                .iter()
+                .filter_map(|b| b.series.as_deref())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect();
+            series.sort();
+            series.dedup();
+
+            // Search saved quotes.
+            let quote_snap = service.quotes(&query);
+            results.quotes = quote_snap.quotes;
+
+            results
+        },
+        |_| {},
+        move |results| {
+            let _ = s.send(HomeMsg::SearchResults(results));
+        },
+    );
 }
 
 fn clear_box(host: &gtk::Box) {

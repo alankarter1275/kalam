@@ -337,6 +337,180 @@ button.kalam-notify-clear:focus-visible {
     margin-bottom: 18px;
 }
 
+/* ── Home search bar and box (§57, decisions 196–201) ────────────── */
+/* Bar: 520 wide, 40 high, 1px border underline at rest / accent on focus.
+   Magnifier 18px, text 14px, hint in text-2, 1.5px accent caret.
+   N results in Meta at the right while typing. */
+.kalam-home-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 520px;
+    height: 40px;
+    padding: 0 12px;
+    border: none;
+    border-bottom: 1px solid @kalam_border;
+    border-radius: 0;
+    background: @kalam_bg;
+    color: @kalam_text;
+    transition: border-bottom-color 120ms ease;
+    margin-top: 28px;
+}
+
+.kalam-home-search-bar:focus-within {
+    border-bottom-color: @kalam_accent;
+}
+
+.kalam-home-search-bar entry {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+    color: @kalam_text;
+    font-size: 14px;
+    min-height: 0;
+    min-width: 0;
+    hexpand: true;
+}
+
+.kalam-home-search-bar entry > text {
+    color: @kalam_text;
+}
+
+.kalam-home-search-bar entry:placeholder {
+    color: @kalam_text_2;
+}
+
+/* Magnifier icon at the left end of the bar. */
+.kalam-home-search-magnifier {
+    color: @kalam_text_dim;
+    -gtk-icon-size: 18px;
+}
+
+/* Caret at the right end of the entry while focused. */
+.kalam-home-search-caret {
+    width: 1.5px;
+    background: @kalam_accent;
+}
+
+/* "N results" text shown at the right end while typing. */
+.kalam-home-search-count {
+    font-size: 0.82rem;
+    color: @kalam_text_2;
+    min-width: 0;
+}
+
+/* Bare three-row sliders icon button: 32x32, radius 8, no outline. */
+.kalam-home-search-picker-btn {
+    min-width: 32px;
+    min-height: 32px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: @kalam_text_2;
+}
+
+.kalam-home-search-picker-btn:hover,
+.kalam-home-search-picker-btn.open {
+    background: @kalam_border;
+    color: @kalam_text;
+}
+
+/* Search box dropped under the bar: bg fill, 1px border, no top border,
+   radius 0 0 14 14, 520 wide, scrolling with fade. */
+.kalam-home-search-box {
+    min-width: 520px;
+    background: @kalam_bg;
+    border: 1px solid @kalam_border;
+    border-top: none;
+    border-bottom-left-radius: 14px;
+    border-bottom-right-radius: 14px;
+    box-shadow: 0 8px 24px alpha(@kalam_text, 0.12);
+    margin-top: -1px;
+}
+
+/* Contents of the box scroll with a fade; no visible scrollbar. */
+.kalam-home-search-box contents {
+    padding: 8px 0;
+    background: @kalam_bg;
+}
+
+/* Recent searches heading and rows. */
+.kalam-home-search-heading {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: @kalam_text_2;
+    padding: 8px 12px 4px 12px;
+}
+
+.kalam-home-search-history-row {
+    padding: 6px 12px;
+    border-radius: 8px;
+    color: @kalam_text;
+}
+
+.kalam-home-search-history-row:hover {
+    background: @kalam_hover;
+}
+
+.kalam-home-search-history-cross {
+    color: @kalam_text_dim;
+    -gtk-icon-size: 14px;
+}
+
+.kalam-home-search-clear {
+    font-size: 0.82rem;
+    color: @kalam_accent;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+}
+
+.kalam-home-search-clear:hover {
+    background: @kalam_hover;
+}
+
+/* Option picker popover (§17 menu machinery, 260 wide). */
+.kalam-home-search-picker {
+    min-width: 260px;
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    box-shadow: 0 8px 24px alpha(@kalam_text, 0.12);
+    padding: 8px 0;
+}
+
+.kalam-home-search-picker contents {
+    padding: 4px 0;
+    background: @kalam_card;
+}
+
+.kalam-home-search-picker-heading {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: @kalam_text_2;
+    padding: 8px 12px 4px 12px;
+}
+
+.kalam-home-search-picker-divider {
+    height: 1px;
+    background: @kalam_border;
+    margin: 4px 0;
+}
+
+/* Switch row: plain text, switch at right. */
+.kalam-home-search-switch-row {
+    padding: 8px 12px;
+    color: @kalam_text;
+}
+
+.kalam-home-search-switch-caption {
+    font-size: 0.78rem;
+    color: @kalam_text_dim;
+    margin-top: 2px;
+}
+
 /* ── cards (shelves grid, book cards, hub tiles) ─────── */
 .kalam-card {
     background: @kalam_surface;

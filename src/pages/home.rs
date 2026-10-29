@@ -6,7 +6,9 @@ use crate::service::LibraryService;
 use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W, COVER_H, COVER_W};
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// Navigation requests from Home. Variants are named for their destination
@@ -25,6 +27,11 @@ pub enum HomeOut {
     /// Open a comic series in the Comics hub
     ComicSeries {
         series_name: String,
+    },
+    /// Open the full search page (chat 10) with the current query.
+    Search {
+        query: String,
+        inside_books: bool,
     },
 }
 
@@ -45,12 +52,48 @@ pub enum HomeMsg {
     /// page painted its skeleton in `init` and fills every section from
     /// this. No library read happens on the UI thread.
     Loaded(Box<HomeSnapshot>),
+    /// Search bar gained focus: drop the search box under the bar.
+    SearchFocused,
+    /// Search bar lost focus: hide the box after a short delay.
+    SearchBlurred,
+    /// User typed in the search bar: update "N results" and show matches.
+    SearchChanged(String),
+    /// User pressed Enter in the bar: open the full search page.
+    SearchActivate,
+    /// "N results" clicked: open the full search page with current query.
+    SearchOpenResults,
+    /// Recent search item chosen: run that search.
+    SearchHistoryItem { query: String },
+    /// Clear all recent searches.
+    SearchClear,
+    /// Option picker toggle button clicked.
+    SearchPickerToggle,
+    /// Search inside books switch toggled.
+    SearchInsideBooksToggled(bool),
 }
 
 pub struct HomePageModel {
     service: LibraryService,
     importing: bool,
     status: String,
+    /// Current search query typed in the bar.
+    search_query: String,
+    /// Whether the search bar currently has focus (box shown).
+    search_focused: bool,
+    /// "Search inside books" switch state (§199). Off by default, resets
+    /// to off at every restart.
+    search_inside_books: bool,
+    /// Recent searches, most recent first (max 20, §197).
+    search_history: Rc<RefCell<Vec<String>>>,
+    /// The search box popover, built lazily on first focus.
+    search_box: Option<gtk::Popover>,
+    /// The option picker popover under the sliders icon.
+    search_picker: Option<gtk::Popover>,
+    /// Widgets for dynamic updates.
+    #[allow(dead_code)]
+    search_count_lbl: gtk::Label,
+    search_entry: gtk::Entry,
+    search_picker_btn: gtk::Button,
 }
 
 #[relm4::component(pub)]
@@ -68,6 +111,54 @@ impl Component for HomePageModel {
             set_hexpand: true,
             set_vexpand: false,
             set_margin_all: 0,
+
+            // ── Search bar (§57): top left of the main area, 28 from top ──
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_hexpand: false,
+                set_halign: gtk::Align::Start,
+                set_margin_top: 28,
+
+                #[wrap(Some)]
+                set_child = &gtk::Box {
+                    add_css_class: "kalam-home-search-bar",
+                    set_hexpand: false,
+                    set_width_request: 520,
+                    set_height_request: 40,
+
+                    gtk::Image {
+                        add_css_class: "kalam-home-search-magnifier",
+                        set_from_icon_name: Some("edit-find-symbolic"),
+                        set_pixel_size: 18,
+                    },
+
+                    #[name = "search_entry"]
+                    gtk::Entry {
+                        set_placeholder_text: Some("Search your library"),
+                        set_hexpand: true,
+                    },
+
+                    #[name = "search_count_lbl"]
+                    gtk::Label {
+                        add_css_class: "kalam-home-search-count",
+                        set_visible: false,
+                        set_halign: gtk::Align::End,
+                        set_hexpand: false,
+                        set_label: "0 results",
+                    },
+
+                    #[name = "search_picker_btn"]
+                    gtk::Button {
+                        add_css_class: "kalam-home-search-picker-btn",
+                        set_child: Some(&gtk::Image {
+                            add_css_class: "kalam-home-search-picker-icon",
+                            set_from_icon_name: Some("emblem-system-symbolic"),
+                            set_pixel_size: 20,
+                        }),
+                        set_tooltip_text: Some("Search options"),
+                    },
+                },
+            },
 
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
@@ -186,20 +277,171 @@ impl Component for HomePageModel {
 
     fn init(
         catalog: Self::Init,
-        _root: Self::Root,
+        root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let widgets = view_output!();
+
+        let search_entry = widgets.search_entry.clone();
+        let s = sender.clone();
+        search_entry.connect_changed(move |entry| {
+            let query = entry.text().to_string();
+            if !query.is_empty() {
+                s.input(HomeMsg::SearchChanged(query));
+            }
+        });
+        let s2 = sender.clone();
+        search_entry.connect_activate(move |_| {
+            s2.input(HomeMsg::SearchActivate);
+        });
+
+        let switch = widgets.search_inside_books_switch.clone();
+        let s3 = sender.clone();
+        switch.connect_active(move |sw| {
+            s3.input(HomeMsg::SearchInsideBooksToggled(sw.is_active()));
+        });
+
+        // Focus in/out on the entry show/hide the search box (§197).
+        let s4 = sender.clone();
+        widgets.search_entry.connect_focus_in(move |_, _| {
+            s4.input(HomeMsg::SearchFocused);
+        });
+        let s5 = sender.clone();
+        widgets.search_entry.connect_focus_out(move |_, _| {
+            s5.input(HomeMsg::SearchBlurred);
+        });
+
+        // Build the option picker popover (§200: Library ticked, online sites
+        // dimmed, divider, Search inside books switch). 260 wide, right-aligned.
+        let picker = gtk::Popover::builder()
+            .position(gtk::PositionType::Bottom)
+            .autohide(true)
+            .halign(gtk::Align::End)
+            .valign(gtk::Align::Start)
+            .build();
+        picker.add_css_class("kalam-home-search-picker");
+        let picker_list = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(0)
+            .margin_all(8)
+            .build();
+
+        let heading = gtk::Label::builder()
+            .label("Search in")
+            .css_classes(["kalam-home-search-picker-heading"])
+            .halign(gtk::Align::Start)
+            .hexpand(false)
+            .build();
+        picker_list.append(&heading);
+
+        let lib_row = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(6)
+            .margin_start(12)
+            .margin_end(12)
+            .margin_bottom(8)
+            .halign(gtk::Align::Start)
+            .build();
+        let lib_check = gtk::CheckButton::builder()
+            .label("Library")
+            .active(true)
+            .halign(gtk::Align::Start)
+            .build();
+        lib_row.append(&lib_check);
+        picker_list.append(&lib_row);
+
+        let online_heading = gtk::Label::builder()
+            .label("Online · not available yet")
+            .css_classes(["kalam-home-search-picker-heading"])
+            .halign(gtk::Align::Start)
+            .hexpand(false)
+            .margin_top(6)
+            .build();
+        picker_list.append(&online_heading);
+
+        let online_rows = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(2)
+            .margin_start(12)
+            .margin_end(12)
+            .halign(gtk::Align::Start)
+            .visible(false)
+            .build();
+        for site in ["AO3", "Fanfiction.net", "Royal Road", "MangaDex"] {
+            let btn = gtk::Button::builder()
+                .label(site)
+                .halign(gtk::Align::Start)
+                .hexpand(false)
+                .sensitive(false)
+                .build();
+            online_rows.append(&btn);
+        }
+        picker_list.append(&online_rows);
+
+        let divider = gtk::Separator::builder()
+            .css_classes(["kalam-home-search-picker-divider"])
+            .margin_start(12)
+            .margin_end(12)
+            .build();
+        picker_list.append(&divider);
+
+        let switch_row = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(12)
+            .margin_start(12)
+            .margin_end(12)
+            .halign(gtk::Align::Start)
+            .build();
+        let inside_switch = gtk::Switch::builder().active(false).build();
+        let inside_label = gtk::Label::builder()
+            .label("Search inside books")
+            .halign(gtk::Align::Start)
+            .hexpand(true)
+            .tooltip_text(Some("Looks through the full text. Slower."))
+            .build();
+        switch_row.append(&inside_switch);
+        switch_row.append(&inside_label);
+        picker_list.append(&switch_row);
+
+        let caption = gtk::Label::builder()
+            .label("Looks through the full text. Slower.")
+            .css_classes(["kalam-home-search-switch-caption"])
+            .halign(gtk::Align::Start)
+            .hexpand(true)
+            .margin_start(36)
+            .margin_bottom(8)
+            .build();
+        picker_list.append(&caption);
+
+        picker.set_child(Some(&picker_list));
+        widgets.search_picker_btn.set_popover(Some(&picker));
+
+        // Inside books switch in picker also updates model state.
+        let s_inside = sender.clone();
+        inside_switch.connect_active(move |sw| {
+            s_inside.input(HomeMsg::SearchInsideBooksToggled(sw.is_active()));
+        });
+
         let model = HomePageModel {
             service: LibraryService::new(catalog),
             importing: false,
             status: String::new(),
+            search_query: String::new(),
+            search_focused: false,
+            search_inside_books: false,
+            search_history: Rc::new(RefCell::new(Vec::new())),
+            search_box: None,
+            search_picker: Some(picker),
+            search_count_lbl: widgets.search_count_lbl.clone(),
+            search_entry,
+            search_picker_btn: widgets.search_picker_btn.clone(),
         };
-        let widgets = view_output!();
 
         // Skeleton only (7.1 step 2b): the sections paint empty with a
         // loading row, and every read runs on the worker below.
         request_snapshot(&model.service, &sender);
 
+        let _ = root;
         ComponentParts { model, widgets }
     }
 
@@ -244,6 +486,74 @@ impl Component for HomePageModel {
             }
             HomeMsg::AllBooks => {
                 sender.output(HomeOut::AllBooks).ok();
+            }
+            HomeMsg::SearchFocused => {
+                self.search_focused = true;
+                self.show_search_box(widgets, &sender);
+            }
+            HomeMsg::SearchBlurred => {
+                // Small delay so clicking inside the box doesn't close it.
+                if let Some(box_) = &model.search_box {
+                    let box_ = box_.clone();
+                    gtk::glib::timeout_add_local(std::time::Duration::from_millis(150), move || {
+                        box_.popdown();
+                        glib::Continue(false)
+                    });
+                }
+                model.search_focused = false;
+            }
+            HomeMsg::SearchChanged(query) => {
+                self.search_query = query.clone();
+                if query.is_empty() {
+                    widgets.search_count_lbl.set_visible(false);
+                    widgets.search_count_lbl.set_label("0 results");
+                } else {
+                    widgets.search_count_lbl.set_visible(true);
+                    widgets.search_count_lbl.set_label(&format!("{query} results"));
+                }
+            }
+            HomeMsg::SearchActivate => {
+                if !self.search_query.is_empty() {
+                    sender.output(HomeOut::Search {
+                        query: self.search_query.clone(),
+                        inside_books: self.search_inside_books,
+                    }).ok();
+                }
+            }
+            HomeMsg::SearchOpenResults => {
+                if !self.search_query.is_empty() {
+                    sender.output(HomeOut::Search {
+                        query: self.search_query.clone(),
+                        inside_books: self.search_inside_books,
+                    }).ok();
+                }
+            }
+            HomeMsg::SearchHistoryItem { query } => {
+                // Add to history, front-most, cap at 20 (§197).
+                let mut hist = self.search_history.borrow_mut();
+                if let Some(pos) = hist.iter().position(|q| q == &query) {
+                    hist.remove(pos);
+                }
+                hist.insert(0, query.clone());
+                if hist.len() > 20 {
+                    hist.truncate(20);
+                }
+                drop(hist);
+                self.search_query = query.clone();
+                widgets.search_entry.set_text(&query);
+                sender.output(HomeOut::Search {
+                    query,
+                    inside_books: self.search_inside_books,
+                }).ok();
+            }
+            HomeMsg::SearchClear => {
+                self.search_history.borrow_mut().clear();
+            }
+            HomeMsg::SearchPickerToggle => {
+                // Popover is auto-managed by GTK (set_autohide: true).
+            }
+            HomeMsg::SearchInsideBooksToggled(enabled) => {
+                self.search_inside_books = enabled;
             }
             HomeMsg::AddBooks => {
                 let dialog = gtk::FileDialog::builder()
@@ -336,6 +646,123 @@ fn clear_box(host: &gtk::Box) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
+}
+
+/// Build and show the search box popover under the search bar (§197).
+/// Lazily constructed on first focus so the box only exists when needed.
+fn show_search_box(
+    model: &mut HomePageModel,
+    widgets: &HomePageModelWidgets,
+    sender: &ComponentSender<HomePageModel>,
+) {
+    if model.search_box.is_some() {
+        // Already built; just reposition and pop up.
+        if let Some(box_) = &model.search_box {
+            box_.set_parent(Some(&widgets.search_entry));
+            box_.set_pointing_to(Some(&widgets.search_entry));
+            box_.popup();
+        }
+        return;
+    }
+
+    let box_ = gtk::Popover::builder()
+        .position(gtk::PositionType::Bottom)
+        .autohide(false)
+        .halign(gtk::Align::Start)
+        .valign(gtk::Align::Top)
+        .build();
+    box_.add_css_class("kalam-home-search-box");
+
+    let contents = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(0)
+        .build();
+
+    // Recent searches heading (§197).
+    let hist_heading = gtk::Label::builder()
+        .label("Recent searches")
+        .css_classes(["kalam-home-search-heading"])
+        .halign(gtk::Align::Start)
+        .hexpand(false)
+        .margin_start(12)
+        .margin_top(8)
+        .build();
+    contents.append(&hist_heading);
+
+    // History rows (built from model.search_history).
+    let hist_host = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(0)
+        .build();
+    contents.append(&hist_host);
+
+    let refresh_history = |hist_host: &gtk::Box, history: &Rc<RefCell<Vec<String>>>,
+                           sender: &ComponentSender<HomePageModel>| {
+        clear_box(hist_host);
+        let hist = history.borrow();
+        for query in hist.iter() {
+            let q = query.clone();
+            let row = gtk::Box::builder()
+                .orientation(gtk::Orientation::Horizontal)
+                .spacing(8)
+                .margin_start(12)
+                .margin_end(12)
+                .margin_top(6)
+                .margin_bottom(6)
+                .valign(gtk::Align::Center)
+                .hexpand(true)
+                .build();
+            row.add_css_class("kalam-home-search-history-row");
+
+            let lbl = gtk::Label::builder()
+                .label(&q)
+                .halign(gtk::Align::Start)
+                .hexpand(true)
+                .build();
+            row.append(&lbl);
+
+            let cross = gtk::Button::builder()
+                .child(&gtk::Image::builder()
+                    .from_icon_name("edit-delete-symbolic")
+                    .pixel_size(14)
+                    .build())
+                .css_classes(["kalam-home-search-history-cross"])
+                .halign(gtk::Align::End)
+                .build();
+            let s_hist = sender.clone();
+            cross.connect_clicked(move |_| {
+                s_hist.input(HomeMsg::SearchHistoryItem { query: q.clone() });
+            });
+            row.append(&cross);
+
+            hist_host.append(&row);
+        }
+
+        if !hist.is_empty() {
+            let clear_btn = gtk::Button::builder()
+                .label("Clear")
+                .css_classes(["kalam-home-search-clear"])
+                .halign(gtk::Align::Start)
+                .margin_start(12)
+                .margin_top(8)
+                .margin_bottom(8)
+                .build();
+            let s_clear = sender.clone();
+            clear_btn.connect_clicked(move |_| {
+                s_clear.input(HomeMsg::SearchClear);
+            });
+            hist_host.append(&clear_btn);
+        }
+    };
+
+    refresh_history(&hist_host, &model.search_history, sender);
+
+    box_.set_child(Some(&contents));
+    box_.set_parent(Some(&widgets.search_entry));
+    box_.set_pointing_to(Some(&widgets.search_entry));
+    box_.popup();
+
+    model.search_box = Some(box_);
 }
 
 /// Ask the worker for a fresh snapshot. Called at init, after an import,

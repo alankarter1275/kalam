@@ -46,4 +46,4 @@ src/notify.rs:738:9: [1m[91merror[E0061][0m: this function takes 5 arguments 
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 10 previous errors
---- run 40846825129 ---
+--- run 40847254466 ---

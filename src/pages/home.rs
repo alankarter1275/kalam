@@ -97,9 +97,9 @@ impl Component for HomePageModel {
                 set_halign: gtk::Align::Start,
                 set_margin_top: 28,
 
-                #[wrap(Some)]
-                set_child = &gtk::Box {
+                gtk::Box {
                     add_css_class: "kalam-home-search-bar",
+                    set_orientation: gtk::Orientation::Horizontal,
                     set_hexpand: false,
                     set_width_request: 520,
                     set_height_request: 40,
@@ -381,6 +381,12 @@ impl Component for HomePageModel {
             }
             HomeMsg::AllBooks => {
                 sender.output(HomeOut::AllBooks).ok();
+            }
+            HomeMsg::AddBooks => {
+                // Handled by the import dialog; kept for match completeness.
+            }
+            HomeMsg::FilesChosen(_) => {
+                // Handled by the import worker; kept for match completeness.
             }
             HomeMsg::SearchFocused => {
                 self.search_focused = true;

@@ -388,7 +388,7 @@ impl AppModel {
                         HomeOut::ComicSeries { series_name } => {
                             AppMsg::Push(Route::ComicSeries { series_name })
                         }
-                        HomeOut::Search { query: _, .. } => {
+                        HomeOut::Search { .. } => {
                             // Open the full search page (All Books) with the query.
                             // Query wiring to All Books search is deferred to the
                             // search page implementation (chat 10).

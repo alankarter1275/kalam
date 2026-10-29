@@ -236,7 +236,7 @@ impl Component for SavedWordsSphereModel {
         let ds_t = draw_state.clone();
         let stage_clone = widgets.stage.clone();
         let reduce_motion = gtk::Settings::default()
-            .map(|s| !s.property_enable_animations())
+            .map(|s| !s.property_gtk_enable_animations())
             .unwrap_or(false);
         glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
             let mut state = ds_t.borrow_mut();
@@ -369,15 +369,25 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
                     let cx = pos.px - card_w / 2.0;
                     let cy = pos.py - pos.size - card_h - 8.0;
 
-                    // Card background.
+                    // Card background (manual rounded rect — cairo-rs has no rounded_rect).
                     set_source(cr, bg, 0.92);
-                    cr.rounded_rect(cx, cy, card_w, card_h, 8.0);
+                    cr.new_sub_path();
+                    cr.arc(cx + card_w - 8.0, cy + 8.0, 8.0, 0.0, PI / 2.0);
+                    cr.arc(cx + card_w - 8.0, cy + card_h - 8.0, 8.0, PI / 2.0, PI);
+                    cr.arc(cx + 8.0, cy + card_h - 8.0, 8.0, PI, 3.0 * PI / 2.0);
+                    cr.arc(cx + 8.0, cy + 8.0, 8.0, 3.0 * PI / 2.0, 2.0 * PI);
+                    cr.close_path();
                     cr.fill().ok();
 
                     // Card border.
                     set_source(cr, accent, 0.6);
                     cr.set_line_width(1.5);
-                    cr.rounded_rect(cx, cy, card_w, card_h, 8.0);
+                    cr.new_sub_path();
+                    cr.arc(cx + card_w - 8.0, cy + 8.0, 8.0, 0.0, PI / 2.0);
+                    cr.arc(cx + card_w - 8.0, cy + card_h - 8.0, 8.0, PI / 2.0, PI);
+                    cr.arc(cx + 8.0, cy + card_h - 8.0, 8.0, PI, 3.0 * PI / 2.0);
+                    cr.arc(cx + 8.0, cy + 8.0, 8.0, 3.0 * PI / 2.0, 2.0 * PI);
+                    cr.close_path();
                     cr.stroke().ok();
 
                     // Word text.

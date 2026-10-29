@@ -1,10 +1,6 @@
-src/pages/home.rs:29:9: [1m[91merror[0m: fields `query` and `inside_books` are never read
-src/pages/home.rs:15:5: [1m[91merror[0m: variants `Book`, `BookDialog`, and `ComicSeries` are never constructed
-src/pages/home.rs:38:5: [1m[91merror[0m: variants `FilesChosen`, `ImportStep`, `ImportFinished`, and `SearchInsideBooksToggled` are never constructed
-src/pages/home.rs:71:5: [1m[91merror[0m: fields `search_count_lbl`, `search_entry`, and `search_box_host` are never read
-src/service.rs:95:9: [1m[91merror[0m: fields `stats`, `recent`, `continue_reading`, and `reading_list` are never read
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+src/pages/home.rs:335:32: [1m[91merror[E0308][0m: mismatched types: expected `Button`, found `MenuButton`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -28,12 +24,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Checking[0m kalam-reader-demo v0.1.0 (/home/runner/work/kalam/kalam/tools/kalam-reader-demo)
 [1m[92m    Checking[0m chapbook-viewer-gtk v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-viewer-gtk)
-src/pages/home.rs:29:9: [1m[91merror[0m: fields `query` and `inside_books` are never read
-src/pages/home.rs:15:5: [1m[91merror[0m: variants `Book`, `BookDialog`, and `ComicSeries` are never constructed
-src/pages/home.rs:38:5: [1m[91merror[0m: variants `FilesChosen`, `ImportStep`, `ImportFinished`, and `SearchInsideBooksToggled` are never constructed
-src/pages/home.rs:71:5: [1m[91merror[0m: fields `search_count_lbl`, `search_entry`, and `search_box_host` are never read
-src/service.rs:95:9: [1m[91merror[0m: fields `stats`, `recent`, `continue_reading`, and `reading_list` are never read
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
+src/pages/home.rs:335:32: [1m[91merror[E0308][0m: mismatched types: expected `Button`, found `MenuButton`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
---- run 40831614722 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+--- run 40832439674 ---

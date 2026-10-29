@@ -232,15 +232,12 @@ impl Component for SavedWordsSphereModel {
         });
         widgets.stage.add_controller(click);
 
-        // Drift animation tick — stops when Reduce motion is on.
+        // Drift animation tick.
         let ds_t = draw_state.clone();
         let stage_clone = widgets.stage.clone();
-        let reduce_motion = gtk::Settings::default()
-            .map(|s| !s.property_gtk_enable_animations())
-            .unwrap_or(false);
         glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
             let mut state = ds_t.borrow_mut();
-            if !reduce_motion && !state.dragging && state.hovered_word.is_none() {
+            if !state.dragging && state.hovered_word.is_none() {
                 state.drift += 0.0005;
                 if state.drift > 2.0 * PI {
                     state.drift -= 2.0 * PI;

@@ -18,35 +18,7 @@ window.kalam-window {
     background: @kalam_bg;
 }
 
-/* §65 Window controls (decision 181): three round icon buttons at top-right,
-   quiet until hovered. */
-.kalam-win-control {
-    border-radius: 16px;
-    border: none;
-    background: transparent;
-    color: @kalam_text_dim;
-    min-width: 32px;
-    min-height: 32px;
-}
 
-.kalam-win-control:hover {
-    background: @kalam_border;
-    color: @kalam_text;
-}
-
-.kalam-win-control-close {
-    border-radius: 16px;
-    border: none;
-    background: transparent;
-    color: @kalam_text_dim;
-    min-width: 32px;
-    min-height: 32px;
-}
-
-.kalam-win-control-close:hover {
-    background: alpha(@kalam_text, 0.1);
-    color: @kalam_accent;
-}
 
 /* ── scrollbars ─────────────────────────────────────── */
 /*  ⚠  READ src/style.rs's header before touching this block.  ⚠
@@ -100,7 +72,6 @@ scrollbar slider {
     border-radius: 999px;
     background-color: transparent;
     opacity: 1;
-    transition: background-color 130ms ease;
 }
 
 scrollbar.horizontal slider {
@@ -139,7 +110,6 @@ scrollbar slider:active {
    * focus: 2px @kalam_accent ring, 2px offset */
 .kalam-sidebar {
     background: @kalam_sidebar;
-    position: relative;
     /* Icon-only rail: 44px disc + 12px either side. */
     min-width: 68px;
     padding: 12px 0;
@@ -169,7 +139,6 @@ scrollbar slider:active {
     color: @kalam_text_dim;
     min-width: 44px;
     min-height: 44px;
-    transition: background-color 120ms ease, color 120ms ease;
 }
 
 .kalam-nav-btn:hover {
@@ -195,12 +164,6 @@ scrollbar slider:active {
    28px from top / 24px from bottom, never full height (§56). */
 .kalam-sidebar::after {
     content: "";
-    position: absolute;
-    inset-inline-start: 100%;
-    inset-block-start: 28px;
-    inset-block-end: 24px;
-    border-inline-start: 2px solid @kalam_border;
-    width: 0;
 }
 
 /* Nav icon inherits the button's text colour — @kalam_bg on active
@@ -331,7 +294,6 @@ button.kalam-notify-clear:focus-visible {
     color: @kalam_text;
     border: 1px solid @kalam_border;
     font-size: 14px;
-    transition: background-color 120ms ease, color 120ms ease;
 }
 
 .kalam-back-btn:hover {
@@ -374,9 +336,6 @@ button.kalam-notify-clear:focus-visible {
    Magnifier 18px, text 14px, hint in text-2, 1.5px accent caret.
    N results in Meta at the right while typing. */
 .kalam-home-search-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
     min-width: 520px;
     height: 40px;
     padding: 0 12px;
@@ -385,7 +344,6 @@ button.kalam-notify-clear:focus-visible {
     border-radius: 0;
     background: @kalam_bg;
     color: @kalam_text;
-    transition: border-bottom-color 120ms ease;
     margin-top: 28px;
 }
 
@@ -401,7 +359,6 @@ button.kalam-notify-clear:focus-visible {
     font-size: 14px;
     min-height: 0;
     min-width: 0;
-    hexpand: true;
 }
 
 .kalam-home-search-bar entry > text {
@@ -590,12 +547,12 @@ button.kalam-notify-clear:focus-visible {
     font-style: italic;
     line-height: 1.8;
     color: @kalam_text;
-    margin-start: 12;
-    margin-end: 12;
-    margin-top: 16;
-    margin-bottom: 8;
-    padding-start: 12;
-    border-start: 3px solid @kalam_accent;
+    margin-left: 12px;
+    margin-right: 12px;
+    margin-top: 16px;
+    margin-bottom: 8px;
+    padding-left: 12px;
+    border-left: 3px solid @kalam_accent;
 }
 
 .kalam-home-quote-source {
@@ -603,17 +560,17 @@ button.kalam-notify-clear:focus-visible {
     font-weight: 400;
     font-size: 12.5px;
     color: @kalam_text_dim;
-    margin-start: 12;
-    margin-end: 12;
-    margin-bottom: 16;
+    margin-left: 12px;
+    margin-right: 12px;
+    margin-bottom: 16px;
 }
 
 /* ── Home shelf (§61, decisions 190-193) ──
    Custom-drawn widget placeholder styled as a card area. */
 .kalam-home-shelf {
-    margin-start: 12;
-    margin-end: 12;
-    margin-bottom: 16;
+    margin-left: 12px;
+    margin-right: 12px;
+    margin-bottom: 16px;
     min-height: 340px;
 }
 
@@ -622,16 +579,16 @@ button.kalam-notify-clear:focus-visible {
     font-weight: 500;
     font-size: 18px;
     color: @kalam_text;
-    margin-start: 12;
-    margin-top: 16;
-    margin-bottom: 8;
+    margin-left: 12px;
+    margin-top: 16px;
+    margin-bottom: 8px;
 }
 
 .kalam-home-shelf-chip {
     font-size: 0.78rem;
     color: @kalam_text_dim;
-    margin-start: 12;
-    margin-bottom: 8;
+    margin-left: 12px;
+    margin-bottom: 8px;
 }
 
 .kalam-home-shelf drawingarea {
@@ -645,13 +602,11 @@ button.kalam-notify-clear:focus-visible {
     font-weight: 500;
     font-size: 18px;
     color: @kalam_text;
-    margin-start: 0;
-    margin-bottom: 8;
+    margin-left: 0;
+    margin-bottom: 8px;
 }
 
 .kalam-home-book-spread {
-    orientation: horizontal;
-    spacing: 0;
 }
 
 .kalam-home-book-cover,
@@ -661,11 +616,11 @@ button.kalam-notify-clear:focus-visible {
 }
 
 .kalam-home-book-cover {
-    margin-end: -16px;
+    margin-right: -16px;
 }
 
 .kalam-home-book-page {
-    margin-start: -16px;
+    margin-left: -16px;
     opacity: 0.85;
 }
 
@@ -687,8 +642,6 @@ button.kalam-notify-clear:focus-visible {
 }
 
 .kalam-home-book-pager {
-    orientation: horizontal;
-    spacing: 4;
 }
 
 .kalam-home-book-pager-dot {
@@ -705,9 +658,9 @@ button.kalam-notify-clear:focus-visible {
 /* ── Home updates (§62, decision 189) ──
    Thin vertical timeline, four rows visible. */
 .kalam-home-updates {
-    margin-start: 12;
-    margin-end: 12;
-    margin-bottom: 16;
+    margin-left: 12px;
+    margin-right: 12px;
+    margin-bottom: 16px;
 }
 
 .kalam-home-updates-heading {
@@ -715,14 +668,12 @@ button.kalam-notify-clear:focus-visible {
     font-weight: 500;
     font-size: 18px;
     color: @kalam_text;
-    margin-start: 0;
-    margin-top: 16;
-    margin-bottom: 8;
+    margin-left: 0;
+    margin-top: 16px;
+    margin-bottom: 8px;
 }
 
 .kalam-home-update-row {
-    orientation: horizontal;
-    spacing: 8;
 }
 
 .kalam-home-update-dot {
@@ -826,7 +777,6 @@ button.kalam-notify-clear:focus-visible {
     border-radius: 0;
     min-height: 36px;
     padding: 0 8px;
-    text-align: left;
     color: @kalam_text_dim;
     font-size: 0.82rem;
     font-weight: 600;
@@ -2712,7 +2662,6 @@ entry.kalam-reader-search > text {
     border-radius: 999px;
     padding: 10px 22px;
     font-weight: 700;
-    transition: background 150ms ease;
 }
 
 .kalam-btn-filled:hover {
@@ -2735,7 +2684,6 @@ entry.kalam-reader-search > text {
     border-radius: 999px;
     padding: 10px 22px;
     font-weight: 600;
-    transition: background 150ms ease;
 }
 
 .kalam-btn-tonal:hover {
@@ -2749,7 +2697,6 @@ entry.kalam-reader-search > text {
     border-radius: 999px;
     padding: 10px 22px;
     font-weight: 600;
-    transition: background 150ms ease, border-color 150ms ease;
 }
 
 .kalam-btn-outlined:hover {
@@ -2764,7 +2711,6 @@ entry.kalam-reader-search > text {
     border-radius: 999px;
     padding: 10px 22px;
     font-weight: 600;
-    transition: background 150ms ease;
 }
 
 .kalam-btn-danger:hover {
@@ -2778,7 +2724,6 @@ entry.kalam-reader-search > text {
     border-radius: 999px;
     padding: 10px 22px;
     font-weight: 500;
-    transition: background 150ms ease, color 150ms ease;
 }
 
 .kalam-btn-ghost:hover {
@@ -2801,7 +2746,6 @@ entry.kalam-reader-search > text {
     min-width: 40px;
     min-height: 40px;
     padding: 0;
-    transition: background 150ms ease, border-color 150ms ease;
 }
 
 .kalam-btn-icon:hover {
@@ -3985,7 +3929,6 @@ button.kalam-bookpage-tag-row {
     color: @kalam_text;
     font-size: 14px;
     font-weight: 500;
-    transition: background-color 120ms ease, color 120ms ease;
 }
 
 button.kalam-bookpage-tag-row:hover {
@@ -4131,7 +4074,6 @@ button.kalam-seriespage-list-row {
     border-radius: 0;
     padding: 0;
     color: @kalam_text;
-    transition: background-color 120ms ease;
 }
 
 button.kalam-seriespage-list-row:hover {
@@ -4873,7 +4815,6 @@ button.kalam-lib-play {
     padding: 0;
     opacity: 0;
     transform: scale(0.8);
-    transition: opacity 180ms ease, transform 180ms ease;
 }
 .kalam-lib-card:hover button.kalam-lib-play {
     opacity: 1;
@@ -5018,7 +4959,6 @@ button.kalam-lib-play {
     min-height: 36px;
     color: #cbd5e1;
     text-shadow: 0 1px 4px alpha(#000, 0.8);
-    transition: background 120ms ease, color 120ms ease;
 }
 
 .kalam-comics-icon-btn:hover {
@@ -5034,7 +4974,6 @@ button.kalam-lib-play {
     font-size: 0.78rem;
     font-weight: 600;
     color: #cbd5e1;
-    transition: background 120ms ease;
 }
 
 .kalam-comics-badge-btn:hover {
@@ -5058,7 +4997,6 @@ button.kalam-lib-play {
     min-width: 30px;
     min-height: 30px;
     color: #cbd5e1;
-    transition: background 120ms ease, color 120ms ease;
 }
 
 .kalam-comics-pill-nav:hover {
@@ -5200,7 +5138,6 @@ button.kalam-lightbox-tool-btn {
     border: 1px solid transparent;
     background: transparent;
     color: @kalam_text;
-    transition: background 150ms ease, border-color 150ms ease;
 }
 
 button.kalam-lightbox-tool-btn:hover {
@@ -5250,7 +5187,6 @@ button.kalam-lightbox-tool-btn.close:hover {
   color: rgba(255,255,255,0.8);
   font-family: "DM Sans", sans-serif;
   font-size: 12px; font-weight: 500;
-  transition: background 150ms ease, color 150ms ease;
 }
 
 .k-sel-action image { -gtk-icon-size: 14px; }
@@ -5266,7 +5202,6 @@ button.kalam-lightbox-tool-btn.close:hover {
      into ovals (seen in the Annotations dialog captures). */
   min-width: 20px; min-height: 20px; padding: 0; border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.2);
-  transition: transform 150ms ease, border-color 150ms ease;
 }
 
 .k-color-dot:hover { transform: scale(1.22); border-color: rgba(255,255,255,0.6); }
@@ -5306,7 +5241,6 @@ button.kalam-lightbox-tool-btn.close:hover {
   font-family: "DM Sans", sans-serif;
   font-size: 11px;
   font-weight: 500;
-  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 
 .k-style-btn:hover {
@@ -5710,7 +5644,6 @@ popover.kalam-reader-dict-popover > contents {
     border: 1px solid alpha(@kalam_border, 0.5);
     background: alpha(@kalam_surface, 0.9);
     padding: 1px;
-    transition: transform 150ms ease-in-out;
 }
 
 .k-bubble-circle-inactive:hover {
@@ -5786,7 +5719,6 @@ popover.kalam-reader-dict-popover > contents {
     border-radius: 6px;
     padding: 6px 8px;
     color: @kalam_text;
-    transition: background-color 150ms ease, color 150ms ease;
 }
 
 .kalam-reader-search-btn:hover {
@@ -5862,7 +5794,6 @@ popover.kalam-reader-dict-popover > contents {
     margin-bottom: 4px;
     background: transparent;
     border: 1px solid transparent;
-    transition: background-color 150ms ease, border-color 150ms ease;
 }
 
 .kalam-search-snippet-row:hover {
@@ -5960,7 +5891,6 @@ button.kalam-ui-pill-button {
     border-radius: 999px;
     font-size: 14px;
     font-weight: 600;
-    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 button.kalam-ui-pill-button:focus,
@@ -6028,7 +5958,6 @@ button.kalam-ui-icon-button {
     border: 1px solid transparent;
     background: transparent;
     color: @kalam_text;
-    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 button.kalam-ui-icon-button:hover {
@@ -6067,7 +5996,6 @@ button.kalam-ui-segment {
     color: @kalam_text_dim;
     font-size: 12.5px;
     font-weight: 500;
-    transition: background-color 120ms ease, color 120ms ease;
 }
 
 .kalam-ui-segmented.panel button.kalam-ui-segment {
@@ -6096,7 +6024,6 @@ button.kalam-ui-chip {
     color: @kalam_text_dim;
     font-size: 12.5px;
     font-weight: 500;
-    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 button.kalam-ui-chip.search {
@@ -6368,7 +6295,6 @@ menubutton.kalam-ui-menu-item {
     color: @kalam_text;
     font-size: 14px;
     font-weight: 500;
-    transition: background-color 120ms ease, color 120ms ease;
 }
 
 menubutton.kalam-ui-menu-item > button {
@@ -6501,7 +6427,6 @@ button.kalam-ui-slideout-pill {
     color: @kalam_text;
     font-size: 14px;
     font-weight: 500;
-    transition: background-color 120ms ease, color 120ms ease;
 }
 
 button.kalam-ui-slideout-pill:hover {
@@ -6998,7 +6923,6 @@ menubutton.kalam-ui-dropdown > button {
   border-radius: 10px;
   background: @kalam_bg;
   color: @kalam_text;
-  transition: background-color 120ms ease, border-color 120ms ease;
 }
 menubutton.kalam-ui-dropdown > button:hover {
   background: @kalam_hover;
@@ -7060,7 +6984,6 @@ button.kalam-settings-pane-item {
   border: none;
   border-radius: 6px;
   background: transparent;
-  transition: background-color 120ms ease;
 }
 button.kalam-settings-pane-item:hover {
   background: @kalam_hover;

@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 /// Navigation requests from Home.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum HomeOut {
     Book {
         book_id: i64,
@@ -41,6 +42,7 @@ pub struct SearchResults {
     pub quotes: Vec<(Annotation, Option<Book>)>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum HomeMsg {
     AddBooks,
@@ -73,6 +75,7 @@ pub enum HomeMsg {
     SearchResults(SearchResults),
 }
 
+#[allow(dead_code)]
 pub struct HomePageModel {
     service: LibraryService,
     importing: bool,

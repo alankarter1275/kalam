@@ -264,6 +264,7 @@ fn push(kind: Kind, title: &str, detail: &str, compact: bool, view_link: bool) {
 /// presenting its toast. `push` is the live path; the parameters exist
 /// so the screenshot seeder below can file a backdated entry into the
 /// panel's Earlier group without flashing a toast for it now.
+#[allow(clippy::too_many_arguments)]
 fn push_at(
     kind: Kind,
     title: &str,

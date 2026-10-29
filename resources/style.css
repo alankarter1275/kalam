@@ -244,7 +244,6 @@ scrollbar slider:active {
 button.kalam-notify-clear {
     background: transparent;
     border: none;
-    box-shadow: none;
     padding: 0;
     font-size: 12.5px;
     color: @kalam_accent;
@@ -355,10 +354,13 @@ button.kalam-notify-clear:focus-visible {
 
 /* ── page headings ──────────────────────────────────── */
 .kalam-page-title {
-    font-size: 1.6rem;
-    font-weight: 700;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 46px;
+    font-weight: 500;
+    line-height: 1.05;
     color: @kalam_text;
     margin-bottom: 4px;
+    letter-spacing: -0.7px;
 }
 
 .kalam-page-sub {
@@ -394,7 +396,6 @@ button.kalam-notify-clear:focus-visible {
 .kalam-home-search-bar entry {
     border: none;
     border-radius: 0;
-    box-shadow: none;
     background: transparent;
     color: @kalam_text;
     font-size: 14px;
@@ -455,7 +456,6 @@ button.kalam-notify-clear:focus-visible {
     border-top: none;
     border-bottom-left-radius: 14px;
     border-bottom-right-radius: 14px;
-    box-shadow: 0 8px 24px alpha(@kalam_text, 0.12);
     margin-top: -1px;
 }
 
@@ -507,7 +507,6 @@ button.kalam-notify-clear:focus-visible {
     background: @kalam_card;
     border: 1px solid @kalam_border;
     border-radius: 14px;
-    box-shadow: 0 8px 24px alpha(@kalam_text, 0.12);
     padding: 8px 0;
 }
 
@@ -808,7 +807,6 @@ button.kalam-notify-clear:focus-visible {
     border-radius: 999px;
     padding: 8px 16px;
     min-height: 48px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 /* ── list view (§50) ──────────────────────────────────── */
@@ -957,7 +955,6 @@ button.kalam-notify-clear:focus-visible {
     padding: 0;
     margin: 0;
     border: none;
-    box-shadow: 0 2px 10px alpha(#000, 0.35);
 }
 
 .kalam-cover-placeholder {
@@ -999,7 +996,6 @@ button.kalam-author-link {
     background: transparent;
     border: none;
     border-radius: 0;
-    box-shadow: none;
     color: @kalam_accent;
     padding: 0;
     min-width: 0;
@@ -1073,7 +1069,6 @@ button.kalam-author-link-reader:hover {
 }
 
 .kalam-primary-btn:hover {
-    filter: brightness(1.08);
 }
 
 .kalam-secondary-btn {
@@ -1110,10 +1105,11 @@ button.kalam-author-link-reader:hover {
 }
 
 .kalam-section-label {
-    font-size: 0.75rem;
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.07em;
-    color: @kalam_text_dim;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: @kalam_text;
     margin-bottom: 10px;
     margin-top: 8px;
 }
@@ -1173,7 +1169,6 @@ button.kalam-author-link-reader:hover {
 .kalam-author-photo-shell .kalam-cover-img {
     background: transparent;
     border: none;
-    box-shadow: none;
     border-radius: 999px;
 }
 
@@ -1198,7 +1193,6 @@ button.kalam-author-photo-refresh {
     border-radius: 999px;
     background: alpha(@kalam_surface, 0.94);
     color: @kalam_text;
-    box-shadow: 0 10px 20px alpha(#000, 0.28);
 }
 
 button.kalam-author-photo-refresh:hover {
@@ -1324,7 +1318,6 @@ button.kalam-author-photo-refresh:hover {
 }
 
 .kalam-book-card:hover .kalam-cover-frame {
-    box-shadow: 0 6px 18px alpha(#000, 0.5);
 }
 
 .kalam-book-card-title {
@@ -1377,7 +1370,6 @@ button.kalam-author-photo-refresh:hover {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 20px;
-    box-shadow: 0 30px 80px alpha(#000, 0.46), 0 8px 24px alpha(#000, 0.26);
     padding: 0px;
     min-width: 700px;
     min-height: 368px;
@@ -1418,7 +1410,6 @@ button.kalam-author-photo-refresh:hover {
 }
 
 .kalam-float-cover.kalam-cover-frame {
-    box-shadow: 0 12px 28px alpha(#000, 0.36);
 }
 
 .kalam-float-progress-wrap {
@@ -1597,7 +1588,6 @@ button.kalam-float-read {
 }
 
 button.kalam-float-icon-btn {
-    box-shadow: none;
 }
 
 button.kalam-float-icon-btn.active {
@@ -1613,7 +1603,6 @@ button.kalam-float-icon-btn.done-active {
 }
 
 button.kalam-float-icon-btn:focus {
-    box-shadow: none;
 }
 
 button.kalam-float-icon-btn.kalam-float-icon-btn-danger {
@@ -1646,7 +1635,6 @@ button.kalam-reader-dim {
     background: alpha(@kalam_bg, 0.22);
     border: none;
     border-radius: 0;
-    box-shadow: none;
 }
 
 .kalam-reader-hover-edge {
@@ -1659,7 +1647,6 @@ button.kalam-reader-dim {
 button.kalam-reader-ribbon {
     background: transparent;
     border: none;
-    box-shadow: none;
     padding: 0;
     min-width: 0;
     min-height: 0;
@@ -1724,7 +1711,6 @@ button.kalam-reader-list-hit:focus-visible {
     background: @kalam_card;
     border: 1px solid @kalam_border;
     border-radius: 22px;
-    box-shadow: none;
     padding: 0;
     min-width: 340px;
 }
@@ -1805,7 +1791,6 @@ button.kalam-reader-back {
     border-radius: 999px;
     color: @kalam_text;
     padding: 7px 11px 7px 8px;
-    box-shadow: 0 8px 22px alpha(#000, 0.24);
 }
 
 button.kalam-reader-back:hover {
@@ -1829,7 +1814,6 @@ button.kalam-reader-back:hover {
     border: 1px solid @kalam_border;
     border-radius: 999px;
     padding: 5px 8px;
-    box-shadow: 0 8px 24px alpha(#000, 0.26);
 }
 
 .kalam-reader-pill-counter {
@@ -1868,7 +1852,6 @@ button.kalam-reader-pill-nav:hover {
     padding: 0 12px;
     background: transparent;
     border: none;
-    box-shadow: none;
 }
 
 .kalam-reader-pill-pages {
@@ -2208,7 +2191,6 @@ button.kalam-reader-color-dot {
     min-height: 18px;
     border-radius: 999px;
     border: none;
-    box-shadow: none;
     padding: 0;
 }
 
@@ -2219,7 +2201,6 @@ button.kalam-reader-dot-pink   { background: @kalam_hl_pink; }
 button.kalam-reader-dot-orange { background: @kalam_hl_orange; }
 
 button.kalam-reader-color-dot.active {
-    box-shadow: 0 0 0 2px @kalam_accent;
 }
 
 .kalam-reader-annotation-row,
@@ -2318,7 +2299,6 @@ button.kalam-reader-list-hit:hover {
 
 .kalam-reader-annotation-card button.kalam-reader-list-hit:hover {
     background: transparent;
-    box-shadow: none;
 }
 
 .kalam-reader-annotation-card button.kalam-btn-icon,
@@ -2404,7 +2384,6 @@ popover.kalam-reader-annotation-popover > contents {
     border: 1px solid @kalam_border;
     border-radius: 14px;
     padding: 12px;
-    box-shadow: none;
 }
 
 /* Bigger dots than the Notes filter row's: these are the control. */
@@ -2420,7 +2399,6 @@ button.kalam-reader-style-sample {
     min-height: 36px;
     padding: 2px 0;
     color: @kalam_text;
-    box-shadow: none;
 }
 
 button.kalam-reader-style-sample:hover {
@@ -2441,7 +2419,6 @@ button.kalam-reader-annotation-delete {
     background: transparent;
     border: none;
     border-radius: 999px;
-    box-shadow: none;
     padding: 6px 10px;
     color: @kalam_danger;
     font-weight: 500;
@@ -2460,7 +2437,6 @@ button.kalam-reader-annotation-delete:hover {
     padding: 0;
     background: transparent;
     border: none;
-    box-shadow: none;
     color: @kalam_danger;
     opacity: 0;
 }
@@ -2558,7 +2534,6 @@ entry.kalam-reader-search {
     background: @kalam_surface_2;
     border: 1px solid alpha(@kalam_border, 0.9);
     border-radius: 999px;
-    box-shadow: none;
     min-height: 44px;
     padding: 0 14px;
     color: @kalam_text;
@@ -3107,7 +3082,6 @@ entry.kalam-reader-search > text {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 12px;
-    box-shadow: 0 12px 32px alpha(#000, 0.55);
     min-width: 340px;
 }
 
@@ -3286,7 +3260,6 @@ entry.kalam-reader-search > text {
 
 .kalam-theme-card.active {
     border-color: @kalam_accent;
-    box-shadow: inset 0 0 0 1px alpha(@kalam_accent, 0.18);
 }
 
 .kalam-theme-name {
@@ -3446,7 +3419,6 @@ entry.kalam-reader-search > text {
 .kalam-star-clear {
     background: transparent;
     border: none;
-    box-shadow: none;
     color: @kalam_text_dim;
     font-size: 0.8rem;
     min-width: 0;
@@ -4097,7 +4069,6 @@ button.kalam-seriespage-cover-button {
     background: transparent;
     border: none;
     border-radius: 10px;
-    box-shadow: none;
     padding: 0;
 }
 
@@ -4115,7 +4086,6 @@ button.kalam-seriespage-cover-button:focus-visible {
 .kalam-series-strip .kalam-cover-img,
 .kalam-series-strip .kalam-cover-placeholder {
     border-radius: 10px;
-    box-shadow: none;
 }
 
 .kalam-series-strip .kalam-ui-cover-missing-title {
@@ -4151,7 +4121,6 @@ button.kalam-seriespage-list-row {
     background: transparent;
     border: none;
     border-radius: 0;
-    box-shadow: none;
     padding: 0;
     color: @kalam_text;
     transition: background-color 120ms ease;
@@ -4178,7 +4147,6 @@ button.kalam-seriespage-list-row:focus-visible {
 .kalam-seriespage-list-thumb .kalam-ui-cover-fallback,
 .kalam-seriespage-list-thumb.kalam-ui-cover-missing {
     border-radius: 4px;
-    box-shadow: none;
 }
 
 .kalam-seriespage-list-title {
@@ -4201,7 +4169,6 @@ button.kalam-seriespage-list-row:focus-visible {
 /* Cover face with the page-edge behind it. */
 .kalam-cover-face {
     border-radius: 4px;
-    box-shadow: 0 12px 26px alpha(#000, 0.30);
 }
 
 /* Progress. */
@@ -4280,7 +4247,6 @@ button.kalam-series-link:hover {
 
 .kalam-btn-read:hover {
     background: @kalam_accent;
-    filter: brightness(1.1);
 }
 
 
@@ -4417,7 +4383,6 @@ button.kalam-detail-card-link:hover {
 
 .kalam-bar-today {
     background: @kalam_accent;
-    filter: brightness(1.15);
 }
 
 .kalam-bar-label {
@@ -4641,7 +4606,6 @@ button.kalam-journey-more:hover {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 20px;
-    box-shadow: 0 30px 80px alpha(#000, 0.46), 0 8px 24px alpha(#000, 0.26);
 }
 
 /* ── edits review panel (phase 6.5) ───────────────────── */
@@ -4758,7 +4722,6 @@ button.kalam-journey-more:hover {
 }
 
 .kalam-nr-cover {
-    box-shadow: 4px 4px 0 alpha(#000, 0.45);
 }
 
 .kalam-nr-title {
@@ -4903,7 +4866,6 @@ button.kalam-lib-play {
     opacity: 0;
     transform: scale(0.8);
     transition: opacity 180ms ease, transform 180ms ease;
-    box-shadow: 0 2px 8px alpha(#000, 0.4);
 }
 .kalam-lib-card:hover button.kalam-lib-play {
     opacity: 1;
@@ -5127,7 +5089,6 @@ button.kalam-lib-play {
 .kalam-comics-settings-drawer {
     background: #111318;
     border-left: 1px solid alpha(#252a36, 0.8);
-    box-shadow: -10px 0 35px alpha(#000000, 0.7);
 }
 
 .kalam-comics-drawer-header {
@@ -5160,7 +5121,6 @@ button.kalam-lib-play {
     font-size: 0.82rem;
     font-weight: 500;
     color: #94a3b8;
-    transition: all 120ms ease;
 }
 
 .kalam-comics-seg-btn:hover {
@@ -5222,7 +5182,6 @@ scrollbar.kalam-reader-strip-bar {
     border: 1px solid alpha(@kalam_border, 0.60);
     border-radius: 999px;
     padding: 6px 12px;
-    box-shadow: 0 8px 32px alpha(#000000, 0.45);
 }
 
 button.kalam-lightbox-tool-btn {
@@ -5264,20 +5223,17 @@ button.kalam-lightbox-tool-btn.close:hover {
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 999px;
   padding: 5px 6px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
 }
 
 .k-sel-toolbar-popover {
   background: transparent;
   padding: 0;
   border: none;
-  box-shadow: none;
 }
 .k-sel-toolbar-popover > contents {
   background: transparent;
   padding: 0;
   border: none;
-  box-shadow: none;
 }
 
 .k-sel-action {
@@ -5315,7 +5271,6 @@ button.kalam-lightbox-tool-btn.close:hover {
 
 .k-color-dot.active {
   border-color: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 0 0 2px rgba(97, 175, 239, 0.8);
 }
 
 /* ── Calibre-style annotation drawer ──────────────────── */
@@ -5324,7 +5279,6 @@ button.kalam-lightbox-tool-btn.close:hover {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
   padding: 10px 12px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
 }
 
 .k-annotation-header {
@@ -5413,13 +5367,11 @@ button.kalam-lightbox-tool-btn.close:hover {
   background: transparent;
   padding: 0;
   border: none;
-  box-shadow: none;
 }
 .k-word-preview-popover > contents {
   background: transparent;
   padding: 0;
   border: none;
-  box-shadow: none;
 }
 
 .k-word-preview-card {
@@ -5427,7 +5379,6 @@ button.kalam-lightbox-tool-btn.close:hover {
   border: 1px solid @kalam_border;
   border-radius: 14px;
   padding: 12px 14px;
-  box-shadow: 0 12px 32px alpha(#000, 0.30);
 }
 
 .k-word-preview-head {
@@ -5459,14 +5410,12 @@ popover.kalam-reader-dict-popover > contents {
   background-color: transparent;
   border: none;
   padding: 0;
-  box-shadow: none;
 }
 
 .k-popup {
   background-color: @kalam_card;
   border: 1px solid @kalam_border;
   border-radius: 14px;
-  box-shadow: 0 16px 40px alpha(#000, 0.35);
 }
 
 .k-header {
@@ -5504,7 +5453,6 @@ popover.kalam-reader-dict-popover > contents {
   border-color: @kalam_accent;
   color: @kalam_paper;
 }
-.k-save-btn.saved:hover { filter: brightness(1.08); }
 .k-save-btn:disabled, .k-audio-btn:disabled { opacity: 0.45; }
 
 .k-body { padding: 6px 18px 20px; }
@@ -5549,7 +5497,6 @@ popover.kalam-reader-dict-popover > contents {
   color: @kalam_accent;
   background: transparent;
   border: none;
-  box-shadow: none;
   padding: 0;
 }
 .k-show-more:hover { text-decoration: underline; }
@@ -5561,7 +5508,6 @@ popover.kalam-reader-dict-popover > contents {
   border-radius: 999px;
   border: 1px solid @kalam_border;
   padding: 4px 12px;
-  box-shadow: none;
 }
 .k-chip:hover {
   border-color: @kalam_accent;
@@ -5611,7 +5557,6 @@ popover.kalam-reader-dict-popover > contents {
     border: 1px solid alpha(@kalam_border, 0.7);
     border-radius: 999px;
     padding: 4px 12px;
-    box-shadow: 0 4px 12px alpha(#000, 0.15);
 }
 
 .kalam-reader-location-text {
@@ -5623,7 +5568,6 @@ popover.kalam-reader-dict-popover > contents {
 .kalam-pdf-page-image,
 .kalam-pdf-two-page {
     background: #ffffff;
-    box-shadow: 0 8px 30px alpha(#000, 0.28);
     border-radius: 2px;
 }
 
@@ -5655,7 +5599,6 @@ popover.kalam-reader-dict-popover > contents {
     padding: 7px 18px;
     border-radius: 9999px;
     letter-spacing: 0.5px;
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.38);
 }
 
 /* ── Bubbles (Multi-Book Floating Chat Heads & Split Reader) ─────── */
@@ -5667,7 +5610,6 @@ popover.kalam-reader-dict-popover > contents {
     min-width: 56px;
     min-height: 56px;
     border-radius: 9999px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.42);
     background: rgba(30, 30, 36, 0.85);
 }
 
@@ -5690,7 +5632,6 @@ popover.kalam-reader-dict-popover > contents {
     font-weight: 700;
     padding: 1px 5px;
     border-radius: 9999px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .k-bubble-mini-close {
@@ -5701,7 +5642,6 @@ popover.kalam-reader-dict-popover > contents {
     margin: 2px;
     min-height: 18px;
     min-width: 18px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .k-bubble-mini-close-btn {
@@ -5724,7 +5664,6 @@ popover.kalam-reader-dict-popover > contents {
 .k-bubble-floating-strip {
     background: transparent;
     border: none;
-    box-shadow: none;
     padding: 0;
     margin-bottom: 8px;
 }
@@ -5733,7 +5672,6 @@ popover.kalam-reader-dict-popover > contents {
     background: @kalam_surface;
     border: 1px solid alpha(@kalam_border, 0.6);
     border-radius: 14px;
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
 }
 
 .k-bubble-pill-active {
@@ -5741,13 +5679,10 @@ popover.kalam-reader-dict-popover > contents {
     border: 1px solid alpha(@kalam_accent, 0.65);
     border-radius: 9999px;
     padding: 3px 10px 3px 6px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-    transition: all 180ms ease-in-out;
 }
 
 .k-bubble-pill-active:hover {
     border-color: alpha(@kalam_accent, 0.9);
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
 }
 
 .k-bubble-pill-title {
@@ -5767,7 +5702,6 @@ popover.kalam-reader-dict-popover > contents {
     border: 1px solid alpha(@kalam_border, 0.5);
     background: alpha(@kalam_surface, 0.9);
     padding: 1px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     transition: transform 150ms ease-in-out;
 }
 
@@ -5785,7 +5719,6 @@ popover.kalam-reader-dict-popover > contents {
     border: 1px solid alpha(@kalam_border, 0.6);
     border-radius: 9999px;
     padding: 2px 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
     margin-left: 4px;
 }
 
@@ -5830,7 +5763,6 @@ popover.kalam-reader-dict-popover > contents {
 /* ── Whole-Book In-Reader Search Bar & Highlights ─────────────── */
 
 .kalam-reader-search-shell {
-    transition: all 200ms ease;
 }
 
 .kalam-reader-search-bar {
@@ -5838,7 +5770,6 @@ popover.kalam-reader-dict-popover > contents {
     border: 1px solid @kalam_border;
     border-radius: 12px;
     padding: 5px 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
 }
 
 .kalam-reader-search-btn {
@@ -5862,7 +5793,6 @@ popover.kalam-reader-dict-popover > contents {
     padding: 2px 8px;
     margin: 0 2px;
     color: @kalam_text_dim;
-    transition: all 150ms ease;
 }
 
 .kalam-reader-search-count-btn:hover {
@@ -5889,7 +5819,6 @@ popover.kalam-reader-dict-popover > contents {
     border-radius: 12px;
     border: 1px solid @kalam_border;
     background: @kalam_surface;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
     padding: 0;
 }
 
@@ -6415,7 +6344,6 @@ popover.kalam-ui-menu > contents {
     border: 1px solid @kalam_border;
     border-radius: 14px;
     padding: 6px;
-    box-shadow: none;
 }
 
 .kalam-ui-menu-list {
@@ -6767,7 +6695,6 @@ popover.kalam-ui-selection-popover > contents {
     background: transparent;
     border: none;
     padding: 0;
-    box-shadow: none;
 }
 
 /* Redesign dialogs (§§13, 18, 31), layered onto the existing
@@ -6780,7 +6707,6 @@ popover.kalam-ui-selection-popover > contents {
     background: @kalam_card;
     border: 1px solid @kalam_border;
     border-radius: 14px;
-    box-shadow: none;
 }
 
 .kalam-ui-dialog-head {
@@ -6885,7 +6811,6 @@ button.kalam-authorpage-see-all,
 button.kalam-authorpage-open-series {
   background: transparent;
   border: none;
-  box-shadow: none;
   color: @kalam_accent;
   padding: 2px 4px;
   min-height: 0;
@@ -6980,7 +6905,6 @@ button.kalam-authorpage-card {
   background-color: @kalam_bg;
   border: 1px solid @kalam_border;
   border-radius: 14px;
-  box-shadow: none;
   padding: 19px;
 }
 button.kalam-authorpage-card:hover {
@@ -7003,13 +6927,11 @@ button.kalam-authorpage-card:focus-visible {
   background-color: @kalam_bg;
   border: 1px solid @kalam_border;
   border-radius: 14px;
-  box-shadow: 0 24px 48px alpha(black, 0.35);
   padding: 18px 22px;
 }
 button.kalam-authorpage-panel-cover {
   background: transparent;
   border: none;
-  box-shadow: none;
   padding: 0;
   min-height: 0;
 }
@@ -7031,7 +6953,6 @@ button.kalam-authorpage-hl-card {
   background-color: @kalam_bg;
   border: 1px solid @kalam_border;
   border-radius: 14px;
-  box-shadow: none;
   padding: 0;
 }
 button.kalam-authorpage-hl-card:hover {
@@ -7069,7 +6990,6 @@ menubutton.kalam-ui-dropdown > button {
   border-radius: 10px;
   background: @kalam_bg;
   color: @kalam_text;
-  box-shadow: none;
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 menubutton.kalam-ui-dropdown > button:hover {
@@ -7132,7 +7052,6 @@ button.kalam-settings-pane-item {
   border: none;
   border-radius: 6px;
   background: transparent;
-  box-shadow: none;
   transition: background-color 120ms ease;
 }
 button.kalam-settings-pane-item:hover {
@@ -7186,7 +7105,6 @@ button.kalam-settings-pane-item.active .kalam-settings-pane-item-label {
 button.kalam-settings-key-bind {
   background: transparent;
   border: none;
-  box-shadow: none;
   padding: 0;
   min-height: 24px;
 }
@@ -7224,7 +7142,6 @@ button.kalam-settings-key-bind:focus-visible {
 button.kalam-settings-palette-card {
   background: transparent;
   border: none;
-  box-shadow: none;
   padding: 0;
 }
 button.kalam-settings-palette-card:focus {
@@ -7255,7 +7172,6 @@ button.kalam-settings-palette-card:focus {
 button.kalam-settings-link {
   background: transparent;
   border: none;
-  box-shadow: none;
   padding: 0;
   font-size: 13px;
   color: @kalam_accent;
@@ -7291,10 +7207,8 @@ button.kalam-settings-link:focus-visible {
   min-height: 56px;
 }
 .kalam-settings-row.dict.drop-before {
-  box-shadow: inset 0 3px @kalam_accent;
 }
 .kalam-settings-row.dict.drop-after {
-  box-shadow: inset 0 -3px @kalam_accent;
 }
 /* The drag handle's grab cursor is widget state, not CSS — GTK's CSS
    has no `cursor` property; see build_dictionaries_pane. */
@@ -7306,7 +7220,6 @@ button.kalam-settings-chevron {
   background: transparent;
   border: none;
   border-radius: 999px;
-  box-shadow: none;
   padding: 0;
   color: @kalam_text_dim;
 }

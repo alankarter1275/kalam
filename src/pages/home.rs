@@ -660,7 +660,7 @@ impl Component for HomePageModel {
                     widgets.search_count_lbl.set_label(&format!("{query} results"));
                     self.search_results = SearchResults::default();
                     search_library(
-                        self.service.catalog().clone(),
+                        self.service.clone(),
                         query.clone(),
                         self.search_inside_books,
                         &sender,
@@ -1019,12 +1019,11 @@ fn see_all_button(
 
 /// Search the library for the given query, grouped by type.
 fn search_library(
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     query: String,
     inside_books: bool,
     sender: &ComponentSender<HomePageModel>,
 ) {
-    let service = LibraryService::new(catalog);
     let s = sender.input_sender().clone();
     crate::tasks::spawn_internal(
         "Home search",

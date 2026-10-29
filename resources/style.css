@@ -408,7 +408,7 @@ button.kalam-notify-clear:focus-visible {
 }
 
 .kalam-home-search-bar entry:placeholder {
-    color: @kalam_text_2;
+    color: @kalam_text_dim;
 }
 
 /* Magnifier icon at the left end of the bar. */
@@ -426,7 +426,7 @@ button.kalam-notify-clear:focus-visible {
 /* "N results" text shown at the right end while typing. */
 .kalam-home-search-count {
     font-size: 0.82rem;
-    color: @kalam_text_2;
+    color: @kalam_text_dim;
     min-width: 0;
 }
 
@@ -437,7 +437,7 @@ button.kalam-notify-clear:focus-visible {
     border-radius: 8px;
     border: none;
     background: transparent;
-    color: @kalam_text_2;
+    color: @kalam_text_dim;
 }
 
 .kalam-home-search-picker-btn:hover,
@@ -469,7 +469,7 @@ button.kalam-notify-clear:focus-visible {
 .kalam-home-search-heading {
     font-size: 0.82rem;
     font-weight: 600;
-    color: @kalam_text_2;
+    color: @kalam_text_dim;
     padding: 8px 12px 4px 12px;
 }
 
@@ -519,7 +519,7 @@ button.kalam-notify-clear:focus-visible {
 .kalam-home-search-picker-heading {
     font-size: 0.82rem;
     font-weight: 600;
-    color: @kalam_text_2;
+    color: @kalam_text_dim;
     padding: 8px 12px 4px 12px;
 }
 
@@ -619,7 +619,7 @@ button.kalam-notify-clear:focus-visible {
 .kalam-home-shelf-heading {
     font-size: 0.82rem;
     font-weight: 600;
-    color: @kalam_text_2;
+    color: @kalam_text_dim;
     margin-start: 12;
     margin-top: 16;
     margin-bottom: 8;
@@ -641,7 +641,7 @@ button.kalam-notify-clear:focus-visible {
 .kalam-home-book-heading {
     font-size: 0.82rem;
     font-weight: 600;
-    color: @kalam_text_2;
+    color: @kalam_text_dim;
     margin-start: 0;
     margin-bottom: 8;
 }
@@ -710,7 +710,7 @@ button.kalam-notify-clear:focus-visible {
 .kalam-home-updates-heading {
     font-size: 0.82rem;
     font-weight: 600;
-    color: @kalam_text_2;
+    color: @kalam_text_dim;
     margin-start: 0;
     margin-top: 16;
     margin-bottom: 8;

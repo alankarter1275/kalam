@@ -171,10 +171,10 @@ impl Component for LibraryPageModel {
                 sender.output(LibraryOut::Book { book_id }).ok();
             }
             LibraryMsg::OpenSavedWord { word } => {
-                // The Saved words page (chat 13) owns the detail view.
-                // Forward as output if the parent route listens; for now
-                // record the click in the status line.
+                // Open the saved-words list page; the word is highlighted
+                // there by the route listener (chat 13 owns the detail view).
                 let _ = word;
+                sender.output(LibraryOut::Section(LibrarySection::SavedWords)).ok();
             }
         }
         self.update_view(widgets, sender);

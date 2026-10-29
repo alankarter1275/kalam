@@ -266,7 +266,11 @@ impl Component for SavedWordsSphereModel {
                 widgets.stage.queue_draw();
             }
             SavedWordsSphereMsg::ClickWord(idx) => {
-                let _ = idx;
+                if let Some(word) = self.words.get(idx) {
+                    let _ = _sender.output(SavedWordsSphereOut::OpenSavedWord {
+                        word: word.word.clone(),
+                    });
+                }
             }
             SavedWordsSphereMsg::WordsReady(_) => {
                 // Data is loaded in init; keep for future dynamic updates.

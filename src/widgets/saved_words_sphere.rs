@@ -232,12 +232,15 @@ impl Component for SavedWordsSphereModel {
         });
         widgets.stage.add_controller(click);
 
-        // Drift animation tick.
+        // Drift animation tick — stops when Reduce motion is on.
         let ds_t = draw_state.clone();
         let stage_clone = widgets.stage.clone();
+        let reduce_motion = gtk::Settings::default()
+            .map(|s| !s.property_enable_animations())
+            .unwrap_or(false);
         glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
             let mut state = ds_t.borrow_mut();
-            if !state.dragging && state.hovered_word.is_none() {
+            if !reduce_motion && !state.dragging && state.hovered_word.is_none() {
                 state.drift += 0.0005;
                 if state.drift > 2.0 * PI {
                     state.drift -= 2.0 * PI;
@@ -355,6 +358,55 @@ pub fn setup_draw(canvas: &gtk::DrawingArea, model: &SavedWordsSphereModel) {
             pangocairo::functions::show_layout(cr, &layout);
 
             cr.translate(-pos.px + pos.size / 2.0, -pos.py + pos.size / 2.0);
+        }
+
+        // Hover card popover — drawn last so it sits above all words.
+        if let Some(idx) = hovered {
+            if let Some(word) = words.get(idx) {
+                if let Some(pos) = positions.get(idx) {
+                    let card_w = 160.0;
+                    let card_h = 52.0;
+                    let cx = pos.px - card_w / 2.0;
+                    let cy = pos.py - pos.size - card_h - 8.0;
+
+                    // Card background.
+                    set_source(cr, bg, 0.92);
+                    cr.rounded_rect(cx, cy, card_w, card_h, 8.0);
+                    cr.fill().ok();
+
+                    // Card border.
+                    set_source(cr, accent, 0.6);
+                    cr.set_line_width(1.5);
+                    cr.rounded_rect(cx, cy, card_w, card_h, 8.0);
+                    cr.stroke().ok();
+
+                    // Word text.
+                    let layout = Layout::new(&pc);
+                    let mut desc = FontDescription::from_string("Playfair Display");
+                    desc.set_size(16 * 1024);
+                    desc.set_weight(Weight::Bold);
+                    layout.set_font_description(Some(&desc));
+                    layout.set_text(&word.word);
+
+                    set_source(cr, text, 1.0);
+                    cr.move_to(cx + 12.0, cy + card_h / 2.0 + 4.0);
+                    pangocairo::functions::update_layout(cr, &layout);
+                    pangocairo::functions::show_layout(cr, &layout);
+
+                    // Count subtitle.
+                    let count_layout = Layout::new(&pc);
+                    let mut count_desc = FontDescription::from_string("Playfair Display");
+                    count_desc.set_size(11 * 1024);
+                    count_desc.set_weight(Weight::Normal);
+                    count_layout.set_font_description(Some(&count_desc));
+                    count_layout.set_text(&format!("{} saved", word.count));
+
+                    set_source(cr, text, 0.6);
+                    cr.move_to(cx + 12.0, cy + card_h / 2.0 + 20.0);
+                    pangocairo::functions::update_layout(cr, &count_layout);
+                    pangocairo::functions::show_layout(cr, &count_layout);
+                }
+            }
         }
     });
 }

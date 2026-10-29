@@ -2,7 +2,6 @@ use crate::db::Catalog;
 use crate::service::HomeSnapshot;
 use crate::pages::all_books::{import_summary, ImportTally};
 use crate::service::LibraryService;
-use crate::widgets::book_row::{CARD_H, CARD_W, COVER_H, COVER_W};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::cell::RefCell;
@@ -56,8 +55,6 @@ pub enum HomeMsg {
     SearchHistoryItem { query: String },
     /// Clear all recent searches.
     SearchClear,
-    /// Option picker toggle button clicked.
-    SearchPickerToggle,
     /// Search inside books switch toggled.
     SearchInsideBooksToggled(bool),
 }
@@ -139,118 +136,6 @@ impl Component for HomePageModel {
                             set_pixel_size: 20,
                         },
                         set_tooltip_text: Some("Search options"),
-                        #[wrap(Some)]
-                        set_popover = &gtk::Popover {
-                            add_css_class: "kalam-home-search-picker",
-                            set_position: gtk::PositionType::Bottom,
-                            set_autohide: true,
-                            set_halign: gtk::Align::End,
-                            set_valign: gtk::Align::Start,
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Vertical,
-                                set_spacing: 0,
-                                set_margin_all: 8,
-
-                                gtk::Label {
-                                    add_css_class: "kalam-home-search-picker-heading",
-                                    set_label: "Search in",
-                                    set_halign: gtk::Align::Start,
-                                    set_hexpand: false,
-                                },
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
-                                    set_spacing: 6,
-                                    set_margin_start: 12,
-                                    set_margin_end: 12,
-                                    set_margin_bottom: 8,
-                                    set_halign: gtk::Align::Start,
-
-                                    gtk::CheckButton {
-                                        set_active: true,
-                                        set_label: "Library",
-                                        set_halign: gtk::Align::Start,
-                                    },
-                                },
-
-                                gtk::Label {
-                                    add_css_class: "kalam-home-search-picker-heading",
-                                    set_label: "Online · not available yet",
-                                    set_halign: gtk::Align::Start,
-                                    set_hexpand: false,
-                                    set_margin_top: 6,
-                                },
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Vertical,
-                                    set_spacing: 2,
-                                    set_margin_start: 12,
-                                    set_margin_end: 12,
-                                    set_halign: gtk::Align::Start,
-                                    set_visible: false,
-
-                                    gtk::Button {
-                                        set_label: "AO3",
-                                        set_halign: gtk::Align::Start,
-                                        set_hexpand: false,
-                                        set_sensitive: false,
-                                    },
-                                    gtk::Button {
-                                        set_label: "Fanfiction.net",
-                                        set_halign: gtk::Align::Start,
-                                        set_hexpand: false,
-                                        set_sensitive: false,
-                                    },
-                                    gtk::Button {
-                                        set_label: "Royal Road",
-                                        set_halign: gtk::Align::Start,
-                                        set_hexpand: false,
-                                        set_sensitive: false,
-                                    },
-                                    gtk::Button {
-                                        set_label: "MangaDex",
-                                        set_halign: gtk::Align::Start,
-                                        set_hexpand: false,
-                                        set_sensitive: false,
-                                    },
-                                },
-
-                                gtk::Separator {
-                                    add_css_class: "kalam-home-search-picker-divider",
-                                    set_margin_start: 12,
-                                    set_margin_end: 12,
-                                },
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
-                                    set_spacing: 12,
-                                    set_margin_start: 12,
-                                    set_margin_end: 12,
-                                    set_halign: gtk::Align::Start,
-
-                                    #[name = "search_inside_books_switch"]
-                                    gtk::Switch {
-                                        set_active: false,
-                                    },
-
-                                    gtk::Label {
-                                        set_label: "Search inside books",
-                                        set_halign: gtk::Align::Start,
-                                        set_hexpand: true,
-                                        set_tooltip_text: Some("Looks through the full text. Slower."),
-                                    },
-                                },
-
-                                gtk::Label {
-                                    add_css_class: "kalam-home-search-switch-caption",
-                                    set_label: "Looks through the full text. Slower.",
-                                    set_halign: gtk::Align::Start,
-                                    set_hexpand: true,
-                                    set_margin_start: 36,
-                                    set_margin_bottom: 8,
-                                },
-                            },
-                        },
                     },
                 },
             },
@@ -424,12 +309,6 @@ impl Component for HomePageModel {
             s2.input(HomeMsg::SearchActivate);
         });
 
-        let switch = widgets.search_inside_books_switch.clone();
-        let s3 = sender.clone();
-        switch.connect_active(move |sw| {
-            s3.input(HomeMsg::SearchInsideBooksToggled(sw.is_active()));
-        });
-
         // Focus tracking on the entry: show/hide the search box.
         let s4 = sender.clone();
         widgets.search_entry.connect_has_focus_notify(move |entry| {
@@ -551,25 +430,53 @@ impl Component for HomePageModel {
                 widgets.search_clear_btn.set_visible(false);
                 clear_box(&widgets.search_history_host);
             }
-            HomeMsg::SearchPickerToggle => {
-                // Popover is auto-managed by GTK (set_autohide: true).
-            }
             HomeMsg::SearchInsideBooksToggled(enabled) => {
                 self.search_inside_books = enabled;
             }
         }
 
-        self.update_view(widgets, sender);
-    }
-
-    fn update_view(
-        &mut self,
-        widgets: &mut Self::Widgets,
-        _sender: ComponentSender<Self>,
-    ) {
-        // Clear button visibility (updated when history changes).
+        // Update history rows.
         let has_history = !self.search_history.borrow().is_empty();
         widgets.search_clear_btn.set_visible(has_history);
+        clear_box(&widgets.search_history_host);
+        let hist = self.search_history.borrow();
+        for query in hist.iter() {
+            let q = query.clone();
+            let row = gtk::Box::builder()
+                .orientation(gtk::Orientation::Horizontal)
+                .spacing(8)
+                .margin_start(12)
+                .margin_end(12)
+                .margin_top(6)
+                .margin_bottom(6)
+                .valign(gtk::Align::Center)
+                .hexpand(true)
+                .build();
+            row.add_css_class("kalam-home-search-history-row");
+
+            let lbl = gtk::Label::builder()
+                .label(&q)
+                .halign(gtk::Align::Start)
+                .hexpand(true)
+                .build();
+            row.append(&lbl);
+
+            let cross = gtk::Button::builder()
+                .child(&gtk::Image::builder()
+                    .icon_name("edit-delete-symbolic")
+                    .pixel_size(14)
+                    .build())
+                .css_classes(["kalam-home-search-history-cross"])
+                .halign(gtk::Align::End)
+                .build();
+            let s_hist = sender.clone();
+            cross.connect_clicked(move |_| {
+                s_hist.input(HomeMsg::SearchHistoryItem { query: q.clone() });
+            });
+            row.append(&cross);
+
+            widgets.search_history_host.append(&row);
+        }
     }
 }
 
@@ -597,7 +504,7 @@ fn request_snapshot(service: &LibraryService, sender: &ComponentSender<HomePageM
 fn apply_snapshot(
     widgets: &HomePageModelWidgets,
     snap: Box<HomeSnapshot>,
-    sender: &ComponentSender<HomePageModel>,
+    _sender: &ComponentSender<HomePageModel>,
 ) {
     let snap = *snap;
     let _t = crate::timing::measure("home_fill");

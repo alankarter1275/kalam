@@ -698,6 +698,28 @@ button.kalam-notify-clear:focus-visible {
     font-size: 0.82rem;
     color: @kalam_text;
 }
+
+/* ── Home state cards (§64, decision 194) ──
+   Empty library, loading skeletons, error, nothing in progress. */
+.kalam-home-state-card {
+    border: 1px dashed @kalam_border;
+    border-radius: 14px;
+    padding: 24px;
+    background: @kalam_bg;
+}
+
+.kalam-home-state-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: @kalam_text;
+    margin-bottom: 4px;
+}
+
+.kalam-home-state-message {
+    font-size: 0.82rem;
+    color: @kalam_text_dim;
+    line-height: 1.5;
+}
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 14px;

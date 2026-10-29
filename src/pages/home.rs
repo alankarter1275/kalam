@@ -1094,6 +1094,40 @@ fn clear_box(host: &gtk::Box) {
     }
 }
 
+/// Build a state card (§64, decision 194): dashed border, title, message.
+fn state_card(title: &str, message: &str) -> gtk::Box {
+    let card = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(8)
+        .halign(gtk::Align::Center)
+        .hexpand(false)
+        .vexpand(false)
+        .margin_top(24)
+        .margin_bottom(24)
+        .build();
+    card.add_css_class("kalam-home-state-card");
+
+    let title_lbl = gtk::Label::builder()
+        .label(title)
+        .halign(gtk::Align::Center)
+        .hexpand(false)
+        .build();
+    title_lbl.add_css_class("kalam-home-state-title");
+    card.append(&title_lbl);
+
+    let msg_lbl = gtk::Label::builder()
+        .label(message)
+        .halign(gtk::Align::Center)
+        .hexpand(false)
+        .wrap(true)
+        .max_width_chars(40)
+        .build();
+    msg_lbl.add_css_class("kalam-home-state-message");
+    card.append(&msg_lbl);
+
+    card
+}
+
 /// Ask the worker for a fresh snapshot.
 fn request_snapshot(service: &LibraryService, sender: &ComponentSender<HomePageModel>) {
     let service = LibraryService::new(service.catalog().clone());
@@ -1128,15 +1162,30 @@ fn apply_snapshot(
     clear_box(&widgets.home_book_host);
     clear_box(&widgets.home_updates_host);
 
-    // Home book from continue_reading (§60, decision 188).
-    if let Some(book) = snap.continue_reading.first() {
-        let book_widget = build_home_book(book);
-        widgets.home_book_host.append(&book_widget);
-    }
+    // ── State cards (§64, decision 194) ──
+    // Shown instead of normal content when the library is in a special state.
+    if !snap.errors.is_empty() {
+        let card = state_card(
+            "Error loading library",
+            "Could not read some or all of your library. Try again or check your files.",
+        );
+        widgets.counts_host.append(&card);
+    } else if snap.continue_reading.is_empty() && snap.recent.is_empty() {
+        let card = state_card(
+            "Your library is empty",
+            "Add books to get started. Use \"+ Add books\" to import your first EPUB.",
+        );
+        widgets.counts_host.append(&card);
+    } else {
+        // Home book from continue_reading (§60, decision 188).
+        if let Some(book) = snap.continue_reading.first() {
+            let book_widget = build_home_book(book);
+            widgets.home_book_host.append(&book_widget);
+        }
 
-    // Home updates (§62, decision 189): thin vertical timeline, four rows
-    // visible, scrolls. Shown only when there is a saved source.
-    if !snap.reading_list.is_empty() {
+        // Home updates (§62, decision 189): thin vertical timeline, four rows
+        // visible, scrolls. Shown only when there is a saved source.
+        if !snap.reading_list.is_empty() {
         let heading = gtk::Label::builder()
             .label("Updates")
             .halign(gtk::Align::Start)
@@ -1173,6 +1222,7 @@ fn apply_snapshot(
 
             widgets.home_updates_host.append(&row);
         }
+    }
     }
 }
 

@@ -292,6 +292,7 @@ impl Component for HomePageModel {
             // ── Home book (§60, decision 188) ──
             #[name = "home_book_host"]
             gtk::Box {
+                add_css_class: "kalam-home-book",
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 0,
                 set_halign: gtk::Align::Start,
@@ -304,6 +305,7 @@ impl Component for HomePageModel {
             // ── Home updates (§62, decision 189) ──
             #[name = "home_updates_host"]
             gtk::Box {
+                add_css_class: "kalam-home-updates",
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 0,
                 set_halign: gtk::Align::Start,
@@ -315,6 +317,7 @@ impl Component for HomePageModel {
             // ── Home shelf (§61, decisions 190-193) ──
             #[name = "home_shelf_host"]
             gtk::Box {
+                add_css_class: "kalam-home-shelf",
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 0,
                 set_halign: gtk::Align::Start,

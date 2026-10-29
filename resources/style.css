@@ -4804,6 +4804,11 @@ progressbar.kalam-goal-bar progress {
     min-width: 4px;
 }
 
+.kalam-lib-scroll {
+    background: transparent;
+    border: none;
+}
+
 /* Continue reading. */
 button.kalam-lib-play {
     background: @kalam_accent;
@@ -4814,11 +4819,9 @@ button.kalam-lib-play {
     min-height: 32px;
     padding: 0;
     opacity: 0;
-    transform: scale(0.8);
 }
 .kalam-lib-card:hover button.kalam-lib-play {
     opacity: 1;
-    transform: scale(1);
 }
 .kalam-lib-title {
     font-size: 0.72rem;
@@ -4840,6 +4843,9 @@ button.kalam-lib-play {
     border: 1px solid @kalam_border;
     border-radius: 14px;
     padding: 14px;
+}
+.kalam-q-cover {
+    border-radius: 6px;
 }
 .kalam-q-book {
     font-size: 0.66rem;
@@ -5204,7 +5210,7 @@ button.kalam-lightbox-tool-btn.close:hover {
   border: 2px solid rgba(255,255,255,0.2);
 }
 
-.k-color-dot:hover { transform: scale(1.22); border-color: rgba(255,255,255,0.6); }
+.k-color-dot:hover { border-color: rgba(255,255,255,0.6); }
 
 .k-color-dot-yellow { background: rgba(229,192,123,0.38); }
 .k-color-dot-green  { background: rgba(152,195,121,0.38); }
@@ -5647,7 +5653,6 @@ popover.kalam-reader-dict-popover > contents {
 }
 
 .k-bubble-circle-inactive:hover {
-    transform: scale(1.06);
     border-color: alpha(@kalam_accent, 0.7);
 }
 
@@ -6818,7 +6823,6 @@ button.kalam-authorpage-open-series {
    with a transform — negative margins are clamped away by GTK4
    allocation (the facts panel owns the content's own top-right). */
 .kalam-authorpage-more-host {
-  transform: translateY(-60px);
 }
 menubutton.kalam-ui-menu-trigger.kalam-authorpage-more-btn {
   min-width: 44px;

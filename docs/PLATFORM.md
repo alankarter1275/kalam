@@ -4,6 +4,14 @@
 > describes future host and format seams, including platforms and crates that
 > are not in the current workspace. Verify support in the root `Cargo.toml`
 > and source before relying on a capability.
+>
+> **Specifically:** this repository's CI runs one job on Ubuntu — format
+> report, clippy, tests, release build, OCR probe — and performs **no
+> cross-compilation checks at all**. The `wasm32-unknown-unknown`, `armv7` and
+> `aarch64-unknown-linux-gnu` checks described below are upstream's, not this
+> repo's. The `ios/` and `android/` surfaces, the C header and
+> `chapbook-viewer-win32` are likewise absent, `chapbook-viewer` was never
+> vendored, and `chapbook-viewer-gtk` was deleted on 2026-10-30.
 
 Chapbook started as an ereader and turned into the engine an ereader is
 built on. This document takes that seriously: what "platform" has to mean
@@ -99,7 +107,9 @@ happens when a shell cannot. Navigation, annotations, in-book search,
 and settings (persisted, scoped per-book or default) are session API;
 `SHELLS.md` is the contract for driving all of it, enforced by
 `chapbook_reader::conformance` and demonstrated by
-`chapbook-viewer/examples/minimal.rs`.
+`chapbook-viewer/examples/minimal.rs` *(not vendored here — the working
+example in this repository is `crates/kalam-reader`, integrated at
+`src/pages/reader/engine.rs`)*.
 
 ## Host
 
@@ -126,7 +136,7 @@ at every level it names:
 - **iOS** is the Swift package in `ios/` over the header — the consumer
   that cannot route around it, which is what keeps a C ABI honest.
   `ios/README.md` has the platform notes.
-- **Windows** is `crates/chapbook-viewer-win32`, over `chapbook-reader`
+- **Windows** is `crates/chapbook-viewer-win32` *(not vendored here)*, over `chapbook-reader`
   in Rust rather than over the header — a desktop host has no boundary to
   cross, so putting one there would be ceremony. What it is evidence for
   is the *loop*: winit and GTK own the main loop and call into a shell,
@@ -149,13 +159,14 @@ at every level it names:
   loader thread, fonts embedded, opened from bytes) is the same profile
   a stripped e-ink build wants, and is held open by a CI `cargo check`
   for `wasm32-unknown-unknown`.
-- **Cross-compilation**: CI checks `chapbook-core` on armv7 and aarch64
-  (no linker needed — it is where a device build starts), and everything
-  except
-  `chapbook-viewer-gtk` cross-builds and links for
-  `aarch64-unknown-linux-gnu`; the linked binary needs `libc`, `libm`
-  and `libgcc_s` and nothing else. GTK is a packaging exception
-  (`gobject-sys` wants a pkg-config sysroot), not a code one.
+- **Cross-compilation** *(upstream's CI, not this repository's — see the
+  banner. `.github/workflows/ci.yml` here runs a single Ubuntu job and checks
+  no foreign target)*: upstream checks `chapbook-core` on armv7 and aarch64
+  (no linker needed — it is where a device build starts), and everything except
+  the GTK shell cross-builds and links for `aarch64-unknown-linux-gnu`; the
+  linked binary needs `libc`, `libm` and `libgcc_s` and nothing else. GTK is a
+  packaging exception (`gobject-sys` wants a pkg-config sysroot), not a code
+  one.
 
 ## Content
 

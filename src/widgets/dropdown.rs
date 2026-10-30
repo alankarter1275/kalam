@@ -11,9 +11,10 @@
 //! `GtkDropDown`, whose list rows cannot carry per-row fonts or a
 //! footer action.
 //!
-//! First called by the Settings page, which lands in the next tranche
-//! of this phase; the allow below comes off with it.
-#![allow(dead_code)]
+//! Called by the Settings page and by the reader's own settings panel. The
+//! blanket `#![allow(dead_code)]` that used to sit here was waiting for the
+//! first of those to land; it landed, and the allow was removed on
+//! 2026-10-30.
 
 use gtk::prelude::*;
 use std::cell::Cell;

@@ -432,7 +432,9 @@ fn strip_css_comments(text: &str) -> String {
 ///
 /// Splitting on `;`, `{` and `}` puts every declaration at the start of a
 /// fragment, and that is what separates a declaration from a selector that
-/// happens to contain the same word. The stylesheet uses all three shapes this
+/// happens to contain the same word. (Written as a char array rather than a
+/// closure predicate: clippy's `manual_pattern_char_comparison` rejects the
+/// long form, and CI runs clippy with `-D warnings`.) The stylesheet uses all three shapes this
 /// has to survive: one indented declaration per line, a compact
 /// `.a:hover { prop: value; }` on a single line, and a value that runs over
 /// several lines. In each, the property name lands at a fragment start.
@@ -441,7 +443,7 @@ fn find_css_declarations(text: &str, props: &[&str]) -> Vec<(String, usize)> {
     let mut hits = Vec::new();
 
     for (index, line) in stripped.lines().enumerate() {
-        for fragment in line.split(|c| c == ';' || c == '{' || c == '}') {
+        for fragment in line.split([';', '{', '}']) {
             let fragment = fragment.trim();
             for prop in props {
                 let after = match fragment.strip_prefix(prop) {

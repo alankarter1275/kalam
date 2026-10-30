@@ -63,7 +63,12 @@ const MAX_ARC_CATALOG_IN_PAGES: usize = 44;
 /// deleted the theme-dot rules, landing at 121. The remaining literals
 /// live on pages the redesign has not rebuilt yet and leave with them,
 /// page by page.
-const MAX_HEX_IN_CSS: usize = 121;
+///
+/// Lowered 121 -> 100 on 2026-10-30. The real count had already fallen below
+/// the constant and nobody had ratcheted it down, which is the one failure
+/// mode this file's header warns about: slack above the real number means the
+/// ratchet quietly permits that many new literals before it says anything.
+const MAX_HEX_IN_CSS: usize = 100;
 
 // ---------------------------------------------------------------------------
 // The checks

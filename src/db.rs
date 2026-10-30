@@ -900,6 +900,11 @@ impl Catalog {
             PRAGMA cache_size = -64000;
             PRAGMA temp_store = MEMORY;
             PRAGMA mmap_size = 268435456;
+            -- Wait out a write lock instead of failing on it. Without this
+            -- the timeout is zero, so a second Kalam instance, or a background
+            -- task overlapping a save, surfaces as SQLITE_BUSY rather than
+            -- waiting the few milliseconds the lock is held.
+            PRAGMA busy_timeout = 5000;
             ",
         )?;
         let cat = Self {

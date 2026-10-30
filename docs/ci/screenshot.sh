@@ -428,22 +428,31 @@ PDF_ACTION="${PDF_ACTION:-}"
 say "requested PDF action: ${PDF_ACTION:-<none>}"
 say "settings fixture: ${SETTINGS_FIXTURE:-0} empty-dicts=${SETTINGS_EMPTY_DICTS:-0}"
 # WINDOWED controls the A0 step 6 windowed grid (build only the cards on
-# screen). It became the default on 2026-09-04, so the app flag is now the
-# negative one, KALAM_NO_WINDOWED_GRID.
+# screen). It became the app's default on 2026-09-04, so the app flag is now
+# the negative one, KALAM_NO_WINDOWED_GRID.
 #
-# Back-compat matters here. The installed workflow was written while the grid
-# was opt-in: its baseline run passes nothing and its comparison run passes
-# WINDOWED=1. Now that windowed is the default, "nothing" would mean windowed
-# too -- both runs would measure the same thing and publish a green,
-# meaningless comparison. That is the pitfalls §21 failure exactly. So the
-# *output directory* picks the baseline: a run writing to a plain `ci-shots-*`
-# path (not `-windowed`, and not the 139-book `ci-shots`) is the old grid
-# unless told otherwise. An explicit WINDOWED= always wins, so the updated
-# workflow in this directory works unchanged too.
+# This used to be inferred from the output directory. The reason was a
+# comparison job: its baseline run passed nothing and its windowed run passed
+# WINDOWED=1, and once windowed became the default, "nothing" would have meant
+# windowed too -- both runs would have measured the same thing and published a
+# green, meaningless comparison. That is the pitfalls §21 failure exactly,
+# and naming the directory was how the two runs were told apart.
+#
+# That job was deleted on 2026-09-18. The question it answered had been
+# settled on 2026-09-04 and its answer is committed in
+# ci-logs/scale-2000-comparison.txt: windowed 247 MB / 7.1 ms against the old
+# build-every-card grid at 352 MB / 139.7 ms. The heuristic outlived the only
+# thing that needed it, and its fallback branch -- a plain `ci-shots-*` path
+# means the old grid -- then applied to every one of the 138 captures in
+# ci.yml, all of which use that naming. So the whole screenshot suite
+# photographed a grid the app had stopped building eight weeks earlier, and
+# the committed reports described it as current. Nothing failed, because
+# nothing checked: the reports recorded "windowed grid: 0" faithfully.
+#
+# The default is now what the app actually does. An explicit WINDOWED= still
+# wins, so a future comparison run can ask for the legacy grid by name.
 if [ -n "${WINDOWED:-}" ]; then
   :
-elif [ "${OUT%-windowed}" = "$OUT" ] && [ "$OUT" != "ci-shots" ]; then
-  WINDOWED=0
 else
   WINDOWED=1
 fi

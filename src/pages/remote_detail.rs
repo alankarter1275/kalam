@@ -595,8 +595,19 @@ impl Component for RemoteDetailModel {
             }
 
             RemoteDetailMsg::OpenExternalUrl(url) => {
-                // Launch external chapter in system default web browser
-                let _ = gtk::glib::spawn_command_line_async(format!("xdg-open '{}'", url));
+                // Launch external chapter in the system default browser.
+                //
+                // Not `spawn_command_line_async`, which hands its string to a
+                // shell: this URL arrives from a remote source, and a single
+                // quote inside it broke out of the `'{}'` quoting and ran
+                // whatever followed. `launch_default_for_uri` takes the URI as
+                // data and never builds a command line. It is also how every
+                // other external link in the app is opened -- `book.rs`, and
+                // twice in `epub_editor.rs` -- so this now matches them.
+                let _ = gtk::gio::AppInfo::launch_default_for_uri(
+                    &url,
+                    None::<&gtk::gio::AppLaunchContext>,
+                );
             }
         }
 

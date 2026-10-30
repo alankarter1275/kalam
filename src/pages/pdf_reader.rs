@@ -2322,11 +2322,15 @@ impl PdfReaderModel {
             return;
         }
         let fraction = self.progress_fraction();
-        let _ = self.catalog.set_reading_progress(
+        // PDF pages are numbered from 1, while the percent formula counts
+        // from zero; the base is passed so the two agree. Stored positions are
+        // unchanged by this — see Catalog::set_reading_progress_from.
+        let _ = self.catalog.set_reading_progress_from(
             self.book_id,
             self.current_page,
             fraction,
             self.total_pages,
+            1,
         );
 
         if let Some(sid) = self.session_id {

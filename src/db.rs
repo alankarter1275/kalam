@@ -2308,12 +2308,40 @@ impl Catalog {
     }
 
     /// Save position and update the books.progress percent (0–100).
+    ///
+    /// For readers whose saved positions start at zero, which is most of them:
+    /// EPUB chapters and comic pages. PDF numbers its pages from 1 and calls
+    /// [`Catalog::set_reading_progress_from`] with that base instead.
     pub fn set_reading_progress(
         &self,
         book_id: i64,
         chapter_index: usize,
         fraction: f64,
         chapter_count: usize,
+    ) -> Result<()> {
+        self.set_reading_progress_from(book_id, chapter_index, fraction, chapter_count, 0)
+    }
+
+    /// As [`set_reading_progress`], for a reader whose saved position starts at
+    /// `first_index` rather than zero.
+    ///
+    /// PDF numbers pages from 1; comics and EPUB from 0. The percentage has to
+    /// subtract the base, because the same column holds both kinds and the
+    /// formula cannot tell them apart. Without the subtraction every PDF book
+    /// reads one page ahead of where it actually is: never 0% on the first
+    /// page, and 100% a page before the end.
+    ///
+    /// The stored `chapter_index` deliberately keeps whatever base the reader
+    /// restores from. This fixes the displayed percentage without moving
+    /// anyone's saved position, so nothing migrates, no bookmark shifts, and a
+    /// book opened tomorrow lands on the same page it left today.
+    pub fn set_reading_progress_from(
+        &self,
+        book_id: i64,
+        chapter_index: usize,
+        fraction: f64,
+        chapter_count: usize,
+        first_index: usize,
     ) -> Result<()> {
         let conn = self.conn();
         let frac = fraction.clamp(0.0, 1.0);
@@ -2327,11 +2355,13 @@ impl Catalog {
                updated_at = excluded.updated_at",
             params![book_id, chapter_index as i64, frac, now],
         )?;
-        // Overall percent across chapters.
+        // Overall percent across chapters, in the reader's own base: how many
+        // whole units past the first one, plus the fraction of the current one.
+        let reached = chapter_index.saturating_sub(first_index) as f64 + frac;
         let overall = if chapter_count == 0 {
             0.0
         } else {
-            ((chapter_index as f64) + frac) / (chapter_count as f64) * 100.0
+            reached / (chapter_count as f64) * 100.0
         };
         let pct = overall.round().clamp(0.0, 100.0) as i64;
         let saved = saved

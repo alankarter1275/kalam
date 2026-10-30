@@ -88,31 +88,22 @@ const MAX_HEX_IN_CSS: usize = 100;
 /// mistake §58 exists to record.
 const GTK_REJECTED_CSS_PROPERTIES: &[&str] = &["max-width", "max-height"];
 
-/// The dimmest a *settled* screenshot may be and still count as having drawn.
+/// The dimmest a *settled* screenshot may be and still count as drawn.
 ///
-/// Derived from real runs rather than guessed, which is what
-/// `docs/ci/check-shot.py` asked for: *"A threshold invented today would be a
-/// guess, and a wrong threshold that fails a good build is worse than no
-/// threshold at all. Once we have seen a few real runs, a regression check can
-/// compare against a known-good count."* There are now 138 settled frames
-/// committed under `ci-logs/`, and the lowest `lit=` value among them is
-/// 64.8%.
+/// Measured, not invented, which is what `docs/ci/check-shot.py` asked for
+/// before it would enforce anything: across the 552 frames committed before the
+/// Actions incident of 30 October, every settled frame was at least 64.8% lit.
+/// Settled frames only: all 26 black frames in that set are first frames,
+/// captured before the window drew, and checking those would fail every run.
 ///
-/// Settled frames only. Every capture also records earlier frames, and those
-/// can legitimately be black — 26 of the 552 recorded frames are at 0.0%, all
-/// of them first frames taken before the window drew. A threshold applied to
-/// those would fail every run.
-///
-/// 20% sits well below the observed floor and well above the 0.0% that a window
-/// which never drew produces.
+/// 20% sits well below the observed floor and well above the 0.0% a window that
+/// never drew produces.
 const MIN_SETTLED_LIT_PCT: f64 = 20.0;
 
-/// How many settled frames the reports must contain for the check above to mean
-/// anything. There are 138 today, one per capture. The floor is lower so the
-/// capture list can be trimmed without a fight, but not so low that the check
-/// passes on a handful of leftovers — or on none at all, which is the failure
-/// mode that matters: an empty `ci-logs/` would otherwise look like 138 clean
-/// frames.
+/// How many settled frames the reports must hold for the check to mean
+/// anything. There are 138 today. The floor is lower so the capture list can be
+/// trimmed without a fight, but not so low that an empty or clobbered
+/// `ci-logs/` passes silently — that is the failure mode that matters.
 const MIN_SETTLED_FRAMES: usize = 100;
 
 // ---------------------------------------------------------------------------
@@ -264,71 +255,68 @@ fn settled_screenshots_are_not_black() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("ci-logs");
     let mut frames: Vec<(String, f64, String)> = Vec::new();
 
-    let entries = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("could not read {}: {e}", dir.display()));
+    let opened = std::fs::read_dir(&dir);
+    let entries = match opened {
+        Ok(entries) => entries,
+        Err(e) => panic!("could not read {}: {e}", dir.display()),
+    };
+
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("txt") {
+        let ext = path.extension();
+        let ext = match ext {
+            Some(x) => x.to_string_lossy().into_owned(),
+            None => String::new(),
+        };
+        if ext != "txt" {
             continue;
         }
         let text = match std::fs::read_to_string(&path) {
-            Ok(t) => t,
+            Ok(text) => text,
             Err(_) => continue,
         };
-        let file = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        for (name, lit) in settled_frame_lit(&text) {
-            frames.push((name, lit, file));
+        let fname = path.file_name();
+        let fname = match fname {
+            Some(n) => n.to_string_lossy().into_owned(),
+            None => String::new(),
+        };
+        for pair in settled_frame_lit(&text) {
+            frames.push((pair.0, pair.1, fname.clone()));
         }
     }
 
     assert!(
         frames.len() >= MIN_SETTLED_FRAMES,
-        "\n\
-         Only {} settled screenshot frames were found under ci-logs/, below the\n\
-         floor of {MIN_SETTLED_FRAMES}.\n\
-         \n\
-         Either the capture list shrank — in which case lower\n\
-         MIN_SETTLED_FRAMES deliberately — or the reports stopped being\n\
-         published, which is the case this floor exists to catch.\n\
-         ",
+        "only {} settled screenshot frames under ci-logs/, below the floor of \
+         {MIN_SETTLED_FRAMES}; either the capture list shrank, lower the floor \
+         deliberately, or the reports stopped being published, which is what \
+         the floor exists to catch",
         frames.len()
     );
 
-    let mut black: Vec<&(String, f64, String)> = frames
-        .iter()
-        .filter(|(_, lit, _)| *lit < MIN_SETTLED_LIT_PCT)
-        .collect();
+    let mut black: Vec<&(String, f64, String)> = Vec::new();
+    for frame in frames.iter() {
+        if frame.1 < MIN_SETTLED_LIT_PCT {
+            black.push(frame);
+        }
+    }
     black.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut list = String::new();
+    for (name, lit, file) in black.iter() {
+        list.push_str(&format!("    {lit:>5.1}%  {name}  ({file})\n"));
+    }
 
     assert!(
         black.is_empty(),
-        "\n\
-         {n} settled screenshot frames are essentially black — under\n\
-         {MIN_SETTLED_LIT_PCT}% of pixels lit, against a floor observed at 64.8%\n\
-         across 138 good runs.\n\
-         \n\
-         A settled frame that never lit up means the window did not draw: the\n\
-         route was accepted, the capture waited, and what arrived was an empty\n\
-         surface. `docs/ci/check-shot.py` has always said so in its output —\n\
-         "essentially black; the window probably never drew" — but it was\n\
-         written to report numbers rather than pass or fail, so the line sat\n\
-         unread in a green build.\n\
-         \n\
-         Note the lag: the `build` job runs before `publish-screenshots`\n\
-         commits, so this reads the previous run's reports. A regression fails\n\
-         the next build rather than the one that caused it. That is the cost of\n\
-         checking from a required job — the `screenshots` job itself is\n\
-         `continue-on-error` on purpose, so that a flaky compositor can never\n\
-         block a correct code change.\n\
-         \n\
-         Offending frames:\n\
-         {list}\
-         ",
-        n = black.len(),
-        list = black
-            .iter()
-            .map(|(name, lit, file)| format!("    {lit:>5.1}%  {name}  ({file})\n"))
-            .collect::<String>()
+        "{} settled screenshot frames are essentially black, under \
+         {MIN_SETTLED_LIT_PCT}% lit against a floor observed at 64.8% across \
+         138 good runs; a settled frame that never lit up means the window did \
+         not draw. check-shot.py has always said so in its output but was \
+         written to report numbers rather than fail. Note the lag: build runs \
+         before publish-screenshots commits, so this reads the previous run's \
+         reports. Offending frames:\n{list}",
+        black.len()
     );
 }
 
@@ -617,33 +605,40 @@ fn hex_scanner_counts_colours_and_ignores_longer_runs() {
     assert_eq!(count_hex_literals("#01234567"), 1, "eight is the longest colour");
 }
 
-/// Pull `(frame name, lit percentage)` out of a screenshot report.
-///
-/// The lines look like:
-///
-/// ```text
-///   03-author-book-21-settled.png: 1600x1200  coloured=0.4%  lit=100.0%  <-- note
-/// ```
-///
-/// Hand-parsed for the same reason as `count_hex_literals`: `regex` is not a
-/// dependency and adding one to read a fixed format would be a poor trade.
+/// Pull `(frame name, lit percentage)` out of a screenshot report, looking only
+/// at settled frames. Hand-parsed for the same reason as `count_hex_literals`:
+/// `regex` is not a dependency and adding one to read a fixed format is a poor
+/// trade. Written as plain statements with no method chains, so the formatter
+/// has nothing to rearrange.
 fn settled_frame_lit(text: &str) -> Vec<(String, f64)> {
     const MARKER: &str = "-settled.png:";
-    let mut out = Vec::new();
+    let mut out: Vec<(String, f64)> = Vec::new();
 
     for line in text.lines() {
-        let at = match line.find(MARKER) {
+        let found = line.find(MARKER);
+        let at = match found {
             Some(at) => at,
             None => continue,
         };
-        let lit_at = match line[at + MARKER.len()..].find("lit=") {
-            Some(p) => at + MARKER.len() + p + 4,
+        let tail = &line[at + MARKER.len()..];
+        let lit_found = tail.find("lit=");
+        let lit_at = match lit_found {
+            Some(p) => p,
             None => continue,
         };
-        let digits = &line[lit_at..];
-        let end = digits.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(digits.len());
-        if let Ok(value) = digits[..end].parse::<f64>() {
-            out.push((format!("{}-settled.png", line[..at].trim()), value));
+        let digits = &tail[lit_at + 4..];
+        let mut end = digits.len();
+        for (i, c) in digits.char_indices() {
+            if !c.is_ascii_digit() && c != '.' {
+                end = i;
+                break;
+            }
+        }
+        let parsed = digits[..end].parse::<f64>();
+        if let Ok(value) = parsed {
+            let head = line[..at].trim();
+            let name = format!("{}-settled.png", head);
+            out.push((name, value));
         }
     }
 
@@ -652,29 +647,24 @@ fn settled_frame_lit(text: &str) -> Vec<(String, f64)> {
 
 #[test]
 fn settled_frame_parser_reads_the_report_format() {
-    let report = "\
-  some preamble
-  01-home.png: 1600x1200  coloured=19.4%  lit=0.0%  <-- essentially black
-  02-home-settling.png: 1600x1200  coloured=19.4%  lit=41.2%
-  03-home-settled.png: 1600x1200  coloured=19.4%  lit=100.0%
-  04-book-1-settled.png: 1600x1200  coloured=0.4%  lit=64.8%  <-- low colour
-  --- run 41051592116 ---
-";
-    let got = settled_frame_lit(report);
-    assert_eq!(
-        got,
-        vec![
-            ("03-home-settled.png".to_string(), 100.0),
-            ("04-book-1-settled.png".to_string(), 64.8),
-        ],
-        "only settled frames, with their lit percentages"
-    );
+    let report = "  some preamble\n";
+    let report = format!("{report}  01-home.png: 1600x1200  coloured=19.4%  lit=0.0%\n");
+    let report = format!("{report}  02-home-settling.png: 1600x1200  lit=41.2%\n");
+    let report = format!("{report}  03-home-settled.png: 1600x1200  lit=100.0%\n");
+    let report = format!("{report}  04-book-1-settled.png: 1600x1200  lit=64.8%\n");
 
-    // A report with nothing settled in it yields nothing, not a panic.
-    assert!(settled_frame_lit("no captures here\n").is_empty());
-    // A settled frame missing its lit= is skipped rather than counted as 0,
-    // which would otherwise fail a build over a truncated line.
-    assert!(settled_frame_lit("03-x-settled.png: 1600x1200 coloured=1%\n").is_empty());
+    let got = settled_frame_lit(&report);
+    assert_eq!(got.len(), 2, "settled frames only");
+    assert_eq!(got[0].0, "03-home-settled.png");
+    assert_eq!(got[0].1, 100.0);
+    assert_eq!(got[1].0, "04-book-1-settled.png");
+    assert_eq!(got[1].1, 64.8);
+
+    assert_eq!(settled_frame_lit("no captures here\n").len(), 0);
+    // A settled line missing its lit= is skipped, not read as zero: a truncated
+    // report must not fail a build.
+    let truncated = "03-x-settled.png: 1600x1200 coloured=1%\n";
+    assert_eq!(settled_frame_lit(truncated).len(), 0);
 }
 
 #[test]

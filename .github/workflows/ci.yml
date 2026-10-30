@@ -233,7 +233,16 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add -f ci-logs/clippy-latest.txt ci-logs/clippy-full.txt
-          git commit -m "ci: publish clippy failures [skip ci]" || true
+          # These steps run under `if: always()`, so they publish on a clean
+          # run too. Saying "failures" unconditionally put a lie into the
+          # commit stream that an agent reads to find out what broke, and one
+          # was chased as a real regression on 2026-10-30.
+          if [ "${{ steps.clippy.outcome }}" = "success" ]; then
+            MSG="ci: publish clippy log (clean) [skip ci]"
+          else
+            MSG="ci: publish clippy failures [skip ci]"
+          fi
+          git commit -m "$MSG" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
 
@@ -275,7 +284,13 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add -f ci-logs/test-latest.txt ci-logs/test-full.txt
-          git commit -m "ci: publish test failures [skip ci]" || true
+          # As above: outcome-aware, because this step publishes on green runs.
+          if [ "${{ steps.test.outcome }}" = "success" ]; then
+            MSG="ci: publish test log (all passing) [skip ci]"
+          else
+            MSG="ci: publish test failures [skip ci]"
+          fi
+          git commit -m "$MSG" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
 

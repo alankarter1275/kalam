@@ -275,10 +275,7 @@ fn settled_screenshots_are_not_black() {
             Ok(t) => t,
             Err(_) => continue,
         };
-        let file = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let file = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         for (name, lit) in settled_frame_lit(&text) {
             frames.push((name, lit, file));
         }
@@ -297,8 +294,10 @@ fn settled_screenshots_are_not_black() {
         frames.len()
     );
 
-    let mut black: Vec<&(String, f64, String)> =
-        frames.iter().filter(|(_, lit, _)| *lit < MIN_SETTLED_LIT_PCT).collect();
+    let mut black: Vec<&(String, f64, String)> = frames
+        .iter()
+        .filter(|(_, lit, _)| *lit < MIN_SETTLED_LIT_PCT)
+        .collect();
     black.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
     assert!(
@@ -642,9 +641,7 @@ fn settled_frame_lit(text: &str) -> Vec<(String, f64)> {
             None => continue,
         };
         let digits = &line[lit_at..];
-        let end = digits
-            .find(|c: char| !(c.is_ascii_digit() || c == '.'))
-            .unwrap_or(digits.len());
+        let end = digits.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(digits.len());
         if let Ok(value) = digits[..end].parse::<f64>() {
             out.push((format!("{}-settled.png", line[..at].trim()), value));
         }

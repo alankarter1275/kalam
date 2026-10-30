@@ -1546,191 +1546,253 @@ jobs:
         if: always()
         run: |
           mkdir -p ci-logs
-          cp ci-shots-reader/report.txt ci-logs/reader-latest.txt 2>/dev/null \
-            || echo "(no reader report produced)" > ci-logs/reader-latest.txt
+          if [ -f ci-shots-reader/report.txt ]; then cp ci-shots-reader/report.txt ci-logs/reader-latest.txt; else
+            echo "  (no new reader-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-latest.txt
-          cp ci-shots-reader-chrome-light/report.txt ci-logs/reader-chrome-light-latest.txt 2>/dev/null \
-            || echo "(no reader-chrome-light report produced)" > ci-logs/reader-chrome-light-latest.txt
+          if [ -f ci-shots-reader-chrome-light/report.txt ]; then cp ci-shots-reader-chrome-light/report.txt ci-logs/reader-chrome-light-latest.txt; else
+            echo "  (no new reader-chrome-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-chrome-light-latest.txt
-          cp ci-shots-reader-chrome-dark/report.txt ci-logs/reader-chrome-dark-latest.txt 2>/dev/null \
-            || echo "(no reader-chrome-dark report produced)" > ci-logs/reader-chrome-dark-latest.txt
+          if [ -f ci-shots-reader-chrome-dark/report.txt ]; then cp ci-shots-reader-chrome-dark/report.txt ci-logs/reader-chrome-dark-latest.txt; else
+            echo "  (no new reader-chrome-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-chrome-dark-latest.txt
-          cp ci-shots-reader-contents/report.txt ci-logs/reader-contents-latest.txt 2>/dev/null \
-            || echo "(no reader-contents report produced)" > ci-logs/reader-contents-latest.txt
+          if [ -f ci-shots-reader-contents/report.txt ]; then cp ci-shots-reader-contents/report.txt ci-logs/reader-contents-latest.txt; else
+            echo "  (no new reader-contents-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-contents-latest.txt
-          cp ci-shots-reader-notes/report.txt ci-logs/reader-notes-latest.txt 2>/dev/null \
-            || echo "(no reader-notes report produced)" > ci-logs/reader-notes-latest.txt
+          if [ -f ci-shots-reader-notes/report.txt ]; then cp ci-shots-reader-notes/report.txt ci-logs/reader-notes-latest.txt; else
+            echo "  (no new reader-notes-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-notes-latest.txt
-          cp ci-shots-reader-settings/report.txt ci-logs/reader-settings-latest.txt 2>/dev/null \
-            || echo "(no reader-settings report produced)" > ci-logs/reader-settings-latest.txt
+          if [ -f ci-shots-reader-settings/report.txt ]; then cp ci-shots-reader-settings/report.txt ci-logs/reader-settings-latest.txt; else
+            echo "  (no new reader-settings-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-settings-latest.txt
-          cp ci-shots-reader-chip/report.txt ci-logs/reader-chip-latest.txt 2>/dev/null \
-            || echo "(no reader-chip report produced)" > ci-logs/reader-chip-latest.txt
+          if [ -f ci-shots-reader-chip/report.txt ]; then cp ci-shots-reader-chip/report.txt ci-logs/reader-chip-latest.txt; else
+            echo "  (no new reader-chip-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-chip-latest.txt
-          cp ci-shots-reader-annotation/report.txt ci-logs/reader-annotation-latest.txt 2>/dev/null \
-            || echo "(no reader-annotation report produced)" > ci-logs/reader-annotation-latest.txt
+          if [ -f ci-shots-reader-annotation/report.txt ]; then cp ci-shots-reader-annotation/report.txt ci-logs/reader-annotation-latest.txt; else
+            echo "  (no new reader-annotation-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-annotation-latest.txt
-          cp ci-shots-reader-dict/report.txt ci-logs/reader-dict-latest.txt 2>/dev/null \
-            || echo "(no reader-dict report produced)" > ci-logs/reader-dict-latest.txt
+          if [ -f ci-shots-reader-dict/report.txt ]; then cp ci-shots-reader-dict/report.txt ci-logs/reader-dict-latest.txt; else
+            echo "  (no new reader-dict-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-dict-latest.txt
-          cp ci-shots-reader-dict-missing/report.txt ci-logs/reader-dict-missing-latest.txt 2>/dev/null \
-            || echo "(no reader-dict-missing report produced)" > ci-logs/reader-dict-missing-latest.txt
+          if [ -f ci-shots-reader-dict-missing/report.txt ]; then cp ci-shots-reader-dict-missing/report.txt ci-logs/reader-dict-missing-latest.txt; else
+            echo "  (no new reader-dict-missing-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-dict-missing-latest.txt
-          cp ci-shots-reader-search/report.txt ci-logs/reader-search-latest.txt 2>/dev/null \
-            || echo "(no reader-search report produced)" > ci-logs/reader-search-latest.txt
+          if [ -f ci-shots-reader-search/report.txt ]; then cp ci-shots-reader-search/report.txt ci-logs/reader-search-latest.txt; else
+            echo "  (no new reader-search-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-search-latest.txt
-          cp ci-shots-reader-search-missing/report.txt ci-logs/reader-search-missing-latest.txt 2>/dev/null \
-            || echo "(no reader-search-missing report produced)" > ci-logs/reader-search-missing-latest.txt
+          if [ -f ci-shots-reader-search-missing/report.txt ]; then cp ci-shots-reader-search-missing/report.txt ci-logs/reader-search-missing-latest.txt; else
+            echo "  (no new reader-search-missing-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-search-missing-latest.txt
-          cp ci-shots-tasks/report.txt ci-logs/tasks-latest.txt 2>/dev/null \
-            || echo "(no tasks report produced)" > ci-logs/tasks-latest.txt
+          if [ -f ci-shots-tasks/report.txt ]; then cp ci-shots-tasks/report.txt ci-logs/tasks-latest.txt; else
+            echo "  (no new tasks-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/tasks-latest.txt
-          cp ci-shots-components-light/report.txt ci-logs/components-light-latest.txt 2>/dev/null \
-            || echo "(no components-light report produced)" > ci-logs/components-light-latest.txt
+          if [ -f ci-shots-components-light/report.txt ]; then cp ci-shots-components-light/report.txt ci-logs/components-light-latest.txt; else
+            echo "  (no new components-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/components-light-latest.txt
-          cp ci-shots-components-dark/report.txt ci-logs/components-dark-latest.txt 2>/dev/null \
-            || echo "(no components-dark report produced)" > ci-logs/components-dark-latest.txt
+          if [ -f ci-shots-components-dark/report.txt ]; then cp ci-shots-components-dark/report.txt ci-logs/components-dark-latest.txt; else
+            echo "  (no new components-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/components-dark-latest.txt
-          cp ci-shots-book-light/report.txt ci-logs/book-light-latest.txt 2>/dev/null \
-            || echo "(no book-light report produced)" > ci-logs/book-light-latest.txt
+          if [ -f ci-shots-book-light/report.txt ]; then cp ci-shots-book-light/report.txt ci-logs/book-light-latest.txt; else
+            echo "  (no new book-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-light-latest.txt
-          cp ci-shots-book-dark/report.txt ci-logs/book-dark-latest.txt 2>/dev/null \
-            || echo "(no book-dark report produced)" > ci-logs/book-dark-latest.txt
+          if [ -f ci-shots-book-dark/report.txt ]; then cp ci-shots-book-dark/report.txt ci-logs/book-dark-latest.txt; else
+            echo "  (no new book-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-dark-latest.txt
-          cp ci-shots-book-tags-light/report.txt ci-logs/book-tags-light-latest.txt 2>/dev/null \
-            || echo "(no book-tags-light report produced)" > ci-logs/book-tags-light-latest.txt
+          if [ -f ci-shots-book-tags-light/report.txt ]; then cp ci-shots-book-tags-light/report.txt ci-logs/book-tags-light-latest.txt; else
+            echo "  (no new book-tags-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-tags-light-latest.txt
-          cp ci-shots-book-tags-dark/report.txt ci-logs/book-tags-dark-latest.txt 2>/dev/null \
-            || echo "(no book-tags-dark report produced)" > ci-logs/book-tags-dark-latest.txt
+          if [ -f ci-shots-book-tags-dark/report.txt ]; then cp ci-shots-book-tags-dark/report.txt ci-logs/book-tags-dark-latest.txt; else
+            echo "  (no new book-tags-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-tags-dark-latest.txt
-          cp ci-shots-book-annotations-light/report.txt ci-logs/book-annotations-light-latest.txt 2>/dev/null \
-            || echo "(no book-annotations-light report produced)" > ci-logs/book-annotations-light-latest.txt
+          if [ -f ci-shots-book-annotations-light/report.txt ]; then cp ci-shots-book-annotations-light/report.txt ci-logs/book-annotations-light-latest.txt; else
+            echo "  (no new book-annotations-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-annotations-light-latest.txt
-          cp ci-shots-book-annotations-dark/report.txt ci-logs/book-annotations-dark-latest.txt 2>/dev/null \
-            || echo "(no book-annotations-dark report produced)" > ci-logs/book-annotations-dark-latest.txt
+          if [ -f ci-shots-book-annotations-dark/report.txt ]; then cp ci-shots-book-annotations-dark/report.txt ci-logs/book-annotations-dark-latest.txt; else
+            echo "  (no new book-annotations-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-annotations-dark-latest.txt
-          cp ci-shots-series-light/report.txt ci-logs/series-light-latest.txt 2>/dev/null \
-            || echo "(no series-light report produced)" > ci-logs/series-light-latest.txt
+          if [ -f ci-shots-series-light/report.txt ]; then cp ci-shots-series-light/report.txt ci-logs/series-light-latest.txt; else
+            echo "  (no new series-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/series-light-latest.txt
-          cp ci-shots-series-dark/report.txt ci-logs/series-dark-latest.txt 2>/dev/null \
-            || echo "(no series-dark report produced)" > ci-logs/series-dark-latest.txt
+          if [ -f ci-shots-series-dark/report.txt ]; then cp ci-shots-series-dark/report.txt ci-logs/series-dark-latest.txt; else
+            echo "  (no new series-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/series-dark-latest.txt
-          cp ci-shots-series-list-light/report.txt ci-logs/series-list-light-latest.txt 2>/dev/null \
-            || echo "(no series-list-light report produced)" > ci-logs/series-list-light-latest.txt
+          if [ -f ci-shots-series-list-light/report.txt ]; then cp ci-shots-series-list-light/report.txt ci-logs/series-list-light-latest.txt; else
+            echo "  (no new series-list-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/series-list-light-latest.txt
-          cp ci-shots-author-light/report.txt ci-logs/author-light-latest.txt 2>/dev/null \
-            || echo "(no author-light report produced)" > ci-logs/author-light-latest.txt
+          if [ -f ci-shots-author-light/report.txt ]; then cp ci-shots-author-light/report.txt ci-logs/author-light-latest.txt; else
+            echo "  (no new author-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-light-latest.txt
-          cp ci-shots-author-dark/report.txt ci-logs/author-dark-latest.txt 2>/dev/null \
-            || echo "(no author-dark report produced)" > ci-logs/author-dark-latest.txt
+          if [ -f ci-shots-author-dark/report.txt ]; then cp ci-shots-author-dark/report.txt ci-logs/author-dark-latest.txt; else
+            echo "  (no new author-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-dark-latest.txt
-          cp ci-shots-editor-picker-light/report.txt ci-logs/editor-picker-light-latest.txt 2>/dev/null \
-            || echo "(no editor-picker-light report produced)" > ci-logs/editor-picker-light-latest.txt
+          if [ -f ci-shots-editor-picker-light/report.txt ]; then cp ci-shots-editor-picker-light/report.txt ci-logs/editor-picker-light-latest.txt; else
+            echo "  (no new editor-picker-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-picker-light-latest.txt
-          cp ci-shots-editor-picker-dark/report.txt ci-logs/editor-picker-dark-latest.txt 2>/dev/null \
-            || echo "(no editor-picker-dark report produced)" > ci-logs/editor-picker-dark-latest.txt
+          if [ -f ci-shots-editor-picker-dark/report.txt ]; then cp ci-shots-editor-picker-dark/report.txt ci-logs/editor-picker-dark-latest.txt; else
+            echo "  (no new editor-picker-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-picker-dark-latest.txt
-          cp ci-shots-editor-light/report.txt ci-logs/editor-light-latest.txt 2>/dev/null \
-            || echo "(no editor-light report produced)" > ci-logs/editor-light-latest.txt
+          if [ -f ci-shots-editor-light/report.txt ]; then cp ci-shots-editor-light/report.txt ci-logs/editor-light-latest.txt; else
+            echo "  (no new editor-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-light-latest.txt
-          cp ci-shots-editor-dark/report.txt ci-logs/editor-dark-latest.txt 2>/dev/null \
-            || echo "(no editor-dark report produced)" > ci-logs/editor-dark-latest.txt
+          if [ -f ci-shots-editor-dark/report.txt ]; then cp ci-shots-editor-dark/report.txt ci-logs/editor-dark-latest.txt; else
+            echo "  (no new editor-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-dark-latest.txt
-          cp ci-shots-editor-problems-light/report.txt ci-logs/editor-problems-light-latest.txt 2>/dev/null \
-            || echo "(no editor-problems-light report produced)" > ci-logs/editor-problems-light-latest.txt
+          if [ -f ci-shots-editor-problems-light/report.txt ]; then cp ci-shots-editor-problems-light/report.txt ci-logs/editor-problems-light-latest.txt; else
+            echo "  (no new editor-problems-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-problems-light-latest.txt
-          cp ci-shots-editor-livecss-light/report.txt ci-logs/editor-livecss-light-latest.txt 2>/dev/null \
-            || echo "(no editor-livecss-light report produced)" > ci-logs/editor-livecss-light-latest.txt
+          if [ -f ci-shots-editor-livecss-light/report.txt ]; then cp ci-shots-editor-livecss-light/report.txt ci-logs/editor-livecss-light-latest.txt; else
+            echo "  (no new editor-livecss-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-livecss-light-latest.txt
-          cp ci-shots-editor-outline-dark/report.txt ci-logs/editor-outline-dark-latest.txt 2>/dev/null \
-            || echo "(no editor-outline-dark report produced)" > ci-logs/editor-outline-dark-latest.txt
+          if [ -f ci-shots-editor-outline-dark/report.txt ]; then cp ci-shots-editor-outline-dark/report.txt ci-logs/editor-outline-dark-latest.txt; else
+            echo "  (no new editor-outline-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-outline-dark-latest.txt
-          cp ci-shots-editor-find-light/report.txt ci-logs/editor-find-light-latest.txt 2>/dev/null \
-            || echo "(no editor-find-light report produced)" > ci-logs/editor-find-light-latest.txt
+          if [ -f ci-shots-editor-find-light/report.txt ]; then cp ci-shots-editor-find-light/report.txt ci-logs/editor-find-light-latest.txt; else
+            echo "  (no new editor-find-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-find-light-latest.txt
-          cp ci-shots-editor-palette-dark/report.txt ci-logs/editor-palette-dark-latest.txt 2>/dev/null \
-            || echo "(no editor-palette-dark report produced)" > ci-logs/editor-palette-dark-latest.txt
+          if [ -f ci-shots-editor-palette-dark/report.txt ]; then cp ci-shots-editor-palette-dark/report.txt ci-logs/editor-palette-dark-latest.txt; else
+            echo "  (no new editor-palette-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-palette-dark-latest.txt
-          cp ci-shots-editor-contents-light/report.txt ci-logs/editor-contents-light-latest.txt 2>/dev/null \
-            || echo "(no editor-contents-light report produced)" > ci-logs/editor-contents-light-latest.txt
+          if [ -f ci-shots-editor-contents-light/report.txt ]; then cp ci-shots-editor-contents-light/report.txt ci-logs/editor-contents-light-latest.txt; else
+            echo "  (no new editor-contents-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-contents-light-latest.txt
-          cp ci-shots-editor-split-dark/report.txt ci-logs/editor-split-dark-latest.txt 2>/dev/null \
-            || echo "(no editor-split-dark report produced)" > ci-logs/editor-split-dark-latest.txt
+          if [ -f ci-shots-editor-split-dark/report.txt ]; then cp ci-shots-editor-split-dark/report.txt ci-logs/editor-split-dark-latest.txt; else
+            echo "  (no new editor-split-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-split-dark-latest.txt
-          cp ci-shots-editor-reorder-light/report.txt ci-logs/editor-reorder-light-latest.txt 2>/dev/null \
-            || echo "(no editor-reorder-light report produced)" > ci-logs/editor-reorder-light-latest.txt
+          if [ -f ci-shots-editor-reorder-light/report.txt ]; then cp ci-shots-editor-reorder-light/report.txt ci-logs/editor-reorder-light-latest.txt; else
+            echo "  (no new editor-reorder-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-reorder-light-latest.txt
-          cp ci-shots-editor-spell-light/report.txt ci-logs/editor-spell-light-latest.txt 2>/dev/null \
-            || echo "(no editor-spell-light report produced)" > ci-logs/editor-spell-light-latest.txt
+          if [ -f ci-shots-editor-spell-light/report.txt ]; then cp ci-shots-editor-spell-light/report.txt ci-logs/editor-spell-light-latest.txt; else
+            echo "  (no new editor-spell-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-spell-light-latest.txt
-          cp ci-shots-editor-history-light/report.txt ci-logs/editor-history-light-latest.txt 2>/dev/null \
-            || echo "(no editor-history-light report produced)" > ci-logs/editor-history-light-latest.txt
+          if [ -f ci-shots-editor-history-light/report.txt ]; then cp ci-shots-editor-history-light/report.txt ci-logs/editor-history-light-latest.txt; else
+            echo "  (no new editor-history-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-history-light-latest.txt
-          cp ci-shots-editor-compare-light/report.txt ci-logs/editor-compare-light-latest.txt 2>/dev/null \
-            || echo "(no editor-compare-light report produced)" > ci-logs/editor-compare-light-latest.txt
+          if [ -f ci-shots-editor-compare-light/report.txt ]; then cp ci-shots-editor-compare-light/report.txt ci-logs/editor-compare-light-latest.txt; else
+            echo "  (no new editor-compare-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-compare-light-latest.txt
-          cp ci-shots-editor-editing-dark/report.txt ci-logs/editor-editing-dark-latest.txt 2>/dev/null \
-            || echo "(no editor-editing-dark report produced)" > ci-logs/editor-editing-dark-latest.txt
+          if [ -f ci-shots-editor-editing-dark/report.txt ]; then cp ci-shots-editor-editing-dark/report.txt ci-logs/editor-editing-dark-latest.txt; else
+            echo "  (no new editor-editing-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-editing-dark-latest.txt
-          cp ci-shots-editor-image-light/report.txt ci-logs/editor-image-light-latest.txt 2>/dev/null \
-            || echo "(no editor-image-light report produced)" > ci-logs/editor-image-light-latest.txt
+          if [ -f ci-shots-editor-image-light/report.txt ]; then cp ci-shots-editor-image-light/report.txt ci-logs/editor-image-light-latest.txt; else
+            echo "  (no new editor-image-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-image-light-latest.txt
-          cp ci-shots-editor-font-dark/report.txt ci-logs/editor-font-dark-latest.txt 2>/dev/null \
-            || echo "(no editor-font-dark report produced)" > ci-logs/editor-font-dark-latest.txt
+          if [ -f ci-shots-editor-font-dark/report.txt ]; then cp ci-shots-editor-font-dark/report.txt ci-logs/editor-font-dark-latest.txt; else
+            echo "  (no new editor-font-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-font-dark-latest.txt
-          cp ci-shots-editor-cover-dark/report.txt ci-logs/editor-cover-dark-latest.txt 2>/dev/null \
-            || echo "(no editor-cover-dark report produced)" > ci-logs/editor-cover-dark-latest.txt
+          if [ -f ci-shots-editor-cover-dark/report.txt ]; then cp ci-shots-editor-cover-dark/report.txt ci-logs/editor-cover-dark-latest.txt; else
+            echo "  (no new editor-cover-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-cover-dark-latest.txt
-          cp ci-shots-editor-reports-light/report.txt ci-logs/editor-reports-light-latest.txt 2>/dev/null \
-            || echo "(no editor-reports-light report produced)" > ci-logs/editor-reports-light-latest.txt
+          if [ -f ci-shots-editor-reports-light/report.txt ]; then cp ci-shots-editor-reports-light/report.txt ci-logs/editor-reports-light-latest.txt; else
+            echo "  (no new editor-reports-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-reports-light-latest.txt
-          cp ci-shots-editor-tagmapper-light/report.txt ci-logs/editor-tagmapper-light-latest.txt 2>/dev/null \
-            || echo "(no editor-tagmapper-light report produced)" > ci-logs/editor-tagmapper-light-latest.txt
+          if [ -f ci-shots-editor-tagmapper-light/report.txt ]; then cp ci-shots-editor-tagmapper-light/report.txt ci-logs/editor-tagmapper-light-latest.txt; else
+            echo "  (no new editor-tagmapper-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-tagmapper-light-latest.txt
-          cp ci-shots-editor-filterstyle-dark/report.txt ci-logs/editor-filterstyle-dark-latest.txt 2>/dev/null \
-            || echo "(no editor-filterstyle-dark report produced)" > ci-logs/editor-filterstyle-dark-latest.txt
+          if [ -f ci-shots-editor-filterstyle-dark/report.txt ]; then cp ci-shots-editor-filterstyle-dark/report.txt ci-logs/editor-filterstyle-dark-latest.txt; else
+            echo "  (no new editor-filterstyle-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-filterstyle-dark-latest.txt
-          cp ci-shots-editor-upgrade-dark/report.txt ci-logs/editor-upgrade-dark-latest.txt 2>/dev/null \
-            || echo "(no editor-upgrade-dark report produced)" > ci-logs/editor-upgrade-dark-latest.txt
+          if [ -f ci-shots-editor-upgrade-dark/report.txt ]; then cp ci-shots-editor-upgrade-dark/report.txt ci-logs/editor-upgrade-dark-latest.txt; else
+            echo "  (no new editor-upgrade-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-upgrade-dark-latest.txt
-          cp ci-shots-editor-subset-light/report.txt ci-logs/editor-subset-light-latest.txt 2>/dev/null \
-            || echo "(no editor-subset-light report produced)" > ci-logs/editor-subset-light-latest.txt
+          if [ -f ci-shots-editor-subset-light/report.txt ]; then cp ci-shots-editor-subset-light/report.txt ci-logs/editor-subset-light-latest.txt; else
+            echo "  (no new editor-subset-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-subset-light-latest.txt
-          cp ci-shots-editor-embed-dark/report.txt ci-logs/editor-embed-dark-latest.txt 2>/dev/null \
-            || echo "(no editor-embed-dark report produced)" > ci-logs/editor-embed-dark-latest.txt
+          if [ -f ci-shots-editor-embed-dark/report.txt ]; then cp ci-shots-editor-embed-dark/report.txt ci-logs/editor-embed-dark-latest.txt; else
+            echo "  (no new editor-embed-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-embed-dark-latest.txt
-          cp ci-shots-editor-compress-light/report.txt ci-logs/editor-compress-light-latest.txt 2>/dev/null \
-            || echo "(no editor-compress-light report produced)" > ci-logs/editor-compress-light-latest.txt
+          if [ -f ci-shots-editor-compress-light/report.txt ]; then cp ci-shots-editor-compress-light/report.txt ci-logs/editor-compress-light-latest.txt; else
+            echo "  (no new editor-compress-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-compress-light-latest.txt
-          cp ci-shots-editor-links-dark/report.txt ci-logs/editor-links-dark-latest.txt 2>/dev/null \
-            || echo "(no editor-links-dark report produced)" > ci-logs/editor-links-dark-latest.txt
+          if [ -f ci-shots-editor-links-dark/report.txt ]; then cp ci-shots-editor-links-dark/report.txt ci-logs/editor-links-dark-latest.txt; else
+            echo "  (no new editor-links-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-links-dark-latest.txt
-          cp ci-shots-editor-char-dark/report.txt ci-logs/editor-char-dark-latest.txt 2>/dev/null \
-            || echo "(no editor-char-dark report produced)" > ci-logs/editor-char-dark-latest.txt
+          if [ -f ci-shots-editor-char-dark/report.txt ]; then cp ci-shots-editor-char-dark/report.txt ci-logs/editor-char-dark-latest.txt; else
+            echo "  (no new editor-char-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-char-dark-latest.txt
-          cp ci-shots-editor-dict-light/report.txt ci-logs/editor-dict-light-latest.txt 2>/dev/null \
-            || echo "(no editor-dict-light report produced)" > ci-logs/editor-dict-light-latest.txt
+          if [ -f ci-shots-editor-dict-light/report.txt ]; then cp ci-shots-editor-dict-light/report.txt ci-logs/editor-dict-light-latest.txt; else
+            echo "  (no new editor-dict-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-dict-light-latest.txt
-          cp ci-shots-author-panel-light/report.txt ci-logs/author-panel-light-latest.txt 2>/dev/null \
-            || echo "(no author-panel-light report produced)" > ci-logs/author-panel-light-latest.txt
+          if [ -f ci-shots-author-panel-light/report.txt ]; then cp ci-shots-author-panel-light/report.txt ci-logs/author-panel-light-latest.txt; else
+            echo "  (no new author-panel-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-panel-light-latest.txt
-          cp ci-shots-author-shelf-light/report.txt ci-logs/author-shelf-light-latest.txt 2>/dev/null \
-            || echo "(no author-shelf-light report produced)" > ci-logs/author-shelf-light-latest.txt
+          if [ -f ci-shots-author-shelf-light/report.txt ]; then cp ci-shots-author-shelf-light/report.txt ci-logs/author-shelf-light-latest.txt; else
+            echo "  (no new author-shelf-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-shelf-light-latest.txt
-          cp ci-shots-author-annotations-dark/report.txt ci-logs/author-annotations-dark-latest.txt 2>/dev/null \
-            || echo "(no author-annotations-dark report produced)" > ci-logs/author-annotations-dark-latest.txt
+          if [ -f ci-shots-author-annotations-dark/report.txt ]; then cp ci-shots-author-annotations-dark/report.txt ci-logs/author-annotations-dark-latest.txt; else
+            echo "  (no new author-annotations-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-annotations-dark-latest.txt
-          cp ci-shots-authors-light/report.txt ci-logs/authors-light-latest.txt 2>/dev/null \
-            || echo "(no authors-light report produced)" > ci-logs/authors-light-latest.txt
+          if [ -f ci-shots-authors-light/report.txt ]; then cp ci-shots-authors-light/report.txt ci-logs/authors-light-latest.txt; else
+            echo "  (no new authors-light-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/authors-light-latest.txt
-          cp ci-shots-authors-dark/report.txt ci-logs/authors-dark-latest.txt 2>/dev/null \
-            || echo "(no authors-dark report produced)" > ci-logs/authors-dark-latest.txt
+          if [ -f ci-shots-authors-dark/report.txt ]; then cp ci-shots-authors-dark/report.txt ci-logs/authors-dark-latest.txt; else
+            echo "  (no new authors-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/authors-dark-latest.txt
-          cp ci-shots-author-edit-dark/report.txt ci-logs/author-edit-dark-latest.txt 2>/dev/null \
-            || echo "(no author-edit-dark report produced)" > ci-logs/author-edit-dark-latest.txt
+          if [ -f ci-shots-author-edit-dark/report.txt ]; then cp ci-shots-author-edit-dark/report.txt ci-logs/author-edit-dark-latest.txt; else
+            echo "  (no new author-edit-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-edit-dark-latest.txt
-          cp ci-shots-author-merge-dark/report.txt ci-logs/author-merge-dark-latest.txt 2>/dev/null \
-            || echo "(no author-merge-dark report produced)" > ci-logs/author-merge-dark-latest.txt
+          if [ -f ci-shots-author-merge-dark/report.txt ]; then cp ci-shots-author-merge-dark/report.txt ci-logs/author-merge-dark-latest.txt; else
+            echo "  (no new author-merge-dark-latest.txt this run; keeping the previously committed one)";
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-merge-dark-latest.txt
           # Settings has enough panes and states that spelling out 23
           # report/PNG pairs would bury the publish step. The slug is
@@ -1751,8 +1813,9 @@ jobs:
                       settings-notifications-events-dark \
                       settings-notifications-empty-light \
                       settings-notifications-dot-dark; do
-            cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
-              || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
+            if [ -f "ci-shots-$shot/report.txt" ]; then cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt"; else
+              echo "  (no new $shot-latest.txt" this run; keeping the previously committed one)";
+            fi
             echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
             cp "ci-shots-$shot/03-settings-settled.png" \
               "ci-logs/$shot.png" 2>/dev/null || true
@@ -1766,8 +1829,9 @@ jobs:
                       comics-image-light comics-image-adjusted-dark \
                       comics-shortcuts-dark comics-jump-range-dark \
                       comics-presets-dark; do
-            cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
-              || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
+            if [ -f "ci-shots-$shot/report.txt" ]; then cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt"; else
+              echo "  (no new $shot-latest.txt" this run; keeping the previously committed one)";
+            fi
             echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
             cp "ci-shots-$shot/03-comic-read-22-settled.png" \
               "ci-logs/$shot.png" 2>/dev/null || true
@@ -1777,8 +1841,9 @@ jobs:
           for shot in comic-series-dark comic-series-edit-dark \
                       comic-series-find-dark \
                       comic-series-find-review-dark; do
-            cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
-              || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
+            if [ -f "ci-shots-$shot/report.txt" ]; then cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt"; else
+              echo "  (no new $shot-latest.txt" this run; keeping the previously committed one)";
+            fi
             echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
             cp "ci-shots-$shot/03-comic-series-book-22-settled.png" \
               "ci-logs/$shot.png" 2>/dev/null || true
@@ -1805,8 +1870,9 @@ jobs:
                       pdf-password-dark pdf-password-light \
                       pdf-password-wrong-dark pdf-password-unlocked-dark \
                       pdf-corrupt-dark pdf-missing-dark; do
-            cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
-              || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
+            if [ -f "ci-shots-$shot/report.txt" ]; then cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt"; else
+              echo "  (no new $shot-latest.txt" this run; keeping the previously committed one)";
+            fi
             echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
             cp "ci-shots-$shot/03-pdf-read-21-settled.png" \
               "ci-logs/$shot.png" 2>/dev/null || true

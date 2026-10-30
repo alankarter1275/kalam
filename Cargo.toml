@@ -8,10 +8,8 @@ members = [
     "crates/chapbook-paint",
     "crates/chapbook-render-tinyskia",
     "crates/chapbook-reader",
-    "crates/chapbook-viewer-gtk",
     "crates/kalam-reader",
     "tools/chapbook-cli",
-    "tools/kalam-reader-demo",
 ]
 
 [workspace.package]

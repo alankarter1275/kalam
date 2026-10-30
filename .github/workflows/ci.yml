@@ -196,12 +196,14 @@ jobs:
           # --workspace, not just --all-targets. This workspace has a root
           # package (`kalam`), so with no `default-members` key Cargo selects
           # ONLY that package by default -- --all-targets picks targets, not
-          # packages. Without --workspace the eight crates under crates/ (seven
-          # chapbook plus kalam-reader) and the two under tools/ were compiled
-          # as dependencies but never linted, and chapbook-viewer-gtk,
-          # chapbook-cli and kalam-reader-demo (not dependencies of anything)
-          # were never even built. They could fail to compile and this run
-          # stayed green. 10 of the 11 workspace members were being skipped.
+          # packages. Without --workspace the crates under crates/ and tools/
+          # were compiled as dependencies but never linted, and the members
+          # nothing depends on were never even built. They could fail to
+          # compile and this run stayed green. When this was fixed on
+          # 2026-09-18, 10 of the 11 workspace members were being skipped.
+          # Two of those 11 -- chapbook-viewer-gtk and kalam-reader-demo --
+          # were deleted on 2026-10-30, so the workspace is now 9 members and
+          # the flag is still required for exactly the same reason.
           cargo clippy --workspace --all-targets --message-format=short -- -D warnings 2>&1 \
             | tee -a /tmp/clippy.txt
         continue-on-error: true

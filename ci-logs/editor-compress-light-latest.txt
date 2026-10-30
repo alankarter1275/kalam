@@ -1,14 +1,14 @@
 === kalam screenshot run ===
 books=20 out=ci-shots-editor-compress-light settle=20 output=1600x1200
 config home: /home/runner/work/kalam/kalam/ci-shots-editor-compress-light/config-home
-binary: 74666424 bytes
+binary: 74661560 bytes
 
 === seeding 20 books ===
 seed-library: 20 books, 18 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.19558.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.19883.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,162 +32,162 @@ windowed grid: 0 (KALAM_NO_WINDOWED_GRID=1)
 readiness: min=2s max=30s stable_max_changed=0.5%
 readiness: route and window seen after 1s
 toplevel windows seen: 1
-  shot: 01-edit-book-1 (142071 bytes)
+  shot: 01-edit-book-1 (5675 bytes)
 focused: 1
   shot: 02-edit-book-1-settling (233111 bytes)
   shot: 03-edit-book-1-settled (stable after 3s)
 navigation: app accepted route 'edit-book-1'
 navigation: 'edit-book-1' is not a grid page; no grid_build expected
-readiness: Home seen after 0s
+readiness: Home seen after 1s
   shot: 04-home-for-comparison (85616 bytes)
 readiness: Home stable after 3s
 navigation: 'edit-book-1' differs from Home -- the page really did change
 navigation: OK -- the images below are 'edit-book-1'
 
 === timing lines from the app ===
-  [timing] startup_fonts           3.2 ms
-  [timing] startup_gtk_init       60.8 ms
-  [timing] startup_splash_show      1.4 ms
+  [timing] startup_fonts           4.2 ms
+  [timing] startup_gtk_init       76.9 ms
+  [timing] startup_splash_show      1.7 ms
   [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
   [timing] icons_init              0.3 ms
-  [timing] startup_splash_pump    120.4 ms
+  [timing] startup_splash_pump    121.9 ms
   [timing] startup_libraries       0.3 ms
-  [timing] startup_db_open         7.6 ms
-  [timing] startup_theme          35.0 ms
-  [timing] pre_run               228.9 ms
-  [timing] route_open:home         0.6 ms
-  [timing] startup_first_page      0.6 ms
-  [timing] service_home            5.1 ms
-  [timing] init_done             273.2 ms
-  [timing] window_shown          275.4 ms
+  [timing] startup_db_open        12.7 ms
+  [timing] startup_theme          38.2 ms
+  [timing] pre_run               256.1 ms
+  [timing] route_open:home         0.4 ms
+  [timing] startup_first_page      0.4 ms
+  [timing] service_home            4.3 ms
+  [timing] init_done             295.2 ms
+  [timing] window_shown          297.9 ms
   [timing] covers_queued            11
-  [timing] home_fill               2.4 ms
+  [timing] home_fill               3.0 ms
   [timing] page_cache_miss           1
-  [timing] route_open:editor_workspace     10.2 ms
+  [timing] route_open:editor_workspace     14.4 ms
   [timing] covers_land             0.1 ms
   [timing] covers_decoded           11
-  [timing] covers_thumb              6
-  [timing] covers_full               5
-  [timing] covers_decode          46.3 ms
-  [timing] covers_decode_max       8.4 ms
+  [timing] covers_thumb              3
+  [timing] covers_full               8
+  [timing] covers_decode          69.3 ms
+  [timing] covers_decode_max       9.7 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.0 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] book_open               4.1 ms
-  [timing] render_backend     GskCairoRenderer
-  [timing] frame_after:startup_fonts    399.4 ms
-  [timing] frame_after:startup_gtk_init    338.6 ms
-  [timing] frame_after:startup_splash_show    337.1 ms
-  [timing] frame_after:icons_write    333.1 ms
-  [timing] frame_after:icons_theme    333.0 ms
-  [timing] frame_after:icons_init    333.0 ms
-  [timing] frame_after:startup_splash_pump    216.6 ms
-  [timing] frame_after:startup_libraries    216.4 ms
-  [timing] frame_after:startup_db_open    208.8 ms
-  [timing] frame_after:startup_theme    173.8 ms
-  [timing] frame_after:pre_run    173.7 ms
-  [timing] frame_after:route_open:home    171.7 ms
-  [timing] frame_after:startup_first_page    171.7 ms
-  [timing] frame_after:service_home    166.5 ms
-  [timing] frame_after:init_done    129.4 ms
-  [timing] frame_after:window_shown    127.2 ms
-  [timing] frame_after:home_fill    124.0 ms
-  [timing] frame_after:route_open:editor_workspace    113.6 ms
-  [timing] frame_after:covers_land    112.2 ms
-  [timing] frame_after:covers_decode     36.9 ms
-  [timing] frame_after:covers_decode_max     36.9 ms
-  [timing] frame_after:covers_land     15.1 ms
-  [timing] frame_after:covers_gap     15.1 ms
-  [timing] frame_after:covers_land     15.1 ms
-  [timing] frame_after:covers_gap     15.1 ms
-  [timing] frame_after:covers_land     15.0 ms
-  [timing] frame_after:covers_gap     15.0 ms
-  [timing] frame_after:covers_land     15.0 ms
-  [timing] frame_after:covers_gap     15.0 ms
-  [timing] frame_after:covers_land     14.9 ms
-  [timing] frame_after:covers_gap     14.9 ms
-  [timing] frame_after:covers_land     14.9 ms
-  [timing] frame_after:covers_gap     14.9 ms
-  [timing] frame_after:covers_land     14.8 ms
-  [timing] frame_after:covers_gap     14.8 ms
-  [timing] frame_after:covers_land     14.7 ms
-  [timing] frame_after:covers_gap     14.7 ms
-  [timing] frame_after:covers_land     14.7 ms
-  [timing] frame_after:covers_gap     14.7 ms
-  [timing] frame_after:covers_land     14.6 ms
-  [timing] frame_after:book_open      0.8 ms
-  [timing] frame_paint:book_open    412.1 ms
+  [timing] book_open               4.3 ms
   [timing] thumbs_backfilled        18
+  [timing] render_backend     GskCairoRenderer
+  [timing] frame_after:startup_fonts    469.7 ms
+  [timing] frame_after:startup_gtk_init    392.7 ms
+  [timing] frame_after:startup_splash_show    390.9 ms
+  [timing] frame_after:icons_write    386.4 ms
+  [timing] frame_after:icons_theme    386.3 ms
+  [timing] frame_after:icons_init    386.3 ms
+  [timing] frame_after:startup_splash_pump    269.0 ms
+  [timing] frame_after:startup_libraries    268.7 ms
+  [timing] frame_after:startup_db_open    255.9 ms
+  [timing] frame_after:startup_theme    217.7 ms
+  [timing] frame_after:pre_run    217.7 ms
+  [timing] frame_after:route_open:home    216.6 ms
+  [timing] frame_after:startup_first_page    216.6 ms
+  [timing] frame_after:service_home    212.3 ms
+  [timing] frame_after:init_done    178.6 ms
+  [timing] frame_after:window_shown    176.0 ms
+  [timing] frame_after:home_fill    172.0 ms
+  [timing] frame_after:route_open:editor_workspace    157.3 ms
+  [timing] frame_after:covers_land    155.6 ms
+  [timing] frame_after:covers_decode     61.8 ms
+  [timing] frame_after:covers_decode_max     61.8 ms
+  [timing] frame_after:covers_land     17.4 ms
+  [timing] frame_after:covers_gap     17.4 ms
+  [timing] frame_after:covers_land     17.3 ms
+  [timing] frame_after:covers_gap     17.3 ms
+  [timing] frame_after:covers_land     17.3 ms
+  [timing] frame_after:covers_gap     17.3 ms
+  [timing] frame_after:covers_land     17.2 ms
+  [timing] frame_after:covers_gap     17.2 ms
+  [timing] frame_after:covers_land     17.2 ms
+  [timing] frame_after:covers_gap     17.2 ms
+  [timing] frame_after:covers_land     17.1 ms
+  [timing] frame_after:covers_gap     17.1 ms
+  [timing] frame_after:covers_land     17.1 ms
+  [timing] frame_after:covers_gap     17.0 ms
+  [timing] frame_after:covers_land     17.0 ms
+  [timing] frame_after:covers_gap     17.0 ms
+  [timing] frame_after:covers_land     16.9 ms
+  [timing] frame_after:covers_gap     16.9 ms
+  [timing] frame_after:covers_land     16.9 ms
+  [timing] frame_after:book_open     12.5 ms
+  [timing] frame_paint:book_open    566.5 ms
   [timing] thumbs_backfill_done       18
-  [timing] frame_paint:book_open    396.2 ms
-  [timing] startup_dicts        1441.2 ms
+  [timing] frame_paint:book_open    571.9 ms
+  [timing] startup_dicts        2020.0 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 263 ms ago)
-  [stall] UI thread unblocked — was blocked for at least 350 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 50 ms ago)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 251 ms ago)
-  [stall] UI thread unblocked — was blocked for at least 350 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 451 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_done:Measuring image savings (took 0 ms, ended 221 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 550 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 43 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 243 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 550 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 643 ms ago)
   stalls seen -- name the screen and fix it before it spreads
 
 === screenshot pixel sample ===
   low colour is a cover warning only on a seeded library-grid route.
-  01-edit-book-1.png: 1600x1200  coloured=0.2%  lit=41.2%  <-- low colour; interpret as a cover warning only on a library grid
+  01-edit-book-1.png: 1600x1200  coloured=0.0%  lit=0.0%  <-- essentially black; the window probably never drew
   02-edit-book-1-settling.png: 1600x1200  coloured=0.2%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
   03-edit-book-1-settled.png: 1600x1200  coloured=0.2%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
   04-home-for-comparison.png: 1600x1200  coloured=19.4%  lit=100.0%
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  c26c4634d16e39d6273c13b232768d15  ci-shots-editor-compress-light/01-edit-book-1.png
+  c8b124d75ad7ce0a4198fe620629f5dc  ci-shots-editor-compress-light/01-edit-book-1.png
   b86d27d991b612884b653a9d293547c0  ci-shots-editor-compress-light/02-edit-book-1-settling.png
   b86d27d991b612884b653a9d293547c0  ci-shots-editor-compress-light/03-edit-book-1-settled.png
   10c375889ccff7da64f81ceec81e6d78  ci-shots-editor-compress-light/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (process:19614): Gtk-WARNING **: 20:32:46.723: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:19939): Gtk-WARNING **: 01:34:50.489: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-light — applying terracotta-light for this run (not saved)
   kalam: KALAM_ROUTE=edit-book-1 — navigating
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_progress:Rebuilding cover thumbnails (took 0 ms, ended 263 ms ago)
-  [stall] UI thread unblocked — was blocked for at least 350 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 50 ms ago)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 251 ms ago)
-  [stall] UI thread unblocked — was blocked for at least 350 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 451 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_done:Measuring image savings (took 0 ms, ended 221 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 550 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 43 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 243 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 550 ms — after task_done:Rebuilding cover thumbnails (took 0 ms, ended 643 ms ago)
 
 === peak memory ===
-books=20 peak_rss_kb=305648 peak_rss_mb=298
+books=20 peak_rss_kb=281352 peak_rss_mb=274
 
 === shutting down ===
 
 === artifacts ===
-  total 732
-  drwxr-xr-x  3 runner runner   4096 Oct 27 20:32 .
-  drwxr-xr-x 59 runner runner   4096 Oct 27 20:32 ..
-  -rw-r--r--  1 runner runner 142071 Oct 27 20:32 01-edit-book-1.png
-  -rw-r--r--  1 runner runner 233111 Oct 27 20:32 02-edit-book-1-settling.png
-  -rw-r--r--  1 runner runner 233111 Oct 27 20:32 03-edit-book-1-settled.png
-  -rw-r--r--  1 runner runner  85616 Oct 27 20:32 04-home-for-comparison.png
-  drwxr-xr-x  3 runner runner   4096 Oct 27 20:32 config-home
-  -rw-r--r--  1 runner runner      0 Oct 27 20:32 grim.log
-  -rw-r--r--  1 runner runner   6340 Oct 27 20:32 kalam-home.log
-  -rw-r--r--  1 runner runner   4994 Oct 27 20:32 kalam.log
-  -rw-r--r--  1 runner runner   8657 Oct 27 20:32 report.txt
-  -rw-r--r--  1 runner runner     88 Oct 27 20:32 sway.log
-  -rw-r--r--  1 runner runner   7185 Oct 27 20:32 tree.json
---- run 40575852406 ---
+  total 600
+  drwxr-xr-x  3 runner runner   4096 Oct 30 01:34 .
+  drwxr-xr-x 59 runner runner   4096 Oct 30 01:34 ..
+  -rw-r--r--  1 runner runner   5675 Oct 30 01:34 01-edit-book-1.png
+  -rw-r--r--  1 runner runner 233111 Oct 30 01:34 02-edit-book-1-settling.png
+  -rw-r--r--  1 runner runner 233111 Oct 30 01:34 03-edit-book-1-settled.png
+  -rw-r--r--  1 runner runner  85616 Oct 30 01:34 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner   4096 Oct 30 01:34 config-home
+  -rw-r--r--  1 runner runner      0 Oct 30 01:34 grim.log
+  -rw-r--r--  1 runner runner   6340 Oct 30 01:34 kalam-home.log
+  -rw-r--r--  1 runner runner   4986 Oct 30 01:34 kalam.log
+  -rw-r--r--  1 runner runner   8624 Oct 30 01:34 report.txt
+  -rw-r--r--  1 runner runner     88 Oct 30 01:34 sway.log
+  -rw-r--r--  1 runner runner   7185 Oct 30 01:34 tree.json
+--- run 40984964948 ---

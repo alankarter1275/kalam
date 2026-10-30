@@ -70,6 +70,24 @@ const MAX_ARC_CATALOG_IN_PAGES: usize = 44;
 /// ratchet quietly permits that many new literals before it says anything.
 const MAX_HEX_IN_CSS: usize = 100;
 
+/// CSS properties GTK's parser does not have — each one backed by a warning
+/// somebody actually saw, not by web-CSS memory.
+///
+/// `docs/pitfalls.md` §58 records the owner's field log of 2026-10-04:
+///
+/// ```text
+/// Gtk-WARNING **: Theme parser error: <data>:725:5-14: No property named "max-width"
+/// ```
+///
+/// GTK CSS has `min-width` and `min-height` but no `max-width` and no
+/// `max-height`, in any GTK 4 release up to the one CI runs against. The cap
+/// that used them was a silent no-op for as long as it shipped.
+///
+/// Add a name here only with that kind of evidence attached. The two dialects
+/// share a syntax and only part of a vocabulary, and guessing which half is the
+/// mistake §58 exists to record.
+const GTK_REJECTED_CSS_PROPERTIES: &[&str] = &["max-width", "max-height"];
+
 // ---------------------------------------------------------------------------
 // The checks
 // ---------------------------------------------------------------------------
@@ -177,6 +195,40 @@ fn stylesheet_does_not_gain_hex_colours() {
          \n\
          Lower MAX_HEX_IN_CSS when you move one.\n\
          "
+    );
+}
+
+#[test]
+fn stylesheet_declares_no_property_gtk_rejects() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/style.css");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("could not read {}: {e}", path.display()));
+    let hits = find_css_declarations(&text, GTK_REJECTED_CSS_PROPERTIES);
+
+    assert!(
+        hits.is_empty(),
+        "\n\
+         resources/style.css declares a property GTK's CSS parser does not have.\n\
+         \n\
+         {}\
+         \n\
+         A rejected declaration fails nothing, and that is the whole problem:\n\
+         the parser drops the one property, keeps the rest of the rule, prints\n\
+         a single warning at startup, and the app runs fine. Compilation, the\n\
+         tests and the smoke test all stay green while the rule silently does\n\
+         nothing. docs/pitfalls.md §58 is the record of a width cap that was a\n\
+         no-op for as long as it shipped.\n\
+         \n\
+         Put the constraint where it can be measured instead. `min-width` and\n\
+         `min-height` do exist, and a widget's own size request — a label's\n\
+         width in characters, a row's natural width — is the reliable lever.\n\
+         \n\
+         Then grep CI's smoke logs for `Theme parser error`. The evidence is\n\
+         already collected; the failure mode is not looking at it.\n\
+         ",
+        hits.iter()
+            .map(|(prop, line)| format!("    line {line:>5}: {prop}\n"))
+            .collect::<String>()
     );
 }
 
@@ -346,6 +398,66 @@ fn count_hex_literals(text: &str) -> usize {
     n
 }
 
+/// Remove `/* … */` comments, keeping every newline so line numbers in the
+/// result still mean what they meant in the input.
+///
+/// Needed because `resources/style.css` documents the GTK property gap in a
+/// comment that names the properties. That comment is the reason the rule
+/// exists, not a violation of it.
+fn strip_css_comments(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_comment = false;
+    let mut chars = text.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if in_comment {
+            if c == '*' && chars.peek() == Some(&'/') {
+                chars.next();
+                in_comment = false;
+            } else if c == '\n' {
+                out.push('\n');
+            }
+        } else if c == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            in_comment = true;
+        } else {
+            out.push(c);
+        }
+    }
+
+    out
+}
+
+/// Find declarations of any property in `props`, as `(property, 1-based line)`.
+///
+/// Splitting on `;`, `{` and `}` puts every declaration at the start of a
+/// fragment, and that is what separates a declaration from a selector that
+/// happens to contain the same word. The stylesheet uses all three shapes this
+/// has to survive: one indented declaration per line, a compact
+/// `.a:hover { prop: value; }` on a single line, and a value that runs over
+/// several lines. In each, the property name lands at a fragment start.
+fn find_css_declarations(text: &str, props: &[&str]) -> Vec<(String, usize)> {
+    let stripped = strip_css_comments(text);
+    let mut hits = Vec::new();
+
+    for (index, line) in stripped.lines().enumerate() {
+        for fragment in line.split(|c| c == ';' || c == '{' || c == '}') {
+            let fragment = fragment.trim();
+            for prop in props {
+                let after = match fragment.strip_prefix(prop) {
+                    Some(after) => after,
+                    None => continue,
+                };
+                if after.trim_start().starts_with(':') {
+                    hits.push(((*prop).to_string(), index + 1));
+                }
+            }
+        }
+    }
+
+    hits
+}
+
 // ---------------------------------------------------------------------------
 // The scanners are fiddly enough to be worth testing in their own right: a
 // ratchet that counts wrong is worse than no ratchet, because it looks like
@@ -401,6 +513,33 @@ fn hex_scanner_counts_colours_and_ignores_longer_runs() {
     assert_eq!(count_hex_literals("#ab"), 0, "two digits is not a colour");
     assert_eq!(count_hex_literals("#0123456789"), 0, "ten digits is not a colour");
     assert_eq!(count_hex_literals("#01234567"), 1, "eight is the longest colour");
+}
+
+#[test]
+fn css_declaration_scanner_sees_declarations_not_comments_or_selectors() {
+    let props = &["max-width"];
+    let n = |css: &str| find_css_declarations(css, props).len();
+
+    // The stylesheet's ordinary shape: one indented declaration per line.
+    assert_eq!(n(".a {\n  max-width: 100px;\n}\n"), 1);
+    // The compact shape the file also uses.
+    assert_eq!(n(".a:hover { max-width: 1px; color: red; }\n"), 1);
+    // No space before the colon still counts.
+    assert_eq!(n(".a {\n  max-width:1px;\n}\n"), 1);
+    // A value running over several lines is caught where the name is.
+    assert_eq!(n(".a {\n  max-width: calc(100px\n      + 2px);\n}\n"), 1);
+
+    // A comment naming the property is documentation, not a declaration.
+    assert_eq!(n("/* GTK CSS has no max-width property */\n.a { color: red; }\n"), 0);
+    // A selector containing the word is not a declaration.
+    assert_eq!(n(".max-width-panel { color: red; }\n"), 0);
+    assert_eq!(n("entry.kalam-max-width-filter:focus { color: red; }\n"), 0);
+    // min-width is a real GTK property and must not be swept up.
+    assert_eq!(n(".a {\n  min-width: 700px;\n}\n"), 0);
+
+    // Line numbers survive comment stripping, so a hit points somewhere real.
+    let hits = find_css_declarations("/* one\n   two */\n.a {\n  max-width: 1px;\n}\n", props);
+    assert_eq!(hits, vec![("max-width".to_string(), 4)]);
 }
 
 // ---------------------------------------------------------------------------

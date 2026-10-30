@@ -26,10 +26,11 @@
 //! but no catalog. [`init`] loads the cache before the first theme
 //! install; the setters keep it in sync.
 //!
-//! The setters and option enums are called by the Settings page,
-//! which lands in the next tranche of this phase; the allow below
-//! comes off with it.
-#![allow(dead_code)]
+//! The setters and option enums are called by the Settings page, which
+//! landed long ago. The blanket `#![allow(dead_code)]` that waited for it came
+//! off on 2026-10-31: `cargo clippy -p kalam --all-targets` with the allow
+//! removed reports nothing unused in this file, so it had been suppressing
+//! nothing for a long time.
 
 use crate::db::Catalog;
 use std::cell::{Cell, RefCell};

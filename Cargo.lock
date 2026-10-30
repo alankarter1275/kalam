@@ -487,18 +487,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "chapbook-viewer-gtk"
-version = "0.1.0"
-dependencies = [
- "chapbook-core",
- "chapbook-reader",
- "chapbook-render-tinyskia",
- "futures-channel",
- "futures-util",
- "gtk4",
-]
-
-[[package]]
 name = "chrono"
 version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2191,16 +2179,6 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "gtk4",
- "log",
-]
-
-[[package]]
-name = "kalam-reader-demo"
-version = "0.1.0"
-dependencies = [
- "chapbook-core",
- "gtk4",
- "kalam-reader",
  "log",
 ]
 

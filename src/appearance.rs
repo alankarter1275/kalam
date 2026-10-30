@@ -26,10 +26,10 @@
 //! but no catalog. [`init`] loads the cache before the first theme
 //! install; the setters keep it in sync.
 //!
-//! The setters and option enums are called by the Settings page. The
-//! blanket `#![allow(dead_code)]` that used to sit here was waiting for that
-//! page to land; it landed, and the allow was removed on 2026-10-30 rather
-//! than left to hide whatever it had been hiding.
+//! The setters and option enums are called by the Settings page,
+//! which lands in the next tranche of this phase; the allow below
+//! comes off with it.
+#![allow(dead_code)]
 
 use crate::db::Catalog;
 use std::cell::{Cell, RefCell};

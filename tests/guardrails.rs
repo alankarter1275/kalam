@@ -275,7 +275,10 @@ fn settled_screenshots_are_not_black() {
             Ok(t) => t,
             Err(_) => continue,
         };
-        let file = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let file = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         for (name, lit) in settled_frame_lit(&text) {
             frames.push((name, lit, file));
         }

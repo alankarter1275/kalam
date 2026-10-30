@@ -15,31 +15,31 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m fontdb v0.23.0
 [1m[92m    Checking[0m selectors v0.40.0
 [1m[92m    Checking[0m cosmic-text v0.19.0
+[1m[92m    Checking[0m stylo_malloc_size_of v0.20.0
 [1m[92m    Checking[0m tiny-skia v0.12.0
 [1m[92m   Compiling[0m stylo v0.20.0
-[1m[92m    Checking[0m stylo_malloc_size_of v0.20.0
 [1m[92m    Checking[0m fontdb v0.24.0
 [1m[92m    Checking[0m markup5ever v0.39.0
 [1m[92m    Checking[0m simplecss v0.2.2
-[1m[92m    Checking[0m usvg v0.48.1
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m stylo_dom v0.20.0
+[1m[92m    Checking[0m usvg v0.48.1
 [1m[92m    Checking[0m stylo_traits v0.20.0
 [1m[92m    Checking[0m rustybuzz v0.20.1
 [1m[92m    Checking[0m xml5ever v0.39.0
 [1m[92m    Checking[0m html5ever v0.39.0
-[1m[92m    Checking[0m resvg v0.48.1
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
 [1m[92m    Checking[0m globset v0.4.21
-[1m[92m    Checking[0m zopfli v0.8.4
+[1m[92m    Checking[0m resvg v0.48.1
 [1m[92m    Checking[0m insta v1.49.0
+[1m[92m    Checking[0m zopfli v0.8.4
+[1m[92m    Checking[0m formulary v0.2.0
 [1m[92m    Checking[0m pathfinder_geometry v0.5.1
 [1m[92m    Checking[0m font-kit v0.14.3
-[1m[92m    Checking[0m formulary v0.2.0
 [1m[92m    Checking[0m zip v6.0.0
-[1m[92m    Checking[0m env_filter v2.0.0
 [1m[92m    Checking[0m rustls v0.23.46
+[1m[92m    Checking[0m env_filter v2.0.0
 [1m[92m    Checking[0m env_logger v0.11.11
 [1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m epub-builder v0.8.3
@@ -50,4 +50,4 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 41.87s
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 37.31s

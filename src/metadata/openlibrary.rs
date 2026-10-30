@@ -143,6 +143,7 @@ fn doc_to_candidate(doc: SearchDoc) -> Candidate {
         description: String::new(),
         detail_key: doc.key,
         source: Some(SourceId::OpenLibrary),
+        ..Default::default()
     }
 }
 

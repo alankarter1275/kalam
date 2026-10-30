@@ -56,3 +56,24 @@
 //! on a given node.
 
 pub const APP_CSS: &str = include_str!("../resources/style.css");
+
+/// The approved spacing scale, for widget construction code that needs the
+/// same numbers the component CSS uses (`docs/design/design-system.md` §4).
+pub mod spacing {
+    pub const XXS: i32 = 4;
+    pub const XS: i32 = 8;
+    pub const SM: i32 = 12;
+    pub const MD: i32 = 16;
+    pub const LG: i32 = 24;
+    pub const XL: i32 = 32;
+    pub const XXL: i32 = 48;
+}
+
+/// Fixed component sizes that have to be requested from Rust rather than
+/// left to CSS min-size rules.
+pub mod size {
+    pub const TOUCH_TARGET: i32 = 44;
+    pub const CONTROL: i32 = 40;
+    pub const COMPACT: i32 = 32;
+    pub const SIDE_PANEL_WIDTH: i32 = 340;
+}

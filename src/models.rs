@@ -1,14 +1,17 @@
 //! Domain models and navigation routes.
 
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NavItem {
     Home,
     Library,
+    Authors,
     Shelves,
     Downloads,
     Comics,
+    Editor,
     RemoteBrowse,
     Fanfiction,
     Settings,
@@ -19,31 +22,36 @@ impl NavItem {
     ///
     /// Deliberately missing, and not an oversight:
     ///
+    /// * `Authors` — dropped from the rail by decision 179; the authors
+    ///   index and author pages still exist, they just have no rail entry.
     /// * `Downloads` — the queue page works, but nothing ever registers a
     ///   `Source`, so it can only ever read "0 downloads tracked". Online
     ///   sources are a future track in `ROADMAP.md`; until one exists the
     ///   button advertises a feature the app cannot perform.
     /// * `RemoteBrowse` and `Fanfiction` — same reason, removed earlier.
     ///
-    /// All three stay in the enum, in `label`/`icon`, in `placeholder_copy`
-    /// and in the `KALAM_ROUTE` map, so putting one back is a one-line change
-    /// here and nothing else.
+    /// These stay in the enum, in `label`/`icon`, in `placeholder_copy`
+    /// and in the `KALAM_ROUTE` map, so the underlying routes and pages
+    /// keep working even though the rail does not show them.
     ///
     pub const ALL: &'static [NavItem] = &[
         NavItem::Home,
         NavItem::Library,
         NavItem::Shelves,
         NavItem::Comics,
+        NavItem::Editor,
         NavItem::Settings,
     ];
 
     pub fn label(self) -> &'static str {
         match self {
             NavItem::Home => "Home",
-            NavItem::Library => "Library",
+            NavItem::Library => "My Library",
+            NavItem::Authors => "Authors",
             NavItem::Shelves => "Shelves",
             NavItem::Downloads => "Downloads",
             NavItem::Comics => "Comics",
+            NavItem::Editor => "Editor",
             NavItem::RemoteBrowse => "Browse",
             NavItem::Fanfiction => "Fanfic",
             NavItem::Settings => "Settings",
@@ -54,9 +62,11 @@ impl NavItem {
         match self {
             NavItem::Home => "go-home-symbolic",
             NavItem::Library => "folder-documents-symbolic",
+            NavItem::Authors => "avatar-default-symbolic",
             NavItem::Shelves => "view-grid-symbolic",
             NavItem::Downloads => "folder-download-symbolic",
             NavItem::Comics => "image-x-generic-symbolic",
+            NavItem::Editor => "accessories-text-editor-symbolic",
             NavItem::RemoteBrowse => "network-workgroup-symbolic",
             NavItem::Fanfiction => "document-edit-symbolic",
             NavItem::Settings => "emblem-system-symbolic",
@@ -81,11 +91,24 @@ pub enum Route {
     TagBooks {
         tag: String,
     },
+    /// Every author in the library (decision 117).
+    AuthorsIndex,
     AuthorPage {
         author: String,
     },
     BookPage {
         book_id: i64,
+    },
+    /// The deep EPUB editor workspace for one book (decisions 118–143).
+    EditorWorkspace {
+        book_id: i64,
+    },
+    /// The full book-series page. The first author is part of the route
+    /// because it is part of the cached listing's identity: two authors can
+    /// use the same series name without sharing a page or a fetch.
+    SeriesPage {
+        series: String,
+        first_author: String,
     },
     RemoteDetail {
         source_id: String,
@@ -115,17 +138,25 @@ pub enum Route {
     ComicSeries {
         series_name: String,
     },
+    /// Hidden redesign component preview, reached only through
+    /// `KALAM_ROUTE=components`.
+    ComponentPreview,
 }
 
 impl Route {
     pub fn sidebar_item(&self) -> NavItem {
         match self {
             Route::Module(item) => *item,
+            Route::ComponentPreview => NavItem::Settings,
             Route::ComicSeries { .. } => NavItem::Comics,
             Route::LibrarySection(_) => NavItem::Library,
+            // Shelves now has its own rail entry (§56), so its routes
+            // light up the Shelves item rather than Library.
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
-            Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,
-            Route::BookPage { .. } | Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
+            Route::TagBooks { .. } => NavItem::Library,
+            Route::AuthorsIndex | Route::AuthorPage { .. } => NavItem::Authors,
+            Route::EditorWorkspace { .. } => NavItem::Editor,
+            Route::BookPage { .. } | Route::SeriesPage { .. } | Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
             Route::RemoteDetail { .. } => NavItem::RemoteBrowse,
             Route::RemoteSearch { source_id, .. } => {
                 if source_id == "royalroad" {
@@ -145,6 +176,15 @@ impl Route {
                 | Route::ComicsReader { .. }
                 | Route::RemoteReader { .. }
         )
+    }
+
+    /// Pages that fill the content area edge to edge and own their
+    /// scrolling — the readers and the editor workspace. The shell's
+    /// page scroller and back chip step aside for them (the editor
+    /// has its own Back, because leaving it can mean discarding
+    /// unsaved changes).
+    pub fn owns_its_surface(&self) -> bool {
+        self.is_reader() || matches!(self, Route::EditorWorkspace { .. })
     }
 }
 
@@ -305,6 +345,37 @@ impl Book {
     }
 }
 
+/// One role-bearing credit on a comic series. Manga sources speak in
+/// Story/Art, western sources in Writer/Penciller/Inker and friends;
+/// the page stays source-neutral by showing whatever roles it was
+/// given (decision 46).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ComicCredit {
+    #[serde(default)]
+    pub role: String,
+    #[serde(default)]
+    pub name: String,
+}
+
+/// The hand-editable fields of a comic series, by the names its
+/// manual-field locks use. A field the reader changed in Edit details
+/// is recorded here and a metadata refresh must never overwrite it
+/// (decisions 46/48).
+pub const COMIC_SERIES_FIELD_TITLE: &str = "title";
+pub const COMIC_SERIES_FIELD_ORIGINAL_TITLE: &str = "original_title";
+pub const COMIC_SERIES_FIELD_CREDITS: &str = "credits";
+pub const COMIC_SERIES_FIELD_DESCRIPTION: &str = "description";
+pub const COMIC_SERIES_FIELD_STATUS: &str = "status";
+pub const COMIC_SERIES_FIELD_PUBLISHER: &str = "publisher";
+pub const COMIC_SERIES_FIELD_SERIALIZATION: &str = "serialization";
+pub const COMIC_SERIES_FIELD_PUBLISHED: &str = "published";
+pub const COMIC_SERIES_FIELD_END_DATE: &str = "end_date";
+pub const COMIC_SERIES_FIELD_MEDIA_TYPE: &str = "media_type";
+pub const COMIC_SERIES_FIELD_GENRES: &str = "genres";
+pub const COMIC_SERIES_FIELD_KNOWN_VOLUMES: &str = "known_volumes";
+pub const COMIC_SERIES_FIELD_KNOWN_CHAPTERS: &str = "known_chapters";
+pub const COMIC_SERIES_FIELD_COVER: &str = "cover";
+
 /// A first-class Comic / Manga Series in the library catalog.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -312,10 +383,17 @@ pub struct ComicSeries {
     pub id: i64,
     pub title: String,
     pub sort_title: String,
+    /// The flat author line, kept beside `credits` for lists and
+    /// search: unique credit names when roles are known, else the
+    /// imported/typed summary.
     pub author: String,
     pub description: String,
     pub cover_book_id: Option<i64>,
+    /// The cover to show: a fetched series cover when one was kept,
+    /// else the cover chapter's own cover.
     pub cover_path: Option<PathBuf>,
+    /// The fetched series cover alone, when metadata supplied one.
+    pub metadata_cover_path: Option<PathBuf>,
     pub status: String,
     pub total_chapters: usize,
     pub completed_chapters: usize,
@@ -323,6 +401,64 @@ pub struct ComicSeries {
     pub created_at: String,
     pub updated_at: String,
     pub last_read_at: Option<String>,
+
+    // Fetched/edited series metadata (decision 46). Empty and `None`
+    // are “not known”, never a claim.
+    pub original_title: String,
+    pub credits: Vec<ComicCredit>,
+    pub publisher: String,
+    pub serialization: String,
+    pub published: String,
+    pub end_date: String,
+    pub media_type: String,
+    pub genres: Vec<String>,
+    pub known_volumes: Option<i64>,
+    /// Chapters (manga) or issues (western) the source knows about,
+    /// as distinct from `total_chapters`, which counts this library.
+    pub known_chapters: Option<i64>,
+    /// Provenance of the last accepted fetch: source key
+    /// (`myanimelist`, `comicvine`), its record id and page, and when
+    /// Kalam took it. Empty until a fetch is accepted.
+    pub metadata_source: String,
+    pub metadata_source_id: String,
+    pub metadata_source_url: String,
+    pub metadata_fetched_at: String,
+    /// `COMIC_SERIES_FIELD_*` names the reader edited by hand.
+    pub manual_fields: Vec<String>,
+}
+
+impl ComicSeries {
+    pub fn is_manual_field(&self, field: &str) -> bool {
+        self.manual_fields.iter().any(|locked| locked == field)
+    }
+
+    /// “Story: A · Art: B” when roles are known, else the flat author.
+    pub fn credits_summary(&self) -> String {
+        if self.credits.is_empty() {
+            return self.author.clone();
+        }
+        let mut parts: Vec<String> = Vec::new();
+        for credit in &self.credits {
+            let name = credit.name.trim();
+            if name.is_empty() {
+                continue;
+            }
+            let role = credit.role.trim();
+            let part = if role.is_empty() {
+                name.to_string()
+            } else {
+                format!("{role}: {name}")
+            };
+            if !parts.iter().any(|existing| existing == &part) {
+                parts.push(part);
+            }
+        }
+        if parts.is_empty() {
+            self.author.clone()
+        } else {
+            parts.join(" · ")
+        }
+    }
 }
 
 /// An individual chapter within a `ComicSeries`, joined with its underlying `Book` row.

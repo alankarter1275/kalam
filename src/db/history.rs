@@ -19,6 +19,41 @@ pub struct SessionRow {
     pub seconds: i64,
 }
 
+/// One reading session on a timeline lane.
+#[derive(Debug, Clone)]
+pub struct TimelineSession {
+    pub id: i64,
+    pub started_at: String,
+    pub seconds: i64,
+    pub end_pct: i64,
+}
+
+/// One book's lane on the reading timeline (§51).
+#[derive(Debug, Clone)]
+pub struct TimelineLaneData {
+    pub book_id: i64,
+    pub title: String,
+    pub authors: String,
+    pub progress: u8,
+    pub finished_at: Option<String>,
+    pub last_opened_at: Option<String>,
+    pub sessions: Vec<TimelineSession>,
+}
+
+/// One resolved timeline lane, with its most recent session precomputed for
+/// sorting.
+#[derive(Debug, Clone)]
+pub struct TimelineLane {
+    pub book_id: i64,
+    pub title: String,
+    pub authors: String,
+    pub progress: u8,
+    pub finished_at: Option<String>,
+    pub last_opened_at: Option<String>,
+    pub sessions: Vec<TimelineSession>,
+    pub most_recent: Option<TimelineSession>,
+}
+
 /// A closed session with its book identity — the library dashboard merges
 /// sessions into its history feed.
 #[derive(Debug, Clone)]
@@ -178,6 +213,36 @@ impl Catalog {
         Ok(out)
     }
 
+    /// Finished stamps for many books at once — the series page's version
+    /// of [`Catalog::finished_book_ids`], for rows that print the date and
+    /// not just the tick. Unfinished and unknown ids are simply absent.
+    pub fn finished_dates_by_ids(
+        &self,
+        ids: &[i64],
+    ) -> Result<std::collections::HashMap<i64, String>> {
+        let mut out = std::collections::HashMap::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.conn();
+        for chunk in ids.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT id, finished_at FROM books \
+                 WHERE finished_at IS NOT NULL AND id IN ({holders})"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (id, finished_at) = row?;
+                out.insert(id, finished_at);
+            }
+        }
+        Ok(out)
+    }
+
     pub fn book_finished_at(&self, book_id: i64) -> Result<Option<String>> {
         let conn = self.conn();
         let v: Option<Option<String>> = conn
@@ -188,6 +253,97 @@ impl Catalog {
             )
             .optional()?;
         Ok(v.flatten())
+    }
+
+    /// Reading sessions organised into timeline lanes, one lane per book,
+    /// newest session first within each lane. Used by the §51 reading
+    /// timeline widget on the My Library page.
+    pub fn timeline_lanes(&self, limit: usize) -> Result<Vec<TimelineLane>> {
+        let conn = self.conn();
+        // One row per session, with book identity. Group by book in Rust.
+        let mut stmt = conn.prepare_cached(
+            "SELECT s.id, s.book_id, s.started_at, s.seconds, s.end_pct,
+                    b.title, b.authors, b.progress, b.finished_at, b.last_opened_at
+             FROM reading_sessions s
+             JOIN books b ON b.id = s.book_id
+             WHERE s.ended_at IS NOT NULL
+             ORDER BY s.started_at DESC, s.id DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,   // session id
+                r.get::<_, i64>(1)?,   // book_id
+                r.get::<_, String>(2)?, // started_at
+                r.get::<_, i64>(3)?,   // seconds
+                r.get::<_, i64>(4)?,   // end_pct
+                r.get::<_, String>(5)?, // title
+                r.get::<_, String>(6)?, // authors
+                r.get::<_, u8>(7)?,    // progress
+                r.get::<_, Option<String>>(8)?, // finished_at
+                r.get::<_, Option<String>>(9)?, // last_opened_at
+            ))
+        })?;
+        let rows: std::result::Result<Vec<_>, _> = rows.collect();
+        let rows = rows?;
+
+        // Group sessions by book, newest session first.
+        let mut by_book: std::collections::HashMap<i64, TimelineLaneData> =
+            std::collections::HashMap::new();
+        for (session_id, book_id, started_at, seconds, end_pct, title, authors, progress, finished_at, last_opened_at) in rows {
+            let entry = by_book.entry(book_id).or_insert(TimelineLaneData {
+                book_id,
+                title,
+                authors,
+                progress,
+                finished_at,
+                last_opened_at,
+                sessions: Vec::new(),
+            });
+            entry.sessions.push(TimelineSession {
+                id: session_id,
+                started_at,
+                seconds,
+                end_pct,
+            });
+        }
+
+        // Sort lanes by most recent session first.
+        let mut lanes: Vec<TimelineLane> = by_book
+            .into_values()
+            .map(|d| {
+                let most_recent = d
+                    .sessions
+                    .iter()
+                    .max_by_key(|s| s.started_at.clone())
+                    .cloned();
+                TimelineLane {
+                    book_id: d.book_id,
+                    title: d.title,
+                    authors: d.authors,
+                    progress: d.progress,
+                    finished_at: d.finished_at,
+                    last_opened_at: d.last_opened_at,
+                    sessions: d.sessions,
+                    most_recent,
+                }
+            })
+            .collect();
+        lanes.sort_by(|a, b| {
+            let a_date = a
+                .most_recent
+                .as_ref()
+                .map(|s| s.started_at.as_str())
+                .unwrap_or("");
+            let b_date = b
+                .most_recent
+                .as_ref()
+                .map(|s| s.started_at.as_str())
+                .unwrap_or("");
+            b_date.cmp(a_date)
+        });
+        lanes.truncate(limit);
+        Ok(lanes)
     }
 
     /// Newest-first history, optionally filtered by kind and free text.

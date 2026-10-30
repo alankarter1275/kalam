@@ -70,6 +70,86 @@ impl Catalog {
         Ok(out)
     }
 
+    /// Annotations for many books at once — the author page's version of
+    /// [`Catalog::get_annotations_for_book`], one statement per 500-id
+    /// chunk so the page's statement count stays flat in the book count.
+    pub fn annotations_for_books(&self, ids: &[i64]) -> Result<Vec<Annotation>> {
+        let mut out = Vec::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.conn();
+        for chunk in ids.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
+                        color, style, text_excerpt, note, cfi, created_at, updated_at
+                 FROM annotations WHERE book_id IN ({holders})
+                 ORDER BY created_at DESC"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), row_to_annotation)?;
+            for row in rows {
+                out.push(row?);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Reading bookmarks for many books at once; see
+    /// [`Catalog::annotations_for_books`] for the chunking rationale.
+    pub fn reading_bookmarks_for_books(&self, ids: &[i64]) -> Result<Vec<ReadingBookmark>> {
+        let mut out = Vec::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.conn();
+        for chunk in ids.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT id, book_id, chapter_index, fraction, label, created_at
+                 FROM reading_bookmarks
+                 WHERE book_id IN ({holders})
+                 ORDER BY chapter_index ASC, fraction ASC, created_at DESC"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(
+                rusqlite::params_from_iter(chunk.iter()),
+                row_to_reading_bookmark,
+            )?;
+            for row in rows {
+                out.push(row?);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Saved words drawn from many books at once (words with no book are
+    /// nobody's, so they cannot appear here); see
+    /// [`Catalog::annotations_for_books`].
+    pub fn saved_words_for_books(&self, ids: &[i64]) -> Result<Vec<SavedWord>> {
+        let mut out = Vec::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.conn();
+        for chunk in ids.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at, known
+                 FROM saved_words
+                 WHERE book_id IN ({holders})
+                 ORDER BY created_at DESC"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), row_to_saved_word)?;
+            for row in rows {
+                out.push(row?);
+            }
+        }
+        Ok(out)
+    }
+
     pub fn get_annotations_for_chapter(
         &self,
         book_id: i64,
@@ -182,6 +262,40 @@ impl Catalog {
         if let Some(book_id) = book_id {
             crate::sidecar::refresh_for_book(self, book_id);
         }
+        Ok(())
+    }
+
+    /// Put a deleted annotation back exactly as it was — same id,
+    /// same stamps, same locators (decision 30's undo). An undo that
+    /// minted a new row would move the mark to the end of its
+    /// chapter's list and orphan anything holding the old id.
+    pub fn restore_annotation(&self, row: &Annotation) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO annotations
+                (id, book_id, kind, chapter_index, start_path, start_offset, end_path,
+                 end_offset, color, style, text_excerpt, note, cfi, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            params![
+                row.id,
+                row.book_id,
+                row.kind,
+                row.chapter_index,
+                row.start_path,
+                row.start_offset,
+                row.end_path,
+                row.end_offset,
+                row.color,
+                row.style,
+                row.text_excerpt,
+                row.note,
+                row.cfi,
+                row.created_at,
+                row.updated_at
+            ],
+        )?;
+        drop(conn);
+        crate::sidecar::refresh_for_book(self, row.book_id);
         Ok(())
     }
 
@@ -401,6 +515,42 @@ impl Catalog {
         Ok(())
     }
 
+    /// Put a forgotten word back exactly as it was (decision 30's
+    /// undo), review state included.
+    pub fn restore_saved_word(&self, row: &SavedWord) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO saved_words
+                (id, word, definition, dict_name, book_id, chapter_index, context_text,
+                 created_at, known)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                row.id,
+                row.word,
+                row.definition,
+                row.dict_name,
+                row.book_id,
+                row.chapter_index,
+                row.context_text,
+                row.created_at,
+                row.known as i64
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// The dictionary toggle's off stroke: forget every row this book
+    /// holds for the word (one in practice — `saved_word_exists` is
+    /// what the toggle reads, and it counts any row).
+    pub fn delete_saved_word_for(&self, word: &str, book_id: i64) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "DELETE FROM saved_words WHERE word = ?1 COLLATE NOCASE AND book_id = ?2",
+            params![word, book_id],
+        )?;
+        Ok(())
+    }
+
     /// Fetch all saved words without display caps for data export.
     pub fn list_all_saved_words_unlimited(&self) -> Result<Vec<SavedWord>> {
         let conn = self.conn();
@@ -560,6 +710,27 @@ impl Catalog {
         }
         Ok(())
     }
+
+    /// Put a removed bookmark back exactly as it was (decision 30's
+    /// undo).
+    pub fn restore_reading_bookmark(&self, row: &ReadingBookmark) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO reading_bookmarks (id, book_id, chapter_index, fraction, label, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                row.id,
+                row.book_id,
+                row.chapter_index,
+                row.fraction.clamp(0.0, 1.0),
+                row.label,
+                row.created_at
+            ],
+        )?;
+        drop(conn);
+        crate::sidecar::refresh_for_book(self, row.book_id);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -705,6 +876,78 @@ mod tests {
         // Library scope (all saved words)
         let all = cat.get_saved_words_for_scope(book_id2, "library").expect("query library");
         assert_eq!(all.len(), 3);
+    }
+
+    #[test]
+    fn deleted_marks_restore_exactly() {
+        // Decision 30: Ctrl+Z brings a deletion back, so the store
+        // must be able to reinsert a row as it was — id, stamps,
+        // locators and review state all included.
+        let (cat, book_id) = catalog_with_book();
+        let anno_id = cat
+            .insert_annotation(
+                book_id,
+                "highlight",
+                1,
+                "",
+                0,
+                "",
+                0,
+                "blue",
+                "underline",
+                "Restore me",
+                "with the note",
+            )
+            .expect("insert annotation");
+        cat.update_annotation_cfi(anno_id, "{\"kalam_locator\":1}")
+            .expect("update cfi");
+        let anno = cat
+            .get_annotation_by_id(anno_id)
+            .expect("get annotation")
+            .expect("found");
+        cat.delete_annotation(anno_id).expect("delete annotation");
+        cat.restore_annotation(&anno).expect("restore annotation");
+        let back = cat
+            .get_annotation_by_id(anno_id)
+            .expect("get annotation")
+            .expect("restored");
+        assert_eq!(back.id, anno.id);
+        assert_eq!(back.cfi, anno.cfi);
+        assert_eq!(back.created_at, anno.created_at);
+        assert_eq!(back.note, "with the note");
+
+        let word_id = cat
+            .insert_saved_word("restore", "to bring back", None, Some(book_id), Some(1), None)
+            .expect("insert word");
+        cat.set_saved_word_known(word_id, true).expect("mark known");
+        let word = cat
+            .list_saved_words("restore", None)
+            .expect("list words")
+            .into_iter()
+            .next()
+            .expect("word listed");
+        cat.delete_saved_word(word_id).expect("delete word");
+        cat.restore_saved_word(&word).expect("restore word");
+        let words = cat.list_saved_words("restore", None).expect("list words");
+        assert_eq!(words.len(), 1);
+        assert_eq!(words[0].id, word_id);
+        assert!(words[0].known, "the review state came back too");
+
+        let mark_id = cat
+            .insert_reading_bookmark(book_id, 1, 0.25, "Chapter 1")
+            .expect("insert bookmark");
+        let mark = cat
+            .list_reading_bookmarks(book_id)
+            .expect("list bookmarks")
+            .into_iter()
+            .next()
+            .expect("bookmark listed");
+        cat.delete_reading_bookmark(mark_id).expect("delete bookmark");
+        cat.restore_reading_bookmark(&mark).expect("restore bookmark");
+        let marks = cat.list_reading_bookmarks(book_id).expect("list bookmarks");
+        assert_eq!(marks.len(), 1);
+        assert_eq!(marks[0].id, mark_id);
+        assert_eq!(marks[0].created_at, mark.created_at);
     }
 
     #[test]

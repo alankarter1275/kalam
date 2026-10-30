@@ -26,6 +26,10 @@ pub const RECOGNITION_MODEL_BYTES: &[u8] = include_bytes!("../assets/models/ocr/
 #[derive(Debug, Clone)]
 pub struct PdfOcrRequest {
     pub generation: u64,
+    /// The reader's document revision. A page edit rewrites the
+    /// managed PDF at the same path, so path alone cannot key
+    /// the OCR worker's open document.
+    pub revision: u64,
     pub page: usize,
     pub path: PathBuf,
 }

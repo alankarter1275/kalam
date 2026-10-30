@@ -466,6 +466,18 @@ fn parse_epub_meta(path: &Path) -> Result<OpfMeta> {
     Ok(meta)
 }
 
+/// The subjects an EPUB file declares for itself (`dc:subject`), in file
+/// order; empty when the file cannot be read or declares none. Import
+/// already turns subjects into tags, so the Tag dialog's "Suggested from
+/// the file" section (decision 84) is this list minus the tags the book
+/// carries — usually empty, and useful exactly when a subject tag was
+/// removed by hand and wants a one-tap way back.
+pub fn epub_subjects(path: &Path) -> Vec<String> {
+    parse_epub_meta(path)
+        .map(|meta| meta.subjects)
+        .unwrap_or_default()
+}
+
 /// Locate the OPF inside an EPUB. Exposed for the writer in `epub_metadata`.
 pub fn find_opf_path_pub<R: Read + std::io::Seek>(archive: &mut ZipArchive<R>) -> Result<String> {
     find_opf_path(archive)
@@ -558,6 +570,20 @@ fn parse_opf(xml: &str) -> Result<OpfMeta> {
 }
 
 fn extract_cover(source: &Path, meta: &OpfMeta, dest_dir: &Path) -> Result<Option<String>> {
+    let Some((ext, bytes)) = extract_cover_bytes(source, meta)? else {
+        return Ok(None);
+    };
+    let name = format!("cover.{ext}");
+    let mut out = File::create(dest_dir.join(&name))?;
+    out.write_all(&bytes)?;
+    Ok(Some(name))
+}
+
+/// The EPUB's own cover image as `(extension, bytes)`, without writing
+/// anything — the restore-original-cover path feeds these bytes through
+/// [`replace_cover_bytes`] so naming, cache invalidation and thumbnail
+/// regeneration stay in one place.
+fn extract_cover_bytes(source: &Path, meta: &OpfMeta) -> Result<Option<(String, Vec<u8>)>> {
     let Some(href) = &meta.cover_href else {
         return Ok(None);
     };
@@ -581,10 +607,7 @@ fn extract_cover(source: &Path, meta: &OpfMeta, dest_dir: &Path) -> Result<Optio
                 "jpeg" | "jpg" | "png" | "gif" | "webp" | "svg" => ext,
                 _ => "img".into(),
             };
-            let name = format!("cover.{ext}");
-            let mut out = File::create(dest_dir.join(&name))?;
-            out.write_all(&bytes)?;
-            return Ok(Some(name));
+            return Ok(Some((ext, bytes)));
         }
     }
     Ok(None)
@@ -673,7 +696,7 @@ fn join_zip_path(dir: &str, href: &str) -> String {
     parts.join("/")
 }
 
-fn percent_decode(s: &str) -> String {
+pub(crate) fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -872,6 +895,49 @@ pub fn replace_cover_bytes(
         crate::thumbs::generate_thumbnail(&path, &thumb);
     }
     Ok(stored_name)
+}
+
+/// Put the cover the book file itself carries back in place of a chosen
+/// replacement (book-details-spec cover popover, "Restore original").
+///
+/// Each format's "original" is whatever import extracted: the EPUB's
+/// declared cover image, a comic's first page, a PDF's rendered first
+/// page. The bytes go through [`replace_cover_bytes`], so the replaced
+/// cover is removed and caches invalidated exactly as for a chosen one.
+/// Runs file and (for PDFs) render work — call it off the UI thread.
+pub fn restore_original_cover(
+    catalog: &crate::db::Catalog,
+    book: &crate::models::Book,
+) -> Result<String> {
+    let path = book.file_path.clone();
+    if !path.is_file() {
+        return Err(anyhow!(
+            "this book's file could not be found: {}",
+            path.display()
+        ));
+    }
+    let bytes: Vec<u8> = match book.format {
+        BookFormat::Epub => {
+            let meta = parse_epub_meta(&path)?;
+            extract_cover_bytes(&path, &meta)?
+                .map(|(_, bytes)| bytes)
+                .ok_or_else(|| anyhow!("this EPUB does not declare a cover image"))?
+        }
+        BookFormat::Cbz | BookFormat::Cbr => crate::comics::extract_comic_cover(&path)?,
+        BookFormat::Pdf => {
+            let doc = crate::pdf::PdfDocument::open(&path)?;
+            let img = doc.render_page_image(1, false)?;
+            let mut cursor = std::io::Cursor::new(Vec::new());
+            img.write_to(&mut cursor, image::ImageFormat::Png)?;
+            cursor.into_inner()
+        }
+        BookFormat::Other => {
+            return Err(anyhow!(
+                "this format has no original cover to restore"
+            ))
+        }
+    };
+    replace_cover_bytes(catalog, book, &bytes)
 }
 
 /// Sniff the format from magic bytes; extension alone is unreliable.

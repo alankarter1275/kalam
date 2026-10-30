@@ -101,6 +101,18 @@ impl LibraryRegistry {
         self.active = Some(index);
         true
     }
+
+    /// Point an entry at a different folder — the Locate flow, for a
+    /// library whose folder moved (a renamed disk, a new machine).
+    /// The name stays: it is still the same library. False if out of
+    /// range.
+    pub fn relocate(&mut self, index: usize, path: &Path) -> bool {
+        let Some(entry) = self.libraries.get_mut(index) else {
+            return false;
+        };
+        entry.path = path.to_path_buf();
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +334,22 @@ pub fn looks_like_a_library(path: &Path) -> bool {
     path.join("catalog.db").is_file()
 }
 
+/// How many books a library folder's database holds, read without
+/// opening the library: a read-only connection, so no migrations run
+/// and nothing is written into a library that is not in use. The
+/// number the Settings list shows beside a library's path; `None`
+/// when the folder holds no readable database. Touches the disk —
+/// call it from a worker.
+pub fn library_book_count(path: &Path) -> Option<i64> {
+    let conn = rusqlite::Connection::open_with_flags(
+        path.join("catalog.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()?;
+    conn.query_row("SELECT COUNT(*) FROM books", [], |row| row.get(0))
+        .ok()
+}
+
 /// On first run, put the existing library into the list.
 ///
 /// Before P6.5 there was exactly one library, in a fixed place, and the app
@@ -453,8 +481,13 @@ pub fn is_global_pref(key: &str) -> bool {
     }
     // Prefixes, so new reader settings, new bundled dictionaries and new
     // metadata or source providers are global without anyone having to
-    // remember to come back here.
-    key.starts_with("reader.")
+    // remember to come back here. `ui.` joined them with the Settings
+    // redesign (decisions 144-158): `ui.theme` was its only member and
+    // already global by name above, and the Appearance / Shortcuts prefs
+    // under it are app settings, shared by every library (settings-spec
+    // section 7) - a library must never change how the app looks.
+    key.starts_with("ui.")
+        || key.starts_with("reader.")
         || key.starts_with("bundled_dictionary_")
         || key.starts_with("meta.")
         || key.starts_with("source.")

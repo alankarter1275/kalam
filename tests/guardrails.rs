@@ -45,18 +45,25 @@ const MAX_PROD_PANICS: usize = 8;
 /// The rule behind it: pages ask `LibraryService`, they do not hold the
 /// database handle. That is what made moving queries off the UI thread a
 /// change in one place (roadmap 1.2b) rather than a sweep through every page.
-/// 58 across 22 files today — this counts occurrences, not files, so a page
+/// 46 across 21 files today — this counts occurrences, not files, so a page
 /// that stops holding a handle lowers it by however many it mentioned.
-const MAX_ARC_CATALOG_IN_PAGES: usize = 58;
+/// The book details page took a `LibraryService` in its redesign; the
+/// one mention left in its file is the shelves floating-panel builder
+/// the app still hosts, which leaves when that panel goes. The series
+/// page's redesign retired the float's six mentions.
+const MAX_ARC_CATALOG_IN_PAGES: usize = 44;
 
 /// Literal hex colours in `resources/style.css`.
 ///
 /// Colours are meant to live in `theme.rs`, with the stylesheet holding shape
-/// only, so that a theme change is one file. The stylesheet has 184 literal
-/// colours today and `theme.rs` has 169, which means the two duplicate each
-/// other and neither is the single source. Ratcheting at 184 does not fix
-/// that; it stops it getting worse while the duplication is worked down.
-const MAX_HEX_IN_CSS: usize = 184;
+/// only, so that a theme change is one file. The redesign's token phase cut
+/// the stylesheet's literal colours from 184, and every redesigned surface
+/// since has held the line; the shell phase took it to 147. The EPUB T2
+/// tranche took the reader's highlight hues into `kalam_hl_*` tokens and
+/// deleted the theme-dot rules, landing at 121. The remaining literals
+/// live on pages the redesign has not rebuilt yet and leave with them,
+/// page by page.
+const MAX_HEX_IN_CSS: usize = 121;
 
 // ---------------------------------------------------------------------------
 // The checks
@@ -405,6 +412,7 @@ fn hex_scanner_counts_colours_and_ignores_longer_runs() {
 const READER_PATH_PREFIXES: &[&str] = &[
     "src/pages/reader/",
     "src/pages/pdf_reader.rs",
+    "src/pages/pdf_reader/",
     "src/pages/comics_reader/",
 ];
 
@@ -418,21 +426,6 @@ const ALLOWED_UI_THREAD_SITES: &[(&str, &str, &str)] = &[
         "src/pages/all_books.rs",
         "if cover_path.exists() {",
         "micro-op stat: does this row's cover file exist before the widget shows it",
-    ),
-    (
-        "src/pages/author.rs",
-        "if path.is_file() {",
-        "micro-op stat: the author avatar photo (the 7.1 step-2a allowlist question)",
-    ),
-    (
-        "src/pages/author.rs",
-        "path.is_file().then_some(path)",
-        "micro-op stat: an author-work cover before the widget shows it",
-    ),
-    (
-        "src/pages/book.rs",
-        "photo.filter(|p| p.is_file())",
-        "micro-op stat: the author avatar photo on the book page",
     ),
     (
         "src/pages/comics.rs",
@@ -641,6 +634,76 @@ fn pages_touch_disk_or_documents_only_inside_tasks() {
                 .map(|f| format!("    {f}\n"))
                 .collect::<String>()
         },
+    );
+}
+
+#[test]
+fn reader_page_click_claims_only_mapped_panels() {
+    // Regression pin (2026-10-27): the reader's capture-phase page
+    // click asked a shut GtkRevealer's child `is_visible()`, which
+    // stays true while the revealer conceals it — so the click was
+    // claimed on every press and neither the Back button nor the
+    // page view's selection drag ever saw the sequence. The claim
+    // must key on what is actually mapped, and must leave the press
+    // entirely alone when no panel stands.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/pages/reader/mod.rs");
+    let text = std::fs::read_to_string(&path).expect("reader mod.rs is readable");
+    let start = text
+        .find("A click on the page while a panel stands")
+        .expect("the panel click block is still findable by its comment");
+    let block = &text[start..];
+    let end = block
+        .find("root.add_controller(click);")
+        .expect("the panel click controller is still installed on the root");
+    let block = &block[..end];
+
+    assert!(
+        block.contains("panel.is_mapped()"),
+        "the panel claim must test mapped panels:\n{block}"
+    );
+    assert!(
+        !block.contains("panel.is_visible()"),
+        "a concealed GtkRevealer child still reports visible; asking \
+         is_visible() here re-breaks Back and text selection:\n{block}"
+    );
+    assert!(
+        block.contains("if !any_open"),
+        "with no panel open the press must pass through untouched:\n{block}"
+    );
+}
+
+#[test]
+fn author_series_panel_anchors_to_card_border_box() {
+    // Regression pin (2026-10-27): the open-series panel anchored to
+    // its card with compute_point + width()/height(), which speak in
+    // the CSS content box — 20px inside the card's outline on every
+    // side with this card's padding — so the panel floated inset
+    // instead of joining the card flush (§27). It must anchor to
+    // compute_bounds (the border area), and only the revealer may
+    // take the width request: one on the padded panel box is counted
+    // in its content box and inflates the panel past its allocation.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/pages/author.rs");
+    let text = std::fs::read_to_string(&path).expect("author.rs is readable");
+    let start = text
+        .find("fn update_panel(")
+        .expect("the open-series panel builder is still findable");
+    let block = &text[start..];
+    let end = block
+        .find("fn scroll_highlights(")
+        .expect("the panel builder still ends before scroll_highlights");
+    let block = &block[..end];
+
+    assert!(
+        block.contains("compute_bounds(&overlay)"),
+        "the panel must anchor to the card's border area:\n{block}"
+    );
+    assert!(
+        !block.contains("compute_point("),
+        "compute_point anchors to the content box and insets the panel:\n{block}"
+    );
+    assert!(
+        !block.contains("panel_box.set_size_request"),
+        "a width request on the padded panel box inflates the panel:\n{block}"
     );
 }
 

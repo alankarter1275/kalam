@@ -160,6 +160,9 @@ fn build_window(app: &gtk::Application, view: ReaderView, started: std::time::In
         let shelf = shelf.clone();
         let window_weak = window.downgrade();
         let scrollbar = scrollbar.clone();
+        // Where the demo sits in the legacy theme cycle (`t` below);
+        // `KalamPrefs::default()` opened on the Sepia preset.
+        let demo_theme = std::cell::Cell::new(kalam_reader::KalamTheme::Sepia);
         let key = gtk::EventControllerKey::new();
         key.connect_key_pressed(move |_, keyval, _, _| {
             let prefs = view.prefs();
@@ -180,7 +183,10 @@ fn build_window(app: &gtk::Application, view: ReaderView, started: std::time::In
                     );
                 }
                 Some("t") => {
-                    let theme = prefs.theme.next();
+                    // The prefs carry a resolved palette now, not a named
+                    // theme; the demo owns the cycle position itself.
+                    let theme = demo_theme.get().next();
+                    demo_theme.set(theme);
                     eprintln!("demo: theme {}", theme.name());
                     view.set_theme(theme);
                 }

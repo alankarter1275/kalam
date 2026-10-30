@@ -1,10 +1,17 @@
 //! Kalam's reading preferences, and how they become engine settings.
 //!
-//! Every number and colour here is copied from Kalam's own source
-//! (`src/pages/reader/*`, `src/theme.rs`): the four reading themes with
-//! their paper and ink, the selection tints, the `reader.font_px` /
-//! `reader.line_height` / `reader.column_px` preference ranges. Nothing is
-//! invented — when Kalam changes a colour, change it here too.
+//! The numbers are Kalam's (the `reader.font_px` / `reader.line_height` /
+//! `reader.column_px` ranges), but the colours no longer live here as
+//! four fixed themes: the redesign's reader themes are the app's four
+//! palettes in light and dark (decision 19), so the app resolves its
+//! token table into a [`ReaderPalette`] and hands it over. The old
+//! Light/Sepia/Dark/Ink quartet stays as named presets over that struct
+//! — the demo still cycles them, and a caller with no token table of
+//! its own still gets Kalam's paper and ink by default. What is derived
+//! here, from whichever palette arrives, follows design-system §9: the
+//! selection tint is the ink at 16% (dark) or 14% (light), the handles
+//! are the accent, and the five highlight hues are fixed across
+//! palettes.
 
 use chapbook_core::{Palette, ReadingSettings, Rgba, Theme};
 
@@ -13,7 +20,63 @@ use chapbook_core::{Palette, ReadingSettings, Rgba, Theme};
 /// in (see `fonts.rs`), so the first choice is always available.
 pub const BODY_FONT: &str = "Literata";
 
-/// Kalam's four reading themes (`ReadingTheme` in the reader page).
+/// The resolved colours one book is painted with: the page ground, the
+/// ink, the accent, and whether this is a night palette (which decides
+/// the `prefers-color-scheme` the book sees and whether its own colours
+/// are forced away). Kalam builds one from its token table per open —
+/// the app palette, or the book's own override (decisions 19, 145, 147).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ReaderPalette {
+    /// Page background — the app's `bg` token.
+    pub background: Rgba,
+    /// Text colour — the app's `text` token.
+    pub foreground: Rgba,
+    /// The app's `accent` token: selection handles, search-match
+    /// outline, saved-word dots. Never painted into book text.
+    pub accent: Rgba,
+    /// Night palette: invert images, force publisher colours away.
+    pub dark: bool,
+}
+
+impl ReaderPalette {
+    /// Selection tint (decision 25, design-system §9): the ink itself at
+    /// 16% on dark palettes, 14% on light — a neutral wash that follows
+    /// the palette instead of the old fixed rose.
+    pub fn selection(self) -> Rgba {
+        let fg = self.foreground;
+        Rgba::new(fg.r, fg.g, fg.b, if self.dark { 41 } else { 36 })
+    }
+
+    /// The engine flavour underneath: decides `prefers-color-scheme` and
+    /// whether publisher colours are forced (night) or only defaulted.
+    fn engine_theme(self) -> Theme {
+        if self.dark {
+            Theme::Dark
+        } else {
+            Theme::Light
+        }
+    }
+
+    /// The exact colours, as the engine's palette. Kalam styles links like
+    /// body text (no colour, no underline), so `link` is the ink. The
+    /// fallback highlight colour is Kalam's yellow marker; stored
+    /// highlights carry their own colour anyway.
+    fn palette(self) -> Palette {
+        Palette {
+            background: self.background,
+            foreground: self.foreground,
+            link: self.foreground,
+            selection: self.selection(),
+            highlight: HighlightColor::Yellow.rgba(),
+            accent: self.accent,
+        }
+    }
+}
+
+/// Kalam's four legacy reading themes, kept as named [`ReaderPalette`]
+/// presets. The app no longer picks from these — it resolves its token
+/// table — but the names are what old `reader.theme` preferences hold,
+/// and the paper/ink pairs remain the crate's defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum KalamTheme {
     Light,
@@ -88,53 +151,20 @@ impl KalamTheme {
         }
     }
 
-    /// Selection tint, translucent so text stays readable through it.
-    /// Kalam's `::selection` rgba values, alpha rounded to a byte.
-    pub fn selection(self) -> Rgba {
-        match self {
-            // rgba(211,137,148,.42)
-            KalamTheme::Light => Rgba::new(211, 137, 148, 107),
-            // rgba(202,126,136,.44)
-            KalamTheme::Sepia => Rgba::new(202, 126, 136, 112),
-            // rgba(184,93,112,.52)
-            KalamTheme::Dark => Rgba::new(184, 93, 112, 133),
-            // rgba(204,104,132,.52)
-            KalamTheme::Ink => Rgba::new(204, 104, 132, 133),
-        }
-    }
-
-    /// Selection handle colour — deliberately not the selection's tint:
-    /// near black on the light themes, bright on the dark ones, so the
-    /// grips read against the paper. Kalam's `selection_style()` second
-    /// value.
-    pub fn handle(self) -> Rgba {
-        match self {
-            KalamTheme::Light | KalamTheme::Sepia => hex(0x0b0b0b),
-            KalamTheme::Dark | KalamTheme::Ink => hex(0xffd166),
-        }
-    }
-
-    /// The engine flavour underneath: decides `prefers-color-scheme` and
-    /// whether publisher colours are forced (night) or only defaulted.
-    fn engine_theme(self) -> Theme {
-        if self.is_dark() {
-            Theme::Dark
-        } else {
-            Theme::Sepia
-        }
-    }
-
-    /// The exact colours, as the engine's palette. Kalam styles links like
-    /// body text (no colour, no underline), so `link` is the ink. The
-    /// fallback highlight colour is Kalam's yellow marker; stored
-    /// highlights carry their own colour anyway.
-    fn palette(self) -> Palette {
-        Palette {
+    /// This preset as a resolved palette. The accents are Terracotta's
+    /// (the app's default palette in each mode): the presets predate the
+    /// palette system and never had accents of their own, and their
+    /// handles now follow decision 25 like everything else.
+    pub fn reader_palette(self) -> ReaderPalette {
+        ReaderPalette {
             background: self.background(),
             foreground: self.foreground(),
-            link: self.foreground(),
-            selection: self.selection(),
-            highlight: HighlightColor::Yellow.rgba(),
+            accent: if self.is_dark() {
+                hex(0xd4552a)
+            } else {
+                hex(0xc1440e)
+            },
+            dark: self.is_dark(),
         }
     }
 }
@@ -177,16 +207,21 @@ impl HighlightColor {
         }
     }
 
-    /// `#rrggbbaa` as the engine stores a highlight's colour — Kalam's
-    /// `.kalam-hl-*` rules: `rgba(244,211,94,.64)` and friends, the alpha
-    /// rounded to a byte (0.64 → a3, 0.68 → ad).
+    /// `#rrggbbaa` as the engine stores a highlight's colour. The five
+    /// hues are design-system §9's, the same in every palette, carried
+    /// at the solid band's ~30% alpha (`4d`); the line styles paint the
+    /// same hues at full strength (the frame forces their alpha, since
+    /// one stored string cannot say both). `Underline` is the retired
+    /// sixth "colour" (decision 28): the name and its blue stay
+    /// parseable so a row written before the migration still paints as
+    /// an underline, but nothing new stores it.
     pub fn css(self) -> &'static str {
         match self {
-            HighlightColor::Yellow => "#f4d35ea3",
-            HighlightColor::Green => "#8acb9ca3",
-            HighlightColor::Blue => "#8bb7f2a3",
-            HighlightColor::Pink => "#e99bbdad",
-            HighlightColor::Orange => "#f2ae72a3",
+            HighlightColor::Yellow => "#e8b93a4d",
+            HighlightColor::Green => "#6fb36f4d",
+            HighlightColor::Blue => "#5b9bd54d",
+            HighlightColor::Pink => "#d97ba84d",
+            HighlightColor::Orange => "#e08a4b4d",
             HighlightColor::Underline => "#3b82f6ff",
         }
     }
@@ -195,8 +230,8 @@ impl HighlightColor {
     pub fn rgba(self) -> Rgba {
         // Every `css()` value is a well-formed `#rrggbbaa`; the fallback
         // is unreachable and exists only so this cannot panic.
-        let default_alpha = if self == HighlightColor::Underline { 255 } else { 0xa3 };
-        Rgba::from_hex(self.css(), default_alpha).unwrap_or(Rgba::new(0xf4, 0xd3, 0x5e, 0xa3))
+        let default_alpha = if self == HighlightColor::Underline { 255 } else { 0x4d };
+        Rgba::from_hex(self.css(), default_alpha).unwrap_or(Rgba::new(0xe8, 0xb9, 0x3a, 0x4d))
     }
 }
 
@@ -206,7 +241,9 @@ impl HighlightColor {
 // No `Copy`: `font_family` owns a string, so preferences are cloned.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KalamPrefs {
-    pub theme: KalamTheme,
+    /// The resolved colours, from the app's token table (or a
+    /// [`KalamTheme`] preset for callers without one).
+    pub palette: ReaderPalette,
     /// `reader.font_px`, 13–24, default 17.
     pub font_px: f32,
     /// `reader.line_height`, 1.3–2.5 in steps of 0.1, default 1.8.
@@ -233,7 +270,7 @@ impl KalamPrefs {
     /// The preferences brought back inside Kalam's ranges.
     pub fn clamped(&self) -> KalamPrefs {
         KalamPrefs {
-            theme: self.theme,
+            palette: self.palette,
             font_px: self
                 .font_px
                 .clamp(Self::FONT_PX_RANGE.0, Self::FONT_PX_RANGE.1),
@@ -276,8 +313,8 @@ impl KalamPrefs {
                     .clone()
                     .unwrap_or_else(|| BODY_FONT.to_string()),
             ),
-            theme: prefs.theme.engine_theme(),
-            palette: Some(prefs.theme.palette()),
+            theme: prefs.palette.engine_theme(),
+            palette: Some(prefs.palette.palette()),
             user_css: Some(prefs.skin_css()),
         }
     }
@@ -309,7 +346,7 @@ impl KalamPrefs {
     /// Images need no rule: the engine fits them to the measure.
     fn skin_css(&self) -> String {
         let prefs = self.clamped();
-        let ink = prefs.theme.foreground();
+        let ink = prefs.palette.foreground;
         let ink = format!("#{:02x}{:02x}{:02x}", ink.r, ink.g, ink.b);
         let size = prefs.font_px;
         let lh = prefs.line_height;
@@ -340,7 +377,7 @@ impl KalamPrefs {
 impl Default for KalamPrefs {
     fn default() -> Self {
         KalamPrefs {
-            theme: KalamTheme::default(),
+            palette: KalamTheme::default().reader_palette(),
             font_px: 17.0,
             line_height: 1.8,
             column_px: 620.0,
@@ -403,13 +440,13 @@ mod tests {
         // Sepia ink, in every theme's skin the same way.
         assert!(skin.contains("color: #2c2820 !important"), "{skin}");
         assert!(skin.contains("text-decoration: none !important"), "{skin}");
-        assert_eq!(settings.theme, Theme::Sepia);
+        assert_eq!(settings.theme, Theme::Light);
         assert_eq!(
             settings.palette().background,
             KalamTheme::Sepia.background()
         );
         let night = KalamPrefs {
-            theme: KalamTheme::Ink,
+            palette: KalamTheme::Ink.reader_palette(),
             ..KalamPrefs::default()
         }
         .reading_settings();
@@ -434,7 +471,7 @@ mod tests {
     #[test]
     fn prefs_are_clamped_to_kalams_ranges() {
         let wild = KalamPrefs {
-            theme: KalamTheme::Light,
+            palette: KalamTheme::Light.reader_palette(),
             font_px: 99.0,
             line_height: 0.1,
             column_px: 10_000.0,
@@ -488,12 +525,34 @@ mod tests {
                 color.name()
             );
             assert_eq!(HighlightColor::from_name(color.name()), Some(color));
+            // The five hues carry the solid band's ~30% alpha; the
+            // retired underline colour stays opaque.
             let alpha = match color {
-                HighlightColor::Pink => 0xad,
                 HighlightColor::Underline => 0xff,
-                _ => 0xa3,
+                _ => 0x4d,
             };
             assert_eq!(color.rgba().a, alpha);
         }
+    }
+
+    #[test]
+    fn a_resolved_palette_derives_the_reader_tints() {
+        // Design-system §9: selection is the ink at 16% (dark) / 14%
+        // (light); the accent reaches the engine palette untouched.
+        let dark = ReaderPalette {
+            background: hex(0x1a1512),
+            foreground: hex(0xe8ded2),
+            accent: hex(0xd4552a),
+            dark: true,
+        };
+        assert_eq!(dark.selection(), Rgba::new(0xe8, 0xde, 0xd2, 41));
+        let engine = dark.palette();
+        assert_eq!(engine.accent, hex(0xd4552a));
+        assert_eq!(engine.selection, dark.selection());
+        assert_eq!(dark.engine_theme(), Theme::Dark);
+
+        let light = ReaderPalette { dark: false, ..dark };
+        assert_eq!(light.selection(), Rgba::new(0xe8, 0xde, 0xd2, 36));
+        assert_eq!(light.engine_theme(), Theme::Light);
     }
 }

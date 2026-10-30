@@ -876,6 +876,11 @@ impl BubbleManager {
                         crate::pages::reader::ReaderOut::OpenAuthor { name } => {
                             AppMsg::Push(crate::models::Route::AuthorPage { author: name })
                         }
+                        // The book head's pencil (decision 20): out to
+                        // the book's own page, the bubble left open.
+                        crate::pages::reader::ReaderOut::OpenBook { book_id } => {
+                            AppMsg::Push(crate::models::Route::BookPage { book_id })
+                        }
                     });
                 Some(BubbleReaderInstance::Epub { book_id, ctrl })
             }

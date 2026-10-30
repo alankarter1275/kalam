@@ -373,6 +373,42 @@ pub fn reader_cache_dir(uuid: &str) -> PathBuf {
     data_dir().join("cache").join("reader").join(uuid)
 }
 
+/// Deep-editor snapshots (decision 135): whole-EPUB copies taken before
+/// every save, tool, restore and import, grouped per book by uuid so a
+/// library can be carried elsewhere with its editing history intact.
+/// The rows that name them live in `editor_snapshots`; files found here
+/// without a row are orphans from a crash mid-save and can be deleted.
+pub fn editor_snapshots_dir(uuid: &str) -> PathBuf {
+    data_dir().join("editor-snapshots").join(uuid)
+}
+
+/// `~/Kalam/Editing` — where Export for editing (decision 140)
+/// puts a book file so it can be worked on in an outside app and
+/// brought back. Deliberately in the home folder, not the data
+/// dir: the dialog tells the user exactly this path, and image
+/// editors' Open dialogs should reach it without a treasure map.
+pub fn editing_dir() -> PathBuf {
+    home_dir()
+        .map(|h| h.join("Kalam").join("Editing"))
+        .unwrap_or_else(|| data_dir().join("editing"))
+}
+
+/// The file the editor's live Preview renders: a rewritten copy of
+/// the book carrying the unsaved buffer text (E2). Lives outside the
+/// library folders so no watcher or backup ever mistakes it for a book.
+pub fn editor_preview_path(uuid: &str) -> PathBuf {
+    data_dir()
+        .join("editor-preview")
+        .join(format!("{uuid}.epub"))
+}
+
+/// Where the editor's generated GtkSourceView scheme lives. Written
+/// by the service from the active palette (decision 127); the page
+/// only points the scheme manager at it.
+pub fn source_scheme_dir() -> PathBuf {
+    data_dir().join("sourceview-schemes")
+}
+
 /// `~/.local/share/kalam/covers` — covers kept for remembered metadata.
 ///
 /// Separate from `library/<uuid>/` because that directory is deleted with the

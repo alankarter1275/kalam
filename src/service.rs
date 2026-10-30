@@ -51,12 +51,19 @@
 //! `unwrap_or_default()`s. See the roadmap's A0 step 2 entry.
 
 use crate::db::{
-    Annotation, AuthorProfile, Catalog, Dictionary, DictLookup, EventKind, LibrarySession,
-    LibraryStats, QuoteRef, ReadingBookmark, ReadingEvent, ReadingListEntry, SavedWord,
-    SessionRow, Shelf, SortKey,
+    Annotation, AuthorProfile, Catalog, ComicSeriesMetadataPatch, ComicSeriesUpdateOutcome,
+    Dictionary, DictLookup, EventKind, LibrarySession, LibraryStats, QuoteRef, ReadingBookmark,
+    ReadingEvent, ReadingListEntry, SavedWord, SessionRow, Shelf, SortKey,
+};
+use crate::models::{
+    Book, BookFormat, ComicCredit, COMIC_SERIES_FIELD_COVER, COMIC_SERIES_FIELD_CREDITS,
+    COMIC_SERIES_FIELD_DESCRIPTION, COMIC_SERIES_FIELD_END_DATE, COMIC_SERIES_FIELD_GENRES,
+    COMIC_SERIES_FIELD_KNOWN_CHAPTERS, COMIC_SERIES_FIELD_KNOWN_VOLUMES,
+    COMIC_SERIES_FIELD_MEDIA_TYPE, COMIC_SERIES_FIELD_ORIGINAL_TITLE,
+    COMIC_SERIES_FIELD_PUBLISHED, COMIC_SERIES_FIELD_PUBLISHER,
+    COMIC_SERIES_FIELD_SERIALIZATION, COMIC_SERIES_FIELD_STATUS, COMIC_SERIES_FIELD_TITLE,
 };
 use crate::watch_folder::WatchFolderRule;
-use crate::models::Book;
 use std::sync::Arc;
 
 /// Reads the catalog on behalf of the UI.
@@ -72,9 +79,20 @@ pub struct LibraryService {
 /// no allocation.
 pub type Errors = Vec<String>;
 
+/// The result of applying one reviewed comic candidate: the catalog
+/// outcome, plus the cover side of the story. A cover download or
+/// cleanup failure does not fail the metadata save the reader just
+/// reviewed; it is reported beside it instead.
+#[derive(Debug, Clone, Default)]
+pub struct ComicSeriesMetadataApplyOutcome {
+    pub update: ComicSeriesUpdateOutcome,
+    pub cover_error: Option<String>,
+}
+
 /// Everything the Home page draws, fetched together.
 #[derive(Debug, Default)]
 pub struct HomeSnapshot {
+    #[allow(dead_code)]
     pub stats: LibraryStats,
     /// Recently added — bounded; Home shows a dozen covers, not the library.
     pub recent: Vec<Book>,
@@ -111,16 +129,24 @@ pub struct ReaderSnapshot {
     pub errors: Errors,
 }
 
-/// The book page's reading-stats and timeline panel.
+/// Per-book reading stats.
 ///
 /// Six reads that were each swallowed, so a database problem drew a page
-/// saying you had never read the book.
+/// saying you had never read the book. The redesigned book page removed
+/// its stats/history card (decision 79) and now reads only the chapter
+/// index and the started/finished dates; the remaining fields stay
+/// because this is still the service's per-book stats read — the perf
+/// harness and the service tests consume them.
 #[derive(Debug, Default)]
 pub struct BookStatsSnapshot {
+    #[allow(dead_code)] // stats card removed by decision 79; perf/tests read it
     pub total_seconds: i64,
+    #[allow(dead_code)] // as above
     pub session_count: i64,
     pub chapter_index: usize,
+    #[allow(dead_code)] // as above
     pub seconds_by_day: Vec<(String, i64)>,
+    #[allow(dead_code)] // as above
     pub recent_sessions: Vec<SessionRow>,
     pub finished_at: Option<String>,
     pub first_opened: Option<String>,
@@ -156,11 +182,13 @@ pub struct BookDetailSnapshot {
 /// The page builds its skeleton on the UI thread and a worker fills it
 /// when this snapshot arrives, so opening a book never touches the
 /// database, the filesystem or the EPUB parser on the UI thread. It
-/// composes the two existing per-card snapshots and adds the three reads
-/// the fill functions used to do inline: reading position (one read
-/// shared by the hero bar and the journey card), the highlights list,
-/// and the author profile. The file-size stat stays with the page's
-/// worker — it is a filesystem question, not a catalog one.
+/// composes the two existing per-card snapshots and adds the reads the
+/// redesigned page needs: reading position, annotations, bookmarks,
+/// this book's saved words, manual-shelf membership for the actions
+/// submenu, and the next volume in the series. The file-size stat stays
+/// with the page's worker — it is a filesystem question, not a catalog
+/// one. (The old author profile / other-books reads left with the
+/// author card the redesign retired; the author page has its own.)
 #[derive(Debug, Default)]
 pub struct BookPageSnapshot {
     pub detail: BookDetailSnapshot,
@@ -171,14 +199,80 @@ pub struct BookPageSnapshot {
     /// Why the highlights list is empty when that read failed — reported
     /// with the highlights wording, not a generic database error.
     pub annotations_error: Option<String>,
-    pub author_profile: Option<AuthorProfile>,
-    /// Other books by the same (first) author, for the author card's
-    /// thumbnails. Read once here instead of in the fill function.
-    pub author_other_books: Vec<Book>,
+    /// Reader bookmarks in this book — the Contents timeline's
+    /// per-chapter counts and the Annotations section's bookmark rows.
+    pub bookmarks: Vec<ReadingBookmark>,
+    /// Words saved while reading this book (book scope only; a word
+    /// saved in another volume is not this page's to show).
+    pub saved_words: Vec<SavedWord>,
+    /// Manual shelves, for the actions menu's "Add to shelf" checklist.
+    pub shelves: Vec<Shelf>,
+    /// Which of `shelves` this book is already on.
+    pub shelf_ids: Vec<i64>,
+    /// The next volume when it is in the library — the finished state's
+    /// primary action opens it.
+    pub next_in_series: Option<Book>,
+    /// The next volume's title when the cached series listing names it
+    /// but the library does not own it.
+    pub next_series_title: Option<String>,
+    /// 1-based position in the merged series listing, when known. The
+    /// page prefers the book's own `series_index` for "Book N"; this is
+    /// the fallback for books whose metadata never set one.
+    pub series_position: Option<usize>,
+    /// Length of the cached series listing ("of M"). `None` when no
+    /// listing has been fetched — the owned-book count is never passed
+    /// off as the series' total.
+    pub series_total: Option<usize>,
     /// Not read by the service (it is DB-pure): the page's worker fills
     /// this with the file's `fs::metadata` size on its way back, so the
     /// stat also stays off the UI thread.
     pub file_size: Option<u64>,
+}
+
+/// One volume on the series page: a cached listing entry, an owned book
+/// matched into it, or an owned book the listing never mentioned.
+///
+/// `book: None` is the page's dashed "Not in library" state. The position
+/// is the volume's own metadata position where one exists (fractional
+/// volumes keep their fraction); the listing's order supplies it where the
+/// owned book's metadata never set one.
+#[derive(Debug, Default)]
+pub struct SeriesEntrySnapshot {
+    pub title: String,
+    pub position: f32,
+    pub year: Option<i64>,
+    pub book: Option<Book>,
+    pub finished_at: Option<String>,
+    /// 0-based current chapter from `reading_progress`, when the book has
+    /// been opened. The chapter *count* is a file question, so the page's
+    /// worker reads it separately, exactly as the book page does.
+    pub chapter_index: Option<usize>,
+}
+
+/// Everything the series page draws, in one call.
+///
+/// The cached provider listing and the owned books are merged here — the
+/// same join [`LibraryService::book_page`] reduces to one neighbour — so
+/// the page renders one ordered row per volume and never has to know how
+/// ownership was matched. `listed_total` is `None` until a listing has
+/// been fetched: without one the owned count must never be passed off as
+/// the series' total.
+#[derive(Debug, Default)]
+pub struct SeriesPageSnapshot {
+    pub series_name: String,
+    pub first_author: String,
+    pub series_key: String,
+    pub entries: Vec<SeriesEntrySnapshot>,
+    pub listed_total: Option<usize>,
+    /// The listing's provider id (`openlibrary`) and fetch stamp, for the
+    /// source line. Both are `None` on the local-only listing.
+    pub source: Option<String>,
+    pub fetched_at: Option<String>,
+    /// The remembered Strip/List choice for this series, and the pref key
+    /// it lives under (the page writes the toggle back through it).
+    pub view_list: bool,
+    pub view_pref_key: String,
+    pub errors: Errors,
 }
 
 /// The settings page, first half (7.1 step 2c): every pref- and table-shaped
@@ -202,25 +296,143 @@ pub struct SettingsSnapshot {
     /// Watch-folder rules and the shelf list they route into (Book Files).
     pub watch_rules: Vec<WatchFolderRule>,
     pub shelves: Vec<Shelf>,
-    /// Metadata source toggles and the Google Books key/country prefs
-    /// (Metadata Sources).
+    /// Metadata source toggles and credential prefs (Metadata Sources).
     pub source_open_library: bool,
     pub source_google_books: bool,
     pub google_books_key: String,
     pub google_books_country: String,
+    /// Google rejected the stored API key on its last keyed attempt; the
+    /// Metadata sources pane shows the rejected-key state. Written by the
+    /// fetcher via `enabled_sources`, cleared on key save or success.
+    pub google_books_key_rejected: bool,
+    pub source_myanimelist: bool,
+    pub myanimelist_client_id: String,
+    pub myanimelist_client_id_rejected: bool,
+    pub source_comic_vine: bool,
+    pub comic_vine_key: String,
+    pub comic_vine_key_rejected: bool,
     /// EPUB polish-on-import and metadata writeback toggles (Book Files).
     pub clean_on_import: bool,
     pub writeback_enabled: bool,
+    /// Reading defaults (the Reading pane): the typeface picker's list
+    /// and the current global `reader.*` values, read with the reader's
+    /// own defaults and clamps so the pane opens on what a book would
+    /// actually get.
+    pub typefaces: Vec<String>,
+    pub reader_font_family: Option<String>,
+    pub reader_font_px: i64,
+    pub reader_line_height: f32,
+    pub reader_column_px: i64,
+    pub reader_justify: bool,
+    pub reader_word_memory_scope: String,
+    pub reader_ask_impression: bool,
 }
 
-/// The author page: profile, the owned-books list, and the series grouping
-/// computed from it (7.1 step 2c). The grouping used to run on the UI thread
-/// in `init`; it is pure work over the books, so the worker runs it here.
+/// One work on the author page: a cached bibliography entry, an owned book
+/// matched into it by normalised title, or an owned book the bibliography
+/// never mentioned. `book: None` is the dashed "Not in library" state.
+#[derive(Debug, Default)]
+pub struct AuthorEntrySnapshot {
+    pub title: String,
+    pub year: Option<i64>,
+    /// Series position where one is known (bibliography position, else the
+    /// owned book's `series_index`); 0 means unknown and sorts last.
+    pub position: f32,
+    pub book: Option<Book>,
+}
+
+/// One card on the author page: a series, or the standalone works.
+/// Groups arrive ordered — standalone first, then series by first year —
+/// with entries in series order (decision 106).
+#[derive(Debug, Default)]
+pub struct AuthorGroupSnapshot {
+    pub title: String,
+    /// `Some(series name)` for a series group, `None` for standalone.
+    pub series: Option<String>,
+    pub entries: Vec<AuthorEntrySnapshot>,
+}
+
+/// The pref prefix under which the author page remembers the shelf it
+/// created (`author.shelf.<normalized name>` → `"<shelf id>"`, with a
+/// `:linked` suffix when the name switch was on, so a future author
+/// rename can follow it — decision 113).
+pub const AUTHOR_SHELF_PREF_PREFIX: &str = "author.shelf.";
+
+/// The author page: profile, owned books, the grouped bibliography
+/// (cached works merged with owned books, the series page's join widened
+/// to a whole author), the author's annotations/bookmarks/words, and the
+/// shelf this page created for the author when one is live. The grouping
+/// used to run on the UI thread in `init`; it is pure work over the books,
+/// so the worker runs it here.
 #[derive(Debug, Default)]
 pub struct AuthorPageSnapshot {
     pub profile: Option<AuthorProfile>,
     pub owned_books: Vec<Book>,
-    pub series: Vec<crate::author::SeriesProgress>,
+    pub groups: Vec<AuthorGroupSnapshot>,
+    /// Newest first (the order both the highlights row and the dialog use).
+    pub annotations: Vec<Annotation>,
+    pub bookmarks: Vec<ReadingBookmark>,
+    pub words: Vec<SavedWord>,
+    /// `(shelf id, shelf name)` for the author's shelf, if one was created
+    /// from this page and still exists.
+    pub shelf: Option<(i64, String)>,
+    /// Owned books with a finished stamp — read state is "stamped or at
+    /// 100%", the series page's rule, and the stamp lives outside `Book`.
+    pub finished: std::collections::HashSet<i64>,
+}
+
+/// One author on the Authors index (decision 117): every spelling of
+/// the name in the library folded into one entry, joined with the
+/// cached profile when one exists. Book counts follow the author
+/// page's rule — comic chapters collapse into their series first.
+#[derive(Debug, Clone, Default)]
+pub struct AuthorIndexEntry {
+    pub name: String,
+    pub sort_name: String,
+    pub normalized_name: String,
+    pub book_count: usize,
+    pub read_count: usize,
+    pub series_count: usize,
+    /// Bibliography size when a fetch cached one; `None` until then.
+    pub known_works: Option<i64>,
+    pub bio: String,
+    pub birth_year: Option<i64>,
+    pub death_year: Option<i64>,
+    pub top_subjects: Vec<String>,
+    pub photo_path: Option<std::path::PathBuf>,
+    /// Every spelling that should find this author in search.
+    pub aliases: Vec<String>,
+}
+
+/// The Authors index page: one entry per author in the library,
+/// ordered by sort name.
+#[derive(Debug, Default)]
+pub struct AuthorsSnapshot {
+    pub entries: Vec<AuthorIndexEntry>,
+    pub errors: Errors,
+}
+
+/// What the Edit author dialog asks to do with the portrait. A
+/// replacement carries the image bytes; `edit_author` files them
+/// into the authors directory before the catalog write.
+#[derive(Debug, Clone, Default)]
+pub enum AuthorPortraitEdit {
+    #[default]
+    Keep,
+    Remove,
+    Replace(Vec<u8>),
+}
+
+/// The Edit author form as one value (decision 112).
+#[derive(Debug, Clone, Default)]
+pub struct AuthorEditInput {
+    pub name: String,
+    pub sort_name: String,
+    pub bio: String,
+    pub birth_date: String,
+    pub death_date: String,
+    pub aliases: Vec<String>,
+    pub portrait: AuthorPortraitEdit,
 }
 
 /// The vocabulary page: the visible word list plus its header counts.
@@ -390,6 +602,31 @@ impl LibraryService {
         &self.catalog
     }
 
+    /// Save one hand edit of a comic series. The catalog owns the
+    /// transaction and hand-edit lock bookkeeping; callers run this
+    /// on a worker like every other write.
+    pub fn update_comic_series_details(
+        &self,
+        series_id: i64,
+        edit: &crate::db::ComicSeriesEdit,
+    ) -> Result<crate::db::ComicSeriesUpdateOutcome, String> {
+        self.catalog
+            .update_comic_series_details(series_id, edit)
+            .map_err(|err| err.to_string())
+    }
+
+    /// Apply one reviewed comic-metadata candidate to its series.
+    /// This performs network and disk work for the cover, so callers
+    /// run it on a worker, never while drawing the review dialog.
+    pub fn apply_comic_series_candidate(
+        &self,
+        series_id: i64,
+        candidate: &crate::metadata::Candidate,
+        selected_fields: &[String],
+    ) -> Result<ComicSeriesMetadataApplyOutcome, String> {
+        apply_comic_series_candidate(&self.catalog, series_id, candidate, selected_fields)
+    }
+
     // -- snapshots ---------------------------------------------------------
 
     /// Home: counts strip, continue row, reading-list peek, recently added.
@@ -553,7 +790,7 @@ impl LibraryService {
     /// panic and never a silent wrong screen.
     pub fn book_page(&self, book_id: i64) -> BookPageSnapshot {
         let _t = crate::timing::measure("service_book_page");
-        let detail = self.book_detail(book_id);
+        let mut detail = self.book_detail(book_id);
         // One read for both consumers of the reading position: the hero
         // progress bar and the journey card queried it separately.
         let progress = self.catalog.get_reading_progress(book_id).ok().flatten();
@@ -563,34 +800,304 @@ impl LibraryService {
                 Ok(rows) => (rows, None),
                 Err(err) => (Vec::new(), Some(err.to_string())),
             };
-        let first_author = detail
-            .book
-            .as_ref()
-            .map(|b| b.authors.split(',').next().unwrap_or("").trim().to_string())
-            .unwrap_or_default();
-        let author_profile = if first_author.is_empty() {
-            None
-        } else {
-            self.catalog
-                .get_author_profile_by_name(&first_author)
-                .ok()
-                .flatten()
-        };
-        let author_other_books = if first_author.is_empty() {
-            Vec::new()
-        } else {
-            crate::author::owned_books_for_author(&self.catalog, &first_author)
-        };
+        let bookmarks = take(
+            self.catalog.list_reading_bookmarks(book_id),
+            "bookmarks",
+            &mut detail.errors,
+        );
+        let saved_words = take(
+            self.catalog.get_saved_words_for_scope(book_id, "book"),
+            "saved words",
+            &mut detail.errors,
+        );
+        let shelves: Vec<Shelf> = take(
+            self.catalog.list_shelves(),
+            "shelves",
+            &mut detail.errors,
+        )
+        .into_iter()
+        .filter(|s| s.kind == crate::db::ShelfKind::Manual)
+        .collect();
+        let shelf_ids: Vec<i64> = take(
+            self.catalog.shelves_for_book(book_id),
+            "shelf membership",
+            &mut detail.errors,
+        )
+        .into_iter()
+        .map(|(id, _name)| id)
+        .collect();
+
+        // Next in series: the cached provider listing joined with the
+        // owned books by normalised title — the same merge the series
+        // page renders, reduced to the one neighbour this page needs.
+        // Without a cached listing the owned books alone still answer
+        // "what do I read next", just not "of M".
+        let (next_in_series, next_series_title, series_position, series_total) =
+            self.next_in_series(book_id, detail.book.as_ref(), &mut detail.errors);
+
         BookPageSnapshot {
             detail,
             progress,
             stats,
             annotations,
             annotations_error,
-            author_profile,
-            author_other_books,
+            bookmarks,
+            saved_words,
+            shelves,
+            shelf_ids,
+            next_in_series,
+            next_series_title,
+            series_position,
+            series_total,
             // The service is DB-pure; the page's worker fills this.
             file_size: None,
+        }
+    }
+
+    /// Resolve the volume after `book_id` in its series. Returns
+    /// `(owned next, unowned next title, position, total)`.
+    #[allow(clippy::type_complexity)]
+    fn next_in_series(
+        &self,
+        book_id: i64,
+        book: Option<&Book>,
+        errors: &mut Errors,
+    ) -> (Option<Book>, Option<String>, Option<usize>, Option<usize>) {
+        let Some(book) = book else {
+            return (None, None, None, None);
+        };
+        let series = book.series.as_deref().unwrap_or("").trim();
+        if series.is_empty() {
+            return (None, None, None, None);
+        }
+        let first_author = book
+            .authors
+            .split(',')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let key = crate::db::series_key(series, &first_author);
+        let works = take(
+            self.catalog.get_cached_series(&key),
+            "series listing",
+            errors,
+        )
+        .map(|entry| entry.works)
+        .unwrap_or_default();
+        let owned = take(
+            self.catalog.books_in_series(series),
+            "books in series",
+            errors,
+        );
+
+        let normalise = |s: &str| {
+            s.to_lowercase()
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+        };
+
+        // One ordered row per volume: provider order first, owned books
+        // matched into their slots, unmatched owned books appended in
+        // series order (they are truth the provider never mentioned).
+        let mut rows: Vec<(String, Option<Book>)> = works
+            .iter()
+            .map(|w| (w.title.clone(), None))
+            .collect();
+        let mut extras: Vec<(String, Option<Book>)> = Vec::new();
+        for owned_book in owned {
+            let wanted = normalise(&owned_book.title);
+            let slot = rows
+                .iter()
+                .position(|(title, local)| local.is_none() && normalise(title) == wanted);
+            match slot {
+                Some(i) => rows[i].1 = Some(owned_book),
+                None => extras.push((owned_book.title.clone(), Some(owned_book))),
+            }
+        }
+        let has_listing = !rows.is_empty();
+        rows.extend(extras);
+
+        let Some(index) = rows
+            .iter()
+            .position(|(_, local)| local.as_ref().is_some_and(|b| b.id == book_id))
+        else {
+            return (None, None, None, None);
+        };
+        let position = Some(index + 1);
+        // "of M" only when a fetched listing backs the number.
+        let total = has_listing.then_some(rows.len());
+        match rows.into_iter().nth(index + 1) {
+            Some((_, Some(next))) => (Some(next), None, position, total),
+            Some((title, None)) => (None, Some(title), position, total),
+            None => (None, None, position, total),
+        }
+    }
+
+    /// The whole series page in one call. See `SeriesPageSnapshot`.
+    ///
+    /// The merge is the retired float's, kept honest in the same places:
+    /// provider order first, owned books matched in by normalised title,
+    /// unmatched owned books appended (they are truth the provider never
+    /// mentioned) — with one change the full page needs: an owned book's
+    /// own `series_index` outranks its slot in the provider order, so
+    /// "Book 2.5" stays Book 2.5 and sorts between 2 and 3.
+    pub fn series_page(&self, series: &str, first_author: &str) -> SeriesPageSnapshot {
+        let _t = crate::timing::measure("service_series_page");
+        let mut errors = Errors::new();
+        let series_name = series.trim().to_string();
+        let owned = take(
+            self.catalog.books_in_series(&series_name),
+            "books in series",
+            &mut errors,
+        );
+
+        let first_author = if first_author.trim().is_empty() {
+            owned
+                .first()
+                .map(|b| {
+                    b.authors
+                        .split(',')
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .to_string()
+                })
+                .unwrap_or_default()
+        } else {
+            first_author.trim().to_string()
+        };
+        let key = crate::db::series_key(&series_name, &first_author);
+        let cached = take(
+            self.catalog.get_cached_series(&key),
+            "series listing",
+            &mut errors,
+        );
+        let (works, source, fetched_at) = match cached {
+            Some(entry) => (entry.works, Some(entry.source), Some(entry.fetched_at)),
+            None => (Vec::new(), None, None),
+        };
+        // A series opened with no author and no owned books can still take
+        // its byline from the listing itself.
+        let first_author = if first_author.is_empty() {
+            works
+                .iter()
+                .find_map(|w| {
+                    let author = w.author.trim();
+                    (!author.is_empty()).then(|| author.to_string())
+                })
+                .unwrap_or_default()
+        } else {
+            first_author
+        };
+
+        let normalise = |s: &str| {
+            s.to_lowercase()
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+        };
+
+        let mut entries: Vec<SeriesEntrySnapshot> = works
+            .iter()
+            .enumerate()
+            .map(|(i, work)| SeriesEntrySnapshot {
+                title: work.title.clone(),
+                position: (i + 1) as f32,
+                year: (work.year > 0).then_some(work.year),
+                book: None,
+                finished_at: None,
+                chapter_index: None,
+            })
+            .collect();
+
+        let mut extras: Vec<Book> = Vec::new();
+        for book in owned {
+            let wanted = normalise(&book.title);
+            let slot = entries
+                .iter()
+                .position(|e| e.book.is_none() && normalise(&e.title) == wanted);
+            match slot {
+                Some(i) => {
+                    entries[i].title = book.title.clone();
+                    if book.series_index > 0.0 {
+                        entries[i].position = book.series_index;
+                    }
+                    if entries[i].year.is_none() {
+                        entries[i].year = published_year(&book.published);
+                    }
+                    entries[i].book = Some(book);
+                }
+                None => extras.push(book),
+            }
+        }
+
+        // Unindexed owned books keep the reading order `books_in_series`
+        // returned, after everything whose position is actually known.
+        let mut next_unindexed = entries
+            .iter()
+            .map(|e| e.position)
+            .fold(0.0f32, f32::max);
+        next_unindexed = extras
+            .iter()
+            .filter(|b| b.series_index > 0.0)
+            .fold(next_unindexed, |max, b| max.max(b.series_index));
+        for book in extras {
+            let position = if book.series_index > 0.0 {
+                book.series_index
+            } else {
+                next_unindexed += 1.0;
+                next_unindexed
+            };
+            entries.push(SeriesEntrySnapshot {
+                title: book.title.clone(),
+                position,
+                year: published_year(&book.published),
+                book: Some(book),
+                finished_at: None,
+                chapter_index: None,
+            });
+        }
+        entries.sort_by(|a, b| a.position.total_cmp(&b.position));
+
+        let listed_total = (!works.is_empty()).then_some(entries.len());
+
+        let owned_ids: Vec<i64> = entries
+            .iter()
+            .filter_map(|e| e.book.as_ref().map(|b| b.id))
+            .collect();
+        let finished_dates = take(
+            self.catalog.finished_dates_by_ids(&owned_ids),
+            "finished dates",
+            &mut errors,
+        );
+        let positions = take(
+            self.catalog.reading_progress_by_ids(&owned_ids),
+            "reading positions",
+            &mut errors,
+        );
+        for entry in &mut entries {
+            if let Some(book) = &entry.book {
+                entry.finished_at = finished_dates.get(&book.id).cloned();
+                entry.chapter_index = positions.get(&book.id).map(|(chapter, _)| *chapter);
+            }
+        }
+
+        let view_pref_key = format!("series.view.{key}");
+        let view_list = self.catalog.get_pref(&view_pref_key).as_deref() == Some("list");
+
+        SeriesPageSnapshot {
+            series_name,
+            first_author,
+            series_key: key,
+            entries,
+            listed_total,
+            source,
+            fetched_at,
+            view_list,
+            view_pref_key,
+            errors,
         }
     }
 
@@ -602,14 +1109,16 @@ impl LibraryService {
             Ok(rows) => (rows, None),
             Err(err) => (Vec::new(), Some(err.to_string())),
         };
-        let (source_open_library, source_google_books) = (
+        let (source_open_library, source_google_books, source_myanimelist, source_comic_vine) = (
             crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::OpenLibrary),
             crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::GoogleBooks),
+            crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::MyAnimeList),
+            crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::ComicVine),
         );
         SettingsSnapshot {
             dicts,
             dicts_error,
-            theme_id: crate::theme::current(&self.catalog).id.to_string(),
+            theme_id: crate::theme::current_choice(&self.catalog).id(),
             watch_rules: crate::watch_folder::load_watch_rules(&self.catalog),
             shelves: self.catalog.list_shelves().unwrap_or_default(),
             source_open_library,
@@ -622,30 +1131,208 @@ impl LibraryService {
                 .catalog
                 .get_pref("meta.googlebooks.country")
                 .unwrap_or_else(crate::metadata::google_books::detect_country),
+            google_books_key_rejected: self
+                .catalog
+                .get_pref("meta.googlebooks.key_rejected")
+                .map(|v| v == "1")
+                .unwrap_or(false),
+            source_myanimelist,
+            myanimelist_client_id: self
+                .catalog
+                .get_pref("meta.myanimelist.client_id")
+                .unwrap_or_default(),
+            myanimelist_client_id_rejected: self
+                .catalog
+                .get_pref("meta.myanimelist.client_id_rejected")
+                .map(|v| v == "1")
+                .unwrap_or(false),
+            source_comic_vine,
+            comic_vine_key: self
+                .catalog
+                .get_pref("meta.comicvine.key")
+                .unwrap_or_default(),
+            comic_vine_key_rejected: self
+                .catalog
+                .get_pref("meta.comicvine.key_rejected")
+                .map(|v| v == "1")
+                .unwrap_or(false),
             clean_on_import: crate::epub_sanitizer::clean_on_import_enabled(&self.catalog),
             writeback_enabled: crate::epub_metadata::write_enabled(&self.catalog),
+            // The Reading pane's data. The typeface list builds a font
+            // system just to enumerate it (bundled faces plus the user's
+            // fonts folder) — worker-only work, which is where this runs.
+            typefaces: kalam_reader::available_font_families(Some(crate::paths::fonts_dir())),
+            reader_font_family: self.catalog.get_pref("reader.font_family"),
+            reader_font_px: self.catalog.get_pref_i64("reader.font_px", 17).clamp(13, 24),
+            reader_line_height: self
+                .catalog
+                .get_pref("reader.line_height")
+                .and_then(|v| v.parse::<f32>().ok())
+                .unwrap_or(1.8)
+                .clamp(1.3, 2.5),
+            reader_column_px: self
+                .catalog
+                .get_pref_i64("reader.column_px", 620)
+                .clamp(400, 860),
+            reader_justify: self.catalog.get_pref_i64("reader.justify", 0) != 0,
+            reader_word_memory_scope: self
+                .catalog
+                .get_pref("reader.word_memory_scope")
+                .unwrap_or_else(|| "library".into()),
+            reader_ask_impression: self.catalog.get_pref_i64("reader.ask_impression", 1) != 0,
         }
     }
 
     /// The author page's whole data question in one call (7.1 step 2c):
-    /// the profile if cached, the owned books, and their series grouping.
+    /// the profile if cached, the owned books, their bibliography
+    /// grouping, and the reader's own marks across those books. Nothing
+    /// here fetches: the bibliography is shown as cached (decision 110).
     pub fn author_page(&self, author_name: &str) -> AuthorPageSnapshot {
         let _t = crate::timing::measure("service_author");
         let mut owned_books = crate::author::owned_books_for_author(&self.catalog, author_name);
         // One card per comic series, never per chapter — the author's shelf
         // obeys the same rule as every other list.
         self.catalog.collapse_comic_chapters(&mut owned_books);
-        let profile = self
+        let mut profile = self
             .catalog
             .get_author_profile_by_name(author_name)
             .ok()
             .flatten();
-        let series = crate::author::series_progress(&owned_books);
+        // The photo path is a blind join in the row mapper; whether the
+        // download still exists is settled here, on the worker, so the
+        // page never stats a file to draw the portrait (7.7).
+        if let Some(profile) = &mut profile {
+            if profile.photo_path.as_ref().is_some_and(|p| !p.is_file()) {
+                profile.photo_path = None;
+            }
+        }
+        let groups = author_groups(profile.as_ref(), &owned_books);
+
+        let ids: Vec<i64> = owned_books.iter().map(|book| book.id).collect();
+        let finished = self.catalog.finished_book_ids(&ids).unwrap_or_default();
+        let annotations = self
+            .catalog
+            .annotations_for_books(&ids)
+            .unwrap_or_default();
+        let bookmarks = self
+            .catalog
+            .reading_bookmarks_for_books(&ids)
+            .unwrap_or_default();
+        let words = self.catalog.saved_words_for_books(&ids).unwrap_or_default();
+
+        let shelf = self
+            .catalog
+            .get_pref(&format!(
+                "{AUTHOR_SHELF_PREF_PREFIX}{}",
+                crate::author::normalize_author_name(author_name)
+            ))
+            .and_then(|raw| raw.split(':').next()?.parse::<i64>().ok())
+            .and_then(|id| self.catalog.get_shelf(id).ok().flatten())
+            .map(|shelf| (shelf.id, shelf.name));
+
         AuthorPageSnapshot {
             profile,
             owned_books,
-            series,
+            groups,
+            annotations,
+            bookmarks,
+            words,
+            shelf,
+            finished,
         }
+    }
+
+    /// The Authors index (decision 117): every author named by a
+    /// book in the library, spellings folded by normalized name and
+    /// by cached-profile aliases, with the counts the cards show.
+    /// Runs on the page's worker; portrait existence is settled here
+    /// so the fill never stats a file.
+    pub fn authors(&self) -> AuthorsSnapshot {
+        let _t = crate::timing::measure("service_authors");
+        let mut errors = Errors::new();
+        let mut books = take(
+            self.catalog.list_books(SortKey::Title, ""),
+            "books",
+            &mut errors,
+        );
+        // One entry per comic series, never per chapter — the same
+        // rule the author page's owned count obeys.
+        self.catalog.collapse_comic_chapters(&mut books);
+        let ids: Vec<i64> = books.iter().map(|b| b.id).collect();
+        let finished = take(
+            self.catalog.finished_book_ids(&ids),
+            "finished books",
+            &mut errors,
+        );
+        let profiles = take(
+            self.catalog.all_author_profiles(),
+            "author profiles",
+            &mut errors,
+        );
+        let mut entries = aggregate_author_index(&books, &finished, &profiles);
+        for entry in &mut entries {
+            if entry.photo_path.as_ref().is_some_and(|p| !p.is_file()) {
+                entry.photo_path = None;
+            }
+        }
+        AuthorsSnapshot { entries, errors }
+    }
+
+    /// Save an Edit author form (decision 112). A replacement
+    /// portrait is filed into the authors directory first; the
+    /// catalog then renames the identity and locks the changed
+    /// fields in one transaction.
+    pub fn edit_author(
+        &self,
+        current_name: &str,
+        input: AuthorEditInput,
+    ) -> std::result::Result<crate::db::AuthorEditOutcome, String> {
+        let mut stored_portrait: Option<(String, bool)> = None;
+        let photo = match input.portrait {
+            AuthorPortraitEdit::Keep => crate::db::AuthorPhotoEdit::Keep,
+            AuthorPortraitEdit::Remove => crate::db::AuthorPhotoEdit::Remove,
+            AuthorPortraitEdit::Replace(bytes) => {
+                if bytes.is_empty() {
+                    return Err("That image file is empty.".into());
+                }
+                let (file, created) = store_author_portrait(&input.name, &bytes)?;
+                stored_portrait = Some((file.clone(), created));
+                crate::db::AuthorPhotoEdit::Replace(file)
+            }
+        };
+        let result = self.catalog.edit_author(
+            current_name,
+            &crate::db::AuthorEdit {
+                name: input.name,
+                sort_name: input.sort_name,
+                bio: input.bio,
+                birth_date: input.birth_date,
+                death_date: input.death_date,
+                aliases: input.aliases,
+                photo,
+            },
+        );
+        if result.is_err() {
+            // A rejected edit must not leave a newly stored portrait
+            // orphaned. A file that already existed may belong to a
+            // profile, so only this call's own file is removed.
+            if let Some((file, true)) = stored_portrait {
+                let _ = std::fs::remove_file(crate::paths::authors_dir().join(file));
+            }
+        }
+        result.map_err(|e| e.to_string())
+    }
+
+    /// Merge one author into another (decision 112); see
+    /// [`Catalog::merge_authors`] for the semantics.
+    pub fn merge_authors(
+        &self,
+        source_name: &str,
+        target_name: &str,
+    ) -> std::result::Result<crate::db::AuthorEditOutcome, String> {
+        self.catalog
+            .merge_authors(source_name, target_name)
+            .map_err(|e| e.to_string())
     }
 
     /// Vocabulary matching `query` and `known`, plus the header counts.
@@ -1008,6 +1695,593 @@ impl LibraryService {
 /// Unwrap a query result, or record why it failed and fall back to the empty
 /// value. This is the one place the "a failed read shows as empty" policy
 /// lives; it used to be repeated, silently, in every page.
+#[derive(Default)]
+struct AuthorAccum {
+    /// Display spellings seen on books, with counts — the most-used
+    /// spelling names the entry when no profile canonicalizes it.
+    candidates: std::collections::HashMap<String, usize>,
+    books: std::collections::HashSet<i64>,
+    read: std::collections::HashSet<i64>,
+    series: std::collections::HashSet<String>,
+    spellings: Vec<String>,
+    profile: Option<usize>,
+}
+
+/// Fold the library's books into one index entry per author
+/// (decision 117). Pure work over the reads `authors()` made.
+fn aggregate_author_index(
+    books: &[Book],
+    finished: &std::collections::HashSet<i64>,
+    profiles: &[AuthorProfile],
+) -> Vec<AuthorIndexEntry> {
+    use std::collections::HashMap;
+
+    let mut profile_by_key: HashMap<String, usize> = HashMap::new();
+    for (index, profile) in profiles.iter().enumerate() {
+        let mut claim = |key: String| {
+            if !key.is_empty() {
+                profile_by_key.entry(key).or_insert(index);
+            }
+        };
+        claim(profile.normalized_name.trim().to_string());
+        claim(crate::author::normalize_author_name(&profile.canonical_name));
+        claim(crate::author::normalize_author_name(&profile.sort_name));
+        for alias in &profile.aliases {
+            claim(crate::author::normalize_author_name(alias));
+        }
+    }
+
+    let mut by_key: HashMap<String, AuthorAccum> = HashMap::new();
+    for book in books {
+        if book.authors.trim().is_empty() {
+            continue;
+        }
+        for raw_name in crate::author::split_author_names(&book.authors) {
+            let key = crate::author::normalize_author_name(&raw_name);
+            if key.is_empty() {
+                continue;
+            }
+            let (identity, profile_index) = match profile_by_key.get(&key) {
+                Some(&index) => {
+                    let profile = &profiles[index];
+                    let identity = if profile.normalized_name.trim().is_empty() {
+                        crate::author::normalize_author_name(&profile.canonical_name)
+                    } else {
+                        profile.normalized_name.trim().to_string()
+                    };
+                    (identity, Some(index))
+                }
+                None => (key, None),
+            };
+            let acc = by_key.entry(identity).or_default();
+            if profile_index.is_some() {
+                acc.profile = profile_index;
+            }
+            *acc.candidates
+                .entry(crate::author::display_author_name(&raw_name))
+                .or_insert(0) += 1;
+            acc.spellings.push(raw_name);
+            acc.books.insert(book.id);
+            if finished.contains(&book.id) || book.progress >= 100 {
+                acc.read.insert(book.id);
+            }
+            if let Some(series) = book.series.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                acc.series
+                    .insert(series.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" "));
+            }
+        }
+    }
+
+    let mut entries: Vec<AuthorIndexEntry> = by_key
+        .into_iter()
+        .map(|(normalized_name, acc)| {
+            let profile = acc.profile.map(|index| &profiles[index]);
+            let name = profile
+                .map(|p| p.canonical_name.trim().to_string())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| {
+                    let mut candidates: Vec<(String, usize)> =
+                        acc.candidates.iter().map(|(n, c)| (n.clone(), *c)).collect();
+                    candidates
+                        .sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+                    candidates
+                        .into_iter()
+                        .next()
+                        .map(|(n, _)| n)
+                        .unwrap_or_default()
+                });
+            let sort_name = profile
+                .map(|p| p.sort_name.trim().to_string())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| crate::author::sort_author_name(&name));
+
+            let mut aliases: Vec<String> = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+            let mut push_alias = |alias: &str| {
+                let alias = alias.trim();
+                if !alias.is_empty()
+                    && seen.insert(crate::author::normalize_author_name(alias))
+                {
+                    aliases.push(alias.to_string());
+                }
+            };
+            for spelling in &acc.spellings {
+                push_alias(spelling);
+            }
+            if let Some(profile) = profile {
+                for alias in &profile.aliases {
+                    push_alias(alias);
+                }
+            }
+
+            AuthorIndexEntry {
+                name,
+                sort_name,
+                normalized_name,
+                book_count: acc.books.len(),
+                read_count: acc.read.len(),
+                series_count: acc.series.len(),
+                known_works: profile
+                    .filter(|p| !p.works.is_empty())
+                    .map(|p| p.work_count.max(p.works.len() as i64)),
+                bio: profile.map(|p| p.bio.clone()).unwrap_or_default(),
+                birth_year: profile.and_then(|p| published_year(&p.birth_date)),
+                death_year: profile.and_then(|p| published_year(&p.death_date)),
+                top_subjects: profile
+                    .map(|p| p.top_subjects.clone())
+                    .unwrap_or_default(),
+                photo_path: profile.and_then(|p| p.photo_path.clone()),
+                aliases,
+            }
+        })
+        .collect();
+    entries.sort_by(|a, b| {
+        a.sort_name
+            .to_lowercase()
+            .cmp(&b.sort_name.to_lowercase())
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    entries
+}
+
+/// File a hand-picked portrait into the authors directory and
+/// return its file name. Content-hashed, so picking the same image
+/// twice is one file and a changed image never reads back stale
+/// through the cover cache.
+fn store_author_portrait(
+    name: &str,
+    bytes: &[u8],
+) -> std::result::Result<(String, bool), String> {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    let ext = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        "png"
+    } else if bytes.starts_with(&[0xFF, 0xD8]) {
+        "jpg"
+    } else if bytes.starts_with(b"GIF8") {
+        "gif"
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        "webp"
+    } else {
+        "img"
+    };
+    let mut stem: String = crate::author::normalize_author_name(name)
+        .chars()
+        .take(32)
+        .collect();
+    if stem.is_empty() {
+        stem = "author".to_string();
+    }
+    let file_name = format!("custom-{stem}-{:016x}.{ext}", hasher.finish());
+    let dir = crate::paths::authors_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create the authors folder: {e}"))?;
+    let path = dir.join(&file_name);
+    if path.is_file() {
+        return Ok((file_name, false));
+    }
+    let tmp = dir.join(format!(".{file_name}.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, bytes).map_err(|e| format!("Could not save the portrait: {e}"))?;
+    match std::fs::rename(&tmp, &path) {
+        Ok(()) => Ok((file_name, true)),
+        Err(err) => {
+            let _ = std::fs::remove_file(&tmp);
+            if path.is_file() {
+                Ok((file_name, false))
+            } else {
+                Err(format!("Could not save the portrait: {err}"))
+            }
+        }
+    }
+}
+
+/// The first plausible four-digit year in a free-form published string
+/// (`1969`, `1969-06-01`, `June 1969`). The catalog stores whatever the
+/// file's metadata said, so a series row that wants a year has to dig it
+/// out rather than assume a shape.
+fn published_year(published: &str) -> Option<i64> {
+    let bytes = published.as_bytes();
+    let last = bytes.len().checked_sub(4)?;
+    for i in 0..=last {
+        if bytes[i].is_ascii_digit()
+            && bytes[i + 1].is_ascii_digit()
+            && bytes[i + 2].is_ascii_digit()
+            && bytes[i + 3].is_ascii_digit()
+        {
+            let year: i64 = published[i..i + 4].parse().ok()?;
+            if (1000..=2999).contains(&year) {
+                return Some(year);
+            }
+        }
+    }
+    None
+}
+
+/// Merge a cached bibliography with the owned books into the author
+/// page's cards (decisions 106, 110): bibliography works first (duplicate
+/// editions collapse by normalised title), owned books matched in by
+/// normalised title, unmatched owned books grouped by the series their
+/// file metadata names, else standalone. Without a bibliography the
+/// owned books alone still group the same way — the page just shows no
+/// totals and no missing works.
+fn author_groups(
+    profile: Option<&AuthorProfile>,
+    owned_books: &[Book],
+) -> Vec<AuthorGroupSnapshot> {
+    use std::collections::HashMap;
+
+    let normalise = |s: &str| {
+        s.to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect::<String>()
+    };
+
+    // Groups keyed by normalised series name; "" is standalone. Built in
+    // encounter order, reordered at the end.
+    let mut groups: Vec<AuthorGroupSnapshot> = Vec::new();
+    let mut group_index: HashMap<String, usize> = HashMap::new();
+    // Normalised title → (group, entry) for bibliography works, so owned
+    // books land in their work's slot.
+    let mut work_slots: HashMap<String, (usize, usize)> = HashMap::new();
+
+    fn group_for<'g>(
+        groups: &'g mut Vec<AuthorGroupSnapshot>,
+        group_index: &mut HashMap<String, usize>,
+        key: &str,
+        series: Option<String>,
+    ) -> &'g mut AuthorGroupSnapshot {
+        let index = *group_index.entry(key.to_string()).or_insert_with(|| {
+            groups.push(AuthorGroupSnapshot {
+                title: series
+                    .clone()
+                    .unwrap_or_else(|| "Standalone works".to_string()),
+                series,
+                entries: Vec::new(),
+            });
+            groups.len() - 1
+        });
+        &mut groups[index]
+    }
+
+    if let Some(profile) = profile {
+        for work in &profile.works {
+            let title = work.title.trim();
+            if title.is_empty() {
+                continue;
+            }
+            let title_key = normalise(title);
+            // Duplicate editions/translations of one work collapse.
+            if work_slots.contains_key(&title_key) {
+                continue;
+            }
+            let series_name = work.series_name.trim();
+            let (key, series) = if series_name.is_empty() {
+                (String::new(), None)
+            } else {
+                (normalise(series_name), Some(series_name.to_string()))
+            };
+            let group = group_for(&mut groups, &mut group_index, &key, series);
+            let group_pos = group_index[&key];
+            // Open Library positions arrive as text ("1", "2.5", sometimes
+            // prose); anything unparseable is simply unknown.
+            let position = work.series_position.trim().parse::<f32>().unwrap_or(0.0);
+            group.entries.push(AuthorEntrySnapshot {
+                title: title.to_string(),
+                year: work.first_publish_year,
+                position,
+                book: None,
+            });
+            work_slots.insert(title_key, (group_pos, group.entries.len() - 1));
+        }
+    }
+
+    for book in owned_books {
+        let title_key = normalise(&book.title);
+        if let Some(&(group_pos, entry_pos)) = work_slots.get(&title_key) {
+            let entry = &mut groups[group_pos].entries[entry_pos];
+            if entry.book.is_none() {
+                entry.title = book.title.clone();
+                if entry.year.is_none() {
+                    entry.year = published_year(&book.published);
+                }
+                if book.series_index > 0.0 {
+                    entry.position = book.series_index;
+                }
+                entry.book = Some(book.clone());
+                continue;
+            }
+        }
+        let series_name = book.series.as_deref().unwrap_or("").trim();
+        let (key, series) = if series_name.is_empty() {
+            (String::new(), None)
+        } else {
+            (normalise(series_name), Some(series_name.to_string()))
+        };
+        let group = group_for(&mut groups, &mut group_index, &key, series);
+        group.entries.push(AuthorEntrySnapshot {
+            title: book.title.clone(),
+            year: published_year(&book.published),
+            position: if book.series_index > 0.0 {
+                book.series_index
+            } else {
+                0.0
+            },
+            book: Some(book.clone()),
+        });
+    }
+
+    groups.retain(|group| !group.entries.is_empty());
+    for group in &mut groups {
+        let is_series = group.series.is_some();
+        group.entries.sort_by(|a, b| {
+            if is_series {
+                let pos = |e: &AuthorEntrySnapshot| {
+                    if e.position > 0.0 { e.position } else { f32::MAX }
+                };
+                pos(a)
+                    .partial_cmp(&pos(b))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            } else {
+                std::cmp::Ordering::Equal
+            }
+            .then_with(|| {
+                a.year
+                    .unwrap_or(i64::MAX)
+                    .cmp(&b.year.unwrap_or(i64::MAX))
+            })
+            .then_with(|| a.title.cmp(&b.title))
+        });
+    }
+    // Standalone first, then series by first year (decision 106).
+    groups.sort_by(|a, b| {
+        let rank = |g: &AuthorGroupSnapshot| {
+            (
+                g.series.is_some(),
+                g.entries
+                    .iter()
+                    .filter_map(|e| e.year)
+                    .min()
+                    .unwrap_or(i64::MAX),
+            )
+        };
+        rank(a).cmp(&rank(b)).then_with(|| a.title.cmp(&b.title))
+    });
+    groups
+}
+
+fn comic_field_selected(selected_fields: &[String], field: &str) -> bool {
+    selected_fields.iter().any(|selected| selected == field)
+}
+
+fn comic_credits_from_candidate(candidate: &crate::metadata::Candidate) -> Vec<ComicCredit> {
+    if !candidate.credits.is_empty() {
+        return candidate
+            .credits
+            .iter()
+            .map(|credit| ComicCredit {
+                role: credit.role.clone(),
+                name: credit.name.clone(),
+            })
+            .collect();
+    }
+    candidate
+        .authors
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(|name| ComicCredit {
+            role: String::new(),
+            name: name.to_string(),
+        })
+        .collect()
+}
+
+/// Convert a reviewed candidate into the catalog's patch shape. Only
+/// fields the reader left ticked in review carry values; the source
+/// identity always travels, so accepting “this is that series” works
+/// even when no field needed changing.
+fn comic_series_patch_from_candidate(
+    candidate: &crate::metadata::Candidate,
+    selected_fields: &[String],
+    cover_file: Option<String>,
+) -> Result<ComicSeriesMetadataPatch, String> {
+    let source = candidate
+        .source
+        .ok_or_else(|| "This result does not say which source it came from.".to_string())?;
+    if source.kind() != crate::metadata::SourceKind::Comic {
+        return Err(format!(
+            "{} does not describe comic series.",
+            source.label()
+        ));
+    }
+
+    let mut patch = ComicSeriesMetadataPatch {
+        source: source.key().to_string(),
+        source_id: candidate.external_id.clone().unwrap_or_default(),
+        source_url: candidate.source_url.clone().unwrap_or_default(),
+        proposed_fields: selected_fields.to_vec(),
+        ..Default::default()
+    };
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_TITLE) {
+        patch.title = Some(candidate.title.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_ORIGINAL_TITLE) {
+        patch.original_title = Some(candidate.original_title.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_CREDITS) {
+        patch.credits = Some(comic_credits_from_candidate(candidate));
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_DESCRIPTION) {
+        patch.description = Some(candidate.description.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_STATUS) {
+        patch.status = Some(candidate.status.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_PUBLISHER) {
+        patch.publisher = Some(candidate.publisher.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_SERIALIZATION) {
+        patch.serialization = Some(candidate.serialization.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_PUBLISHED) {
+        patch.published = if candidate.published.trim().is_empty() {
+            candidate.first_year.map(|year| year.to_string())
+        } else {
+            Some(candidate.published.clone())
+        };
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_END_DATE) {
+        patch.end_date = Some(candidate.end_date.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_MEDIA_TYPE) {
+        patch.media_type = Some(candidate.media_type.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_GENRES) {
+        patch.genres = Some(candidate.tags.clone());
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_KNOWN_VOLUMES) {
+        patch.known_volumes = candidate.known_volumes;
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_KNOWN_CHAPTERS) {
+        patch.known_chapters = candidate.known_chapters;
+    }
+    if comic_field_selected(selected_fields, COMIC_SERIES_FIELD_COVER) {
+        patch.cover_file = cover_file;
+    }
+    Ok(patch)
+}
+
+/// Apply one reviewed comic candidate end to end: download and write
+/// its cover when the cover was picked, let the catalog make the
+/// field/lock decisions transactionally, then remove whichever cover
+/// file the committed row no longer points at. Runs on a worker.
+pub fn apply_comic_series_candidate(
+    catalog: &Catalog,
+    series_id: i64,
+    candidate: &crate::metadata::Candidate,
+    selected_fields: &[String],
+) -> Result<ComicSeriesMetadataApplyOutcome, String> {
+    // Validate the source before any cover bytes move.
+    let _ = comic_series_patch_from_candidate(candidate, selected_fields, None)?;
+    let current = catalog
+        .get_comic_series(series_id)
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "That series is no longer in your library.".to_string())?;
+
+    let cover_selected = comic_field_selected(selected_fields, COMIC_SERIES_FIELD_COVER);
+    let cover_locked = current.is_manual_field(COMIC_SERIES_FIELD_COVER);
+    let mut cover_error: Option<String> = None;
+    let mut written_cover: Option<String> = None;
+
+    if cover_selected && !cover_locked {
+        if let Some(cover) = &candidate.cover {
+            match crate::metadata::fetch_cover(cover) {
+                Ok(bytes) => match catalog.series_folder_name_for(series_id) {
+                    Ok(folder) => {
+                        match crate::db::write_comic_series_cover(&folder, series_id, &bytes) {
+                            Ok(relative) => written_cover = Some(relative),
+                            Err(err) => {
+                                cover_error = Some(format!(
+                                    "The fetched cover could not be saved: {err}"
+                                ));
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        cover_error = Some(format!(
+                            "The fetched cover could not be saved: {err}"
+                        ));
+                    }
+                },
+                Err(err) => {
+                    cover_error = Some(format!("The cover could not be downloaded: {err}"));
+                }
+            }
+        }
+    }
+
+    let patch = comic_series_patch_from_candidate(
+        candidate,
+        selected_fields,
+        written_cover.clone(),
+    )?;
+    let mut update = match catalog.apply_comic_series_metadata(series_id, &patch) {
+        Ok(update) => update,
+        Err(err) => {
+            if let Some(file) = &written_cover {
+                let _ = crate::db::remove_comic_series_cover(file);
+            }
+            return Err(err.to_string());
+        }
+    };
+
+    if cover_selected
+        && cover_locked
+        && !update
+            .protected_fields
+            .iter()
+            .any(|field| field == COMIC_SERIES_FIELD_COVER)
+    {
+        update
+            .protected_fields
+            .push(COMIC_SERIES_FIELD_COVER.to_string());
+    }
+
+    if let Some(file) = &written_cover {
+        let cover_applied = update
+            .applied_fields
+            .iter()
+            .any(|field| field == COMIC_SERIES_FIELD_COVER);
+        if !cover_applied {
+            if let Err(err) = crate::db::remove_comic_series_cover(file) {
+                if cover_error.is_none() {
+                    cover_error = Some(format!(
+                        "The unused fetched cover could not be removed: {err}"
+                    ));
+                }
+            }
+        }
+    }
+    if let Some(old) = &update.replaced_cover_file {
+        if written_cover.as_deref() != Some(old.as_str()) {
+            if let Err(err) = crate::db::remove_comic_series_cover(old) {
+                if cover_error.is_none() {
+                    cover_error = Some(format!(
+                        "The old series cover could not be removed: {err}"
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(ComicSeriesMetadataApplyOutcome {
+        update,
+        cover_error,
+    })
+}
+
 fn take<T: Default>(result: crate::db::Result<T>, what: &str, errors: &mut Errors) -> T {
     match result {
         Ok(value) => value,
@@ -1147,6 +2421,757 @@ fn dashboard_feed(
     items
 }
 
+// ---------------------------------------------------------------------------
+// Deep EPUB editor (editor-spec.md, decisions 118–143)
+// ---------------------------------------------------------------------------
+
+/// One row of the editor picker (decision 142).
+#[derive(Debug)]
+pub struct EditorPickerEntry {
+    pub book: Book,
+    /// When the newest editor snapshot was taken — the picker's
+    /// "Edited 2 Oct" state. `None` reads "Not edited".
+    pub last_edited_at: Option<String>,
+}
+
+impl LibraryService {
+    /// Every EPUB in the library in title order, with its last-edit
+    /// stamp. PDFs and comics have no deep editor (decision 119).
+    pub fn editor_picker_entries(&self) -> Vec<EditorPickerEntry> {
+        let books = self
+            .catalog
+            .list_books(crate::db::SortKey::Title, "")
+            .unwrap_or_default();
+        books
+            .into_iter()
+            .filter(|book| matches!(book.format, BookFormat::Epub))
+            .map(|book| {
+                let last_edited_at = self.catalog.last_editor_snapshot_at(book.id);
+                EditorPickerEntry {
+                    book,
+                    last_edited_at,
+                }
+            })
+            .collect()
+    }
+
+    /// Load a book whole for the workspace. The `Err` text is
+    /// user-presentable: the can't-open state card shows it as-is
+    /// (decision 143).
+    /// Generate the editor's GtkSourceView scheme from the active
+    /// palette and write it where the page's scheme manager reads
+    /// (decision 127). Best effort: a failure leaves the previous
+    /// scheme in place rather than blocking the editor.
+    pub fn write_editor_style_scheme(&self) {
+        let theme = crate::theme::current(&self.catalog);
+        let dir = crate::paths::source_scheme_dir();
+        if std::fs::create_dir_all(&dir).is_ok() {
+            let _ = std::fs::write(
+                dir.join("kalam.xml"),
+                editor_style_scheme_xml(&theme),
+            );
+        }
+    }
+
+    pub fn open_for_editing(
+        &self,
+        book_id: i64,
+    ) -> Result<(Book, crate::epub_container::EpubContainer), String> {
+        // The editor's source colours are a GtkSourceView scheme
+        // generated from the palette; refresh it while we are already
+        // on a worker so the first tab opens in the right colours.
+        self.write_editor_style_scheme();
+        let book = self
+            .catalog
+            .get_book(book_id)
+            .ok()
+            .flatten()
+            .ok_or_else(|| "This book is no longer in the library.".to_string())?;
+        if !matches!(book.format, BookFormat::Epub) {
+            return Err("Only EPUBs can be edited.".to_string());
+        }
+        if !book.file_path.is_file() {
+            return Err(
+                "This EPUB can't be opened. The file is missing. Kalam has not changed it."
+                    .to_string(),
+            );
+        }
+        let container = crate::epub_container::EpubContainer::open(&book.file_path).map_err(
+            |_| {
+                "This EPUB can't be opened. The file is damaged. Kalam has not changed it."
+                    .to_string()
+            },
+        )?;
+        Ok((book, container))
+    }
+
+    /// Write edited files back into Kalam's copy of the book.
+    ///
+    /// Decision 135, in order: keep a whole-book snapshot, keep the
+    /// one-time `.orig` backup of the untouched original (the same
+    /// backup metadata writes make), rewrite, refresh the stored
+    /// hash, and drop the reader's extraction cache so the next read
+    /// sees the edited text instead of the pre-edit extraction.
+    pub fn save_editor_changes(
+        &self,
+        book: &Book,
+        replacements: &std::collections::HashMap<String, Vec<u8>>,
+        removals: &std::collections::HashSet<String>,
+        snapshot_label: &str,
+    ) -> Result<(), String> {
+        self.take_editor_snapshot(
+            book,
+            snapshot_label,
+            (replacements.len() + removals.len()) as i64,
+        )?;
+
+        let backup = crate::epub_metadata::backup_path(&book.file_path);
+        if !backup.exists() {
+            let _ = std::fs::copy(&book.file_path, &backup);
+        }
+
+        crate::epub_container::rewrite_epub(
+            &book.file_path,
+            &book.file_path,
+            replacements,
+            removals,
+        )
+        .map_err(|e| e.to_string())?;
+
+        if let Ok(new_hash) = crate::db::hash_file(&book.file_path) {
+            let _ = self.catalog.rehash_book(book.id, &book.file_hash, &new_hash);
+        }
+        let _ = std::fs::remove_dir_all(crate::paths::reader_cache_dir(&book.uuid));
+        Ok(())
+    }
+
+    /// A tool's snapshot (decision 135): taken after the tool has
+    /// computed its changes but before any of them is applied.
+    pub fn editor_snapshot(
+        &self,
+        book: &Book,
+        label: &str,
+        files_changed: i64,
+    ) -> Result<(), String> {
+        self.take_editor_snapshot(book, label, files_changed)
+    }
+
+    /// The snapshot every editor write takes first (decision 135):
+    /// the whole book copied aside and the row History lists.
+    fn take_editor_snapshot(
+        &self,
+        book: &Book,
+        label: &str,
+        files_changed: i64,
+    ) -> Result<(), String> {
+        let dir = crate::paths::editor_snapshots_dir(&book.uuid);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let file_name = format!("{stamp}-{}.epub", snapshot_slug(label));
+        std::fs::copy(&book.file_path, dir.join(&file_name)).map_err(|e| e.to_string())?;
+        self.catalog
+            .add_editor_snapshot(book.id, label, &file_name, files_changed)
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Write the copy the editor's live Preview renders (E2): the
+    /// book as saved, with the open buffers' unsaved text laid over
+    /// it. Never touches the book itself.
+    pub fn write_editor_preview(
+        &self,
+        book: &Book,
+        replacements: &std::collections::HashMap<String, Vec<u8>>,
+        removals: &std::collections::HashSet<String>,
+    ) -> Result<std::path::PathBuf, String> {
+        let dest = crate::paths::editor_preview_path(&book.uuid);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        crate::epub_container::rewrite_epub(
+            &book.file_path,
+            &dest,
+            replacements,
+            removals,
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(dest)
+    }
+
+    /// Read a user-chosen file for the editor (Add files, Replace
+    /// from file, Insert image). The page chooses; the service
+    /// touches disk.
+    pub fn read_editor_import(&self, path: &std::path::Path) -> Result<Vec<u8>, String> {
+        std::fs::read(path).map_err(|e| e.to_string())
+    }
+
+    /// Write an exported editor file to a user-chosen path.
+    pub fn write_editor_export(
+        &self,
+        path: &std::path::Path,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        std::fs::write(path, bytes).map_err(|e| e.to_string())
+    }
+
+    /// Re-encode one image as small as lossless allows (image
+    /// tabs' Compress, decision 126; the whole-book dialog of
+    /// decision 141 reuses it). PNG re-encodes at best
+    /// compression; JPEG has no generic lossless shrink, so the
+    /// original comes back and the caller reports no saving.
+    pub fn compress_image_lossless(&self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?;
+        let format = reader.format();
+        let img = reader.decode().map_err(|e| e.to_string())?;
+        let mut out: Vec<u8> = Vec::new();
+        match format {
+            Some(image::ImageFormat::Png) => {
+                let encoder = image::codecs::png::PngEncoder::new_with_quality(
+                    std::io::Cursor::new(&mut out),
+                    image::codecs::png::CompressionType::Best,
+                    image::codecs::png::FilterType::Adaptive,
+                );
+                img.write_with_encoder(encoder).map_err(|e| e.to_string())?;
+                Ok(out)
+            }
+            Some(image::ImageFormat::Gif) => {
+                img.write_to(
+                    &mut std::io::Cursor::new(&mut out),
+                    image::ImageFormat::Gif,
+                )
+                .map_err(|e| e.to_string())?;
+                Ok(out)
+            }
+            _ => Ok(bytes.to_vec()),
+        }
+    }
+
+    /// Make a chosen replacement cover match the standing cover
+    /// file's format (decision 139), so the bytes the editor
+    /// swaps in never lie about the manifest's media type. Only
+    /// JPEG/PNG targets convert; anything else passes through.
+    pub fn prepare_cover_image(
+        &self,
+        bytes: &[u8],
+        target_ext: Option<&str>,
+    ) -> Result<Vec<u8>, String> {
+        let Some(ext) = target_ext else {
+            return Ok(bytes.to_vec());
+        };
+        let want = match ext.to_ascii_lowercase().as_str() {
+            "jpg" | "jpeg" => image::ImageFormat::Jpeg,
+            "png" => image::ImageFormat::Png,
+            _ => return Ok(bytes.to_vec()),
+        };
+        let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?;
+        if reader.format() == Some(want) {
+            return Ok(bytes.to_vec());
+        }
+        let img = reader.decode().map_err(|e| e.to_string())?;
+        let mut out: Vec<u8> = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut out), want)
+            .map_err(|e| e.to_string())?;
+        Ok(out)
+    }
+
+    /// One image through the Compress images engine (decision
+    /// 141). Lossless never loses a pixel. Smaller additionally
+    /// re-encodes JPEGs at a gentler quality; formats never
+    /// change, so a swapped-in file never lies about its
+    /// extension or the manifest's media type.
+    pub fn compress_book_image(
+        &self,
+        bytes: &[u8],
+        smaller: bool,
+    ) -> Result<Vec<u8>, String> {
+        let lossless = self.compress_image_lossless(bytes)?;
+        if !smaller {
+            return Ok(lossless);
+        }
+        let reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+            .with_guessed_format()
+            .map_err(|e| e.to_string())?;
+        if reader.format() != Some(image::ImageFormat::Jpeg) {
+            return Ok(lossless);
+        }
+        let img = reader.decode().map_err(|e| e.to_string())?;
+        let mut out: Vec<u8> = Vec::new();
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+            std::io::Cursor::new(&mut out),
+            80,
+        );
+        img.write_with_encoder(encoder).map_err(|e| e.to_string())?;
+        Ok(if out.len() < lossless.len() { out } else { lossless })
+    }
+
+    /// Materialise an embedded font and learn its family name,
+    /// for the specimen tab (decision 126). The page loads the
+    /// file into a private Pango font map for the preview only.
+    pub fn editor_font_preview(
+        &self,
+        book: &Book,
+        inner_path: &str,
+        bytes: &[u8],
+    ) -> Result<(std::path::PathBuf, String), String> {
+        let dest = self.materialize_editor_file(book, inner_path, bytes)?;
+        let mut db = fontdb::Database::new();
+        db.load_font_data(bytes.to_vec());
+        let family = db
+            .faces()
+            .next()
+            .and_then(|face| face.families.first().map(|(name, _)| name.clone()))
+            .unwrap_or_else(|| {
+                inner_path
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("Font")
+                    .to_string()
+            });
+        Ok((dest, family))
+    }
+
+    /// Subset an embedded font to the glyphs for `chars`
+    /// (decision 141). The pure engine refuses what it cannot
+    /// honestly cut (CFF, WOFF2); the dialog shows real sizes
+    /// from having already run it.
+    pub fn editor_subset_font(
+        &self,
+        bytes: &[u8],
+        chars: &std::collections::HashSet<char>,
+    ) -> Result<Vec<u8>, String> {
+        crate::font_subset::subset_font(bytes, chars)
+    }
+
+    /// A font file's family name, when it parses.
+    pub fn font_family(&self, bytes: &[u8]) -> Option<String> {
+        let mut db = fontdb::Database::new();
+        db.load_font_data(bytes.to_vec());
+        let found = db
+            .faces()
+            .next()
+            .and_then(|face| face.families.first().map(|(name, _)| name.clone()));
+        found
+    }
+
+    /// Embed fonts' scan (decision 141): of the families the
+    /// book's CSS names, which the book lacks, and where each
+    /// lives on this computer when it does. Generic families
+    /// are the reader's business and never appear.
+    pub fn embed_font_candidates(
+        &self,
+        used: Vec<String>,
+        embedded: Vec<Vec<u8>>,
+    ) -> Vec<(String, Option<std::path::PathBuf>)> {
+        const GENERIC: [&str; 8] = [
+            "serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui",
+            "ui-serif", "ui-sans-serif",
+        ];
+        let have: Vec<String> = embedded
+            .iter()
+            .filter_map(|bytes| self.font_family(bytes))
+            .map(|name| name.to_ascii_lowercase())
+            .collect();
+        let mut seen: Vec<String> = Vec::new();
+        let mut out = Vec::new();
+        for family in used {
+            let key = family.to_ascii_lowercase();
+            if GENERIC.contains(&key.as_str())
+                || have.contains(&key)
+                || seen.contains(&key)
+            {
+                continue;
+            }
+            seen.push(key);
+            let found = self.find_system_font(&family);
+            out.push((family, found));
+        }
+        out
+    }
+
+    /// Where a font family lives on this computer, for Embed
+    /// fonts (decision 141). Collections are skipped — embedding
+    /// a whole TTC for one face would bloat the book.
+    pub fn find_system_font(&self, family: &str) -> Option<std::path::PathBuf> {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        let found = db
+            .faces()
+            .find(|face| {
+                face.families
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case(family))
+            })
+            .and_then(|face| match &face.source {
+                fontdb::Source::File(path) => Some(path.clone()),
+                _ => None,
+            });
+        found
+    }
+
+    /// One external link's verdict, board-worded ("Works",
+    /// "404 Not found", "Moved to https", …). Sync HTTP on the
+    /// caller's worker thread; never on the UI thread, and only
+    /// ever from the Check external links dialog.
+    pub fn check_external_link(&self, url: &str) -> String {
+        let agent = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(10))
+            .redirects(0)
+            .build();
+        let result = agent
+            .head(url)
+            .set("User-Agent", "Mozilla/5.0 (compatible; Kalam)")
+            .call();
+        let result = match result {
+            Err(ureq::Error::Status(405, _)) => agent
+                .get(url)
+                .set("User-Agent", "Mozilla/5.0 (compatible; Kalam)")
+                .call(),
+            other => other,
+        };
+        let verdict = |code: u16, location: Option<String>| -> String {
+            match code {
+                200..=299 => "Works".to_string(),
+                300..=399 => {
+                    let moved_https = url.starts_with("http://")
+                        && location
+                            .as_deref()
+                            .map(|l| l.starts_with("https://"))
+                            .unwrap_or(false);
+                    if moved_https {
+                        "Moved to https".to_string()
+                    } else {
+                        "Moved".to_string()
+                    }
+                }
+                404 => "404 Not found".to_string(),
+                410 => "410 Gone".to_string(),
+                other => format!("{other}"),
+            }
+        };
+        match result {
+            Ok(response) => verdict(
+                response.status(),
+                response.header("location").map(str::to_string),
+            ),
+            Err(ureq::Error::Status(code, response)) => verdict(
+                code,
+                response.header("location").map(str::to_string),
+            ),
+            Err(_) => "Could not reach".to_string(),
+        }
+    }
+
+    /// Put one book file in `~/Kalam/Editing` for outside editing
+    /// (decision 140) and say where it landed. The dialog watches
+    /// the copy and brings it back with `read_editor_import`.
+    pub fn export_for_editing(
+        &self,
+        inner_path: &str,
+        bytes: &[u8],
+    ) -> Result<std::path::PathBuf, String> {
+        let dir = crate::paths::editing_dir();
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let name = inner_path.rsplit('/').next().unwrap_or("file");
+        let dest = dir.join(name);
+        std::fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+        Ok(dest)
+    }
+
+    /// Materialise a working copy of one book file so an external
+    /// app can open it (tree menu, decision 125). Written under
+    /// the cache with its real name so the external app titles it
+    /// sensibly.
+    pub fn materialize_editor_file(
+        &self,
+        book: &Book,
+        inner_path: &str,
+        bytes: &[u8],
+    ) -> Result<std::path::PathBuf, String> {
+        let dir = crate::paths::reader_cache_dir(&book.uuid).join("editor-external");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let name = inner_path.rsplit('/').next().unwrap_or("file");
+        let dest = dir.join(name);
+        std::fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+        Ok(dest)
+    }
+
+    /// Every distinct headword key in the merged dictionary store,
+    /// for the editor's spell check (decision 137). Keys are
+    /// already case/diacritic-folded in `combined_words`.
+    pub fn spell_wordlist(&self) -> Result<Vec<String>, String> {
+        self.catalog.spell_headwords().map_err(|e| e.to_string())
+    }
+
+    /// The editor's History (decision 134): every snapshot,
+    /// newest first, with the untouched original last while its
+    /// `.orig` backup stands.
+    pub fn editor_history(&self, book: &Book) -> Vec<crate::db::EditorVersion> {
+        let dir = crate::paths::editor_snapshots_dir(&book.uuid);
+        let mut out: Vec<crate::db::EditorVersion> = self
+            .catalog
+            .editor_snapshots(book.id)
+            .into_iter()
+            .map(|s| crate::db::EditorVersion {
+                missing: !dir.join(&s.file_name).exists(),
+                snapshot_id: Some(s.id),
+                label: s.label,
+                created_at: s.created_at,
+                files_changed: Some(s.files_changed),
+            })
+            .collect();
+        if crate::epub_metadata::backup_path(&book.file_path).exists() {
+            out.push(crate::db::EditorVersion {
+                snapshot_id: None,
+                label: "Original file".to_string(),
+                created_at: book.added_at.clone(),
+                files_changed: None,
+                missing: false,
+            });
+        }
+        out
+    }
+
+    fn editor_version_path(
+        &self,
+        book: &Book,
+        snapshot_id: Option<i64>,
+    ) -> Result<std::path::PathBuf, String> {
+        match snapshot_id {
+            None => Ok(crate::epub_metadata::backup_path(&book.file_path)),
+            Some(id) => self
+                .catalog
+                .editor_snapshots(book.id)
+                .into_iter()
+                .find(|s| s.id == id)
+                .map(|s| crate::paths::editor_snapshots_dir(&book.uuid).join(s.file_name))
+                .ok_or_else(|| "That snapshot no longer exists.".to_string()),
+        }
+    }
+
+    /// Open one History version read-only, for Compare.
+    pub fn open_editor_version(
+        &self,
+        book: &Book,
+        snapshot_id: Option<i64>,
+    ) -> Result<crate::epub_container::EpubContainer, String> {
+        let path = self.editor_version_path(book, snapshot_id)?;
+        crate::epub_container::EpubContainer::open(&path).map_err(|e| e.to_string())
+    }
+
+    /// Put a History version back as the book (decision 134): a
+    /// snapshot of the current book is kept first, the version
+    /// is verified to open before it replaces anything, then
+    /// the stored hash and reader cache are refreshed exactly
+    /// as after a save.
+    pub fn restore_editor_version(
+        &self,
+        book: &Book,
+        snapshot_id: Option<i64>,
+    ) -> Result<(), String> {
+        let source = self.editor_version_path(book, snapshot_id)?;
+        crate::epub_container::EpubContainer::open(&source).map_err(|e| e.to_string())?;
+        self.take_editor_snapshot(book, "Before restore", 0)?;
+        let tmp = book.file_path.with_extension("epub.kalam-restore");
+        std::fs::copy(&source, &tmp).map_err(|e| e.to_string())?;
+        if let Err(e) = std::fs::rename(&tmp, &book.file_path) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e.to_string());
+        }
+        if let Ok(new_hash) = crate::db::hash_file(&book.file_path) {
+            let _ = self.catalog.rehash_book(book.id, &book.file_hash, &new_hash);
+        }
+        let _ = std::fs::remove_dir_all(crate::paths::reader_cache_dir(&book.uuid));
+        Ok(())
+    }
+
+    /// Remove one file from the book (Problems' Remove, decision
+    /// 132): snapshot first, then rewrite without the file and
+    /// without its manifest (and spine, if any) entries.
+    pub fn remove_editor_file(&self, book: &Book, path: &str) -> Result<(), String> {
+        let container =
+            crate::epub_container::EpubContainer::open(&book.file_path).map_err(|e| e.to_string())?;
+        self.take_editor_snapshot(book, "Before fix", 1)?;
+
+        let backup = crate::epub_metadata::backup_path(&book.file_path);
+        if !backup.exists() {
+            let _ = std::fs::copy(&book.file_path, &backup);
+        }
+
+        let mut replacements: std::collections::HashMap<String, Vec<u8>> =
+            std::collections::HashMap::new();
+        if let Some(opf_text) = container.text(&container.opf_path) {
+            let href = opf_relative_href(&container.opf_path, path);
+            let (stripped, removed_id) = strip_manifest_item(&opf_text, &href);
+            let stripped = match &removed_id {
+                Some(id) => strip_spine_itemref(&stripped, id),
+                None => stripped,
+            };
+            if stripped != opf_text {
+                replacements.insert(container.opf_path.clone(), stripped.into_bytes());
+            }
+        }
+        let removals: std::collections::HashSet<String> = [path.to_string()].into_iter().collect();
+        crate::epub_container::rewrite_epub(&book.file_path, &book.file_path, &replacements, &removals)
+            .map_err(|e| e.to_string())?;
+
+        if let Ok(new_hash) = crate::db::hash_file(&book.file_path) {
+            let _ = self.catalog.rehash_book(book.id, &book.file_hash, &new_hash);
+        }
+        let _ = std::fs::remove_dir_all(crate::paths::reader_cache_dir(&book.uuid));
+        Ok(())
+    }
+}
+
+/// `OEBPS/content.opf` + `OEBPS/images/a.jpg` → `images/a.jpg`;
+/// files outside the OPF folder climb with `../`.
+fn opf_relative_href(opf_path: &str, file_path: &str) -> String {
+    let dir = opf_path.rfind('/').map(|i| &opf_path[..i + 1]).unwrap_or("");
+    if let Some(rest) = file_path.strip_prefix(dir) {
+        return rest.to_string();
+    }
+    let ups = dir.matches('/').count();
+    format!("{}{}", "../".repeat(ups), file_path)
+}
+
+/// The value of `name="…"` inside one tag's text.
+fn tag_attr(tag: &str, name: &str) -> Option<String> {
+    let needle = format!("{name}=\"");
+    let start = tag.find(&needle)? + needle.len();
+    let end = tag[start..].find('"')? + start;
+    Some(tag[start..end].to_string())
+}
+
+/// Remove the `<item … href="href" …>` tag from the OPF, returning
+/// the new text and the removed item's id. Match is on the decoded
+/// href, so `images/my%20pic.jpg` finds `images/my pic.jpg`.
+fn strip_manifest_item(opf: &str, href: &str) -> (String, Option<String>) {
+    let mut search_from = 0usize;
+    while let Some(rel) = opf[search_from..].find("<item") {
+        let at = search_from + rel;
+        let after = opf[at + 5..].chars().next().unwrap_or('>');
+        if !(after.is_whitespace() || after == '/' || after == '>') {
+            search_from = at + 5; // <itemref — not a manifest item
+            continue;
+        }
+        let Some(end_rel) = opf[at..].find('>') else { break };
+        let tag = &opf[at..at + end_rel + 1];
+        let matches = tag_attr(tag, "href")
+            .map(|h| crate::epub::percent_decode(&h) == href)
+            .unwrap_or(false);
+        if matches {
+            let id = tag_attr(tag, "id");
+            let mut out = String::with_capacity(opf.len());
+            out.push_str(&opf[..at]);
+            out.push_str(&opf[at + end_rel + 1..]);
+            return (out, id);
+        }
+        search_from = at + end_rel + 1;
+    }
+    (opf.to_string(), None)
+}
+
+/// Remove `<itemref idref="id" …>` from the spine.
+fn strip_spine_itemref(opf: &str, id: &str) -> String {
+    let mut search_from = 0usize;
+    while let Some(rel) = opf[search_from..].find("<itemref") {
+        let at = search_from + rel;
+        let Some(end_rel) = opf[at..].find('>') else { break };
+        let tag = &opf[at..at + end_rel + 1];
+        if tag_attr(tag, "idref").as_deref() == Some(id) {
+            let mut out = String::with_capacity(opf.len());
+            out.push_str(&opf[..at]);
+            out.push_str(&opf[at + end_rel + 1..]);
+            return out;
+        }
+        search_from = at + end_rel + 1;
+    }
+    opf.to_string()
+}
+
+/// "Before save" → `before-save`, for snapshot file names.
+/// The editor's GtkSourceView scheme, generated from palette tokens
+/// (decision 127): tags in accent, names in text, values and
+/// comments in text-2, comments italic, errors danger.
+fn editor_style_scheme_xml(theme: &crate::theme::Theme) -> String {
+    let xml = format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<style-scheme id="kalam" _name="Kalam" version="1.0">
+  <author>Kalam</author>
+  <_description>Generated from the active Kalam palette.</_description>
+  <color name="bg" value="{bg}"/>
+  <color name="text" value="{text}"/>
+  <color name="text2" value="{text2}"/>
+  <color name="accent" value="{accent}"/>
+  <color name="border" value="{border}"/>
+  <color name="surface2" value="{surface2}"/>
+  <color name="danger" value="{danger}"/>
+  <style name="text" foreground="text" background="bg"/>
+  <style name="selection" foreground="text" background="surface2"/>
+  <style name="cursor" foreground="accent"/>
+  <style name="secondary-cursor" foreground="accent"/>
+  <style name="current-line" background="border"/>
+  <style name="line-numbers" foreground="text2" background="bg"/>
+  <style name="current-line-number" foreground="text" background="border"/>
+  <style name="search-match" foreground="text" background="surface2"/>
+  <style name="bracket-match" foreground="text" background="surface2"/>
+  <style name="bracket-mismatch" foreground="danger" background="surface2"/>
+  <style name="def:comment" foreground="text2" italic="true"/>
+  <style name="def:string" foreground="text2"/>
+  <style name="def:keyword" foreground="text"/>
+  <style name="def:type" foreground="text"/>
+  <style name="def:function" foreground="text"/>
+  <style name="def:identifier" foreground="text"/>
+  <style name="def:statement" foreground="text"/>
+  <style name="def:constant" foreground="text"/>
+  <style name="def:number" foreground="text"/>
+  <style name="def:decimal" foreground="text"/>
+  <style name="def:floating-point" foreground="text"/>
+  <style name="def:special-char" foreground="text2"/>
+  <style name="def:preprocessor" foreground="text2"/>
+  <style name="def:error" foreground="danger"/>
+  <style name="xml:tags" foreground="accent"/>
+  <style name="xml:element-name" foreground="accent"/>
+  <style name="xml:attribute-name" foreground="text"/>
+  <style name="xml:attribute-value" foreground="text2"/>
+  <style name="xml:entity" foreground="text2"/>
+  <style name="xml:namespace" foreground="accent"/>
+  <style name="html:tag" foreground="accent"/>
+  <style name="css:property-name" foreground="text"/>
+  <style name="css:at-rule" foreground="accent"/>
+</style-scheme>
+"##,
+        bg = theme.bg,
+        text = theme.text,
+        text2 = theme.text_dim,
+        accent = theme.accent,
+        border = theme.border,
+        surface2 = theme.surface_2,
+        danger = theme.danger,
+    );
+    xml
+}
+
+fn snapshot_slug(label: &str) -> String {
+    let slug: String = label
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let slug = slug.trim_matches('-');
+    if slug.is_empty() {
+        "snapshot".to_string()
+    } else {
+        slug.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1172,6 +3197,8 @@ mod tests {
         assert_send::<BookStatsSnapshot>();
         // The book page snapshot crosses a worker boundary (7.1 step 2a).
         assert_send::<BookPageSnapshot>();
+        // The series page reads on the same worker pattern.
+        assert_send::<SeriesPageSnapshot>();
         // Settings and the author page join it in 7.1 step 2c.
         assert_send::<SettingsSnapshot>();
         assert_send::<AuthorPageSnapshot>();
@@ -1246,10 +3273,12 @@ mod tests {
         );
         assert_eq!(snap.progress.map(|(c, _)| c), Some(3));
         assert_eq!(snap.annotations.len(), 5);
-        // Both books share an author, so the list has both — the author
-        // card filters out the book itself when it draws.
-        assert_eq!(snap.author_other_books.len(), 2);
-        assert!(snap.author_other_books.iter().any(|b| b.title == "Bare"));
+        // The redesign's reads ride along empty rather than erroring:
+        // no bookmarks or saved words were seeded, and neither book is
+        // in a series, so there is no next volume to offer.
+        assert!(snap.bookmarks.is_empty());
+        assert!(snap.saved_words.is_empty());
+        assert!(snap.next_in_series.is_none());
     }
 
     /// 7.1 step 2c: the settings snapshot is one fixed set of statements.
@@ -1330,6 +3359,229 @@ mod tests {
         // AuthorProfile is not PartialEq, so the emptiness is asked, not
         // compared.
         assert!(snap.profile.is_none());
+    }
+
+    #[test]
+    fn author_page_groups_bibliography_with_owned_books() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let cat = svc.catalog();
+
+        // Owned: series books 1 and 3 of "Alpha", one standalone the
+        // bibliography never mentions.
+        let one = seed(cat, "Alpha One", &[]);
+        let three = seed(cat, "Alpha Three", &[]);
+        seed(cat, "Loose Ends", &[]);
+        cat.set_book_series(one, Some("Alpha"), 1.0).unwrap();
+        cat.set_book_series(three, Some("Alpha"), 3.0).unwrap();
+
+        let work = |title: &str, series: &str, position: &str, year: i64| crate::db::AuthorWork {
+            title: title.into(),
+            series_name: series.into(),
+            series_position: position.into(),
+            first_publish_year: Some(year),
+            ..crate::db::AuthorWork::default()
+        };
+        let profile = AuthorProfile {
+            canonical_name: "An Author".into(),
+            normalized_name: crate::author::normalize_author_name("An Author"),
+            works: vec![
+                work("Alpha One", "Alpha", "1", 2001),
+                work("Alpha Two", "Alpha", "2", 2003),
+                // A duplicate edition of the same work collapses.
+                work("Alpha Two", "Alpha", "2", 2004),
+                work("Alpha Three", "Alpha", "3", 2005),
+                work("Solo Flight", "", "", 1999),
+            ],
+            ..AuthorProfile::default()
+        };
+        cat.upsert_author_profile(&profile).unwrap();
+
+        let snap = svc.author_page("An Author");
+        // Standalone first, then the series (decision 106).
+        assert_eq!(snap.groups.len(), 2);
+        let standalone = &snap.groups[0];
+        assert_eq!(standalone.title, "Standalone works");
+        assert!(standalone.series.is_none());
+        // Year order: the bibliography's Solo Flight (missing), then the
+        // unlisted owned book.
+        assert_eq!(standalone.entries.len(), 2);
+        assert_eq!(standalone.entries[0].title, "Solo Flight");
+        assert!(standalone.entries[0].book.is_none());
+        assert_eq!(standalone.entries[1].title, "Loose Ends");
+        assert!(standalone.entries[1].book.is_some());
+
+        let alpha = &snap.groups[1];
+        assert_eq!(alpha.series.as_deref(), Some("Alpha"));
+        assert_eq!(alpha.entries.len(), 3, "duplicate edition collapsed");
+        assert_eq!(
+            alpha
+                .entries
+                .iter()
+                .map(|e| e.book.is_some())
+                .collect::<Vec<_>>(),
+            vec![true, false, true],
+            "position order with the middle book missing"
+        );
+        assert_eq!(alpha.entries[1].year, Some(2003));
+        assert_eq!(alpha.entries[2].position, 3.0);
+    }
+
+    #[test]
+    fn authors_index_folds_spellings_and_counts_books() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let cat = svc.catalog();
+        let seed_author = |uuid: &str, title: &str, authors: &str, series: Option<&str>| {
+            cat.insert_book(
+                uuid,
+                title,
+                authors,
+                series,
+                "",
+                BookFormat::Epub,
+                &format!("{uuid}.epub"),
+                &format!("hash-{uuid}"),
+                None,
+                &[],
+            )
+            .unwrap()
+        };
+
+        let first = seed_author(
+            "idx-1",
+            "A Wizard of Earthsea",
+            "Le Guin, Ursula K.",
+            Some("Earthsea"),
+        );
+        seed_author(
+            "idx-2",
+            "The Tombs of Atuan",
+            "Ursula K. Le Guin",
+            Some("Earthsea"),
+        );
+        seed_author("idx-3", "The Dispossessed", "Ursula Le Guin", None);
+        seed_author(
+            "idx-4",
+            "A Shared Book",
+            "Ursula K. Le Guin; Another Author",
+            None,
+        );
+        cat.set_book_finished(first, true).unwrap();
+
+        let profile = AuthorProfile {
+            canonical_name: "Ursula K. Le Guin".into(),
+            sort_name: "Le Guin, Ursula K.".into(),
+            normalized_name: crate::author::normalize_author_name("Ursula K. Le Guin"),
+            birth_date: "21 October 1929".into(),
+            death_date: "22 January 2018".into(),
+            work_count: 12,
+            works: vec![
+                crate::db::AuthorWork {
+                    title: "A Wizard of Earthsea".into(),
+                    ..crate::db::AuthorWork::default()
+                },
+                crate::db::AuthorWork {
+                    title: "The Tombs of Atuan".into(),
+                    ..crate::db::AuthorWork::default()
+                },
+            ],
+            aliases: vec!["Ursula Le Guin".into()],
+            ..AuthorProfile::default()
+        };
+        cat.upsert_author_profile(&profile).unwrap();
+        // A cached profile with no books left is not an author *in
+        // the library* and stays off the index.
+        let ghost = AuthorProfile {
+            canonical_name: "Ghost Author".into(),
+            normalized_name: crate::author::normalize_author_name("Ghost Author"),
+            ..AuthorProfile::default()
+        };
+        cat.upsert_author_profile(&ghost).unwrap();
+
+        let snap = svc.authors();
+        assert!(snap.errors.is_empty(), "{:?}", snap.errors);
+        assert_eq!(snap.entries.len(), 2);
+        assert_eq!(snap.entries[0].name, "Another Author");
+        assert_eq!(snap.entries[0].book_count, 1);
+
+        let le_guin = &snap.entries[1];
+        assert_eq!(le_guin.name, "Ursula K. Le Guin");
+        assert_eq!(le_guin.book_count, 4);
+        assert_eq!(le_guin.read_count, 1);
+        assert_eq!(le_guin.series_count, 1);
+        assert_eq!(le_guin.known_works, Some(12));
+        assert_eq!(le_guin.birth_year, Some(1929));
+        assert_eq!(le_guin.death_year, Some(2018));
+        assert!(le_guin.aliases.iter().any(|a| a == "Ursula Le Guin"));
+    }
+
+    #[test]
+    fn series_page_merges_the_listing_with_owned_books() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let cat = svc.catalog();
+        let one = seed(cat, "Alpha One", &[]);
+        let two = seed(cat, "Alpha Two", &[]);
+        cat.set_book_series(one, Some("Alpha"), 1.0).unwrap();
+        // A fractional owned position outranks the listing's slot for the
+        // same work: the listing puts this third, the book says 2.5.
+        cat.set_book_series(two, Some("Alpha"), 2.5).unwrap();
+        cat.set_book_finished(one, true).unwrap();
+        cat.set_reading_progress(two, 8, 0.5, 10).unwrap();
+        {
+            let conn = cat.conn();
+            conn.execute(
+                "UPDATE books SET published = 'June 2001', progress = 42 WHERE id = ?1",
+                rusqlite::params![two],
+            )
+            .unwrap();
+        }
+
+        let works = vec![
+            crate::db::SeriesWork {
+                title: "Alpha One".into(),
+                key: String::new(),
+                cover_path: String::new(),
+                year: 1998,
+                author: "An Author".into(),
+            },
+            crate::db::SeriesWork {
+                title: "Alpha Missing".into(),
+                key: String::new(),
+                cover_path: String::new(),
+                year: 2000,
+                author: "An Author".into(),
+            },
+            crate::db::SeriesWork {
+                title: "Alpha Two".into(),
+                key: String::new(),
+                cover_path: String::new(),
+                year: 0,
+                author: "An Author".into(),
+            },
+        ];
+        cat.upsert_series_cache(
+            &crate::db::series_key("Alpha", "An Author"),
+            "openlibrary",
+            &works,
+        )
+        .unwrap();
+
+        let snap = svc.series_page("Alpha", "An Author");
+        assert!(snap.errors.is_empty(), "errors: {:?}", snap.errors);
+        assert_eq!(snap.listed_total, Some(3));
+        let titles: Vec<&str> = snap.entries.iter().map(|e| e.title.as_str()).collect();
+        assert_eq!(titles, ["Alpha One", "Alpha Missing", "Alpha Two"]);
+        assert_eq!(snap.entries[2].position, 2.5);
+        assert!(snap.entries[0].finished_at.is_some());
+        assert!(snap.entries[1].book.is_none(), "the unowned work stays a gap");
+        assert_eq!(snap.entries[2].chapter_index, Some(8));
+        assert_eq!(snap.entries[2].year, Some(2001));
+        assert!(!snap.view_list);
+
+        cat.set_pref(&snap.view_pref_key, "list");
+        assert!(svc.series_page("Alpha", "An Author").view_list);
     }
 
     fn seed(cat: &Catalog, title: &str, tags: &[&str]) -> i64 {
@@ -2061,6 +4313,55 @@ mod tests {
         let snap = svc.analytics();
         assert!(snap.errors.is_empty());
         assert_eq!(snap.goal, 24);
+    }
+
+    #[test]
+    fn comic_candidate_patch_keeps_only_reviewed_fields() {
+        let candidate = crate::metadata::Candidate {
+            title: "The Paper Meridian".into(),
+            authors: "Ada Meridian".into(),
+            publisher: "Meridian Press".into(),
+            published: String::new(),
+            first_year: Some(2021),
+            description: "A mapmaker loses the north.".into(),
+            tags: vec!["Adventure".into()],
+            credits: vec![crate::metadata::CandidateCredit {
+                role: "Story & Art".into(),
+                name: "Ada Meridian".into(),
+            }],
+            status: "Ongoing".into(),
+            known_chapters: Some(42),
+            external_id: Some("99".into()),
+            source_url: Some("https://myanimelist.net/manga/99".into()),
+            source: Some(crate::metadata::SourceId::MyAnimeList),
+            ..Default::default()
+        };
+        let selected = vec![
+            COMIC_SERIES_FIELD_TITLE.to_string(),
+            COMIC_SERIES_FIELD_CREDITS.to_string(),
+            COMIC_SERIES_FIELD_PUBLISHED.to_string(),
+            COMIC_SERIES_FIELD_GENRES.to_string(),
+            COMIC_SERIES_FIELD_KNOWN_CHAPTERS.to_string(),
+        ];
+        let patch =
+            comic_series_patch_from_candidate(&candidate, &selected, None).unwrap();
+        assert_eq!(patch.title.as_deref(), Some("The Paper Meridian"));
+        assert_eq!(patch.published.as_deref(), Some("2021"));
+        assert_eq!(patch.known_chapters, Some(42));
+        assert_eq!(patch.genres.as_deref(), Some(&["Adventure".to_string()][..]));
+        assert_eq!(patch.credits.as_ref().unwrap()[0].role, "Story & Art");
+        // Unreviewed fields carry nothing, even though the candidate
+        // knows them; identity still travels for the source link.
+        assert!(patch.publisher.is_none());
+        assert!(patch.description.is_none());
+        assert!(patch.status.is_none());
+        assert_eq!(patch.source, "myanimelist");
+        assert_eq!(patch.source_id, "99");
+
+        // A book source cannot be dressed up as a comic series.
+        let mut book_candidate = candidate.clone();
+        book_candidate.source = Some(crate::metadata::SourceId::OpenLibrary);
+        assert!(comic_series_patch_from_candidate(&book_candidate, &selected, None).is_err());
     }
 
     #[test]

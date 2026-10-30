@@ -1,18 +1,24 @@
 /* ── base font ──────────────────────────────────────── */
-/* Nerd Fonts "Propo" (proportional) variants first, so UI text and
- * fallback glyphs (✓, →, ·) never come from a mono-width nerd face;
- * clean proportional fallbacks if none are installed. */
+/* The redesign sets the interface in DM Sans and display text in
+ * Playfair Display (design-system.md §3); both are bundled and registered
+ * as fontconfig application fonts by src/fonts.rs before GTK starts.
+ * The Nerd Font Propo faces stay in the stack after the text faces so
+ * fallback glyphs (✓, →, ·) still resolve on systems that have them,
+ * without ever supplying the UI's letterforms. */
 * {
-    font-family: "JetBrains Mono Nerd Font Propo", "JetBrainsMono Nerd Font Propo",
+    font-family: "DM Sans", "Cantarell", "Noto Sans",
+                 "JetBrains Mono Nerd Font Propo", "JetBrainsMono Nerd Font Propo",
                  "Cascadia Code Nerd Font Propo", "FiraCode Nerd Font Propo",
                  "Hack Nerd Font Propo", "Source Code Pro Nerd Font Propo",
-                 "Cantarell", "Noto Sans", sans-serif;
+                 sans-serif;
 }
 
 /* ── window ─────────────────────────────────────────── */
 window.kalam-window {
     background: @kalam_bg;
 }
+
+
 
 /* ── scrollbars ─────────────────────────────────────── */
 /*  ⚠  READ src/style.rs's header before touching this block.  ⚠
@@ -66,7 +72,6 @@ scrollbar slider {
     border-radius: 999px;
     background-color: transparent;
     opacity: 1;
-    transition: background-color 130ms ease;
 }
 
 scrollbar.horizontal slider {
@@ -97,21 +102,25 @@ scrollbar slider:active {
     background-color: @kalam_accent;
 }
 
-/* ── slim sidebar ───────────────────────────────────── */
+/* ── nav rail (design-system §4, §56) ────────────────────── */
+/* 68 wide, 44 circular items. Per decision 179/180:
+   * default: transparent bg, dim text
+   * hover: @kalam_border fill, @kalam_text text
+   * active: @kalam_accent_fill circle, icon drawn in @kalam_bg (cut-out look)
+   * focus: 2px @kalam_accent ring, 2px offset */
 .kalam-sidebar {
     background: @kalam_sidebar;
-    border-right: 1px solid @kalam_border;
-    /* Icon-only rail: 34px disc + 7px either side. */
-    min-width: 48px;
-    padding: 8px 0;
+    /* Icon-only rail: 44px disc + 12px either side. */
+    min-width: 68px;
+    padding: 12px 0;
 }
 
 .kalam-sidebar-inner {
-    padding: 0 6px;
+    padding: 0;
 }
 
 .kalam-brand {
-    padding: 2px 0 10px 0;
+    padding: 4px 0 8px 0;
 }
 
 /* No size here on purpose. The exact size is set in code with
@@ -128,28 +137,116 @@ scrollbar slider:active {
     background: transparent;
     border: none;
     color: @kalam_text_dim;
-    min-width: 34px;
-    min-height: 34px;
+    min-width: 44px;
+    min-height: 44px;
 }
 
 .kalam-nav-btn:hover {
-    background: @kalam_surface_2;
+    background: @kalam_border;
     color: @kalam_text;
 }
 
 .kalam-nav-btn.active {
-    background: @kalam_accent_dim;
-    color: @kalam_accent;
-    font-weight: 600;
+    background: @kalam_accent_fill;
+    color: @kalam_bg;
 }
 
+.kalam-nav-btn.active:hover {
+    background: shade(@kalam_accent_fill, 1.08);
+}
+
+.kalam-nav-btn:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+/* Divider between rail and page: 2px line in @kalam_border, inset
+   28px from top / 24px from bottom, never full height (§56). */
+.kalam-sidebar::after {
+    content: "";
+}
+
+/* Nav icon inherits the button's text colour — @kalam_bg on active
+   gives the cut-out glyph look against accent-fill. */
 .kalam-nav-icon {
     color: inherit;
-    -gtk-icon-size: 18px;
+    -gtk-icon-size: 20px;
 }
 
 .kalam-nav-spacer {
     min-height: 0;
+}
+
+/* Rail bell and notification panel (§45, decision 148): the bell is a
+   nav disc whose open state takes the active item's accent-fill; the
+   8px dot is plain accent. The panel itself is the §9 side-panel
+   shell — only its rows and link need shapes here. */
+.kalam-bell-icon {
+    color: inherit;
+    -gtk-icon-size: 22px;
+}
+
+.kalam-nav-btn.open {
+    background: @kalam_accent_fill;
+    color: @kalam_bg;
+}
+
+.kalam-nav-btn.open:hover {
+    background: shade(@kalam_accent_fill, 1.08);
+}
+
+.kalam-bell-dot {
+    background: @kalam_accent;
+    border-radius: 999px;
+}
+
+.kalam-notify-catcher {
+    background: transparent;
+}
+
+button.kalam-notify-clear {
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-size: 12.5px;
+    color: @kalam_accent;
+}
+
+button.kalam-notify-clear > label {
+    color: @kalam_accent;
+}
+
+button.kalam-notify-clear:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+.kalam-notify-group {
+    margin-bottom: 4px;
+}
+
+.kalam-notify-row {
+    border-top: 1px solid @kalam_border;
+    padding: 12px 0;
+}
+
+.kalam-notify-marker {
+    background: @kalam_text_dim;
+    border-radius: 999px;
+}
+
+.kalam-notify-marker.problem {
+    background: @kalam_accent;
+}
+
+.kalam-notify-message {
+    font-size: 13px;
+    color: @kalam_text;
+}
+
+.kalam-notify-empty {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
 }
 
 /* ── main column ────────────────────────────────────── */
@@ -186,22 +283,30 @@ scrollbar slider:active {
 }
 
 /* ── breadcrumbs / back ─────────────────────────────── */
+/* The page specs' Back pill: top-left at a 16px inset (set in app.rs),
+   40 high, card fill. The readers grow their own hidden variant with the
+   Bubble peek in the reader-chrome phase (decision 15). */
 .kalam-back-btn {
-    padding: 6px 14px;
+    padding: 0 16px;
+    min-height: 40px;
     border-radius: 999px;
     background: @kalam_surface_2;
     color: @kalam_text;
     border: 1px solid @kalam_border;
-    font-size: 0.85rem;
+    font-size: 14px;
 }
 
 .kalam-back-btn:hover {
     background: @kalam_border;
 }
 
+.kalam-back-btn:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
 .kalam-back-float {
-    background: alpha(@kalam_surface, 0.92);
-    box-shadow: 0 10px 26px alpha(#000, 0.28);
+    background: @kalam_card;
 }
 
 .kalam-back-float image {
@@ -211,10 +316,13 @@ scrollbar slider:active {
 
 /* ── page headings ──────────────────────────────────── */
 .kalam-page-title {
-    font-size: 1.6rem;
-    font-weight: 700;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 46px;
+    font-weight: 500;
+    line-height: 1.05;
     color: @kalam_text;
     margin-bottom: 4px;
+    letter-spacing: -0.7px;
 }
 
 .kalam-page-sub {
@@ -223,8 +331,395 @@ scrollbar slider:active {
     margin-bottom: 18px;
 }
 
-/* ── cards (shelves grid, book cards, hub tiles) ─────── */
-.kalam-card {
+/* ── Home search bar and box (§57, decisions 196–201) ────────────── */
+/* Bar: 520 wide, 40 high, 1px border underline at rest / accent on focus.
+   Magnifier 18px, text 14px, hint in text-2, 1.5px accent caret.
+   N results in Meta at the right while typing. */
+.kalam-home-search-bar {
+    min-width: 520px;
+    height: 40px;
+    padding: 0 12px;
+    border: none;
+    border-bottom: 1px solid @kalam_border;
+    border-radius: 0;
+    background: @kalam_bg;
+    color: @kalam_text;
+    margin-top: 28px;
+}
+
+.kalam-home-search-bar:focus-within {
+    border-bottom-color: @kalam_accent;
+}
+
+.kalam-home-search-bar entry {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: @kalam_text;
+    font-size: 14px;
+    min-height: 0;
+    min-width: 0;
+}
+
+.kalam-home-search-bar entry > text {
+    color: @kalam_text;
+}
+
+.kalam-home-search-bar entry:placeholder {
+    color: @kalam_text_dim;
+}
+
+/* Magnifier icon at the left end of the bar. */
+.kalam-home-search-magnifier {
+    color: @kalam_text_dim;
+    -gtk-icon-size: 18px;
+}
+
+/* Caret at the right end of the entry while focused. */
+.kalam-home-search-caret {
+    width: 1.5px;
+    background: @kalam_accent;
+}
+
+/* "N results" text shown at the right end while typing. */
+.kalam-home-search-count {
+    font-size: 0.82rem;
+    color: @kalam_text_dim;
+    min-width: 0;
+}
+
+/* Bare three-row sliders icon button: 32x32, radius 8, no outline. */
+.kalam-home-search-picker-btn {
+    min-width: 32px;
+    min-height: 32px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: @kalam_text_dim;
+}
+
+.kalam-home-search-picker-btn:hover,
+.kalam-home-search-picker-btn.open {
+    background: @kalam_border;
+    color: @kalam_text;
+}
+
+/* Search box dropped under the bar: bg fill, 1px border, no top border,
+   radius 0 0 14 14, 520 wide, scrolling with fade. */
+.kalam-home-search-box {
+    min-width: 520px;
+    background: @kalam_bg;
+    border: 1px solid @kalam_border;
+    border-top: none;
+    border-bottom-left-radius: 14px;
+    border-bottom-right-radius: 14px;
+    margin-top: -1px;
+}
+
+/* Contents of the box scroll with a fade; no visible scrollbar. */
+.kalam-home-search-box contents {
+    padding: 8px 0;
+    background: @kalam_bg;
+}
+
+/* Recent searches heading and rows. */
+.kalam-home-search-heading {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: @kalam_text_dim;
+    padding: 8px 12px 4px 12px;
+}
+
+.kalam-home-search-history-row {
+    padding: 6px 12px;
+    border-radius: 8px;
+    color: @kalam_text;
+}
+
+.kalam-home-search-history-row:hover {
+    background: @kalam_hover;
+}
+
+.kalam-home-search-history-cross {
+    color: @kalam_text_dim;
+    -gtk-icon-size: 14px;
+}
+
+.kalam-home-search-clear {
+    font-size: 0.82rem;
+    color: @kalam_accent;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+}
+
+.kalam-home-search-clear:hover {
+    background: @kalam_hover;
+}
+
+/* Option picker popover (§17 menu machinery, 260 wide). */
+.kalam-home-search-picker {
+    min-width: 260px;
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 8px 0;
+}
+
+.kalam-home-search-picker contents {
+    padding: 4px 0;
+    background: @kalam_card;
+}
+
+.kalam-home-search-picker-heading {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: @kalam_text_dim;
+    padding: 8px 12px 4px 12px;
+}
+
+.kalam-home-search-picker-divider {
+    height: 1px;
+    background: @kalam_border;
+    margin: 4px 0;
+}
+
+/* Switch row: plain text, switch at right. */
+.kalam-home-search-switch-row {
+    padding: 8px 12px;
+    color: @kalam_text;
+}
+
+.kalam-home-search-switch-caption {
+    font-size: 0.78rem;
+    color: @kalam_text_dim;
+    margin-top: 2px;
+}
+
+/* Dimmed site rows inside the option picker (online search, Part 2). */
+.kalam-home-search-picker-dim {
+    color: @kalam_text_dim;
+}
+
+/* Result group rows shown in the search box while typing. */
+.kalam-home-search-result-row {
+    padding: 4px 12px;
+    border-radius: 8px;
+    color: @kalam_text;
+}
+
+.kalam-home-search-result-row:hover {
+    background: @kalam_hover;
+}
+
+.kalam-home-search-result-sub {
+    font-size: 0.78rem;
+    color: @kalam_text_dim;
+}
+
+/* "See all N" button under a group. */
+.kalam-home-search-see-all {
+    border: none;
+    background: transparent;
+    color: @kalam_accent;
+    font-size: 0.82rem;
+    border-radius: 8px;
+    min-width: 0;
+}
+
+.kalam-home-search-see-all:hover {
+    background: @kalam_hover;
+}
+
+/* Quiet notice when a search returns no results. */
+.kalam-home-search-no-results {
+    font-size: 0.82rem;
+    color: @kalam_text_dim;
+    padding: 8px 12px;
+}
+
+/* ── Home quote (§63, decision 187) ──
+   Large quote in Playfair Display/Literata italic, with an accent rule. */
+.kalam-home-quote {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 18px;
+    font-style: italic;
+    line-height: 1.8;
+    color: @kalam_text;
+    margin-left: 12px;
+    margin-right: 12px;
+    margin-top: 16px;
+    margin-bottom: 8px;
+    padding-left: 12px;
+    border-left: 3px solid @kalam_accent;
+}
+
+.kalam-home-quote-source {
+    font-family: "DM Sans";
+    font-weight: 400;
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+    margin-left: 12px;
+    margin-right: 12px;
+    margin-bottom: 16px;
+}
+
+/* ── Home shelf (§61, decisions 190-193) ──
+   Custom-drawn widget placeholder styled as a card area. */
+.kalam-home-shelf {
+    margin-left: 12px;
+    margin-right: 12px;
+    margin-bottom: 16px;
+    min-height: 340px;
+}
+
+.kalam-home-shelf-heading {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-weight: 500;
+    font-size: 18px;
+    color: @kalam_text;
+    margin-left: 12px;
+    margin-top: 16px;
+    margin-bottom: 8px;
+}
+
+.kalam-home-shelf-chip {
+    font-size: 0.78rem;
+    color: @kalam_text_dim;
+    margin-left: 12px;
+    margin-bottom: 8px;
+}
+
+.kalam-home-shelf drawingarea {
+    background: @kalam_bg;
+}
+
+/* ── Home greeting (§1) ──
+   Two lines, Display font (Playfair Display). */
+.kalam-home-greeting {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-weight: 500;
+    font-size: 20px;
+    line-height: 1.2;
+    color: @kalam_text;
+    margin-bottom: 8px;
+}
+
+/* ── Home book (§60, decision 188) ──
+   Cover page, reading page, ribbon, play button, pager of 5 dots. */
+.kalam-home-book-heading {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-weight: 500;
+    font-size: 18px;
+    color: @kalam_text;
+    margin-left: 0;
+    margin-bottom: 8px;
+}
+
+.kalam-home-book-spread {
+}
+
+.kalam-home-book-cover,
+.kalam-home-book-page {
+    border-radius: 10px;
+    background: @kalam_surface;
+}
+
+.kalam-home-book-cover {
+    margin-right: -16px;
+}
+
+.kalam-home-book-page {
+    margin-left: -16px;
+    opacity: 0.85;
+}
+
+.kalam-home-book-ribbon {
+    color: @kalam_accent;
+}
+
+.kalam-home-book-play {
+    font-size: 0.82rem;
+    color: @kalam_accent;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    padding: 6px 12px;
+}
+
+.kalam-home-book-play:hover {
+    background: @kalam_hover;
+}
+
+.kalam-home-book-pager {
+}
+
+.kalam-home-book-pager-dot {
+    min-width: 8px;
+    min-height: 8px;
+    border-radius: 4px;
+    background: @kalam_border;
+}
+
+.kalam-home-book-pager-dot.active {
+    background: @kalam_accent;
+}
+
+/* ── Home updates (§62, decision 189) ──
+   Thin vertical timeline, four rows visible. */
+.kalam-home-updates {
+    margin-left: 12px;
+    margin-right: 12px;
+    margin-bottom: 16px;
+}
+
+.kalam-home-updates-heading {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-weight: 500;
+    font-size: 18px;
+    color: @kalam_text;
+    margin-left: 0;
+    margin-top: 16px;
+    margin-bottom: 8px;
+}
+
+.kalam-home-update-row {
+}
+
+.kalam-home-update-dot {
+    min-width: 6px;
+    min-height: 6px;
+    border-radius: 3px;
+    background: @kalam_border;
+}
+
+.kalam-home-update-label {
+    font-size: 0.82rem;
+    color: @kalam_text;
+}
+
+/* ── Home state cards (§64, decision 194) ──
+   Empty library, loading skeletons, error, nothing in progress. */
+.kalam-home-state-card {
+    border: 1px dashed @kalam_border;
+    border-radius: 14px;
+    padding: 24px;
+    background: @kalam_bg;
+}
+
+.kalam-home-state-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: @kalam_text;
+    margin-bottom: 4px;
+}
+
+.kalam-home-state-message {
+    font-size: 0.82rem;
+    color: @kalam_text_dim;
+    line-height: 1.5;
+}
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 14px;
@@ -257,6 +752,127 @@ scrollbar slider:active {
     border-radius: 999px;
     padding: 2px 8px;
 }
+
+/* ── selection mode (§49) ────────────────────────────── */
+/* Outline circles on unselected cards when selection mode is on. */
+.kalam-card.selection-mode {
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+}
+
+/* Accent outline on selected cards. */
+.kalam-card.kalam-card-selected {
+    border: 2px solid @kalam_accent;
+    border-radius: 10px;
+    background: @kalam_surface_2;
+}
+
+/* Floating bulk bar at bottom centre (§49: 48 high, 32 up). */
+.kalam-bulk-bar {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    padding: 8px 16px;
+    min-height: 48px;
+}
+
+/* ── list view (§50) ──────────────────────────────────── */
+.kalam-book-list {
+    min-height: 300px;
+}
+
+.kalam-book-list-header {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid @kalam_border;
+    border-radius: 0;
+    min-height: 36px;
+    padding: 0 8px;
+    color: @kalam_text_dim;
+    font-size: 0.82rem;
+    font-weight: 600;
+    font-family: "DM Sans", sans-serif;
+}
+.kalam-book-list-header:hover {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+}
+
+.kalam-book-list-cell {
+    color: @kalam_text;
+    font-size: 0.92rem;
+    min-height: 52px;
+}
+
+.kalam-book-list-cell.selected {
+    background: @kalam_accent_dim;
+    color: @kalam_text;
+}
+
+.kalam-book-list progress {
+    min-height: 8px;
+    border-radius: 4px;
+    background: @kalam_border;
+}
+
+/* ── reading timeline (§51) ───────────────────────────── */
+.kalam-timeline-link {
+    color: @kalam_accent;
+    font-size: 12.5px;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+    padding: 0;
+    min-height: 24px;
+}
+.kalam-timeline-link:hover {
+    color: @kalam_accent;
+    text-decoration: underline;
+}
+
+.kalam-timeline-ghost {
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    background: transparent;
+    color: @kalam_text_dim;
+    padding: 2px 10px;
+    min-height: 36px;
+    min-width: 36px;
+}
+.kalam-timeline-ghost:hover {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+}
+
+/* ── reading timeline canvas (§51) ───────────────────────────── */
+.drawingarea.kalam-reading-timeline {
+    background: @kalam_bg;
+}
+
+.kalam-timeline-card {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+}
+
+.kalam-timeline-card-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-timeline-card-meta {
+    font-size: 11px;
+    color: @kalam_text_dim;
+}
+
+/* ── additional Cairo colour probes for the timeline highlight lines ── */
+.kalam-ui-token-hl-yellow { color: @kalam_hl_yellow; }
+.kalam-ui-token-hl-green { color: @kalam_hl_green; }
+.kalam-ui-token-hl-blue { color: @kalam_hl_blue; }
+.kalam-ui-token-hl-pink { color: @kalam_hl_pink; }
+.kalam-ui-token-hl-orange { color: @kalam_hl_orange; }
 
 /* ── hub tiles inside My Library ────────────────────── */
 .kalam-hub-grid {
@@ -305,7 +921,6 @@ scrollbar slider:active {
     padding: 0;
     margin: 0;
     border: none;
-    box-shadow: 0 2px 10px alpha(#000, 0.35);
 }
 
 .kalam-cover-placeholder {
@@ -347,7 +962,6 @@ button.kalam-author-link {
     background: transparent;
     border: none;
     border-radius: 0;
-    box-shadow: none;
     color: @kalam_accent;
     padding: 0;
     min-width: 0;
@@ -421,7 +1035,6 @@ button.kalam-author-link-reader:hover {
 }
 
 .kalam-primary-btn:hover {
-    filter: brightness(1.08);
 }
 
 .kalam-secondary-btn {
@@ -458,10 +1071,11 @@ button.kalam-author-link-reader:hover {
 }
 
 .kalam-section-label {
-    font-size: 0.75rem;
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.07em;
-    color: @kalam_text_dim;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: @kalam_text;
     margin-bottom: 10px;
     margin-top: 8px;
 }
@@ -521,7 +1135,6 @@ button.kalam-author-link-reader:hover {
 .kalam-author-photo-shell .kalam-cover-img {
     background: transparent;
     border: none;
-    box-shadow: none;
     border-radius: 999px;
 }
 
@@ -546,7 +1159,6 @@ button.kalam-author-photo-refresh {
     border-radius: 999px;
     background: alpha(@kalam_surface, 0.94);
     color: @kalam_text;
-    box-shadow: 0 10px 20px alpha(#000, 0.28);
 }
 
 button.kalam-author-photo-refresh:hover {
@@ -667,23 +1279,25 @@ button.kalam-author-photo-refresh:hover {
 
 .kalam-book-card {
     padding: 0;
-    border-radius: 0;
+    border-radius: 14px;
     background: transparent;
 }
 
 .kalam-book-card:hover .kalam-cover-frame {
-    box-shadow: 0 6px 18px alpha(#000, 0.5);
 }
 
 .kalam-book-card-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
     font-weight: 600;
-    font-size: 0.78rem;
+    font-size: 16px;
     color: @kalam_text;
     min-width: 0;
 }
 
 .kalam-book-card-author {
-    font-size: 0.7rem;
+    font-family: "DM Sans";
+    font-weight: 400;
+    font-size: 12.5px;
     color: @kalam_text_dim;
     min-width: 0;
 }
@@ -725,7 +1339,6 @@ button.kalam-author-photo-refresh:hover {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 20px;
-    box-shadow: 0 30px 80px alpha(#000, 0.46), 0 8px 24px alpha(#000, 0.26);
     padding: 0px;
     min-width: 700px;
     min-height: 368px;
@@ -766,7 +1379,6 @@ button.kalam-author-photo-refresh:hover {
 }
 
 .kalam-float-cover.kalam-cover-frame {
-    box-shadow: 0 12px 28px alpha(#000, 0.36);
 }
 
 .kalam-float-progress-wrap {
@@ -945,7 +1557,6 @@ button.kalam-float-read {
 }
 
 button.kalam-float-icon-btn {
-    box-shadow: none;
 }
 
 button.kalam-float-icon-btn.active {
@@ -961,7 +1572,6 @@ button.kalam-float-icon-btn.done-active {
 }
 
 button.kalam-float-icon-btn:focus {
-    box-shadow: none;
 }
 
 button.kalam-float-icon-btn.kalam-float-icon-btn-danger {
@@ -982,43 +1592,96 @@ button.kalam-float-icon-btn.kalam-float-icon-btn-danger:hover {
 }
 
 .kalam-reader,
-.kalam-reader-stage,
-.kalam-reader-stage.kalam-reader-paper-light,
-.kalam-reader-stage.kalam-reader-paper-sepia,
-.kalam-reader-stage.kalam-reader-paper-dark,
-.kalam-reader-stage.kalam-reader-paper-ink {
+.kalam-reader-stage {
     background: @kalam_bg;
 }
 
-/* No top padding on the stage: the reading surface runs flush to the
-   top edge exactly as it does left, right and bottom. The 12px of app
-   background this rule used to add showed up as a dark band along the
-   upper edge whenever the reading theme's paper did not match the app
-   background (2026-10-05 field run #2 report). */
+/* The page is painted in the palette's own bg (decisions 19/145) and
+   runs flush to every edge, so the stage and the paper agree by
+   construction — no per-theme paper classes, no banding. */
 
 button.kalam-reader-dim {
     background: alpha(@kalam_bg, 0.22);
     border: none;
     border-radius: 0;
-    box-shadow: none;
 }
 
 .kalam-reader-hover-edge {
     background: transparent;
 }
 
-.kalam-reader-sidebar {
-    background: alpha(@kalam_sidebar, 0.97);
-    border: 1px solid alpha(@kalam_border, 0.95);
-    border-radius: 20px;
-    box-shadow: 0 22px 52px alpha(#000, 0.42);
+/* The bookmark ribbon (decision 16): hangs from the top edge, always
+   there. Idle it is an outline in the line colour over the page; set,
+   it is accent-filled and a touch longer. The V-notch is the icon. */
+button.kalam-reader-ribbon {
+    background: transparent;
+    border: none;
     padding: 0;
-    min-width: 340px;
+    min-width: 0;
+    min-height: 0;
+    color: @kalam_border;
 }
 
-.kalam-reader-sidebar-left,
-.kalam-reader-sidebar-right {
-    border-radius: 20px;
+button.kalam-reader-ribbon:hover {
+    background: transparent;
+    color: @kalam_text_dim;
+}
+
+button.kalam-reader-ribbon.set {
+    color: @kalam_accent;
+}
+
+button.kalam-reader-ribbon.set:hover {
+    color: @kalam_accent_fill;
+}
+
+.kalam-reader-ribbon image {
+    -gtk-icon-size: 26px;
+}
+
+button.kalam-reader-ribbon.set image {
+    -gtk-icon-size: 30px;
+}
+
+/* The location text (decision 17): small, text-2, bottom-right; on
+   hover it grows leftwards into `Chapter · NN%` at full ink. */
+label.kalam-reader-location {
+    color: @kalam_text_dim;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+label.kalam-reader-location.hover {
+    color: @kalam_text;
+}
+
+/* Keyboard focus gets the 2px accent ring on every piece of reader
+   chrome (system §9: focus is never invisible here). */
+button.kalam-reader-ribbon:focus-visible,
+button.kalam-reader-tab:focus-visible,
+button.kalam-reader-pill-nav:focus-visible,
+button.kalam-reader-filter-chip:focus-visible,
+button.kalam-reader-toc-item:focus-visible,
+button.kalam-reader-stepper-btn:focus-visible,
+button.kalam-reader-keycap:focus-visible,
+button.kalam-reader-seg-btn:focus-visible,
+button.kalam-reader-seg-item:focus-visible,
+button.kalam-reader-option-row:focus-visible,
+button.kalam-reader-color-choice:focus-visible,
+button.kalam-reader-list-hit:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 1px;
+}
+
+/* Reader panels (decision 20): 340 wide, floating 16 from every edge
+   (margins in the view), radius 22, solid card ground, a hairline —
+   and no shadow, anywhere in the app. */
+.kalam-reader-sidebar {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 22px;
+    padding: 0;
+    min-width: 340px;
 }
 
 .kalam-reader-book-head {
@@ -1097,7 +1760,6 @@ button.kalam-reader-back {
     border-radius: 999px;
     color: @kalam_text;
     padding: 7px 11px 7px 8px;
-    box-shadow: 0 8px 22px alpha(#000, 0.24);
 }
 
 button.kalam-reader-back:hover {
@@ -1121,7 +1783,6 @@ button.kalam-reader-back:hover {
     border: 1px solid @kalam_border;
     border-radius: 999px;
     padding: 5px 8px;
-    box-shadow: 0 8px 24px alpha(#000, 0.26);
 }
 
 .kalam-reader-pill-counter {
@@ -1160,7 +1821,6 @@ button.kalam-reader-pill-nav:hover {
     padding: 0 12px;
     background: transparent;
     border: none;
-    box-shadow: none;
 }
 
 .kalam-reader-pill-pages {
@@ -1180,8 +1840,13 @@ button.kalam-reader-pill-nav:hover {
     background: transparent;
 }
 
+/* Settings sections are inset cards (spec §3): the fill tone set
+   into the panel card, no dividers between them. */
 .kalam-reader-section {
-    padding: 14px 16px 8px;
+    background: @kalam_surface_2;
+    border-radius: 14px;
+    padding: 14px 16px 16px;
+    margin: 0 12px 12px;
 }
 
 .kalam-reader-section-label {
@@ -1192,9 +1857,42 @@ button.kalam-reader-pill-nav:hover {
     color: @kalam_text_dim;
 }
 
-.kalam-reader-panel-divider {
-    background: alpha(@kalam_border, 0.9);
-    margin: 4px 16px;
+/* The Settings preview sheet, in the reader's narrower column. */
+.kalam-reader-sidebar .kalam-settings-preview {
+    margin: 0 12px 12px;
+    padding: 16px;
+}
+
+/* The reader panels' titled heads (Settings, decision 23). */
+.kalam-reader-panel-head {
+    padding: 16px 16px 2px;
+}
+
+.kalam-reader-panel-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+button.kalam-reader-use-defaults {
+    margin: 0 12px 14px;
+}
+
+.kalam-reader-keybind-conflict {
+    color: @kalam_danger;
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+/* Notes: a chapter's items gather under its name (decision 20). */
+.kalam-reader-notes-heading {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: @kalam_text_dim;
+    padding: 16px 14px 6px;
 }
 
 .kalam-reader-setting-row {
@@ -1368,88 +2066,6 @@ button.kalam-reader-settings-switch.active {
     color: @kalam_accent;
 }
 
-.kalam-reader-ui-setting {
-    padding-top: 2px;
-}
-
-.kalam-reader-ui-setting-head {
-    min-height: 20px;
-}
-
-.kalam-reader-ui-setting-label {
-    font-size: 0.82rem;
-    color: @kalam_text;
-}
-
-button.kalam-reader-ui-preset {
-    min-width: 64px;
-    min-height: 28px;
-    padding: 4px 0;
-    font-size: 0.68rem;
-}
-
-button.kalam-reader-ui-preset.kalam-reader-ui-preset-custom.active {
-    color: @kalam_text;
-}
-
-.kalam-reader-ui-control-row {
-    padding-top: 2px;
-}
-
-entry.kalam-reader-ui-value-entry {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    color: @kalam_text;
-    min-width: 0;
-    padding: 4px 0;
-}
-
-entry.kalam-reader-ui-value-entry:focus,
-entry.kalam-reader-ui-value-entry:focus-within {
-    border: none;
-    box-shadow: none;
-}
-
-entry.kalam-reader-ui-value-entry > text {
-    color: @kalam_text;
-}
-
-.kalam-reader-ui-unit {
-    color: @kalam_text_dim;
-    font-size: 0.76rem;
-    font-weight: 600;
-}
-
-button.kalam-reader-theme-dot {
-    min-width: 24px;
-    min-height: 24px;
-    padding: 0;
-    border: 2px solid transparent;
-    border-radius: 999px;
-    box-shadow: none;
-}
-
-button.kalam-reader-theme-dot.active {
-    border-color: @kalam_accent;
-}
-
-button.kalam-reader-theme-dot.kalam-reader-theme-dot-light {
-    background: #faf8f5;
-}
-
-button.kalam-reader-theme-dot.kalam-reader-theme-dot-sepia {
-    background: #f4ecd8;
-}
-
-button.kalam-reader-theme-dot.kalam-reader-theme-dot-dark {
-    background: #1a1b1e;
-}
-
-button.kalam-reader-theme-dot.kalam-reader-theme-dot-ink {
-    background: #0d0d0d;
-}
-
 .kalam-reader-filter-row {
     padding: 10px 12px;
     border-bottom: 1px solid alpha(@kalam_border, 0.9);
@@ -1476,41 +2092,48 @@ button.kalam-reader-filter-chip.active {
 }
 
 button.kalam-reader-filter-chip.kalam-reader-filter-yellow.active {
-    background: alpha(#e5c07b, 0.18);
-    border-color: #e5c07b;
-    color: #e5c07b;
+    background: alpha(@kalam_hl_yellow, 0.18);
+    border-color: @kalam_hl_yellow;
+    color: @kalam_hl_yellow;
 }
 
 button.kalam-reader-filter-chip.kalam-reader-filter-green.active {
-    background: alpha(#98c379, 0.18);
-    border-color: #98c379;
-    color: #98c379;
+    background: alpha(@kalam_hl_green, 0.18);
+    border-color: @kalam_hl_green;
+    color: @kalam_hl_green;
 }
 
 button.kalam-reader-filter-chip.kalam-reader-filter-blue.active {
-    background: alpha(#61afef, 0.18);
-    border-color: #61afef;
-    color: #61afef;
+    background: alpha(@kalam_hl_blue, 0.18);
+    border-color: @kalam_hl_blue;
+    color: @kalam_hl_blue;
 }
 
 button.kalam-reader-filter-chip.kalam-reader-filter-pink.active {
-    background: alpha(#e06c75, 0.18);
-    border-color: #e06c75;
-    color: #e06c75;
+    background: alpha(@kalam_hl_pink, 0.18);
+    border-color: @kalam_hl_pink;
+    color: @kalam_hl_pink;
 }
 
 button.kalam-reader-filter-chip.kalam-reader-filter-orange.active {
-    background: alpha(#d19a66, 0.18);
-    border-color: #d19a66;
-    color: #d19a66;
+    background: alpha(@kalam_hl_orange, 0.18);
+    border-color: @kalam_hl_orange;
+    color: @kalam_hl_orange;
 }
 
+/* Contents (decision 20): 44px rows, the current chapter marked by
+   a 3px accent bar and bold type, parts standing bold. The bar is
+   always drawn (transparently when inactive) so titles never shift. */
 button.kalam-reader-toc-item {
     background: transparent;
     border: none;
+    border-left: 3px solid transparent;
     border-radius: 0;
     color: @kalam_text_dim;
-    padding: 9px 16px;
+    /* 36 + 4 + 4 = the spec's 44px row (GTK min-height is the
+       content box, so the padding counts on top of it). */
+    min-height: 36px;
+    padding: 4px 16px 4px 13px;
 }
 
 button.kalam-reader-toc-item:hover {
@@ -1519,8 +2142,34 @@ button.kalam-reader-toc-item:hover {
 }
 
 button.kalam-reader-toc-item.active {
-    background: @kalam_accent_dim;
-    color: @kalam_accent;
+    border-left-color: @kalam_accent;
+    color: @kalam_text;
+    font-weight: 700;
+}
+
+.kalam-reader-toc-part {
+    font-weight: 700;
+    color: @kalam_text;
+    padding: 14px 16px 4px 0;
+}
+
+/* The Highlights view's colour dots (decision 21): the ringed dot is
+   the standing filter. */
+button.kalam-reader-color-dot {
+    min-width: 18px;
+    min-height: 18px;
+    border-radius: 999px;
+    border: none;
+    padding: 0;
+}
+
+button.kalam-reader-dot-yellow { background: @kalam_hl_yellow; }
+button.kalam-reader-dot-green  { background: @kalam_hl_green; }
+button.kalam-reader-dot-blue   { background: @kalam_hl_blue; }
+button.kalam-reader-dot-pink   { background: @kalam_hl_pink; }
+button.kalam-reader-dot-orange { background: @kalam_hl_orange; }
+
+button.kalam-reader-color-dot.active {
 }
 
 .kalam-reader-annotation-row,
@@ -1546,23 +2195,272 @@ button.kalam-reader-list-hit:hover {
 }
 
 .kalam-reader-bar-yellow {
-    background: #e5c07b;
+    background: @kalam_hl_yellow;
 }
 
 .kalam-reader-bar-green {
-    background: #98c379;
+    background: @kalam_hl_green;
 }
 
 .kalam-reader-bar-blue {
-    background: #61afef;
+    background: @kalam_hl_blue;
 }
 
 .kalam-reader-bar-pink {
-    background: #e06c75;
+    background: @kalam_hl_pink;
 }
 
 .kalam-reader-bar-orange {
-    background: #d19a66;
+    background: @kalam_hl_orange;
+}
+
+/* Annotation cards and the note editor — ported from the retired
+   generated reader-UI stylesheet when `ui_prefs` went (decision 18);
+   the five hues are the §9 tokens now. */
+.kalam-reader-annotation-wrap {
+    padding: 12px 14px;
+}
+
+.kalam-reader-annotation-card {
+    border: 1px solid transparent;
+    border-radius: 10px;
+}
+
+.kalam-reader-annotation-card-yellow {
+    background: alpha(@kalam_hl_yellow, 0.08);
+    border-color: alpha(@kalam_hl_yellow, 0.16);
+    border-left: 3px solid alpha(@kalam_hl_yellow, 0.55);
+}
+
+.kalam-reader-annotation-card-green {
+    background: alpha(@kalam_hl_green, 0.08);
+    border-color: alpha(@kalam_hl_green, 0.16);
+    border-left: 3px solid alpha(@kalam_hl_green, 0.55);
+}
+
+.kalam-reader-annotation-card-blue {
+    background: alpha(@kalam_hl_blue, 0.08);
+    border-color: alpha(@kalam_hl_blue, 0.16);
+    border-left: 3px solid alpha(@kalam_hl_blue, 0.55);
+}
+
+.kalam-reader-annotation-card-pink {
+    background: alpha(@kalam_hl_pink, 0.08);
+    border-color: alpha(@kalam_hl_pink, 0.16);
+    border-left: 3px solid alpha(@kalam_hl_pink, 0.55);
+}
+
+.kalam-reader-annotation-card-orange {
+    background: alpha(@kalam_hl_orange, 0.08);
+    border-color: alpha(@kalam_hl_orange, 0.16);
+    border-left: 3px solid alpha(@kalam_hl_orange, 0.55);
+}
+
+.kalam-reader-annotation-card-underline {
+    background: alpha(@kalam_text, 0.04);
+    border-color: alpha(@kalam_text, 0.12);
+    border-left: 3px solid alpha(@kalam_text, 0.4);
+}
+
+.kalam-reader-annotation-body {
+    padding: 11px 12px 10px 13px;
+}
+
+.kalam-reader-annotation-card button.kalam-reader-list-hit:hover {
+    background: transparent;
+}
+
+.kalam-reader-annotation-card button.kalam-btn-icon,
+.kalam-reader-annotation-card menubutton.kalam-btn-icon {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: @kalam_danger;
+    opacity: 0;
+}
+
+.kalam-reader-annotation-card:hover button.kalam-btn-icon,
+.kalam-reader-annotation-card.open button.kalam-btn-icon,
+.kalam-reader-annotation-card:focus-within button.kalam-btn-icon,
+.kalam-reader-annotation-card:hover menubutton.kalam-btn-icon,
+.kalam-reader-annotation-card.open menubutton.kalam-btn-icon,
+.kalam-reader-annotation-card:focus-within menubutton.kalam-btn-icon {
+    opacity: 1;
+}
+
+.kalam-reader-annotation-note-preview {
+    background: transparent;
+    border: none;
+    border-top: 1px solid alpha(@kalam_border, 0.4);
+    border-radius: 0;
+    padding: 6px 13px 8px;
+    color: @kalam_text_dim;
+}
+
+.kalam-reader-annotation-note-preview:hover {
+    background: alpha(@kalam_surface_2, 0.4);
+}
+
+label.kalam-reader-note-preview-text {
+    color: @kalam_text_dim;
+    font-size: 0.72rem;
+    font-style: italic;
+    line-height: 1.4;
+}
+
+.kalam-reader-annotation-note-wrap {
+    border-top: 1px solid alpha(@kalam_border, 0.4);
+    padding: 8px 13px 10px;
+}
+
+label.kalam-reader-note-label {
+    color: @kalam_text_dim;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+}
+
+scrolledwindow.kalam-reader-note-scroll {
+    min-height: 52px;
+    background: alpha(@kalam_bg, 0.2);
+    border: 1px solid alpha(@kalam_border, 0.55);
+    border-radius: 7px;
+}
+
+textview.kalam-reader-note-view {
+    min-height: 52px;
+    padding: 7px 10px;
+    background: transparent;
+    color: @kalam_text;
+}
+
+textview.kalam-reader-note-view text {
+    background: transparent;
+    color: @kalam_text;
+}
+
+/* The annotation popover (decision 29): one card over the tapped
+   highlight — dots, style samples, note, delete. Popup shape per
+   spec §2 (card fill, 1px border, radius 14). */
+popover.kalam-reader-annotation-popover {
+    background: transparent;
+}
+
+popover.kalam-reader-annotation-popover > contents {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 12px;
+}
+
+/* Bigger dots than the Notes filter row's: these are the control. */
+.kalam-reader-annotation-editor button.kalam-reader-color-dot {
+    min-width: 24px;
+    min-height: 24px;
+}
+
+button.kalam-reader-style-sample {
+    background: transparent;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+    min-height: 36px;
+    padding: 2px 0;
+    color: @kalam_text;
+}
+
+button.kalam-reader-style-sample:hover {
+    background: alpha(@kalam_surface_2, 0.85);
+}
+
+button.kalam-reader-style-sample.active {
+    border-color: @kalam_accent;
+    background: alpha(@kalam_accent, 0.08);
+}
+
+label.kalam-reader-style-sample-text {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 1rem;
+}
+
+button.kalam-reader-annotation-delete {
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    padding: 6px 10px;
+    color: @kalam_danger;
+    font-weight: 500;
+}
+
+button.kalam-reader-annotation-delete:hover {
+    background: alpha(@kalam_danger, 0.1);
+}
+
+/* Row deletes ride hover and keyboard arrival alike (decisions 20,
+   22), the shape the annotation cards already use. */
+.kalam-reader-bookmark-row button.kalam-btn-icon,
+.kalam-reader-word-row-wrap button.kalam-btn-icon {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: @kalam_danger;
+    opacity: 0;
+}
+
+.kalam-reader-bookmark-row:hover button.kalam-btn-icon,
+.kalam-reader-bookmark-row:focus-within button.kalam-btn-icon,
+.kalam-reader-word-row-wrap:hover button.kalam-btn-icon,
+.kalam-reader-word-row-wrap:focus-within button.kalam-btn-icon {
+    opacity: 1;
+}
+
+popover.kalam-reader-color-popover {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+}
+
+box.kalam-reader-color-palette {
+    padding: 6px;
+}
+
+button.kalam-reader-color-choice {
+    min-width: 92px;
+    min-height: 30px;
+    padding: 5px 10px;
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 7px;
+    color: @kalam_text;
+}
+
+button.kalam-reader-color-choice:hover,
+button.kalam-reader-color-choice.active {
+    background: alpha(@kalam_surface_2, 0.9);
+    border-color: @kalam_accent;
+}
+
+button.kalam-reader-color-choice-yellow {
+    color: @kalam_hl_yellow;
+}
+
+button.kalam-reader-color-choice-green {
+    color: @kalam_hl_green;
+}
+
+button.kalam-reader-color-choice-blue {
+    color: @kalam_hl_blue;
+}
+
+button.kalam-reader-color-choice-pink {
+    color: @kalam_hl_pink;
+}
+
+button.kalam-reader-color-choice-orange {
+    color: @kalam_hl_orange;
 }
 
 .kalam-reader-annotation-text,
@@ -1572,7 +2470,8 @@ button.kalam-reader-list-hit:hover {
 }
 
 .kalam-reader-annotation-text {
-    font-size: 0.84rem;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 0.875rem;
     line-height: 1.55;
     font-style: italic;
 }
@@ -1599,10 +2498,13 @@ button.kalam-reader-list-hit:hover {
     border-bottom: 1px solid alpha(@kalam_border, 0.9);
 }
 
+/* The Notes searches stand alone as pills (decision 22). */
 entry.kalam-reader-search {
-    background: transparent;
-    border: none;
-    box-shadow: none;
+    background: @kalam_surface_2;
+    border: 1px solid alpha(@kalam_border, 0.9);
+    border-radius: 999px;
+    min-height: 44px;
+    padding: 0 14px;
     color: @kalam_text;
 }
 
@@ -1622,8 +2524,9 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-reader-word-name {
-    font-size: 0.92rem;
-    font-weight: 700;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 1rem;
+    font-weight: 600;
 }
 
 .kalam-reader-word-def {
@@ -1770,7 +2673,6 @@ entry.kalam-reader-search > text {
     border-radius: 999px;
     padding: 10px 22px;
     font-weight: 700;
-    transition: background 150ms ease;
 }
 
 .kalam-btn-filled:hover {
@@ -1793,7 +2695,6 @@ entry.kalam-reader-search > text {
     border-radius: 999px;
     padding: 10px 22px;
     font-weight: 600;
-    transition: background 150ms ease;
 }
 
 .kalam-btn-tonal:hover {
@@ -1807,7 +2708,6 @@ entry.kalam-reader-search > text {
     border-radius: 999px;
     padding: 10px 22px;
     font-weight: 600;
-    transition: background 150ms ease, border-color 150ms ease;
 }
 
 .kalam-btn-outlined:hover {
@@ -1822,7 +2722,6 @@ entry.kalam-reader-search > text {
     border-radius: 999px;
     padding: 10px 22px;
     font-weight: 600;
-    transition: background 150ms ease;
 }
 
 .kalam-btn-danger:hover {
@@ -1836,7 +2735,6 @@ entry.kalam-reader-search > text {
     border-radius: 999px;
     padding: 10px 22px;
     font-weight: 500;
-    transition: background 150ms ease, color 150ms ease;
 }
 
 .kalam-btn-ghost:hover {
@@ -1859,7 +2757,6 @@ entry.kalam-reader-search > text {
     min-width: 40px;
     min-height: 40px;
     padding: 0;
-    transition: background 150ms ease, border-color 150ms ease;
 }
 
 .kalam-btn-icon:hover {
@@ -1899,16 +2796,15 @@ entry.kalam-reader-search > text {
 }
 
 /* ── literary display type ──────────────────────────── */
-/* Book titles only — everywhere else stays on the system UI font. Bundle
-   Fraunces as an app resource before shipping; this degrades to the system
-   serif if it isn't installed, so nothing breaks in the meantime. */
+/* Book titles only — everywhere else stays on the system UI font. Playfair Display is bundled (src/fonts.rs); Literata/Georgia are the
+   fallbacks if font registration ever fails. */
 .kalam-title-serif {
-    font-family: "Fraunces", serif;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
     font-weight: 600;
 }
 
 .kalam-title-serif-italic {
-    font-family: "Fraunces", serif;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
     font-style: italic;
     font-weight: 500;
 }
@@ -2149,7 +3045,6 @@ entry.kalam-reader-search > text {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 12px;
-    box-shadow: 0 12px 32px alpha(#000, 0.55);
     min-width: 340px;
 }
 
@@ -2249,11 +3144,54 @@ entry.kalam-reader-search > text {
     color: @kalam_info;
 }
 
+/* §66 Toast "View" link (decision 184). */
+.kalam-toast-view {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: @kalam_accent;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    padding: 4px 10px;
+    min-width: 0;
+}
+
+.kalam-toast-view:hover {
+    background: @kalam_hover;
+    color: @kalam_accent;
+}
+
 /* ── theme picker (P5.5 v2: family blocks + mini UI previews) ── */
 .kalam-theme-btn {
     padding: 0;
     background: transparent;
     border: none;
+}
+
+.kalam-theme-mode-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-theme-mode-btn {
+    padding: 6px 16px;
+    border-radius: 999px;
+    border: 1px solid @kalam_border;
+    background: @kalam_surface;
+    color: @kalam_text_dim;
+    font-weight: 600;
+}
+
+.kalam-theme-mode-btn:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+.kalam-theme-mode-btn.active {
+    background: @kalam_accent_fill;
+    border-color: @kalam_accent_fill;
+    color: white;
 }
 
 .kalam-theme-family-card {
@@ -2285,7 +3223,6 @@ entry.kalam-reader-search > text {
 
 .kalam-theme-card.active {
     border-color: @kalam_accent;
-    box-shadow: inset 0 0 0 1px alpha(@kalam_accent, 0.18);
 }
 
 .kalam-theme-name {
@@ -2445,7 +3382,6 @@ entry.kalam-reader-search > text {
 .kalam-star-clear {
     background: transparent;
     border: none;
-    box-shadow: none;
     color: @kalam_text_dim;
     font-size: 0.8rem;
     min-width: 0;
@@ -2873,25 +3809,327 @@ switch.kalam-switch slider {
 }
 
 .kalam-bookpage-title {
-    font-family: "Fraunces", serif;
-    font-size: 1.7rem;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 46px;
     font-weight: 600;
     line-height: 1.15;
     color: @kalam_text;
 }
 
 .kalam-desc-serif {
-    font-family: "Fraunces", serif;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
     font-style: italic;
     font-size: 0.95rem;
     line-height: 1.55;
     color: @kalam_text_dim;
 }
 
+/* Book details (book-details-spec): the page-local pieces the shared
+   component classes do not own. */
+.kalam-bookpage-kind {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: @kalam_accent;
+}
+
+button.kalam-bookpage-series {
+    background: none;
+    border: none;
+    padding: 0;
+    min-height: 0;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 16px;
+    font-style: italic;
+    font-weight: 500;
+    color: @kalam_accent;
+}
+
+button.kalam-bookpage-series:hover {
+    text-decoration-line: underline;
+}
+
+button.kalam-bookpage-author {
+    background: none;
+    border: none;
+    padding: 0;
+    min-height: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+button.kalam-bookpage-author:hover {
+    color: @kalam_accent;
+    text-decoration-line: underline;
+}
+
+.kalam-bookpage-credit-role {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+.kalam-bookpage-facts {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+.kalam-bookpage-description {
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: @kalam_text_dim;
+}
+
+.kalam-bookpage-progress-pct {
+    font-size: 20px;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-bookpage-progress-meta {
+    font-size: 12px;
+    color: @kalam_text_dim;
+}
+
+.kalam-bookpage-annotation-count {
+    font-size: 16px;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-bookpage-annotation-quote {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 16px;
+    font-style: italic;
+    line-height: 1.5;
+    color: @kalam_text;
+}
+
+/* The cover's pencil (36px card circle) and the header's ⋯ (44px): the
+   shared menu trigger is 40px, so the page sizes its two instances. */
+menubutton.kalam-ui-menu-trigger.kalam-bookpage-cover-edit,
+menubutton.kalam-ui-menu-trigger.kalam-bookpage-cover-edit > button {
+    min-width: 36px;
+    min-height: 36px;
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+}
+
+menubutton.kalam-ui-menu-trigger.kalam-bookpage-more {
+    min-width: 44px;
+    min-height: 44px;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    background: transparent;
+}
+
+menubutton.kalam-ui-menu-trigger.kalam-bookpage-more > button {
+    min-width: 44px;
+    min-height: 44px;
+}
+
+/* Tag dialog rows (decision 84): the menu item's shape at the dialog's
+   44px row height — tick circle, name, count, with the row ⋯ beside it. */
+button.kalam-bookpage-tag-row {
+    min-height: 44px;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: @kalam_text;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+button.kalam-bookpage-tag-row:hover {
+    background: @kalam_hover;
+}
+
+button.kalam-bookpage-tag-row:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: -2px;
+}
+
+/* Series page (decisions 94–101): plain page, cover strip or plain
+   list. The app content host already contributes 24px of side padding
+   (and 72px on top behind the Back pill), so 32/24 here lands the page
+   on the spec's 56px margin and 96px header top. */
+.kalam-seriespage {
+    background: transparent;
+}
+
+.kalam-seriespage-inner {
+    padding: 24px 32px 32px;
+}
+
+.kalam-seriespage-eyebrow {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: @kalam_accent;
+}
+
+.kalam-seriespage-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 46px;
+    font-weight: 500;
+    line-height: 1.05;
+    letter-spacing: -0.7px;
+    color: @kalam_text;
+}
+
+button.kalam-seriespage-author {
+    background: none;
+    border: none;
+    padding: 0;
+    min-height: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+button.kalam-seriespage-author:hover {
+    color: @kalam_accent;
+    text-decoration-line: underline;
+}
+
+button.kalam-seriespage-author:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+menubutton.kalam-ui-menu-trigger.kalam-seriespage-more {
+    min-width: 44px;
+    min-height: 44px;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    background: transparent;
+}
+
+menubutton.kalam-ui-menu-trigger.kalam-seriespage-more > button {
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.kalam-seriespage-books-label,
+.kalam-seriespage-focused-meta {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: @kalam_text_dim;
+}
+
+/* The strip: size is the only focus treatment — no shadow, glow or
+   underline (decision 96). The 4px row padding keeps the keyboard ring
+   from clipping against the scroller's edge. */
+.kalam-series-strip {
+    padding: 4px;
+}
+
+button.kalam-seriespage-cover-button {
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    padding: 0;
+}
+
+button.kalam-seriespage-cover-button:hover {
+    outline: 2px solid @kalam_text_dim;
+    outline-offset: 2px;
+}
+
+button.kalam-seriespage-cover-button:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+.kalam-series-strip .kalam-cover-frame,
+.kalam-series-strip .kalam-cover-img,
+.kalam-series-strip .kalam-cover-placeholder {
+    border-radius: 10px;
+}
+
+.kalam-series-strip .kalam-ui-cover-missing-title {
+    color: @kalam_text_dim;
+}
+
+.kalam-seriespage-strip-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-seriespage-strip-title.focused {
+    font-weight: 700;
+}
+
+.kalam-seriespage-focused-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 22px;
+    font-weight: 500;
+    color: @kalam_text;
+}
+
+.kalam-seriespage-description {
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: @kalam_text_dim;
+}
+
+/* The list: plain 64px rows, hairlines between, no boxes. */
+button.kalam-seriespage-list-row {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    color: @kalam_text;
+}
+
+button.kalam-seriespage-list-row:hover {
+    background: @kalam_hover;
+}
+
+button.kalam-seriespage-list-row:focus-visible {
+    outline: 2px solid @kalam_accent;
+    outline-offset: -2px;
+}
+
+.kalam-seriespage-current-bar {
+    background: @kalam_accent;
+    border-radius: 999px;
+}
+
+.kalam-seriespage-list-thumb.kalam-cover-frame,
+.kalam-seriespage-list-thumb .kalam-cover-frame,
+.kalam-seriespage-list-thumb .kalam-cover-img,
+.kalam-seriespage-list-thumb .kalam-cover-placeholder,
+.kalam-seriespage-list-thumb .kalam-ui-cover-fallback,
+.kalam-seriespage-list-thumb.kalam-ui-cover-missing {
+    border-radius: 4px;
+}
+
+.kalam-seriespage-list-title {
+    font-size: 14px;
+    color: @kalam_text;
+}
+
+.kalam-seriespage-list-title.current {
+    font-weight: 700;
+}
+
+.kalam-seriespage-list-title.unread {
+    font-weight: 600;
+}
+
+.kalam-seriespage-list-title.read {
+    font-weight: 400;
+}
+
 /* Cover face with the page-edge behind it. */
 .kalam-cover-face {
     border-radius: 4px;
-    box-shadow: 0 12px 26px alpha(#000, 0.30);
 }
 
 /* Progress. */
@@ -2970,7 +4208,6 @@ button.kalam-series-link:hover {
 
 .kalam-btn-read:hover {
     background: @kalam_accent;
-    filter: brightness(1.1);
 }
 
 
@@ -3107,7 +4344,6 @@ button.kalam-detail-card-link:hover {
 
 .kalam-bar-today {
     background: @kalam_accent;
-    filter: brightness(1.15);
 }
 
 .kalam-bar-label {
@@ -3196,7 +4432,7 @@ button.kalam-detail-card-link:hover {
 }
 
 .kalam-hl-text {
-    font-family: "Fraunces", serif;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
     font-style: italic;
     font-size: 0.88rem;
     line-height: 1.45;
@@ -3323,28 +4559,14 @@ button.kalam-journey-more:hover {
     padding: 7px 10px;
 }
 
-/* ── P5.5 series float ─────────────────────────────────── */
-
-.kalam-series-float {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 14px;
-    box-shadow: 0 18px 44px alpha(#000, 0.40);
-}
-
-/* ── in-app highlights & quotes panel ─────────────────── */
-/* The three book-page panels: highlights, shelves checklist, tags. One rule
- * for all three — they were three byte-identical copies, and they now match
- * the A1 dialog shell (.kalam-float) so the app has one panel look, not two.
- * Kept as separate selectors because each is addressed elsewhere by name. */
-.kalam-annotations-float,
-.kalam-shelves-float,
-.kalam-tags-float,
-.kalam-edits-float {
+/* ── in-app shelves checklist panel ─────────────────── */
+/* The last of the old book-page float panels still standing: highlights
+ * and tags became designed dialogs, so only the shelves checklist (the
+ * app-level float opened from the book float) keeps this shell. */
+.kalam-shelves-float {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 20px;
-    box-shadow: 0 30px 80px alpha(#000, 0.46), 0 8px 24px alpha(#000, 0.26);
 }
 
 /* ── edits review panel (phase 6.5) ───────────────────── */
@@ -3352,7 +4574,7 @@ button.kalam-journey-more:hover {
    new text bright below it, the meta line quiet — same hierarchy as the
    highlights panel's text/meta pair. */
 .k-edit-before {
-    font-family: "Fraunces", serif;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
     font-style: italic;
     font-size: 0.86rem;
     line-height: 1.4;
@@ -3361,7 +4583,7 @@ button.kalam-journey-more:hover {
 }
 
 .k-edit-after {
-    font-family: "Fraunces", serif;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
     font-size: 0.88rem;
     line-height: 1.4;
     color: @kalam_text;
@@ -3381,69 +4603,7 @@ button.kalam-journey-more:hover {
     margin-top: 10px;
 }
 
-.kalam-series-float-title {
-    font-size: 1.0rem;
-    font-weight: 700;
-    color: @kalam_text;
-}
-
-.kalam-series-float .kalam-icon-btn {
-    border-radius: 999px;
-    min-height: 32px;
-    background: transparent;
-}
-
-.kalam-series-float .kalam-icon-btn image {
-    color: inherit;
-    -gtk-icon-size: 16px;
-}
-
-.kalam-series-float .kalam-icon-btn:disabled {
-    color: alpha(@kalam_text_dim, 0.5);
-    border-color: alpha(@kalam_border, 0.6);
-    background: transparent;
-}
-
-.kalam-series-spinner {
-    min-width: 28px;
-    min-height: 28px;
-}
-
-.kalam-series-error {
-    font-size: 0.88rem;
-    line-height: 1.5;
-    color: @kalam_text_dim;
-}
-
-.kalam-series-footer {
-    font-size: 0.7rem;
-    font-family: monospace;
-    color: @kalam_text_dim;
-}
-
-.kalam-series-row {
-    padding: 7px 8px;
-    border-radius: 10px;
-    background: transparent;
-}
-
-.kalam-series-row:hover {
-    background: @kalam_surface_2;
-}
-
-.kalam-series-num {
-    font-size: 0.68rem;
-    font-family: monospace;
-    color: @kalam_text_dim;
-}
-
-.kalam-series-name {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: @kalam_text;
-}
-
-/* Ownership badges. */
+/* Ownership badges (comics list). */
 .kalam-badge-series-read {
     background: alpha(@kalam_success, 0.16);
     color: @kalam_success;
@@ -3504,20 +4664,6 @@ button.kalam-journey-more:hover {
     background: #e5c07b;
 }
 
-.kalam-series-host {
-    padding: 4px 0;
-}
-
-.kalam-series-list {
-    min-width: 0;
-    padding-bottom: 8px;
-}
-
-.kalam-series-mini {
-    border-radius: 3px;
-}
-
-/* ── end P5.5 ──────────────────────────────────────────── */
 /* ── My Library v5 (docs/files/kalam_my_library_v5.html) ─────── */
 
 /* Top row: now reading card. */
@@ -3537,11 +4683,10 @@ button.kalam-journey-more:hover {
 }
 
 .kalam-nr-cover {
-    box-shadow: 4px 4px 0 alpha(#000, 0.45);
 }
 
 .kalam-nr-title {
-    font-family: "Fraunces", serif;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
     font-size: 0.82rem;
     color: @kalam_text;
     line-height: 1.3;
@@ -3670,6 +4815,11 @@ progressbar.kalam-goal-bar progress {
     min-width: 4px;
 }
 
+.kalam-lib-scroll {
+    background: transparent;
+    border: none;
+}
+
 /* Continue reading. */
 button.kalam-lib-play {
     background: @kalam_accent;
@@ -3680,13 +4830,9 @@ button.kalam-lib-play {
     min-height: 32px;
     padding: 0;
     opacity: 0;
-    transform: scale(0.8);
-    transition: opacity 180ms ease, transform 180ms ease;
-    box-shadow: 0 2px 8px alpha(#000, 0.4);
 }
 .kalam-lib-card:hover button.kalam-lib-play {
     opacity: 1;
-    transform: scale(1);
 }
 .kalam-lib-title {
     font-size: 0.72rem;
@@ -3709,12 +4855,15 @@ button.kalam-lib-play {
     border-radius: 14px;
     padding: 14px;
 }
+.kalam-q-cover {
+    border-radius: 6px;
+}
 .kalam-q-book {
     font-size: 0.66rem;
     color: @kalam_accent;
 }
 .kalam-q-text {
-    font-family: "Fraunces", serif;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
     font-style: italic;
     font-size: 0.78rem;
     color: @kalam_text_dim;
@@ -3767,7 +4916,7 @@ button.kalam-lib-play {
     border-color: @kalam_accent;
 }
 .kalam-vocab-word {
-    font-family: "Fraunces", serif;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
     font-size: 0.88rem;
     color: @kalam_text;
 }
@@ -3827,7 +4976,6 @@ button.kalam-lib-play {
     min-height: 36px;
     color: #cbd5e1;
     text-shadow: 0 1px 4px alpha(#000, 0.8);
-    transition: background 120ms ease, color 120ms ease;
 }
 
 .kalam-comics-icon-btn:hover {
@@ -3843,7 +4991,6 @@ button.kalam-lib-play {
     font-size: 0.78rem;
     font-weight: 600;
     color: #cbd5e1;
-    transition: background 120ms ease;
 }
 
 .kalam-comics-badge-btn:hover {
@@ -3867,7 +5014,6 @@ button.kalam-lib-play {
     min-width: 30px;
     min-height: 30px;
     color: #cbd5e1;
-    transition: background 120ms ease, color 120ms ease;
 }
 
 .kalam-comics-pill-nav:hover {
@@ -3906,7 +5052,6 @@ button.kalam-lib-play {
 .kalam-comics-settings-drawer {
     background: #111318;
     border-left: 1px solid alpha(#252a36, 0.8);
-    box-shadow: -10px 0 35px alpha(#000000, 0.7);
 }
 
 .kalam-comics-drawer-header {
@@ -3939,7 +5084,6 @@ button.kalam-lib-play {
     font-size: 0.82rem;
     font-weight: 500;
     color: #94a3b8;
-    transition: all 120ms ease;
 }
 
 .kalam-comics-seg-btn:hover {
@@ -4001,7 +5145,6 @@ scrollbar.kalam-reader-strip-bar {
     border: 1px solid alpha(@kalam_border, 0.60);
     border-radius: 999px;
     padding: 6px 12px;
-    box-shadow: 0 8px 32px alpha(#000000, 0.45);
 }
 
 button.kalam-lightbox-tool-btn {
@@ -4012,7 +5155,6 @@ button.kalam-lightbox-tool-btn {
     border: 1px solid transparent;
     background: transparent;
     color: @kalam_text;
-    transition: background 150ms ease, border-color 150ms ease;
 }
 
 button.kalam-lightbox-tool-btn:hover {
@@ -4043,29 +5185,25 @@ button.kalam-lightbox-tool-btn.close:hover {
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 999px;
   padding: 5px 6px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
 }
 
 .k-sel-toolbar-popover {
   background: transparent;
   padding: 0;
   border: none;
-  box-shadow: none;
 }
 .k-sel-toolbar-popover > contents {
   background: transparent;
   padding: 0;
   border: none;
-  box-shadow: none;
 }
 
 .k-sel-action {
   padding: 6px 12px; border-radius: 999px;
   border: none; background: transparent;
   color: rgba(255,255,255,0.8);
-  font-family: 'IBM Plex Sans', sans-serif;
+  font-family: "DM Sans", sans-serif;
   font-size: 12px; font-weight: 500;
-  transition: background 150ms ease, color 150ms ease;
 }
 
 .k-sel-action image { -gtk-icon-size: 14px; }
@@ -4077,12 +5215,13 @@ button.kalam-lightbox-tool-btn.close:hover {
 .k-color-bar { padding: 0 4px; }
 
 .k-color-dot {
-  min-width: 20px; min-height: 20px; border-radius: 50%;
+  /* Adwaita's default button padding otherwise stretches the 20px dots
+     into ovals (seen in the Annotations dialog captures). */
+  min-width: 20px; min-height: 20px; padding: 0; border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.2);
-  transition: transform 150ms ease, border-color 150ms ease;
 }
 
-.k-color-dot:hover { transform: scale(1.22); border-color: rgba(255,255,255,0.6); }
+.k-color-dot:hover { border-color: rgba(255,255,255,0.6); }
 
 .k-color-dot-yellow { background: rgba(229,192,123,0.38); }
 .k-color-dot-green  { background: rgba(152,195,121,0.38); }
@@ -4092,7 +5231,6 @@ button.kalam-lightbox-tool-btn.close:hover {
 
 .k-color-dot.active {
   border-color: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 0 0 2px rgba(97, 175, 239, 0.8);
 }
 
 /* ── Calibre-style annotation drawer ──────────────────── */
@@ -4101,7 +5239,6 @@ button.kalam-lightbox-tool-btn.close:hover {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
   padding: 10px 12px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
 }
 
 .k-annotation-header {
@@ -4118,10 +5255,9 @@ button.kalam-lightbox-tool-btn.close:hover {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.75);
-  font-family: 'IBM Plex Sans', sans-serif;
+  font-family: "DM Sans", sans-serif;
   font-size: 11px;
   font-weight: 500;
-  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 
 .k-style-btn:hover {
@@ -4145,7 +5281,7 @@ button.kalam-lightbox-tool-btn.close:hover {
 .k-annotation-note-area {
   background: transparent;
   color: rgba(255, 255, 255, 0.9);
-  font-family: 'IBM Plex Sans', sans-serif;
+  font-family: "DM Sans", sans-serif;
   font-size: 12px;
   padding: 6px;
 }
@@ -4160,7 +5296,7 @@ button.kalam-lightbox-tool-btn.close:hover {
   border: 1px solid rgba(235, 87, 87, 0.4);
   background: rgba(235, 87, 87, 0.15);
   color: rgb(235, 87, 87);
-  font-family: 'IBM Plex Sans', sans-serif;
+  font-family: "DM Sans", sans-serif;
   font-size: 11px;
   font-weight: 500;
 }
@@ -4176,7 +5312,7 @@ button.kalam-lightbox-tool-btn.close:hover {
   border: 1px solid alpha(@kalam_accent, 0.6);
   background: @kalam_accent;
   color: rgb(255, 255, 255);
-  font-family: 'IBM Plex Sans', sans-serif;
+  font-family: "DM Sans", sans-serif;
   font-size: 12px;
   font-weight: 600;
 }
@@ -4185,193 +5321,187 @@ button.kalam-lightbox-tool-btn.close:hover {
   background: alpha(@kalam_accent, 0.85);
 }
 
-/* ── Word Memory preview tooltip ──────────────────────── */
+/* ── Word Memory preview tooltip (decision 33) ────────── */
 .k-word-preview-popover {
   background: transparent;
   padding: 0;
   border: none;
-  box-shadow: none;
 }
 .k-word-preview-popover > contents {
   background: transparent;
   padding: 0;
   border: none;
-  box-shadow: none;
 }
 
 .k-word-preview-card {
-  background: rgba(24, 27, 34, 0.97);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  padding: 8px 12px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+  background: @kalam_card;
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  padding: 12px 14px;
 }
 
 .k-word-preview-head {
-  font-family: 'Fraunces', serif;
+  font-family: "Playfair Display", "Literata", Georgia, serif;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 15px;
+  color: @kalam_text;
+}
+
+.k-word-preview-tick { color: @kalam_accent; }
+
+.k-word-preview-saved {
+  font-size: 11px;
+  font-weight: 600;
   color: @kalam_accent;
 }
 
 .k-word-preview-def {
-  font-family: 'IBM Plex Sans', sans-serif;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.85);
-  line-height: 1.35;
+  font-size: 12.5px;
+  color: @kalam_text_dim;
+  line-height: 1.4;
 }
 
-/* ── dictionary popup (v3 design) ─────────────────────── */
-/* Palette + type from docs/design/kalam_dictionary_popup_v3.html. Fonts fall
-   back to generic families when Fraunces / IBM Plex are not installed. */
+/* ── dictionary popup (decision 31) ───────────────────── */
+/* One card family with the annotation popover: card fill, 1px border,
+   radius 14, no arrow. Type and colour come from the tokens alone. */
 popover.kalam-reader-dict-popover { background: transparent; }
 popover.kalam-reader-dict-popover > contents {
   background-color: transparent;
   border: none;
   padding: 0;
-  box-shadow: none;
 }
 
 .k-popup {
-  background-color: #1b1e24;
-  border: 1px solid #343842;
-  border-radius: 18px;
-  box-shadow: 0 32px 72px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.3);
+  background-color: @kalam_card;
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
 }
 
 .k-header {
-  background-color: #1b1e24;
-  border-bottom: 1px solid #343842;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-  padding: 20px 20px 16px;
+  border-bottom: 1px solid @kalam_border;
+  padding: 14px 14px 12px 18px;
 }
 
 .k-word {
-  font-family: "Fraunces", Georgia, serif;
-  font-size: 26px;
+  font-family: "Playfair Display", "Literata", Georgia, serif;
+  font-size: 22px;
   font-weight: 600;
-  color: #e6e9ef;
+  color: @kalam_text;
 }
 
 .k-pronunciation {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
-  color: #6b7280;
+  font-size: 12px;
+  color: @kalam_text_dim;
 }
 
-.k-pos {
-  font-size: 10px;
-  font-style: italic;
-  color: #c678dd;
-  background-color: rgba(198,120,221,0.14);
+.k-save-btn, .k-audio-btn, .k-back-btn {
+  background: transparent;
+  border: 1px solid @kalam_border;
   border-radius: 999px;
-  padding: 2px 9px;
-}
-
-.k-save-btn, .k-audio-btn {
-  background-color: #282c34;
-  border: 1px solid #343842;
-  border-radius: 999px;
-  color: #6b7280;
+  color: @kalam_text_dim;
   min-width: 30px;
   min-height: 30px;
+  padding: 0;
 }
-.k-save-btn:hover, .k-audio-btn:hover { background-color: #343842; color: #abb2bf; }
+.k-save-btn:hover, .k-audio-btn:hover, .k-back-btn:hover {
+  background-color: @kalam_hover;
+  color: @kalam_text;
+}
 .k-save-btn.saved {
-  color: #61afef;
-  border-color: #61afef;
-  background-color: rgba(97,175,239,0.15);
+  background-color: @kalam_accent;
+  border-color: @kalam_accent;
+  color: @kalam_paper;
 }
+.k-save-btn:disabled, .k-audio-btn:disabled { opacity: 0.45; }
 
-.k-body { padding: 4px 20px 24px; }
+.k-body { padding: 6px 18px 20px; }
 
 .k-section-label {
-  font-size: 9px;
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #6b7280;
-  margin-top: 20px;
-  margin-bottom: 10px;
+  color: @kalam_text_3;
+  margin-top: 18px;
+  margin-bottom: 8px;
+}
+
+.k-pos-divider { margin-top: 14px; }
+.k-pos-divider:first-child { margin-top: 6px; }
+
+.k-pos-name {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: @kalam_text_dim;
 }
 
 .k-def-num {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 10px;
-  color: #61afef;
-}
-.k-def-text { font-size: 13px; color: #abb2bf; }
-.k-def-example {
-  font-family: "Fraunces", Georgia, serif;
-  font-style: italic;
   font-size: 12px;
-  color: #6b7280;
+  color: @kalam_text_3;
+  padding-top: 2px;
 }
-.k-def-badge {
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  color: #61afef;
-  background-color: rgba(97,175,239,0.15);
-  border-radius: 999px;
-  padding: 1px 8px;
+.k-def-text {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: @kalam_text;
+}
+.k-def-example {
+  font-family: "Playfair Display", "Literata", Georgia, serif;
+  font-style: italic;
+  font-size: 12.5px;
+  color: @kalam_text_dim;
 }
 .k-show-more {
-  font-size: 11px;
-  color: #61afef;
+  font-size: 12px;
+  color: @kalam_accent;
   background: transparent;
   border: none;
-  box-shadow: none;
   padding: 0;
 }
 .k-show-more:hover { text-decoration: underline; }
 
 .k-chip {
-  font-size: 12px;
+  font-size: 12.5px;
+  color: @kalam_text;
+  background-color: @kalam_hover;
   border-radius: 999px;
-  border: 1px solid;
+  border: 1px solid @kalam_border;
   padding: 4px 12px;
-  box-shadow: none;
 }
-.k-chip-syn {
-  color: #61afef;
-  background-color: rgba(97,175,239,0.15);
-  border-color: rgba(97,175,239,0.3);
+.k-chip:hover {
+  border-color: @kalam_accent;
+  color: @kalam_accent;
 }
-.k-chip-syn:hover { background-color: rgba(97,175,239,0.25); border-color: #61afef; }
-.k-chip-ant {
-  color: #e06c75;
-  background-color: rgba(224,108,117,0.14);
-  border-color: rgba(224,108,117,0.3);
-}
-.k-chip-ant:hover { background-color: rgba(224,108,117,0.25); border-color: #e06c75; }
 
 .k-idiom-item {
-  background-color: #282c34;
-  border: 1px solid #343842;
+  background-color: @kalam_hover;
   border-radius: 10px;
   padding: 10px 12px;
 }
 .k-idiom-phrase {
-  font-family: "Fraunces", Georgia, serif;
+  font-family: "Playfair Display", "Literata", Georgia, serif;
   font-style: italic;
-  font-size: 13px;
-  color: #e6e9ef;
+  font-size: 13.5px;
+  color: @kalam_text;
 }
-.k-idiom-def { font-size: 12px; color: #abb2bf; }
+.k-idiom-def { font-size: 12.5px; color: @kalam_text_dim; }
 
 .k-fade-bottom {
-  background-image: linear-gradient(to bottom, transparent, #1b1e24);
-  border-radius: 0 0 18px 18px;
+  background-image: linear-gradient(to bottom, transparent, @kalam_card);
+  border-radius: 0 0 14px 14px;
 }
 
 /* Roadmap 2.5: a footnote read in place. No new colours — the note card is
    the dictionary card, so the two read as the same kind of thing. */
 .k-note-text {
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.55;
-  padding: 14px 20px 2px;
+  color: @kalam_text;
+  padding: 14px 18px 2px;
 }
 
 .k-note-go {
+  color: @kalam_accent;
   margin: 8px 14px 14px;
 }
 
@@ -4386,7 +5516,6 @@ popover.kalam-reader-dict-popover > contents {
     border: 1px solid alpha(@kalam_border, 0.7);
     border-radius: 999px;
     padding: 4px 12px;
-    box-shadow: 0 4px 12px alpha(#000, 0.15);
 }
 
 .kalam-reader-location-text {
@@ -4398,7 +5527,6 @@ popover.kalam-reader-dict-popover > contents {
 .kalam-pdf-page-image,
 .kalam-pdf-two-page {
     background: #ffffff;
-    box-shadow: 0 8px 30px alpha(#000, 0.28);
     border-radius: 2px;
 }
 
@@ -4430,7 +5558,6 @@ popover.kalam-reader-dict-popover > contents {
     padding: 7px 18px;
     border-radius: 9999px;
     letter-spacing: 0.5px;
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.38);
 }
 
 /* ── Bubbles (Multi-Book Floating Chat Heads & Split Reader) ─────── */
@@ -4442,7 +5569,6 @@ popover.kalam-reader-dict-popover > contents {
     min-width: 56px;
     min-height: 56px;
     border-radius: 9999px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.42);
     background: rgba(30, 30, 36, 0.85);
 }
 
@@ -4465,7 +5591,6 @@ popover.kalam-reader-dict-popover > contents {
     font-weight: 700;
     padding: 1px 5px;
     border-radius: 9999px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .k-bubble-mini-close {
@@ -4476,7 +5601,6 @@ popover.kalam-reader-dict-popover > contents {
     margin: 2px;
     min-height: 18px;
     min-width: 18px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .k-bubble-mini-close-btn {
@@ -4499,7 +5623,6 @@ popover.kalam-reader-dict-popover > contents {
 .k-bubble-floating-strip {
     background: transparent;
     border: none;
-    box-shadow: none;
     padding: 0;
     margin-bottom: 8px;
 }
@@ -4508,7 +5631,6 @@ popover.kalam-reader-dict-popover > contents {
     background: @kalam_surface;
     border: 1px solid alpha(@kalam_border, 0.6);
     border-radius: 14px;
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
 }
 
 .k-bubble-pill-active {
@@ -4516,13 +5638,10 @@ popover.kalam-reader-dict-popover > contents {
     border: 1px solid alpha(@kalam_accent, 0.65);
     border-radius: 9999px;
     padding: 3px 10px 3px 6px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-    transition: all 180ms ease-in-out;
 }
 
 .k-bubble-pill-active:hover {
     border-color: alpha(@kalam_accent, 0.9);
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
 }
 
 .k-bubble-pill-title {
@@ -4542,12 +5661,9 @@ popover.kalam-reader-dict-popover > contents {
     border: 1px solid alpha(@kalam_border, 0.5);
     background: alpha(@kalam_surface, 0.9);
     padding: 1px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    transition: transform 150ms ease-in-out;
 }
 
 .k-bubble-circle-inactive:hover {
-    transform: scale(1.06);
     border-color: alpha(@kalam_accent, 0.7);
 }
 
@@ -4560,7 +5676,6 @@ popover.kalam-reader-dict-popover > contents {
     border: 1px solid alpha(@kalam_border, 0.6);
     border-radius: 9999px;
     padding: 2px 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
     margin-left: 4px;
 }
 
@@ -4605,7 +5720,6 @@ popover.kalam-reader-dict-popover > contents {
 /* ── Whole-Book In-Reader Search Bar & Highlights ─────────────── */
 
 .kalam-reader-search-shell {
-    transition: all 200ms ease;
 }
 
 .kalam-reader-search-bar {
@@ -4613,7 +5727,6 @@ popover.kalam-reader-dict-popover > contents {
     border: 1px solid @kalam_border;
     border-radius: 12px;
     padding: 5px 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
 }
 
 .kalam-reader-search-btn {
@@ -4622,7 +5735,6 @@ popover.kalam-reader-dict-popover > contents {
     border-radius: 6px;
     padding: 6px 8px;
     color: @kalam_text;
-    transition: background-color 150ms ease, color 150ms ease;
 }
 
 .kalam-reader-search-btn:hover {
@@ -4637,7 +5749,6 @@ popover.kalam-reader-dict-popover > contents {
     padding: 2px 8px;
     margin: 0 2px;
     color: @kalam_text_dim;
-    transition: all 150ms ease;
 }
 
 .kalam-reader-search-count-btn:hover {
@@ -4664,7 +5775,6 @@ popover.kalam-reader-dict-popover > contents {
     border-radius: 12px;
     border: 1px solid @kalam_border;
     background: @kalam_surface;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
     padding: 0;
 }
 
@@ -4700,7 +5810,6 @@ popover.kalam-reader-dict-popover > contents {
     margin-bottom: 4px;
     background: transparent;
     border: 1px solid transparent;
-    transition: background-color 150ms ease, border-color 150ms ease;
 }
 
 .kalam-search-snippet-row:hover {
@@ -4730,4 +5839,1374 @@ popover.kalam-reader-dict-popover > contents {
     line-height: 1.35;
     color: @kalam_text;
     margin-top: 2px;
+}
+
+/* ── Redesign component library ───────────────────────────────────────
+   New shared components use the `kalam-ui-` namespace so pages can adopt
+   them one at a time without changing the legacy classes above. Shape and
+   type come from docs/design/design-system.md §§3–4 and §§9–24; colours
+   are only referenced through the Phase 1 `@kalam_*` token names. */
+
+.kalam-ui-display {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 46px;
+    font-weight: 500;
+    line-height: 1.05;
+    letter-spacing: -0.7px;
+    color: @kalam_text;
+}
+
+.kalam-ui-section-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 18px;
+    font-weight: 500;
+    color: @kalam_text;
+}
+
+.kalam-ui-card-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-ui-quote {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 14px;
+    font-style: italic;
+    line-height: 1.78;
+    color: @kalam_text;
+}
+
+.kalam-ui-body {
+    font-size: 14px;
+    color: @kalam_text;
+}
+
+.kalam-ui-meta {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-caption {
+    font-size: 11px;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: @kalam_text_dim;
+}
+
+/* Buttons (§§6, 12, 13, 33). */
+button.kalam-ui-pill-button {
+    min-height: 40px;
+    padding: 0 20px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+button.kalam-ui-pill-button:focus,
+button.kalam-ui-icon-button:focus,
+button.kalam-ui-chip:focus,
+button.kalam-ui-segment:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+button.kalam-ui-pill-button:disabled,
+button.kalam-ui-icon-button:disabled,
+button.kalam-ui-chip:disabled,
+button.kalam-ui-segment:disabled {
+    opacity: 0.4;
+}
+
+button.kalam-ui-pill-button.primary {
+    background: @kalam_accent_fill;
+    border: 1px solid @kalam_accent_fill;
+    color: white;
+}
+
+button.kalam-ui-pill-button.primary:hover {
+    background: shade(@kalam_accent_fill, 1.08);
+    border-color: shade(@kalam_accent_fill, 1.08);
+}
+
+button.kalam-ui-pill-button.ghost {
+    background: transparent;
+    border: 1px solid transparent;
+    color: @kalam_text_dim;
+}
+
+button.kalam-ui-pill-button.ghost:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+button.kalam-ui-pill-button.boxed-ghost {
+    background: transparent;
+    border: 1px solid @kalam_border;
+    color: @kalam_text;
+}
+
+button.kalam-ui-pill-button.boxed-ghost:hover {
+    background: @kalam_hover;
+}
+
+button.kalam-ui-pill-button.danger {
+    background: transparent;
+    border: 1px solid @kalam_accent;
+    color: @kalam_accent;
+}
+
+button.kalam-ui-pill-button.danger:hover {
+    background: @kalam_accent_dim;
+}
+
+button.kalam-ui-icon-button {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: @kalam_text;
+}
+
+button.kalam-ui-icon-button:hover {
+    background: @kalam_hover;
+}
+
+button.kalam-ui-icon-button.active {
+    background: @kalam_accent_fill;
+    border-color: @kalam_accent_fill;
+    color: white;
+}
+
+button.kalam-ui-icon-button.bordered {
+    border-color: @kalam_border;
+}
+
+button.kalam-ui-icon-button image {
+    color: inherit;
+    -gtk-icon-size: 18px;
+}
+
+/* Segmented controls and panel tabs (§§10, 22). */
+.kalam-ui-segmented {
+    background: @kalam_bg;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    padding: 4px;
+}
+
+button.kalam-ui-segment {
+    min-height: 28px;
+    padding: 0 16px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    color: @kalam_text_dim;
+    font-size: 12.5px;
+    font-weight: 500;
+}
+
+.kalam-ui-segmented.panel button.kalam-ui-segment {
+    min-height: 36px;
+    font-size: 14px;
+}
+
+button.kalam-ui-segment:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+button.kalam-ui-segment.active {
+    background: @kalam_accent_fill;
+    border-color: @kalam_accent_fill;
+    color: white;
+}
+
+/* Chips, key chips and count badges (§§10, 13, 17). */
+button.kalam-ui-chip {
+    min-height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid @kalam_border;
+    background: transparent;
+    color: @kalam_text_dim;
+    font-size: 12.5px;
+    font-weight: 500;
+}
+
+button.kalam-ui-chip.search {
+    min-height: 44px;
+    padding: 0 16px;
+}
+
+button.kalam-ui-chip:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+button.kalam-ui-chip:checked {
+    border-color: @kalam_accent;
+    color: @kalam_text;
+    background: @kalam_accent_dim;
+}
+
+.kalam-ui-chip-label,
+.kalam-ui-key-chip,
+.kalam-ui-count-badge {
+    border: 1px solid @kalam_border;
+    color: @kalam_text_dim;
+    font-size: 12.5px;
+}
+
+.kalam-ui-chip-label {
+    min-height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
+}
+
+.kalam-ui-chip-label.active {
+    border-color: @kalam_accent;
+    color: @kalam_text;
+}
+
+.kalam-ui-key-chip {
+    min-height: 24px;
+    padding: 0 8px;
+    border-radius: 6px;
+    color: @kalam_text;
+    font-size: 12px;
+}
+
+.kalam-ui-key-chip.recording {
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+.kalam-ui-count-badge {
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+    font-weight: 600;
+}
+
+/* Setting rows, switches, sliders and steppers (§§9–10). */
+.kalam-ui-setting-row {
+    min-height: 48px;
+}
+
+.kalam-ui-setting-copy {
+    min-width: 0;
+}
+
+switch.kalam-ui-switch {
+    margin: 0;
+    border: none;
+    min-width: 40px;
+    min-height: 24px;
+    border-radius: 999px;
+    background: @kalam_border;
+}
+
+switch.kalam-ui-switch:checked {
+    background: @kalam_accent;
+}
+
+switch.kalam-ui-switch slider {
+    margin: 3px;
+    border: none;
+    min-width: 18px;
+    min-height: 18px;
+    border-radius: 999px;
+    background: @kalam_text;
+}
+
+switch.kalam-ui-switch:checked slider {
+    background: white;
+}
+
+scale.kalam-ui-slider {
+    min-height: 24px;
+    padding: 0;
+}
+
+scale.kalam-ui-slider trough {
+    min-height: 4px;
+    border-radius: 2px;
+    background: @kalam_border;
+}
+
+scale.kalam-ui-slider highlight {
+    min-height: 4px;
+    border-radius: 2px;
+    background: @kalam_accent;
+}
+
+scale.kalam-ui-slider slider {
+    min-width: 18px;
+    min-height: 18px;
+    margin: -7px 0;
+    border: none;
+    border-radius: 999px;
+    background: @kalam_accent;
+}
+
+.kalam-ui-stepper-value {
+    min-width: 64px;
+    font-size: 14px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+/* Surfaces (§§9, 10, 14, 30). */
+.kalam-ui-inset-card {
+    background: @kalam_bg;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 0;
+}
+
+.kalam-ui-inset-row {
+    min-height: 48px;
+    padding: 0 16px;
+    border-top: 1px solid @kalam_border;
+}
+
+.kalam-ui-inset-row:first-child {
+    border-top: none;
+}
+
+.kalam-ui-outlined-section {
+    background: @kalam_bg;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 20px;
+}
+
+.kalam-ui-side-panel {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 22px;
+    padding: 20px;
+}
+
+.kalam-ui-state-card {
+    background: transparent;
+    border: 1.5px dashed @kalam_text_dim;
+    border-radius: 6px;
+    padding: 24px;
+}
+
+.kalam-ui-state-heading {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-ui-quiet-notice {
+    border-top: 1px solid @kalam_border;
+    padding-top: 16px;
+    margin-top: 32px;
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+separator.kalam-ui-hairline {
+    min-height: 1px;
+    background: @kalam_border;
+}
+
+/* Progress and rating (§§10, 16, 19). */
+progressbar.kalam-ui-progress {
+    min-height: 3px;
+    font-size: 0;
+}
+
+progressbar.kalam-ui-progress trough {
+    min-height: 3px;
+    border: none;
+    border-radius: 2px;
+    background: @kalam_border;
+}
+
+progressbar.kalam-ui-progress progress {
+    min-height: 3px;
+    border: none;
+    border-radius: 2px;
+    background: @kalam_accent;
+}
+
+drawingarea.kalam-ui-segmented-progress {
+    color: @kalam_accent;
+}
+
+drawingarea.kalam-ui-rating {
+    color: @kalam_accent;
+}
+
+.kalam-ui-rating-label {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+/* Hidden component-preview route (`KALAM_ROUTE=components`). */
+.kalam-component-preview {
+    background: @kalam_bg;
+}
+
+.kalam-component-preview-content {
+    padding: 12px 0 32px 0;
+}
+
+.kalam-component-preview-status {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    padding: 8px 14px;
+    color: @kalam_text_dim;
+    font-size: 12.5px;
+}
+
+/* Hidden foreground probes for Cairo-drawn components. They carry no text
+   and are never visible; only their resolved `color` is read. */
+.kalam-ui-token-accent { color: @kalam_accent; }
+.kalam-ui-token-border { color: @kalam_border; }
+.kalam-ui-token-text-dim { color: @kalam_text_dim; }
+
+/* Menus and submenus (§17). GTK paints a popover through its `contents`
+   node; styling only the outer popover leaves the platform surface and
+   shadow behind, so the redesign surface lives there. */
+popover.kalam-ui-menu {
+    background: transparent;
+}
+
+popover.kalam-ui-menu > contents {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 6px;
+}
+
+.kalam-ui-menu-list {
+    background: transparent;
+}
+
+button.kalam-ui-menu-item,
+menubutton.kalam-ui-menu-item {
+    min-height: 40px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: @kalam_text;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+menubutton.kalam-ui-menu-item > button {
+    min-height: 40px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+button.kalam-ui-menu-item:hover,
+menubutton.kalam-ui-menu-item:hover,
+menubutton.kalam-ui-menu-item > button:hover,
+button.kalam-ui-menu-item.open,
+menubutton.kalam-ui-menu-item.open {
+    background: @kalam_hover;
+}
+
+button.kalam-ui-menu-item:focus,
+menubutton.kalam-ui-menu-item:focus,
+menubutton.kalam-ui-menu-item > button:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: -2px;
+}
+
+button.kalam-ui-menu-item:disabled,
+menubutton.kalam-ui-menu-item:disabled {
+    opacity: 0.4;
+}
+
+button.kalam-ui-menu-item.destructive,
+menubutton.kalam-ui-menu-item.destructive {
+    color: @kalam_accent;
+}
+
+.kalam-ui-menu-item-content {
+    padding: 0 10px;
+}
+
+.kalam-ui-menu-item-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: inherit;
+}
+
+.kalam-ui-menu-chevron {
+    color: @kalam_text_dim;
+    font-size: 16px;
+}
+
+.kalam-ui-menu-check {
+    min-width: 22px;
+    min-height: 22px;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    background: transparent;
+    color: transparent;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.kalam-ui-menu-check.checked {
+    background: @kalam_accent_fill;
+    border-color: @kalam_accent_fill;
+    color: white;
+}
+
+.kalam-ui-menu-separator {
+    min-height: 1px;
+    background: @kalam_border;
+    margin: 4px 10px;
+}
+
+button.kalam-ui-menu-trigger,
+menubutton.kalam-ui-menu-trigger {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    color: @kalam_text;
+}
+
+menubutton.kalam-ui-menu-trigger > button {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+}
+
+menubutton.kalam-ui-menu-trigger:hover,
+menubutton.kalam-ui-menu-trigger > button:hover {
+    background: @kalam_hover;
+}
+
+menubutton.kalam-ui-menu-trigger:focus,
+menubutton.kalam-ui-menu-trigger > button:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+/* Slide-out pill (§23). The sizing/reveal mechanics are in
+   `slide_out_pill.rs`: an expanding spacer moves following controls while
+   the primary stays painted above the secondary pill's tucked-under edge. */
+.kalam-ui-slideout {
+    background: transparent;
+}
+
+.kalam-ui-slideout-primary,
+button.kalam-ui-pill-button.kalam-ui-slideout-primary {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    color: @kalam_text;
+}
+
+button.kalam-ui-slideout-pill {
+    min-height: 44px;
+    padding: 0 16px 0 38px;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    background: @kalam_bg;
+    color: @kalam_text;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+button.kalam-ui-slideout-pill:hover {
+    background: @kalam_hover;
+}
+
+button.kalam-ui-slideout-pill:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+button.kalam-ui-slideout-pill:disabled {
+    background: @kalam_bg;
+    color: alpha(@kalam_text, 0.4);
+}
+
+/* Series timeline (§15). The gutter itself is Cairo-drawn in
+   `timeline.rs`; these classes carry the row's text roles. */
+.kalam-ui-timeline {
+    background: transparent;
+}
+
+.kalam-ui-timeline-row {
+    min-height: 64px;
+}
+
+drawingarea.kalam-ui-timeline-gutter {
+    min-width: 24px;
+    min-height: 64px;
+}
+
+.kalam-ui-timeline-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-ui-timeline-subtitle {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-timeline-right {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-timeline-right.current {
+    color: @kalam_accent;
+    font-weight: 600;
+}
+
+.kalam-ui-timeline-bookmarks {
+    color: @kalam_accent;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+.kalam-ui-timeline-bookmarks image {
+    color: @kalam_accent;
+    -gtk-icon-size: 14px;
+}
+
+/* Cover fallback, missing and finished states (§20). */
+.kalam-ui-cover-fallback {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.kalam-ui-cover-fallback.compact {
+    padding: 8px;
+    border-radius: 6px;
+}
+
+.kalam-ui-cover-kind {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-cover-fallback.compact .kalam-ui-cover-kind {
+    font-size: 8px;
+}
+
+.kalam-ui-cover-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 22px;
+    font-weight: 500;
+    color: @kalam_text;
+}
+
+.kalam-ui-cover-fallback.compact .kalam-ui-cover-title {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.kalam-ui-cover-author {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-cover-fallback.compact .kalam-ui-cover-author {
+    font-size: 9px;
+}
+
+.kalam-ui-cover-missing {
+    background: transparent;
+    border: 1.5px dashed @kalam_text_dim;
+    border-radius: 10px;
+    padding: 16px;
+}
+
+.kalam-ui-cover-missing.compact {
+    border-radius: 6px;
+    padding: 8px;
+}
+
+.kalam-ui-cover-missing-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-ui-cover-missing.compact .kalam-ui-cover-missing-title {
+    font-size: 10px;
+}
+
+.kalam-ui-cover-missing-caption {
+    font-size: 11px;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-fetch-cover {
+    /* The missing-cover column already contributes 6px of row spacing;
+       together these give §28's 8px below the caption. */
+    margin-top: 2px;
+}
+
+.kalam-ui-finished-badge {
+    min-width: 22px;
+    min-height: 22px;
+    border: 1px solid @kalam_accent_fill;
+    border-radius: 999px;
+    background: @kalam_accent_fill;
+    color: white;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+/* Reader selection chip (§13). The five colour dots are Cairo-drawn so
+   their fixed highlight palette does not become five new CSS hex rules. */
+.kalam-ui-selection-chip {
+    min-height: 44px;
+    padding: 0 8px;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    background: @kalam_card;
+}
+
+button.kalam-ui-selection-color {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+}
+
+button.kalam-ui-selection-color:hover {
+    background: @kalam_hover;
+}
+
+button.kalam-ui-selection-color:focus {
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+drawingarea.kalam-ui-selection-dot {
+    min-width: 20px;
+    min-height: 20px;
+}
+
+.kalam-ui-selection-divider {
+    min-width: 1px;
+    min-height: 24px;
+    background: @kalam_border;
+    margin: 0 4px;
+}
+
+popover.kalam-ui-selection-popover {
+    background: transparent;
+}
+
+popover.kalam-ui-selection-popover > contents {
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
+/* Redesign dialogs (§§13, 18, 31), layered onto the existing
+   `in_app_dialog` scrim/focus-trap/teardown machinery. */
+.kalam-float-scrim.kalam-ui-dialog-scrim {
+    background: @kalam_overlay;
+}
+
+.kalam-float.kalam-in-app-dialog.kalam-ui-dialog-panel {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+}
+
+.kalam-ui-dialog-head {
+    padding: 24px 24px 0 24px;
+}
+
+.kalam-ui-dialog-title {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 18px;
+    font-weight: 500;
+    color: @kalam_text;
+}
+
+.kalam-ui-dialog-body {
+    padding: 12px 24px 24px 24px;
+}
+
+.kalam-ui-dialog-message {
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: @kalam_text_dim;
+}
+
+.kalam-ui-dialog-footer {
+    /* DialogShell's column contributes the other 16px; §31 asks for the
+       actions 28px below the body in total. */
+    margin-top: 12px;
+}
+
+.kalam-ui-field-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: @kalam_text_dim;
+}
+
+entry.kalam-ui-field {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+    background: @kalam_bg;
+    color: @kalam_text;
+    font-size: 14px;
+}
+
+entry.kalam-ui-field:focus {
+    border-color: @kalam_accent;
+    outline: 2px solid @kalam_accent;
+    outline-offset: 2px;
+}
+
+entry.kalam-ui-field:disabled {
+    opacity: 0.4;
+}
+
+/* Additional Cairo colour probes used by the timeline. */
+.kalam-ui-token-accent-fill { color: @kalam_accent_fill; }
+.kalam-ui-token-bg { color: @kalam_bg; }
+.kalam-ui-token-text { color: @kalam_text; }
+
+/* ------------------------------------------------------------------ */
+/* Author page (author-page-spec.md, decisions 104–115)               */
+/* A scrolling page on plain bg: header + facts panel (§25), two      */
+/* series-card groups (§26), the overlaid open-series panel (§27),   */
+/* and the highlights row (§29). Radii 4/6/10/14/999.                  */
+/* ------------------------------------------------------------------ */
+
+/* The app's .kalam-content already insets 72 top / 24 sides; this
+   brings the page to the spec's 96 from the top, 56 margins, 48 at
+   the foot (decision 105). */
+.kalam-authorpage-inner {
+  padding: 24px 32px 48px 32px;
+}
+
+/* Header (decision 105): accent eyebrow, Display 46 name, Meta bio. */
+.kalam-authorpage-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: @kalam_accent;
+}
+.kalam-authorpage-title {
+  font-family: "Playfair Display", "Literata", Georgia, serif;
+  font-size: 46px;
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.7px;
+  color: @kalam_text;
+}
+.kalam-authorpage-bio {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: @kalam_text_dim;
+}
+
+/* Flat accent-text buttons: the bio toggle, the notice's inline link,
+   "See all N" and "Open series ›". */
+button.kalam-authorpage-more,
+button.kalam-authorpage-notice-link,
+button.kalam-authorpage-see-all,
+button.kalam-authorpage-open-series {
+  background: transparent;
+  border: none;
+  color: @kalam_accent;
+  padding: 2px 4px;
+  min-height: 0;
+}
+button.kalam-authorpage-more:hover,
+button.kalam-authorpage-notice-link:hover,
+button.kalam-authorpage-see-all:hover,
+button.kalam-authorpage-open-series:hover {
+  text-decoration: underline;
+}
+button.kalam-authorpage-more:focus-visible,
+button.kalam-authorpage-notice-link:focus-visible,
+button.kalam-authorpage-see-all:focus-visible,
+button.kalam-authorpage-open-series:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+button.kalam-authorpage-see-all,
+button.kalam-authorpage-open-series {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* The quiet no-bibliography notice (§30): one Meta line. */
+.kalam-authorpage-notice {
+  font-size: 12.5px;
+  color: @kalam_text_dim;
+}
+
+/* Bibliography footer (§31/data, decision 110): 11px text-2. */
+.kalam-authorpage-footer {
+  font-size: 11px;
+  color: @kalam_text_dim;
+}
+
+/* Facts panel (§25): outlined 340, radius 14; hairline rows are laid
+   out in Rust. */
+.kalam-authorpage-facts {
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  padding: 20px;
+}
+.kalam-authorpage-fact-value {
+  font-size: 15px;
+  font-weight: 500;
+  color: @kalam_text;
+}
+.kalam-authorpage-lifespan {
+  font-size: 15px;
+  font-weight: 500;
+  color: @kalam_text;
+}
+
+/* Portrait 64, circular (§25): clipped photo, else the neutral
+   initials disc (no accent, per decision 110). */
+.kalam-authorpage-portrait { border-radius: 999px; }
+.kalam-authorpage-portrait-initials {
+  border-radius: 999px;
+  background-color: @kalam_card;
+  border: 1px solid @kalam_border;
+}
+.kalam-authorpage-initials-text {
+  font-family: "Playfair Display", "Literata", Georgia, serif;
+  font-size: 20px;
+  font-weight: 600;
+  color: @kalam_text_dim;
+}
+
+/* The ⋯ button (decision 105): 44px circular, top-right at 56,
+   level with the shell's Back pill. It is hosted in the page overlay
+   at content-top and lifted into the shell's 72px back-pill band
+   with a transform — negative margins are clamped away by GTK4
+   allocation (the facts panel owns the content's own top-right). */
+.kalam-authorpage-more-host {
+}
+menubutton.kalam-ui-menu-trigger.kalam-authorpage-more-btn {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid @kalam_border;
+  border-radius: 999px;
+  background: transparent;
+}
+menubutton.kalam-ui-menu-trigger.kalam-authorpage-more-btn > button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Series card (§26): 124 high (set in Rust), bg fill, 1px border,
+   radius 14, padding 20; hover border-2 grey + card wash (51). */
+button.kalam-authorpage-card {
+  background-color: @kalam_bg;
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  padding: 19px;
+}
+button.kalam-authorpage-card:hover {
+  border-color: alpha(@kalam_text_dim, 0.6);
+  background-color: @kalam_card;
+}
+button.kalam-authorpage-card:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+.kalam-authorpage-chevron { color: @kalam_text_dim; }
+
+/* Fan covers 56 × 84, radius 4 (§26). GTK CSS cannot clip a painted
+   texture to a radius; the class rounds the generated/dashed faces. */
+.kalam-authorpage-fan-cover { border-radius: 4px; }
+
+/* Open-series panel (§27): floats over content below; its soft shadow
+   is the page's only one. */
+.kalam-authorpage-panel {
+  background-color: @kalam_bg;
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  padding: 18px 22px;
+}
+button.kalam-authorpage-panel-cover {
+  background: transparent;
+  border: none;
+  padding: 0;
+  min-height: 0;
+}
+button.kalam-authorpage-panel-cover:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+.kalam-authorpage-panel-title {
+  font-family: "Playfair Display", "Literata", Georgia, serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: @kalam_text;
+}
+
+/* Highlight card (§29): 420 wide, bg, 1px border, radius 14; the
+   whole card is the button, its head/body sections carry padding. */
+button.kalam-authorpage-hl-card {
+  background-color: @kalam_bg;
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  padding: 0;
+}
+button.kalam-authorpage-hl-card:hover {
+  border-color: alpha(@kalam_text_dim, 0.6);
+  background-color: @kalam_card;
+}
+button.kalam-authorpage-hl-card:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+.kalam-authorpage-hl-head { padding: 16px 18px 12px 18px; }
+.kalam-authorpage-hl-body { padding: 14px 18px 18px 18px; }
+.kalam-authorpage-hl-dot { border-radius: 999px; }
+.kalam-authorpage-hl-cover { border-radius: 6px; }
+.kalam-authorpage-hl-quote {
+  font-family: "Literata", Georgia, serif;
+  font-size: 16px;
+  line-height: 1.55;
+  color: @kalam_text;
+}
+
+/* Dropdown (§43, decision 157): 36-high field, 1px border, radius 10,
+   bg fill, 13px value text; the menubutton node is a bare wrapper and
+   the inner button carries the field. Open takes an accent border;
+   keyboard focus takes a 2px accent ring at 2 offset. */
+menubutton.kalam-ui-dropdown {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+menubutton.kalam-ui-dropdown > button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid @kalam_border;
+  border-radius: 10px;
+  background: @kalam_bg;
+  color: @kalam_text;
+}
+menubutton.kalam-ui-dropdown > button:hover {
+  background: @kalam_hover;
+}
+menubutton.kalam-ui-dropdown > button:checked {
+  border-color: @kalam_accent;
+}
+menubutton.kalam-ui-dropdown > button:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+menubutton.kalam-ui-dropdown:disabled {
+  opacity: 0.4;
+}
+.kalam-ui-dropdown-value {
+  font-size: 13px;
+  color: inherit;
+}
+.kalam-ui-dropdown-chevron {
+  color: @kalam_text_dim;
+}
+.kalam-ui-dropdown-row-content {
+  padding: 0 6px;
+}
+.kalam-ui-dropdown-tick {
+  font-size: 14px;
+  font-weight: 700;
+  color: @kalam_accent;
+}
+button.kalam-ui-menu-item.accent {
+  color: @kalam_accent;
+}
+
+/* Settings page (§41): the Meta line sits 12 under the Display title,
+   the first heading 28 below that (the pane host's margin). About
+   hides the title pair and sits flush instead. */
+.kalam-settings-Meta {
+  margin-top: 12px;
+}
+.kalam-settings-pane {
+  margin-top: 28px;
+}
+.kalam-settings-pane.flush {
+  margin-top: 0;
+}
+
+/* Pane list (§41): Label group headings (20 above, 6 below), 34-high
+   items, the active one bold text with a 3px accent bar standing 8
+   in from the top and bottom. Hover takes the border fill (§46). */
+.kalam-settings-group-label {
+  margin: 20px 0 6px 12px;
+}
+.kalam-settings-panes > .kalam-settings-group-label:first-child {
+  margin-top: 0;
+}
+button.kalam-settings-pane-item {
+  min-height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+}
+button.kalam-settings-pane-item:hover {
+  background: @kalam_hover;
+}
+button.kalam-settings-pane-item:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+.kalam-settings-pane-bar {
+  min-width: 3px;
+  border-radius: 2px;
+  background: transparent;
+  margin: 8px 0;
+}
+button.kalam-settings-pane-item.active .kalam-settings-pane-bar {
+  background: @kalam_accent;
+}
+.kalam-settings-pane-item-label {
+  font-size: 13px;
+  color: @kalam_text_dim;
+  margin-left: 9px;
+}
+button.kalam-settings-pane-item:hover .kalam-settings-pane-item-label {
+  color: @kalam_text;
+}
+button.kalam-settings-pane-item.active .kalam-settings-pane-item-label {
+  color: @kalam_text;
+  font-weight: 700;
+}
+
+/* Sections and rows (§§14, 41): outlined box padded 0 20, 48-high
+   rows split by hairlines; key rows (§44) are 40. */
+.kalam-settings-section {
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  background: @kalam_bg;
+  padding: 0 20px;
+}
+.kalam-settings-row {
+  min-height: 48px;
+}
+.kalam-settings-row + .kalam-settings-row {
+  border-top: 1px solid @kalam_border;
+}
+.kalam-settings-row.key {
+  min-height: 40px;
+}
+/* The clickable cluster behind a row's key chips (§44). The chips keep
+   their own outlines; the button only supplies hover and focus. */
+button.kalam-settings-key-bind {
+  background: transparent;
+  border: none;
+  padding: 0;
+  min-height: 24px;
+}
+button.kalam-settings-key-bind:hover .kalam-ui-key-chip {
+  background: @kalam_hover;
+}
+button.kalam-settings-key-bind:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+.kalam-settings-shortcut-conflict {
+  color: @kalam_accent;
+  font-size: 12px;
+  margin-top: 8px;
+}
+.kalam-settings-row-label {
+  font-size: 14px;
+  color: @kalam_text;
+}
+
+/* The accent caption: the row's warning line (§44's missing state). */
+.kalam-ui-caption.accent {
+  color: @kalam_accent;
+}
+
+/* Palette boxes (§42): the outlined 2 x 2 grid cells; the mini-page
+   cards themselves are custom-drawn, and their focus/hover/selected
+   rings are painted with them, so the button chrome stays bare. */
+.kalam-settings-palette-box {
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  background: @kalam_bg;
+  padding: 16px;
+}
+button.kalam-settings-palette-card {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+button.kalam-settings-palette-card:focus {
+  outline: none;
+}
+
+/* Reading preview and the §44 chip. */
+.kalam-settings-preview {
+  border: 1px solid @kalam_border;
+  border-radius: 14px;
+  background: @kalam_bg;
+  padding: 20px;
+}
+.kalam-settings-chip {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid @kalam_border;
+  border-radius: 999px;
+  font-size: 11px;
+  color: @kalam_text_dim;
+}
+.kalam-settings-chip.accent {
+  border-color: @kalam_accent;
+  color: @kalam_accent;
+}
+
+/* About: the accent source link and the licences text. */
+button.kalam-settings-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  color: @kalam_accent;
+}
+button.kalam-settings-link > label {
+  color: @kalam_accent;
+}
+button.kalam-settings-link:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+.kalam-settings-licences {
+  font-size: 13px;
+  line-height: 1.5;
+  color: @kalam_text;
+}
+
+/* Watch folders, Dictionaries and Metadata sources (§§41, 44;
+   decisions 151–153). */
+.kalam-settings-state-card {
+  border: 1.5px dashed @kalam_text_dim;
+  border-radius: 6px;
+  background: @kalam_bg;
+  padding: 24px 20px;
+}
+.kalam-settings-folder-heading {
+  font-size: 13px;
+  font-weight: 600;
+  color: @kalam_text;
+}
+
+.kalam-settings-row.dict {
+  min-height: 56px;
+}
+.kalam-settings-row.dict.drop-before {
+}
+.kalam-settings-row.dict.drop-after {
+}
+/* The drag handle's grab cursor is widget state, not CSS — GTK's CSS
+   has no `cursor` property; see build_dictionaries_pane. */
+.kalam-settings-dict-handle-icon {
+  color: @kalam_text_dim;
+}
+
+button.kalam-settings-chevron {
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 0;
+  color: @kalam_text_dim;
+}
+button.kalam-settings-chevron:hover {
+  background: @kalam_hover;
+}
+button.kalam-settings-chevron:focus-visible {
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+button.kalam-settings-chevron:disabled {
+  opacity: 0.4;
+}
+
+entry.kalam-settings-entry {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid @kalam_border;
+  border-radius: 10px;
+  background: @kalam_bg;
+  color: @kalam_text;
+  font-size: 13px;
+}
+entry.kalam-settings-entry:focus {
+  border-color: @kalam_accent;
+  outline: 2px solid @kalam_accent;
+  outline-offset: 2px;
+}
+entry.kalam-settings-entry.rejected {
+  border-color: @kalam_accent;
+}
+.kalam-settings-error-line {
+  font-size: 12px;
+  color: @kalam_accent;
+}
+
+/* Nested Google Books rows keep the hairline under their parent,
+   but the two nested rows have no line between them (decision 153). */
+.kalam-settings-nested-rows > .kalam-settings-row:first-child {
+  border-top: 1px solid @kalam_border;
+}
+.kalam-settings-nested-rows > .kalam-settings-row + .kalam-settings-row {
+  border-top: none;
 }

@@ -5,7 +5,7 @@
 //! `annotations` table.
 
 mod common;
-use chapbook_reader::{HostHighlight, Session};
+use chapbook_reader::{HostHighlight, SearchMatch, Session};
 use common::*;
 
 /// Mark the heading of the illustrated fixture the way a host does: select,
@@ -23,6 +23,7 @@ fn mark_heading(s: &mut Session, id: i64) -> (HostHighlight, (u32, u32), String)
         color: None,
         style: None,
         text: Some(text.clone()),
+        has_note: false,
     };
     s.selection_clear();
     (row, (start, end), text)
@@ -102,6 +103,87 @@ fn taps_find_a_host_highlight_and_recolouring_reaches_the_page() {
     assert!(s.goto_host_highlight(7));
     s.render().expect("page renders");
     assert_eq!((s.spine(), s.page()), (0, 0));
+    assert_eq!(s.host_highlight_at(110.0, 70.0), Some(7));
+}
+
+#[test]
+fn a_note_dot_answers_a_hover_and_follows_the_note() {
+    let source = fixture("epub/illustrated.epub");
+    let mut s = open_isolated("host-note-dot", &source);
+    s.set_metrics(metrics());
+    let (row, range, _) = mark_heading(&mut s, 9);
+    s.show_host_highlight(row);
+    s.render().expect("page renders");
+
+    // Just past the span's end, high in its band: where the dot sits.
+    let last = s
+        .range_rects_on_page(0, 0, range.0, range.1)
+        .into_iter()
+        .last()
+        .expect("the span paints a band");
+    let (x, y) = (last.max_x() + 4.0, last.origin.y + 4.0);
+    assert_eq!(
+        s.host_highlight_note_at_page(0, 0, x, y),
+        None,
+        "no note, no dot"
+    );
+
+    let plain = s.render().expect("page renders").data().to_vec();
+    s.set_host_highlight_note(9, true);
+    assert!(s.host_highlights(0)[0].has_note);
+    assert_eq!(s.host_highlight_note_at_page(0, 0, x, y), Some(9));
+    assert_ne!(
+        s.render().expect("page renders").data(),
+        &plain[..],
+        "the dot reached the page"
+    );
+
+    s.set_host_highlight_note(9, false);
+    assert_eq!(s.host_highlight_note_at_page(0, 0, x, y), None);
+}
+
+#[test]
+fn search_matches_paint_without_becoming_highlights() {
+    let source = fixture("epub/illustrated.epub");
+    let mut s = open_isolated("search-wash", &source);
+    s.set_metrics(metrics());
+    let (row, _, _) = mark_heading(&mut s, 7);
+    s.show_host_highlight(row.clone());
+    let plain = s.render().expect("page renders").data().to_vec();
+
+    // The same span twice is enough to prove the plumbing: the wash
+    // resolves, flags its current match, and reaches the pixels —
+    // while the host's own mark stays the only thing a tap can find.
+    s.set_search_matches(vec![
+        SearchMatch {
+            start: row.start.clone(),
+            end: row.end.clone(),
+            current: false,
+        },
+        SearchMatch {
+            start: row.start.clone(),
+            end: row.end.clone(),
+            current: true,
+        },
+    ]);
+    let ranges = s.search_match_ranges(0).to_vec();
+    assert_eq!(ranges.len(), 2, "both matches resolved");
+    assert_eq!(
+        ranges.iter().map(|m| m.current).collect::<Vec<_>>(),
+        vec![false, true],
+        "the current match keeps its flag"
+    );
+    assert_eq!(s.host_highlights(0).len(), 1, "the wash adds no highlights");
+    assert_eq!(s.host_highlight_at(110.0, 70.0), Some(7));
+    assert_ne!(
+        s.render().expect("page renders").data(),
+        &plain[..],
+        "the wash reached the page"
+    );
+
+    s.clear_search_matches();
+    assert!(s.search_match_ranges(0).is_empty(), "the wash is gone");
+    assert_eq!(s.host_highlights(0).len(), 1, "the stored mark stays");
     assert_eq!(s.host_highlight_at(110.0, 70.0), Some(7));
 }
 

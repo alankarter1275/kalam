@@ -9,7 +9,8 @@ this file.
 
 Kalam's core library, EPUB/PDF/comics reading, annotations and dictionaries are
 usable without online content sources. Optional metadata lookup can query Open
-Library and Google Books. Remote browsing, source plugins and downloads remain
+Library and Google Books for books, and MyAnimeList and Comic Vine for comic
+series. Remote browsing, source plugins and downloads remain
 unimplemented and are kept separate from core reading and library features.
 
 For tracked issue status, see [`Issues.md`](../Issues.md). KAL-5's EPUB content

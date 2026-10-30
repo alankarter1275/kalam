@@ -3,7 +3,7 @@ use crate::metadata::{self, CoverRef};
 use crate::models::Book;
 use crate::paths::authors_dir;
 use serde::Deserialize;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 
 #[derive(Debug, Clone)]
@@ -12,13 +12,6 @@ pub struct AuthorQuote {
     pub book_title: String,
     pub excerpt: String,
     pub created_at: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct SeriesProgress {
-    pub name: String,
-    pub owned: Vec<Book>,
-    pub missing: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -210,39 +203,6 @@ pub fn saved_quotes_for_books(catalog: &Catalog, books: &[Book], limit: usize) -
     quotes
 }
 
-pub fn series_progress(books: &[Book]) -> Vec<SeriesProgress> {
-    let mut grouped: BTreeMap<String, Vec<Book>> = BTreeMap::new();
-    for book in books {
-        let Some(series) = book.series.clone() else {
-            continue;
-        };
-        let series = series.trim();
-        if series.is_empty() {
-            continue;
-        }
-        grouped
-            .entry(series.to_string())
-            .or_default()
-            .push(book.clone());
-    }
-
-    let mut out = Vec::new();
-    for (name, mut owned) in grouped {
-        owned.sort_by(|a, b| {
-            a.series_index
-                .partial_cmp(&b.series_index)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.title.cmp(&b.title))
-        });
-        out.push(SeriesProgress {
-            missing: missing_series_slots(&owned),
-            name,
-            owned,
-        });
-    }
-    out
-}
-
 pub fn fetch_and_cache_author(
     catalog: &Catalog,
     requested_name: &str,
@@ -320,27 +280,6 @@ pub fn fetch_and_cache_author(
         .ok_or_else(|| "Saved the author info, but could not load it back.".into())
 }
 
-pub fn works_not_in_library(profile: &AuthorProfile, owned_books: &[Book]) -> Vec<AuthorWork> {
-    let owned_titles: HashSet<String> = owned_books
-        .iter()
-        .map(|book| normalize_title(&book.title))
-        .collect();
-    let mut works = profile
-        .works
-        .iter()
-        .filter(|work| !work.title.trim().is_empty())
-        .filter(|work| !owned_titles.contains(&normalize_title(&work.title)))
-        .cloned()
-        .collect::<Vec<_>>();
-    works.sort_by(|a, b| {
-        a.first_publish_year
-            .unwrap_or(i64::MAX)
-            .cmp(&b.first_publish_year.unwrap_or(i64::MAX))
-            .then_with(|| a.title.cmp(&b.title))
-    });
-    works
-}
-
 pub fn initials(name: &str) -> String {
     let display = display_author_name(name);
     let mut out = String::new();
@@ -366,55 +305,9 @@ pub fn line_text(parts: &[String]) -> String {
         .join(" · ")
 }
 
-pub fn status_counts(books: &[Book]) -> (usize, usize, usize) {
-    let finished = books.iter().filter(|book| book.progress >= 100).count();
-    let reading = books
-        .iter()
-        .filter(|book| book.progress > 0 && book.progress < 100)
-        .count();
-    (books.len(), finished, reading)
-}
-
 #[allow(dead_code)] // as above
 fn is_saved_quote(ann: &Annotation) -> bool {
     matches!(ann.kind.as_str(), "quote" | "highlight") && !ann.text_excerpt.trim().is_empty()
-}
-
-fn missing_series_slots(books: &[Book]) -> Vec<String> {
-    let mut nums: Vec<i32> = books
-        .iter()
-        .filter_map(|book| {
-            let idx = book.series_index;
-            if idx > 0.0 && idx.fract().abs() < f32::EPSILON {
-                Some(idx.round() as i32)
-            } else {
-                None
-            }
-        })
-        .collect();
-    nums.sort_unstable();
-    nums.dedup();
-
-    if nums.is_empty() {
-        return Vec::new();
-    }
-
-    let mut out = Vec::new();
-    if let Some(first) = nums.first().copied() {
-        for n in 1..first {
-            out.push(format!("Missing #{n}"));
-        }
-    }
-    for pair in nums.windows(2) {
-        let a = pair[0];
-        let b = pair[1];
-        if b - a > 1 {
-            for n in (a + 1)..b {
-                out.push(format!("Missing #{n}"));
-            }
-        }
-    }
-    out
 }
 
 fn search_author(name: &str, owned_books: &[Book]) -> Result<Option<AuthorSearchDoc>, String> {
@@ -607,6 +500,9 @@ fn fetch_author_profile(
         aliases: dedup_names(aliases),
         fetched_at: String::new(),
         source_url,
+        // A fetch never invents hand edits; `upsert_author_profile`
+        // carries the stored locks forward and re-applies them.
+        manual_fields: Vec::new(),
     })
 }
 
@@ -907,7 +803,7 @@ fn normalize_bits(text: &str) -> String {
         .collect()
 }
 
-fn normalize_title(title: &str) -> String {
+pub(crate) fn normalize_title(title: &str) -> String {
     normalize_bits(title)
 }
 

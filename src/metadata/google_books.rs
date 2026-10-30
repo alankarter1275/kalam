@@ -17,6 +17,19 @@ pub struct GoogleBooks {
     pub api_key: String,
     /// ISO country code sent with every request; see the note in `search`.
     pub country: String,
+    /// Reports whether the API key was rejected (`true`) or accepted
+    /// (`false`) on a keyed attempt, so Settings can show the rejected-key
+    /// state. Only keyed attempts report; quota and network failures say
+    /// nothing about the key.
+    pub on_key_state: Option<std::sync::Arc<dyn Fn(bool) + Send + Sync>>,
+}
+
+impl GoogleBooks {
+    fn report_key_state(&self, rejected: bool) {
+        if let Some(report) = &self.on_key_state {
+            report(rejected);
+        }
+    }
 }
 
 /// Google only serves results for countries it has rights in, so the fallback
@@ -102,6 +115,7 @@ impl MetadataSource for GoogleBooks {
                     ),
                     429 => FetchError::Limited("your API key hit its daily limit.".into()),
                     400 if !self.api_key.trim().is_empty() => {
+                        self.report_key_state(true);
                         FetchError::Limited("the API key in Settings was rejected.".into())
                     }
                     403 if detail.contains("location") => {
@@ -116,6 +130,12 @@ impl MetadataSource for GoogleBooks {
 
         let parsed: VolumesResponse =
             serde_json::from_str(&body).map_err(|e| FetchError::Parse(e.to_string()))?;
+
+        // A keyed request Google answered clears any rejected-key state: the
+        // key in Settings works, whatever an earlier attempt hit.
+        if !self.api_key.trim().is_empty() {
+            self.report_key_state(false);
+        }
 
         Ok(parsed
             .items
@@ -250,6 +270,7 @@ fn volume_to_candidate(volume: Volume) -> Candidate {
         description: info.description.unwrap_or_default(),
         detail_key: None,
         source: Some(SourceId::GoogleBooks),
+        ..Default::default()
     }
 }
 

@@ -1,12 +1,14 @@
 use crate::db::{BulkMetadataEdit, Catalog, SortKey};
 use crate::models::Book;
 use crate::service::{AllBooksSnapshot, LibraryService};
-use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable, invalidate_cover_cache};
+use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable, build_book_list, invalidate_cover_cache};
 use crate::widgets::in_app_dialog;
+use crate::widgets::menu::{menu_popover, MenuWidth};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -15,6 +17,9 @@ pub enum AllBooksOut {
     OpenBookDialog { book_id: i64 },
     OpenReader { book_id: i64, chapter: Option<usize> },
     ComicSeries { series_name: String },
+    /// The "All books" title button opens the shelves menu (§47).
+    #[allow(dead_code)]
+    OpenShelves,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -24,9 +29,69 @@ pub enum SearchMode {
     Content,
 }
 
+/// Grid or List view (§47 toolbar: Grid / List).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ViewMode {
+    #[default]
+    Grid,
+    List,
+}
+
+/// A column that can be shown in the list view (§50).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListColumn {
+    Title,
+    Author,
+    Format,
+    Size,
+    Added,
+    Rating,
+    Status,
+}
+
+impl ListColumn {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Title => "Title",
+            Self::Author => "Author",
+            Self::Format => "Format",
+            Self::Size => "Size",
+            Self::Added => "Date added",
+            Self::Rating => "Rating",
+            Self::Status => "Status",
+        }
+    }
+
+    pub const ALL: [Self; 7] = [
+        Self::Title,
+        Self::Author,
+        Self::Format,
+        Self::Size,
+        Self::Added,
+        Self::Rating,
+        Self::Status,
+    ];
+
+    pub fn default_visible() -> Vec<Self> {
+        vec![
+            Self::Title,
+            Self::Author,
+            Self::Format,
+            Self::Size,
+            Self::Added,
+        ]
+    }
+}
+
 #[derive(Debug)]
 pub enum AllBooksMsg {
     SearchChanged(String),
+    /// Set the search from outside (the author page's "Show books in
+    /// library"): the entry text and the query move together, so what
+    /// the reader sees is a search they can keep editing.
+    SetQuery(String),
+    /// Put keyboard focus in the library search (the shell's Ctrl+F).
+    FocusSearch,
     SearchModeChanged(SearchMode),
     SortChanged(SortKey),
     PickFiles,
@@ -58,6 +123,13 @@ pub enum AllBooksMsg {
     ToggleSelectBook(i64),
     SelectAll,
     DeselectAll,
+    /// Switch between Grid and List view (§47 toolbar: Grid / List).
+    #[allow(dead_code)]
+    ViewModeChanged(ViewMode),
+    /// Toggle one list-view column's visibility (§50 Columns menu).
+    ListColumnToggled(ListColumn),
+    /// Sort the list by one column; toggles direction on repeat click.
+    ListSortChanged(ListColumn),
     OpenBulkEditDialog(gtk::Widget),
     ApplyBulkEdit(BulkMetadataEdit),
     /// Ask before deleting the selected books; carries the button as anchor.
@@ -211,6 +283,13 @@ pub struct AllBooksModel {
     index_status: crate::content_index::ContentIndexStatus,
     indexing: bool,
     expanded_books: HashSet<i64>,
+    /// Grid or List view (§47 toolbar: Grid / List).
+    view_mode: ViewMode,
+    /// Which list-view columns are visible, in left-to-right order (§50).
+    list_columns: Vec<ListColumn>,
+    /// Current list sort column and direction (§50).
+    list_sort_column: Option<ListColumn>,
+    list_sort_desc: bool,
 }
 
 #[relm4::component(pub)]
@@ -222,95 +301,134 @@ impl Component for AllBooksModel {
 
     view! {
         #[root]
-        gtk::Box {
-            set_orientation: gtk::Orientation::Vertical,
-            set_spacing: 12,
-            set_hexpand: true,
+        gtk::Overlay {
+            // Main content area.
+            #[wrap(Some)]
+            set_child = &gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 12,
+                set_hexpand: true,
+                set_vexpand: true,
 
-            gtk::Label {
-                set_label: "All books",
-                add_css_class: "kalam-page-title",
-                set_halign: gtk::Align::Start,
-            },
-
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 8,
-
-                #[name = "search"]
-                gtk::SearchEntry {
-                    set_hexpand: true,
-                    set_placeholder_text: Some("Search title, author, tag:fantasy, status:unread, rating:>3…"),
-                    connect_search_changed[sender] => move |entry| {
-                        sender.input(AllBooksMsg::SearchChanged(entry.text().to_string()));
-                    },
+                gtk::Label {
+                    set_label: "All books",
+                    add_css_class: "kalam-page-title",
+                    set_halign: gtk::Align::Start,
                 },
 
-                #[name = "mode_box"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
-                    add_css_class: "linked",
+                    set_spacing: 8,
 
-                    #[name = "mode_meta_btn"]
-                    gtk::ToggleButton {
-                        set_label: "Titles & Authors",
-                        set_active: true,
-                        set_tooltip_text: Some("Filter library by title, author, tag, reading status, or rating"),
-                        connect_toggled[sender] => move |btn| {
-                            if btn.is_active() {
-                                sender.input(AllBooksMsg::SearchModeChanged(SearchMode::Metadata));
-                            }
+                    #[name = "search"]
+                    gtk::SearchEntry {
+                        set_hexpand: true,
+                        set_placeholder_text: Some("Search title, author, tag:fantasy, status:unread, rating:>3…"),
+                        connect_search_changed[sender] => move |entry| {
+                            sender.input(AllBooksMsg::SearchChanged(entry.text().to_string()));
                         },
                     },
 
-                    #[name = "mode_content_btn"]
-                    gtk::ToggleButton {
-                        set_label: "Book Content",
-                        set_tooltip_text: Some("Deep search inside the full text of all books in your library"),
-                        connect_toggled[sender] => move |btn| {
-                            if btn.is_active() {
-                                sender.input(AllBooksMsg::SearchModeChanged(SearchMode::Content));
-                            }
+                    #[name = "mode_box"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        add_css_class: "linked",
+
+                        #[name = "mode_meta_btn"]
+                        gtk::ToggleButton {
+                            set_label: "Titles & Authors",
+                            set_active: true,
+                            set_tooltip_text: Some("Filter library by title, author, tag, reading status, or rating"),
+                            connect_toggled[sender] => move |btn| {
+                                if btn.is_active() {
+                                    sender.input(AllBooksMsg::SearchModeChanged(SearchMode::Metadata));
+                                }
+                            },
+                        },
+
+                        #[name = "mode_content_btn"]
+                        gtk::ToggleButton {
+                            set_label: "Book Content",
+                            set_tooltip_text: Some("Deep search inside the full text of all books in your library"),
+                            connect_toggled[sender] => move |btn| {
+                                if btn.is_active() {
+                                    sender.input(AllBooksMsg::SearchModeChanged(SearchMode::Content));
+                                }
+                            },
                         },
                     },
+
+                    #[name = "sort_box"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 4,
+                    },
+
+                    #[name = "columns_btn"]
+                    gtk::MenuButton {
+                        set_child: Some(&crate::icons::labelled(
+                            "view-list-symbolic",
+                            16,
+                            "Columns",
+                            6,
+                        )),
+                        add_css_class: "kalam-toolbar-btn",
+                        set_always_show_arrow: false,
+                        set_tooltip_text: Some("Choose which list-view columns to show (§50)"),
+                    },
+
+                    #[name = "select_btn"]
+                    gtk::Button {
+                        #[watch]
+                        set_label: if model.selection_mode {
+                            "Exit Select"
+                        } else {
+                            "Select Mode"
+                        },
+                        add_css_class: "kalam-secondary-btn",
+                        connect_clicked => AllBooksMsg::ToggleSelectionMode,
+                    },
+
+                    gtk::Button {
+                        #[watch]
+                        set_label: if model.importing {
+                            "Importing…"
+                        } else {
+                            "+ Import EPUB"
+                        },
+                        add_css_class: "kalam-primary-btn",
+                        #[watch]
+                        set_sensitive: !model.importing,
+                        connect_clicked => AllBooksMsg::PickFiles,
+                    },
                 },
 
-                #[name = "sort_box"]
+                #[name = "status_label"]
+                gtk::Label {
+                    #[watch]
+                    set_label: &model.status,
+                    add_css_class: "kalam-muted",
+                    set_halign: gtk::Align::Start,
+                },
+
+                #[name = "list"]
                 gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 4,
-                },
-
-                #[name = "select_btn"]
-                gtk::Button {
-                    #[watch]
-                    set_label: if model.selection_mode {
-                        "Exit Select"
-                    } else {
-                        "Select Mode"
-                    },
-                    add_css_class: "kalam-secondary-btn",
-                    connect_clicked => AllBooksMsg::ToggleSelectionMode,
-                },
-
-                gtk::Button {
-                    #[watch]
-                    set_label: if model.importing {
-                        "Importing…"
-                    } else {
-                        "+ Import EPUB"
-                    },
-                    add_css_class: "kalam-primary-btn",
-                    #[watch]
-                    set_sensitive: !model.importing,
-                    connect_clicked => AllBooksMsg::PickFiles,
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 0,
+                    set_halign: gtk::Align::Start,
+                    set_hexpand: false,
+                    set_vexpand: false,
                 },
             },
 
-            #[name = "selection_bar"]
-            gtk::Box {
+            // Floating bulk bar (§49): bottom centre, 48 high, 32 up from bottom.
+            add_overlay = &gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_spacing: 8,
+                set_halign: gtk::Align::Center,
+                set_valign: gtk::Align::End,
+                set_margin_bottom: 32,
+                add_css_class: "kalam-bulk-bar",
                 #[watch]
                 set_visible: model.selection_mode,
 
@@ -360,23 +478,6 @@ impl Component for AllBooksModel {
                     },
                 },
             },
-
-            #[name = "status_label"]
-            gtk::Label {
-                #[watch]
-                set_label: &model.status,
-                add_css_class: "kalam-muted",
-                set_halign: gtk::Align::Start,
-            },
-
-            #[name = "list"]
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 0,
-                set_halign: gtk::Align::Start,
-                set_hexpand: false,
-                set_vexpand: false,
-            },
         }
     }
 
@@ -419,6 +520,10 @@ impl Component for AllBooksModel {
             index_status: crate::content_index::ContentIndexStatus::default(),
             indexing: false,
             expanded_books: HashSet::new(),
+            view_mode: ViewMode::Grid,
+            list_columns: ListColumn::default_visible(),
+            list_sort_column: None,
+            list_sort_desc: false,
         };
         let widgets = view_output!();
         widgets.mode_content_btn.set_group(Some(&widgets.mode_meta_btn));
@@ -441,6 +546,8 @@ impl Component for AllBooksModel {
         }
         group_toggles(&widgets.sort_box);
 
+        setup_columns_menu(&widgets.columns_btn, &sender, &model.list_columns);
+
         rebuild_list(
             &widgets.list,
             &model.books,
@@ -448,6 +555,8 @@ impl Component for AllBooksModel {
             model.selection_mode,
             &model.selected_books,
             &sender,
+            model.view_mode,
+            &model.list_columns,
         );
 
         ComponentParts { model, widgets }
@@ -506,6 +615,18 @@ impl Component for AllBooksModel {
                             self.status = status_line(n, &self.query);
                         }
                     }
+                }
+            }
+            AllBooksMsg::FocusSearch => {
+                widgets.search.grab_focus();
+                return;
+            }
+            AllBooksMsg::SetQuery(q) => {
+                // Setting the entry text fires search-changed, which
+                // arrives as SearchChanged and does the actual reload.
+                widgets.search.set_text(&q);
+                if self.query != q {
+                    sender.input(AllBooksMsg::SearchChanged(q));
                 }
             }
             AllBooksMsg::SearchChanged(q) => {
@@ -652,6 +773,34 @@ impl Component for AllBooksModel {
             }
             AllBooksMsg::DeselectAll => {
                 self.selected_books.clear();
+            }
+            AllBooksMsg::ViewModeChanged(mode) => {
+                self.view_mode = mode;
+                self.status.clear();
+                self.reload(&sender);
+            }
+            AllBooksMsg::ListColumnToggled(col) => {
+                if let Some(pos) = self.list_columns.iter().position(|c| *c == col) {
+                    self.list_columns.remove(pos);
+                } else {
+                    let insert_at = ListColumn::ALL
+                        .iter()
+                        .take_while(|c| **c != col)
+                        .filter(|c| self.list_columns.contains(c))
+                        .count();
+                    self.list_columns.insert(insert_at, col);
+                }
+                self.status.clear();
+                self.reload(&sender);
+            }
+            AllBooksMsg::ListSortChanged(col) => {
+                if self.list_sort_column == Some(col) {
+                    self.list_sort_desc = !self.list_sort_desc;
+                } else {
+                    self.list_sort_column = Some(col);
+                    self.list_sort_desc = false;
+                }
+                self.sort_books_in_place();
             }
             AllBooksMsg::OpenBulkEditDialog(anchor) => {
                 let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -1018,7 +1167,6 @@ impl Component for AllBooksModel {
         if self.search_mode == SearchMode::Content {
             widgets.sort_box.set_visible(false);
             widgets.select_btn.set_visible(false);
-            widgets.selection_bar.set_visible(false);
             widgets.search.set_placeholder_text(Some("Search inside book contents (phrases, quotes, names)…"));
             widgets.mode_meta_btn.set_active(false);
             widgets.mode_content_btn.set_active(true);
@@ -1026,7 +1174,6 @@ impl Component for AllBooksModel {
         } else {
             widgets.sort_box.set_visible(true);
             widgets.select_btn.set_visible(true);
-            widgets.selection_bar.set_visible(self.selection_mode);
             widgets.search.set_placeholder_text(Some("Search title, author, tag:fantasy, status:unread, rating:>3…"));
             widgets.mode_meta_btn.set_active(true);
             widgets.mode_content_btn.set_active(false);
@@ -1037,6 +1184,8 @@ impl Component for AllBooksModel {
                 self.selection_mode,
                 &self.selected_books,
                 &sender,
+                self.view_mode,
+                &self.list_columns,
             );
         }
         self.update_view(widgets, sender);
@@ -1112,6 +1261,27 @@ impl AllBooksModel {
             },
         );
     }
+
+    /// Sort the already-loaded books in memory by the current list-view
+    /// sort column/direction (§50). Cheap and immediate — no round trip.
+    fn sort_books_in_place(&mut self) {
+        let Some(col) = self.list_sort_column else {
+            return;
+        };
+        let desc = self.list_sort_desc;
+        self.books.sort_by(|a, b| {
+            let ord = match col {
+                ListColumn::Title => a.title.cmp(&b.title),
+                ListColumn::Author => a.authors.cmp(&b.authors),
+                ListColumn::Format => format!("{:?}", a.format).cmp(&format!("{:?}", b.format)),
+                ListColumn::Size => std::cmp::Ordering::Equal,
+                ListColumn::Added => a.added_at.cmp(&b.added_at),
+                ListColumn::Rating => b.rating.cmp(&a.rating),
+                ListColumn::Status => b.progress.cmp(&a.progress),
+            };
+            if desc { ord.reverse() } else { ord }
+        });
+    }
 }
 
 fn status_line(n: usize, query: &str) -> String {
@@ -1127,6 +1297,27 @@ fn status_line(n: usize, query: &str) -> String {
     } else {
         format!("{n} result{}", if n == 1 { "" } else { "s" })
     }
+}
+
+/// Build (or rebuild) the §50 Columns popover on `columns_btn`, keeping the
+/// check items in sync with `list_columns`. Each check item toggles one
+/// column's visibility; toggling sends `ListColumnToggled`, which reloads the
+/// page so the list redraws with the new column set.
+fn setup_columns_menu(
+    button: &gtk::MenuButton,
+    sender: &ComponentSender<AllBooksModel>,
+    list_columns: &[ListColumn],
+) {
+    let menu = menu_popover(MenuWidth::Wide);
+    for col in ListColumn::ALL {
+        let checked = list_columns.contains(&col);
+        let c = col;
+        let s = sender.clone();
+        menu.add_check_item(col.label(), checked, move |_next| {
+            s.input(AllBooksMsg::ListColumnToggled(c));
+        });
+    }
+    button.set_popover(Some(&menu.popover()));
 }
 
 fn group_toggles(box_: &gtk::Box) {
@@ -1145,6 +1336,7 @@ fn group_toggles(box_: &gtk::Box) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rebuild_list(
     list: &gtk::Box,
     books: &[Book],
@@ -1152,6 +1344,8 @@ fn rebuild_list(
     selection_mode: bool,
     selected_books: &HashSet<i64>,
     sender: &ComponentSender<AllBooksModel>,
+    view_mode: ViewMode,
+    list_columns: &[ListColumn],
 ) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
@@ -1174,7 +1368,31 @@ fn rebuild_list(
     let s = sender.clone();
     let s2 = sender.clone();
 
-    if selection_mode {
+    if view_mode == ViewMode::List {
+        let sel_set = selected_books.clone();
+        let s_open = s.clone();
+        let s_toggle = s.clone();
+        let s_sort = s.clone();
+        let on_open = Rc::new(move |id| {
+            s_open.output(AllBooksOut::OpenBook { book_id: id }).ok();
+        });
+        let on_toggle_select = Rc::new(move |id| {
+            s_toggle.input(AllBooksMsg::ToggleSelectBook(id));
+        });
+        let on_sort = Rc::new(move |col| {
+            s_sort.input(AllBooksMsg::ListSortChanged(col));
+        });
+        let list_view = build_book_list(
+            books,
+            list_columns,
+            selection_mode,
+            &sel_set,
+            on_open,
+            on_toggle_select,
+            on_sort,
+        );
+        list.append(&list_view);
+    } else if selection_mode {
         let sel_set = selected_books.clone();
         let grid = build_book_grid_selectable(
             books,

@@ -56,6 +56,11 @@ pub enum DisplayOp {
         color: Rgba,
         radius: f32,
         blend: Blend,
+        /// kalam: a 1px ring just inside the band's edge — how the
+        /// current search match stands apart from the rest (decision
+        /// 34). `None` for every ordinary band; a backend without
+        /// strokes may skip it and keep the fill.
+        outline: Option<Rgba>,
     },
     /// Positioned glyphs sharing one face/size/weight/color. `origin` is the
     /// baseline origin in page coordinates; glyph offsets are relative to it.
@@ -250,6 +255,12 @@ pub struct Selection {
     pub color: Rgba,
     pub blend: Blend,
     pub style: SelectionStyle,
+    /// kalam: the current search match's ring (decision 34), carried
+    /// to [`DisplayOp::Band`]. Only the `Band` style can wear it.
+    pub outline: Option<Rgba>,
+    /// kalam: this highlight carries a note, so a small dot of its
+    /// colour sits at the end of the span (decision 29).
+    pub note_dot: bool,
 }
 
 /// kalam: corner radius of a selection band, CSS px — the old reader's
@@ -339,6 +350,23 @@ pub fn build_display_list(
         }
     }
 
+    // Note dots last (decision 29): a dot is furniture on top of the
+    // ink, not a wash under it, and its place is a whole-page fact
+    // (the span's final glyph), not a per-line one.
+    for sel in selections.iter().filter(|sel| sel.note_dot) {
+        if let Some(rect) = page.note_dot_rect(sel.start, sel.end) {
+            let mut color = sel.color;
+            color.a = 255;
+            ops.push(DisplayOp::Band {
+                rect,
+                color,
+                radius: rect.size.h / 2.0,
+                blend: Blend::Normal,
+                outline: None,
+            });
+        }
+    }
+
     DisplayList {
         size: page.size,
         ops,
@@ -382,6 +410,7 @@ fn push_selection_rect(
                     color: sel.color,
                     radius: BAND_RADIUS,
                     blend: sel.blend,
+                    outline: sel.outline,
                 });
             }
             SelectionStyle::Underline => {

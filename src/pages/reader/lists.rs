@@ -1,11 +1,11 @@
 //! Sidebar list rebuilders (TOC, Highlights, Notes, Bookmarks, Words) and note editing.
 
 use super::chapter::chapter_label;
-use super::chrome::connect_hover_zone;
+use super::chrome::connect_hover_open;
 use super::dictionary_popover::truncate_def;
 use super::mod_model::ReaderModel;
 use super::types::*;
-use crate::db::{Annotation, HighlightColor, SavedWord};
+use crate::db::{Annotation, HighlightColor, ReadingBookmark, SavedWord};
 use gtk::prelude::*;
 use relm4::ComponentSender;
 
@@ -59,6 +59,46 @@ impl ReaderModel {
         self.view.as_ref().map(|view| view.toc()).unwrap_or_default()
     }
 
+    /// The chapter the location text names (decision 17): the last TOC
+    /// row whose target sits at or before the reading position, so a
+    /// nested section names itself rather than its part. Part headings
+    /// carry no target and never win past the first real entry; with no
+    /// usable TOC the spine title stands in.
+    pub(crate) fn current_toc_title(&self) -> String {
+        let entries = self.toc_entries();
+        let rows = toc_rows(&entries, &self.chapter_titles);
+        let mut label: Option<&str> = None;
+        for row in &rows {
+            if let Some(spine) = row.spine_index {
+                if spine <= self.chapter {
+                    label = Some(row.label.as_str());
+                }
+            }
+        }
+        match label {
+            Some(label) if !label.trim().is_empty() => label.to_string(),
+            _ => self.current_chapter_title().to_string(),
+        }
+    }
+
+    /// Whether a bookmark sits at the reading position — the ribbon's
+    /// set state, and the toggle's remove branch. "Here" is the same
+    /// chapter within 3% of its length, the tolerance the toggle has
+    /// always used.
+    pub(crate) fn bookmark_here(&self) -> bool {
+        self.bookmark_here_id().is_some()
+    }
+
+    pub(crate) fn bookmark_here_id(&self) -> Option<i64> {
+        self.bookmarks
+            .iter()
+            .find(|b| {
+                b.chapter_index == self.chapter as i64
+                    && (b.fraction - self.fraction).abs() < 0.03
+            })
+            .map(|b| b.id)
+    }
+
     /// Which entry the TOC scroll should centre on, as (position, total)
     /// in the list `rebuild_toc` builds from the same entries.
     pub(crate) fn toc_display_position(&self) -> Option<(usize, usize)> {
@@ -97,8 +137,6 @@ impl ReaderModel {
     pub(crate) fn close_sidebars(&mut self) {
         self.left_sidebar_open = false;
         self.right_sidebar_open = false;
-        self.cancel_left_close();
-        self.cancel_right_close();
     }
 
     pub(crate) fn flush_annotation_note_draft(&mut self) {
@@ -152,6 +190,10 @@ impl ReaderModel {
                 annotation.note = saved_note.clone();
             }
         }
+        // The dot at the span's end follows the note in and out
+        // (decision 29).
+        let has_note = !saved_note.is_empty();
+        self.with_view(|view| view.set_highlight_note(id, has_note));
         true
     }
 
@@ -279,7 +321,7 @@ pub(crate) fn rebuild_toc(
 fn append_toc_heading(list: &gtk::Box, row: &TocRow) {
     let label = gtk::Label::new(Some(&row.label));
     label.add_css_class("kalam-reader-toc-part");
-    label.set_halign(gtk::Align::Start);
+    label.set_halign(gtk::Align::Fill);
     label.set_xalign(0.0);
     label.set_wrap(true);
     label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
@@ -313,6 +355,8 @@ fn append_toc_btn(
 ) {
     let btn = gtk::Button::new();
     btn.add_css_class("kalam-reader-toc-item");
+    btn.set_hexpand(true);
+    btn.set_halign(gtk::Align::Fill);
     if Some(idx) == active_spine {
         btn.add_css_class("active");
     }
@@ -320,12 +364,15 @@ fn append_toc_btn(
     // a top-level row and a chapter of the same book do not look switched.
     btn.set_margin_start(row.depth as i32 * 16);
     let title = gtk::Label::new(Some(&row.label));
-    title.set_halign(gtk::Align::Start);
+    // Fill, not Start: a wrapping label measures at its longest word,
+    // so a Start label inside the button is allocated that sliver and
+    // wraps mid-word ("Cha-pter"). The text itself stays left via
+    // xalign. Every row label in this file follows the same rule.
+    title.set_halign(gtk::Align::Fill);
     title.set_hexpand(true);
     title.set_wrap(true);
     title.set_wrap_mode(gtk::pango::WrapMode::WordChar);
     title.set_lines(-1);
-    title.set_width_chars(1);
     title.set_xalign(0.0);
     btn.set_child(Some(&title));
     let s = sender.clone();
@@ -437,15 +484,10 @@ fn annotation_recolor_button(
     let tx = sender.input_sender().clone();
     recolor.connect_active_notify(move |button| {
         if button.is_active() {
-            let _ = tx.send(ReaderMsg::OpenRightSidebar);
+            let _ = tx.send(ReaderMsg::OpenLeftSidebar);
         }
     });
-    connect_hover_zone(
-        &popover,
-        sender,
-        ReaderMsg::OpenRightSidebar,
-        ReaderMsg::ScheduleCloseRight,
-    );
+    connect_hover_open(&popover, sender, ReaderMsg::OpenLeftSidebar);
     recolor
 }
 
@@ -471,169 +513,179 @@ fn highlight_color_choice_class(color: HighlightColor) -> &'static str {
     }
 }
 
-pub(crate) fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>) {
-    while let Some(child) = model.highlights_list.first_child() {
-        model.highlights_list.remove(&child);
+/// One chapter's heading over its Notes items (decision 20): the
+/// Label style, uppercased by CSS.
+fn notes_chapter_heading(model: &ReaderModel, chapter_index: usize) -> gtk::Label {
+    let heading = gtk::Label::new(Some(&chapter_label(model, chapter_index)));
+    heading.add_css_class("kalam-reader-notes-heading");
+    heading.set_halign(gtk::Align::Fill);
+    heading.set_xalign(0.0);
+    heading.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    heading
+}
+
+/// One annotation as the Notes list draws it: the colour-barred card
+/// with its excerpt, the recolour and delete buttons the hover
+/// reveals, and — while it is the one being edited — the note box.
+/// The text view comes back alongside so the caller can focus it
+/// after the card is on screen.
+fn annotation_card(
+    model: &ReaderModel,
+    anno: &Annotation,
+    sender: &ComponentSender<ReaderModel>,
+    show_chapter: bool,
+) -> (gtk::Box, Option<gtk::TextView>) {
+    let annotation_id = anno.id;
+    let selected = model.editing_annotation == Some(annotation_id);
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    outer.add_css_class("kalam-reader-annotation-wrap");
+
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    card.add_css_class("kalam-reader-annotation-card");
+    card.add_css_class(color_card_class(&anno.color));
+    if selected {
+        card.add_css_class("open");
     }
-    let annos = model.filtered_annotations();
-    if annos.is_empty() {
-        let empty_message = if model.annotation_search_query.trim().is_empty() {
-            "No highlights yet in this view."
-        } else {
-            "No matching highlights or notes."
-        };
-        append_reader_empty(&model.highlights_list, empty_message);
-        return;
-    }
+    card.set_hexpand(true);
 
-    for anno in annos.into_iter().take(150) {
-        let annotation_id = anno.id;
-        let selected = model.editing_annotation == Some(annotation_id);
-        let outer = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        outer.add_css_class("kalam-reader-annotation-wrap");
+    let body = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    body.add_css_class("kalam-reader-annotation-body");
+    body.set_hexpand(true);
 
-        let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        card.add_css_class("kalam-reader-annotation-card");
-        card.add_css_class(color_card_class(&anno.color));
-        if selected {
-            card.add_css_class("open");
-        }
-        card.set_hexpand(true);
+    let jump = gtk::Button::new();
+    jump.add_css_class("kalam-reader-list-hit");
+    jump.set_hexpand(true);
+    jump.set_halign(gtk::Align::Fill);
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    row.set_hexpand(true);
 
-        let body = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        body.add_css_class("kalam-reader-annotation-body");
-        body.set_hexpand(true);
-
-        let jump = gtk::Button::new();
-        jump.add_css_class("kalam-reader-list-hit");
-        jump.set_hexpand(true);
-        jump.set_halign(gtk::Align::Fill);
-        let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-        row.set_hexpand(true);
-
-        let text_col = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        text_col.set_hexpand(true);
-        let text = gtk::Label::new(Some(&anno.text_excerpt));
-        text.add_css_class("kalam-reader-annotation-text");
-        text.set_wrap(true);
-        text.set_xalign(0.0);
-        text.set_halign(gtk::Align::Start);
-        text_col.append(&text);
-        let is_legacy = super::engine::highlight_of(anno).is_none();
-        let meta_str = if is_legacy {
-            format!("{} · (Archived)", chapter_label(model, anno.chapter_index as usize))
-        } else {
+    let text_col = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    text_col.set_hexpand(true);
+    let text = gtk::Label::new(Some(&anno.text_excerpt));
+    text.add_css_class("kalam-reader-annotation-text");
+    text.set_wrap(true);
+    text.set_xalign(0.0);
+    text.set_halign(gtk::Align::Fill);
+    text_col.append(&text);
+    // Under a chapter heading the chapter names itself; the meta line
+    // only remains to flag a WebKit-era row the engine cannot place.
+    let is_legacy = super::engine::highlight_of(anno).is_none();
+    let meta_str = match (show_chapter, is_legacy) {
+        (true, true) => Some(format!(
+            "{} · (Archived)",
             chapter_label(model, anno.chapter_index as usize)
-        };
+        )),
+        (true, false) => Some(chapter_label(model, anno.chapter_index as usize)),
+        (false, true) => Some("(Archived)".to_string()),
+        (false, false) => None,
+    };
+    if let Some(meta_str) = meta_str {
         let meta = gtk::Label::new(Some(&meta_str));
         meta.add_css_class("kalam-reader-annotation-meta");
-        meta.set_halign(gtk::Align::Start);
+        meta.set_halign(gtk::Align::Fill);
         meta.set_xalign(0.0);
         text_col.append(&meta);
-        row.append(&text_col);
-        jump.set_child(Some(&row));
-        let s = sender.clone();
-        jump.connect_clicked(move |_| s.input(ReaderMsg::ToggleAnnotation(annotation_id)));
-        body.append(&jump);
-
-        if anno.kind == "highlight" {
-            let recolor = annotation_recolor_button(
-                annotation_id,
-                HighlightColor::from_str_lossy(&anno.color),
-                sender,
-            );
-            body.append(&recolor);
-        }
-
-        let delete = gtk::Button::new();
-        delete.add_css_class("kalam-btn-icon");
-        delete.add_css_class("danger");
-        delete.set_focus_on_click(false);
-        delete.set_tooltip_text(Some("Delete highlight"));
-        delete.set_child(Some(&crate::icons::symbolic_with_classes(
-            "user-trash-symbolic",
-            16,
-            &["kalam-inline-icon"],
-        )));
-        let s = sender.clone();
-        delete.connect_clicked(move |_| s.input(ReaderMsg::DeleteAnnotation(annotation_id)));
-        body.append(&delete);
-        card.append(&body);
-        let mut note_view_to_focus = None;
-
-        if selected {
-            let note_wrap = gtk::Box::new(gtk::Orientation::Vertical, 5);
-            note_wrap.add_css_class("kalam-reader-annotation-note-wrap");
-            note_wrap.set_hexpand(true);
-
-            let note_label = gtk::Label::new(Some("Note"));
-            note_label.add_css_class("kalam-reader-note-label");
-            note_label.set_halign(gtk::Align::Start);
-            note_label.set_xalign(0.0);
-            note_wrap.append(&note_label);
-
-            let note_view = gtk::TextView::new();
-            note_view.add_css_class("kalam-reader-note-view");
-            note_view.set_wrap_mode(gtk::WrapMode::WordChar);
-            note_view.set_hexpand(true);
-            note_view.set_vexpand(false);
-            let note_buffer = note_view.buffer();
-            note_buffer.set_text(&anno.note);
-
-            let note_scroll = gtk::ScrolledWindow::builder()
-                .min_content_height(52)
-                .max_content_height(112)
-                .hscrollbar_policy(gtk::PolicyType::Never)
-                .vscrollbar_policy(gtk::PolicyType::Automatic)
-                .hexpand(true)
-                .child(&note_view)
-                .build();
-            note_scroll.add_css_class("kalam-reader-note-scroll");
-            note_wrap.append(&note_scroll);
-
-            let tx = sender.input_sender().clone();
-            note_buffer.connect_changed(move |buffer| {
-                let _ = tx.send(ReaderMsg::AnnotationNoteChanged(
-                    annotation_id,
-                    annotation_note_text(buffer),
-                ));
-            });
-
-            let tx = sender.input_sender().clone();
-            let buffer_for_focus = note_buffer.clone();
-            note_view.connect_has_focus_notify(move |view| {
-                if view.has_focus() {
-                    return;
-                }
-                let _ = tx.send(ReaderMsg::SaveAnnotationNote(
-                    annotation_id,
-                    annotation_note_text(&buffer_for_focus),
-                ));
-            });
-            card.append(&note_wrap);
-            note_view_to_focus = Some(note_view);
-        } else if !anno.note.trim().is_empty() {
-            let preview = gtk::Button::new();
-            preview.add_css_class("kalam-reader-annotation-note-preview");
-            preview.set_hexpand(true);
-            preview.set_halign(gtk::Align::Fill);
-            let preview_text = gtk::Label::new(Some(&format!("Note: {}", anno.note.trim())));
-            preview_text.add_css_class("kalam-reader-note-preview-text");
-            preview_text.set_wrap(true);
-            preview_text.set_halign(gtk::Align::Start);
-            preview_text.set_xalign(0.0);
-            preview.set_child(Some(&preview_text));
-            let s = sender.clone();
-            preview.connect_clicked(move |_| s.input(ReaderMsg::ToggleAnnotation(annotation_id)));
-            card.append(&preview);
-        }
-
-        outer.append(&card);
-        model.highlights_list.append(&outer);
-        if let Some(note_view) = note_view_to_focus {
-            note_view.grab_focus();
-        }
     }
+    row.append(&text_col);
+    jump.set_child(Some(&row));
+    let s = sender.clone();
+    jump.connect_clicked(move |_| s.input(ReaderMsg::ToggleAnnotation(annotation_id)));
+    body.append(&jump);
+
+    if anno.kind == "highlight" {
+        let recolor = annotation_recolor_button(
+            annotation_id,
+            HighlightColor::from_str_lossy(&anno.color),
+            sender,
+        );
+        body.append(&recolor);
+    }
+
+    let delete = gtk::Button::new();
+    delete.add_css_class("kalam-btn-icon");
+    delete.add_css_class("danger");
+    delete.set_focus_on_click(false);
+    delete.set_tooltip_text(Some("Delete highlight"));
+    delete.set_child(Some(&crate::icons::symbolic_with_classes(
+        "user-trash-symbolic",
+        16,
+        &["kalam-inline-icon"],
+    )));
+    let s = sender.clone();
+    delete.connect_clicked(move |_| s.input(ReaderMsg::DeleteAnnotation(annotation_id)));
+    body.append(&delete);
+    card.append(&body);
+    let mut note_view_to_focus = None;
+
+    if selected {
+        let note_wrap = gtk::Box::new(gtk::Orientation::Vertical, 5);
+        note_wrap.add_css_class("kalam-reader-annotation-note-wrap");
+        note_wrap.set_hexpand(true);
+
+        let note_label = gtk::Label::new(Some("Note"));
+        note_label.add_css_class("kalam-reader-note-label");
+        note_label.set_halign(gtk::Align::Fill);
+        note_label.set_xalign(0.0);
+        note_wrap.append(&note_label);
+
+        let note_view = gtk::TextView::new();
+        note_view.add_css_class("kalam-reader-note-view");
+        note_view.set_wrap_mode(gtk::WrapMode::WordChar);
+        note_view.set_hexpand(true);
+        note_view.set_vexpand(false);
+        let note_buffer = note_view.buffer();
+        note_buffer.set_text(&anno.note);
+
+        let note_scroll = gtk::ScrolledWindow::builder()
+            .min_content_height(52)
+            .max_content_height(112)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vscrollbar_policy(gtk::PolicyType::Automatic)
+            .hexpand(true)
+            .child(&note_view)
+            .build();
+        note_scroll.add_css_class("kalam-reader-note-scroll");
+        note_wrap.append(&note_scroll);
+
+        let tx = sender.input_sender().clone();
+        note_buffer.connect_changed(move |buffer| {
+            let _ = tx.send(ReaderMsg::AnnotationNoteChanged(
+                annotation_id,
+                annotation_note_text(buffer),
+            ));
+        });
+
+        let tx = sender.input_sender().clone();
+        let buffer_for_focus = note_buffer.clone();
+        note_view.connect_has_focus_notify(move |view| {
+            if view.has_focus() {
+                return;
+            }
+            let _ = tx.send(ReaderMsg::SaveAnnotationNote(
+                annotation_id,
+                annotation_note_text(&buffer_for_focus),
+            ));
+        });
+        card.append(&note_wrap);
+        note_view_to_focus = Some(note_view);
+    } else if !anno.note.trim().is_empty() {
+        let preview = gtk::Button::new();
+        preview.add_css_class("kalam-reader-annotation-note-preview");
+        preview.set_hexpand(true);
+        preview.set_halign(gtk::Align::Fill);
+        let preview_text = gtk::Label::new(Some(&format!("Note: {}", anno.note.trim())));
+        preview_text.add_css_class("kalam-reader-note-preview-text");
+        preview_text.set_wrap(true);
+        preview_text.set_halign(gtk::Align::Fill);
+        preview_text.set_xalign(0.0);
+        preview.set_child(Some(&preview_text));
+        let s = sender.clone();
+        preview.connect_clicked(move |_| s.input(ReaderMsg::ToggleAnnotation(annotation_id)));
+        card.append(&preview);
+    }
+
+    outer.append(&card);
+    (outer, note_view_to_focus)
 }
 
 fn color_card_class(color: &str) -> &'static str {
@@ -647,84 +699,292 @@ fn color_card_class(color: &str) -> &'static str {
     }
 }
 
-pub(crate) fn rebuild_bookmarks_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>) {
-    while let Some(child) = model.bookmarks_list.first_child() {
-        model.bookmarks_list.remove(&child);
-    }
-    if model.bookmarks.is_empty() {
-        append_reader_empty(
-            &model.bookmarks_list,
-            "No marks yet. Use Add current place or press M.",
-        );
-        return;
-    }
+/// One reading mark as the Notes list draws it.
+fn bookmark_row(
+    model: &ReaderModel,
+    mark: &ReadingBookmark,
+    sender: &ComponentSender<ReaderModel>,
+    show_chapter: bool,
+) -> gtk::Box {
+    let outer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    outer.add_css_class("kalam-reader-bookmark-row");
 
-    for mark in model.bookmarks.iter().take(150) {
-        let outer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        outer.add_css_class("kalam-reader-bookmark-row");
-
-        let jump = gtk::Button::new();
-        jump.add_css_class("kalam-reader-list-hit");
-        let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-        row.append(&crate::icons::symbolic_with_classes(
-            "bookmark-new-symbolic",
-            16,
-            &["kalam-reader-bookmark-icon"],
-        ));
-        let text_col = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        text_col.set_hexpand(true);
-        let title = gtk::Label::new(Some(if mark.label.trim().is_empty() {
-            "Reading mark"
-        } else {
-            &mark.label
-        }));
-        title.add_css_class("kalam-reader-bookmark-title");
-        title.set_halign(gtk::Align::Start);
-        title.set_xalign(0.0);
-        text_col.append(&title);
-        let meta = gtk::Label::new(Some(&format!(
+    let jump = gtk::Button::new();
+    jump.add_css_class("kalam-reader-list-hit");
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    row.append(&crate::icons::symbolic_with_classes(
+        "bookmark-new-symbolic",
+        16,
+        &["kalam-reader-bookmark-icon"],
+    ));
+    let text_col = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    text_col.set_hexpand(true);
+    let title = gtk::Label::new(Some(if mark.label.trim().is_empty() {
+        "Reading mark"
+    } else {
+        &mark.label
+    }));
+    title.add_css_class("kalam-reader-bookmark-title");
+    title.set_halign(gtk::Align::Fill);
+    title.set_xalign(0.0);
+    text_col.append(&title);
+    let meta_str = if show_chapter {
+        format!(
             "{} · {}%",
             chapter_label(model, mark.chapter_index as usize),
             (mark.fraction * 100.0).round() as i64
-        )));
-        meta.add_css_class("kalam-reader-annotation-meta");
-        meta.set_halign(gtk::Align::Start);
-        meta.set_xalign(0.0);
-        text_col.append(&meta);
-        row.append(&text_col);
-        jump.set_child(Some(&row));
-        let ch = mark.chapter_index as usize;
-        let frac = mark.fraction;
-        let s = sender.clone();
-        jump.connect_clicked(move |_| s.input(ReaderMsg::JumpToLocation(ch, frac)));
-        outer.append(&jump);
+        )
+    } else {
+        format!("{}% through", (mark.fraction * 100.0).round() as i64)
+    };
+    let meta = gtk::Label::new(Some(&meta_str));
+    meta.add_css_class("kalam-reader-annotation-meta");
+    meta.set_halign(gtk::Align::Fill);
+    meta.set_xalign(0.0);
+    text_col.append(&meta);
+    row.append(&text_col);
+    jump.set_child(Some(&row));
+    let ch = mark.chapter_index as usize;
+    let frac = mark.fraction;
+    let s = sender.clone();
+    jump.connect_clicked(move |_| s.input(ReaderMsg::JumpToLocation(ch, frac)));
+    outer.append(&jump);
 
-        let delete = gtk::Button::new();
-        delete.add_css_class("kalam-btn-icon");
-        delete.add_css_class("danger");
-        delete.set_child(Some(&crate::icons::symbolic_with_classes(
-            "user-trash-symbolic",
-            16,
-            &["kalam-inline-icon"],
-        )));
-        let id = mark.id;
-        let s = sender.clone();
-        delete.connect_clicked(move |_| s.input(ReaderMsg::DeleteBookmark(id)));
-        outer.append(&delete);
+    let delete = gtk::Button::new();
+    delete.add_css_class("kalam-btn-icon");
+    delete.add_css_class("danger");
+    delete.set_child(Some(&crate::icons::symbolic_with_classes(
+        "user-trash-symbolic",
+        16,
+        &["kalam-inline-icon"],
+    )));
+    let id = mark.id;
+    let s = sender.clone();
+    delete.connect_clicked(move |_| s.input(ReaderMsg::DeleteBookmark(id)));
+    outer.append(&delete);
 
-        model.bookmarks_list.append(&outer);
+    outer
+}
+
+/// One saved word as the Notes list draws it (decision 22): the
+/// headword over a one-line meaning; the row is the lookup, and
+/// hover shows the delete the bookmark rows already carry.
+fn saved_word_row(
+    model: &ReaderModel,
+    word: &SavedWord,
+    sender: &ComponentSender<ReaderModel>,
+) -> gtk::Box {
+    let outer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    outer.add_css_class("kalam-reader-word-row-wrap");
+
+    let btn = gtk::Button::new();
+    btn.add_css_class("kalam-reader-word-row");
+    btn.set_hexpand(true);
+    btn.set_halign(gtk::Align::Fill);
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let title = gtk::Label::new(Some(&word.word));
+    title.add_css_class("kalam-reader-word-name");
+    title.set_halign(gtk::Align::Fill);
+    title.set_xalign(0.0);
+    body.append(&title);
+    let def = gtk::Label::new(Some(&truncate_def(&word.definition, 180)));
+    def.add_css_class("kalam-reader-word-def");
+    def.set_wrap(true);
+    def.set_xalign(0.0);
+    def.set_halign(gtk::Align::Fill);
+    body.append(&def);
+    let meta = gtk::Label::new(Some(&saved_word_meta(model, word)));
+    meta.add_css_class("kalam-reader-word-meta");
+    meta.set_halign(gtk::Align::Fill);
+    meta.set_xalign(0.0);
+    body.append(&meta);
+    btn.set_child(Some(&body));
+    let text = word.word.clone();
+    let s = sender.clone();
+    btn.connect_clicked(move |_| s.input(ReaderMsg::DictSearchSelect(text.clone())));
+    outer.append(&btn);
+
+    let delete = gtk::Button::new();
+    delete.add_css_class("kalam-btn-icon");
+    delete.add_css_class("danger");
+    delete.set_tooltip_text(Some("Forget this word"));
+    delete.set_child(Some(&crate::icons::symbolic_with_classes(
+        "user-trash-symbolic",
+        16,
+        &["kalam-inline-icon"],
+    )));
+    let id = word.id;
+    let s = sender.clone();
+    delete.connect_clicked(move |_| s.input(ReaderMsg::DeleteSavedWord(id)));
+    outer.append(&delete);
+
+    outer
+}
+
+/// What fills the Notes list under each filter. Items sit in book
+/// order under chapter headings (decision 20), except the Words
+/// view, which keeps its own scope switch and a flat list
+/// (decision 22).
+enum NotesItem<'a> {
+    Annotation(&'a Annotation),
+    Bookmark(&'a ReadingBookmark),
+    Word(&'a SavedWord),
+}
+
+pub(crate) fn rebuild_notes_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>) {
+    while let Some(child) = model.notes_list.first_child() {
+        model.notes_list.remove(&child);
+    }
+
+    match model.notes_filter {
+        NotesFilter::Words => rebuild_notes_words(model, sender),
+        NotesFilter::Highlights => {
+            let mut annos = model.filtered_annotations();
+            annos.sort_by(|a, b| {
+                a.chapter_index
+                    .cmp(&b.chapter_index)
+                    .then_with(|| a.created_at.cmp(&b.created_at))
+            });
+            if annos.is_empty() {
+                let empty_message = if model.annotation_search_query.trim().is_empty() {
+                    "No highlights yet in this view."
+                } else {
+                    "No matching highlights or notes."
+                };
+                append_reader_empty(&model.notes_list, empty_message);
+                return;
+            }
+            let items: Vec<(Option<i64>, NotesItem<'_>)> = annos
+                .into_iter()
+                .map(|anno| (Some(anno.chapter_index), NotesItem::Annotation(anno)))
+                .collect();
+            append_notes_items(model, sender, items, 150);
+        }
+        NotesFilter::Bookmarks => {
+            if model.bookmarks.is_empty() {
+                append_reader_empty(
+                    &model.notes_list,
+                    "No bookmarks yet — the ribbon at the top of the page adds one.",
+                );
+                return;
+            }
+            let mut marks: Vec<&ReadingBookmark> = model.bookmarks.iter().collect();
+            marks.sort_by(|a, b| {
+                a.chapter_index
+                    .cmp(&b.chapter_index)
+                    .then_with(|| a.fraction.total_cmp(&b.fraction))
+            });
+            let items: Vec<(Option<i64>, NotesItem<'_>)> = marks
+                .into_iter()
+                .map(|mark| (Some(mark.chapter_index), NotesItem::Bookmark(mark)))
+                .collect();
+            append_notes_items(model, sender, items, 150);
+        }
+        NotesFilter::All => {
+            // Book order across all three kinds: chapter first, then
+            // where in the reading they were left (the creation stamp
+            // is the one clock all three share).
+            let mut items: Vec<(Option<i64>, &str, NotesItem<'_>)> = Vec::new();
+            for anno in model
+                .all_book_annotations
+                .iter()
+                .filter(|a| a.kind == "highlight" || a.kind == "quote")
+            {
+                items.push((
+                    Some(anno.chapter_index),
+                    anno.created_at.as_str(),
+                    NotesItem::Annotation(anno),
+                ));
+            }
+            for mark in &model.bookmarks {
+                items.push((
+                    Some(mark.chapter_index),
+                    mark.created_at.as_str(),
+                    NotesItem::Bookmark(mark),
+                ));
+            }
+            for word in model
+                .saved_words
+                .iter()
+                .filter(|w| w.book_id == Some(model.book_id))
+            {
+                items.push((
+                    word.chapter_index,
+                    word.created_at.as_str(),
+                    NotesItem::Word(word),
+                ));
+            }
+            if items.is_empty() {
+                append_reader_empty(
+                    &model.notes_list,
+                    "Nothing kept from this book yet. Highlights, bookmarks and saved words gather here.",
+                );
+                return;
+            }
+            items.sort_by(|a, b| {
+                a.0.unwrap_or(i64::MAX)
+                    .cmp(&b.0.unwrap_or(i64::MAX))
+                    .then_with(|| a.1.cmp(b.1))
+            });
+            let items: Vec<(Option<i64>, NotesItem<'_>)> =
+                items.into_iter().map(|(ch, _, item)| (ch, item)).collect();
+            append_notes_items(model, sender, items, 200);
+        }
     }
 }
 
-pub(crate) fn rebuild_words_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>) {
-    while let Some(child) = model.words_list.first_child() {
-        model.words_list.remove(&child);
+/// Draw grouped items into the Notes list, a chapter heading
+/// whenever the chapter changes.
+fn append_notes_items(
+    model: &ReaderModel,
+    sender: &ComponentSender<ReaderModel>,
+    items: Vec<(Option<i64>, NotesItem<'_>)>,
+    cap: usize,
+) {
+    let mut standing_chapter: Option<Option<i64>> = None;
+    for (chapter, item) in items.into_iter().take(cap) {
+        if standing_chapter != Some(chapter) {
+            standing_chapter = Some(chapter);
+            match chapter {
+                Some(ch) => model
+                    .notes_list
+                    .append(&notes_chapter_heading(model, ch.max(0) as usize)),
+                None => {
+                    let heading = gtk::Label::new(Some("Saved words"));
+                    heading.add_css_class("kalam-reader-notes-heading");
+                    heading.set_halign(gtk::Align::Fill);
+                    heading.set_xalign(0.0);
+                    model.notes_list.append(&heading);
+                }
+            }
+        }
+        match item {
+            NotesItem::Annotation(anno) => {
+                let (card, focus_view) = annotation_card(model, anno, sender, false);
+                model.notes_list.append(&card);
+                if let Some(note_view) = focus_view {
+                    note_view.grab_focus();
+                }
+            }
+            NotesItem::Bookmark(mark) => {
+                model
+                    .notes_list
+                    .append(&bookmark_row(model, mark, sender, false));
+            }
+            NotesItem::Word(word) => {
+                model.notes_list.append(&saved_word_row(model, word, sender));
+            }
+        }
     }
+}
 
+/// The Words filter: a standing dictionary query lists matches;
+/// otherwise the saved words in the standing scope (decision 22).
+fn rebuild_notes_words(model: &ReaderModel, sender: &ComponentSender<ReaderModel>) {
     if !model.dict_query.trim().is_empty() {
         if model.dict_results.is_empty() {
             append_reader_empty(
-                &model.words_list,
+                &model.notes_list,
                 "No matches. Import dictionaries in Settings if needed.",
             );
             return;
@@ -735,62 +995,39 @@ pub(crate) fn rebuild_words_list(model: &ReaderModel, sender: &ComponentSender<R
             let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
             let title = gtk::Label::new(Some(&entry.word));
             title.add_css_class("kalam-reader-word-name");
-            title.set_halign(gtk::Align::Start);
+            title.set_halign(gtk::Align::Fill);
             title.set_xalign(0.0);
             body.append(&title);
             let def = gtk::Label::new(Some(&truncate_def(&entry.definition, 180)));
             def.add_css_class("kalam-reader-word-def");
             def.set_wrap(true);
             def.set_xalign(0.0);
-            def.set_halign(gtk::Align::Start);
+            def.set_halign(gtk::Align::Fill);
             body.append(&def);
             let meta = gtk::Label::new(Some("Dictionary match"));
             meta.add_css_class("kalam-reader-word-meta");
-            meta.set_halign(gtk::Align::Start);
+            meta.set_halign(gtk::Align::Fill);
             meta.set_xalign(0.0);
             body.append(&meta);
             btn.set_child(Some(&body));
             let word = entry.word.clone();
             let s = sender.clone();
             btn.connect_clicked(move |_| s.input(ReaderMsg::DictSearchSelect(word.clone())));
-            model.words_list.append(&btn);
+            model.notes_list.append(&btn);
         }
         return;
     }
 
     let words = model.filtered_saved_words();
     if words.is_empty() {
-        append_reader_empty(&model.words_list, "No saved words in this view yet.");
+        append_reader_empty(&model.notes_list, "No saved words in this view yet.");
         return;
     }
-
     for word in words.into_iter().take(150) {
-        let btn = gtk::Button::new();
-        btn.add_css_class("kalam-reader-word-row");
-        let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        let title = gtk::Label::new(Some(&word.word));
-        title.add_css_class("kalam-reader-word-name");
-        title.set_halign(gtk::Align::Start);
-        title.set_xalign(0.0);
-        body.append(&title);
-        let def = gtk::Label::new(Some(&truncate_def(&word.definition, 180)));
-        def.add_css_class("kalam-reader-word-def");
-        def.set_wrap(true);
-        def.set_xalign(0.0);
-        def.set_halign(gtk::Align::Start);
-        body.append(&def);
-        let meta = gtk::Label::new(Some(&saved_word_meta(model, word)));
-        meta.add_css_class("kalam-reader-word-meta");
-        meta.set_halign(gtk::Align::Start);
-        meta.set_xalign(0.0);
-        body.append(&meta);
-        btn.set_child(Some(&body));
-        let text = word.word.clone();
-        let s = sender.clone();
-        btn.connect_clicked(move |_| s.input(ReaderMsg::DictSearchSelect(text.clone())));
-        model.words_list.append(&btn);
+        model.notes_list.append(&saved_word_row(model, word, sender));
     }
 }
+
 
 fn saved_word_meta(model: &ReaderModel, word: &SavedWord) -> String {
     match word.chapter_index {

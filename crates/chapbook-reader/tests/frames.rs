@@ -170,6 +170,7 @@ fn a_highlight_damages_only_its_own_lines() {
         color: None,
         style: None,
         text: s.selected_text(),
+        has_note: false,
     };
     s.show_host_highlight(row);
     let frame = s.frame().expect("frame");

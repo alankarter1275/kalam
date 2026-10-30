@@ -1,7 +1,7 @@
 //! Comics & Manga hub page: browse local CBZ/CBR comic archives and launch reader.
 
 use crate::db::{Catalog, SortKey};
-use crate::models::{Book, BookFormat};
+use crate::models::{Book, BookFormat, ComicSeries};
 use crate::pages::all_books::{import_summary, spawn_import, ImportTally};
 use crate::service::LibraryService;
 use crate::widgets::book_row::{build_book_grid, cover_widget, cover_widget_deferred};
@@ -34,8 +34,22 @@ pub struct ComicSeriesGroup {
     pub cover_path: Option<PathBuf>,
     pub chapters: Vec<Book>,
     pub total_chapters: usize,
+    pub completed_count: usize,
     pub unread_count: usize,
     pub next_to_read: Option<Book>,
+    /// The catalog's series record when this group came from the
+    /// relational hierarchy. Groups inferred only from book rows (the
+    /// `group_comics_into_series` fallback) have no record to edit or
+    /// fetch metadata into, and say so instead of pretending.
+    pub series: Option<ComicSeries>,
+}
+
+impl ComicSeriesGroup {
+    /// Every chapter finished. “Nothing unread” is not the same
+    /// claim: a chapter at 33% is neither unread nor completed.
+    fn all_completed(&self) -> bool {
+        self.total_chapters > 0 && self.completed_count >= self.total_chapters
+    }
 }
 
 #[derive(Debug)]
@@ -47,6 +61,12 @@ pub enum ComicsMsg {
     ToggleViewMode,
     OpenSeriesDrawer(String),
     CloseSeriesDrawer,
+    EditSeriesDetails(String),
+    FindSeriesMetadata(String),
+    SeriesMetadataSaved {
+        old_title: String,
+        new_title: String,
+    },
     PickFiles,
     PickFolder,
     FilesChosen(Vec<PathBuf>),
@@ -140,6 +160,7 @@ pub fn group_comics_into_series(comics: &[Book]) -> (Vec<ComicSeriesGroup>, Vec<
         });
 
         let total_chapters = chapters.len();
+        let completed_count = chapters.iter().filter(|c| c.progress >= 100).count();
         let unread_count = chapters.iter().filter(|c| c.progress == 0).count();
         let next_to_read = chapters
             .iter()
@@ -158,8 +179,10 @@ pub fn group_comics_into_series(comics: &[Book]) -> (Vec<ComicSeriesGroup>, Vec<
             cover_path,
             chapters,
             total_chapters,
+            completed_count,
             unread_count,
             next_to_read,
+            series: None,
         });
     }
 
@@ -232,14 +255,17 @@ impl ComicsModel {
                 .cloned()
                 .or_else(|| chapters.first().cloned());
 
+            let series_record = s.clone();
             groups.push(ComicSeriesGroup {
-                series_name: s.title,
-                authors: s.author,
-                cover_path: s.cover_path,
+                series_name: s.title.clone(),
+                authors: s.credits_summary(),
+                cover_path: s.cover_path.clone(),
                 total_chapters: s.total_chapters,
+                completed_count: s.completed_chapters,
                 unread_count: s.unread_chapters,
                 chapters,
                 next_to_read,
+                series: Some(series_record),
             });
         }
 
@@ -276,6 +302,13 @@ impl ComicsModel {
                 .filter(|g| {
                     g.series_name.to_lowercase().contains(&query)
                         || g.authors.to_lowercase().contains(&query)
+                        || g.series.as_ref().is_some_and(|series| {
+                            series.original_title.to_lowercase().contains(&query)
+                                || series
+                                    .genres
+                                    .iter()
+                                    .any(|genre| genre.to_lowercase().contains(&query))
+                        })
                         || g.chapters
                             .iter()
                             .any(|c| c.title.to_lowercase().contains(&query))
@@ -398,10 +431,12 @@ fn build_series_card(
     title_lbl.set_halign(gtk::Align::Start);
     top_click_area.append(&title_lbl);
 
-    let sub_text = if group.unread_count == 0 && group.total_chapters > 0 {
+    let sub_text = if group.all_completed() {
         format!("{} ch · All read ✓", group.total_chapters)
-    } else if group.unread_count < group.total_chapters {
+    } else if group.unread_count > 0 && group.unread_count < group.total_chapters {
         format!("{} ch · {} unread", group.total_chapters, group.unread_count)
+    } else if group.unread_count == 0 && group.total_chapters > 0 {
+        format!("{} ch · In progress", group.total_chapters)
     } else {
         format!(
             "{} chapter{}",
@@ -425,7 +460,7 @@ fn build_series_card(
     card.append(&top_click_area);
 
     if let Some(ref next) = group.next_to_read {
-        let resume_lbl = if group.unread_count == 0 && group.total_chapters > 0 {
+        let resume_lbl = if group.all_completed() {
             "Ch. 1".to_string()
         } else if next.progress > 0 {
             if next.series_index > 0.0 {
@@ -450,6 +485,75 @@ fn build_series_card(
     }
 
     card
+}
+
+fn append_series_detail(host: &gtk::Box, label: &str, value: &str) {
+    let value = value.trim();
+    if value.is_empty() {
+        return;
+    }
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+    row.add_css_class("kalam-comic-series-detail-row");
+
+    let name = gtk::Label::new(Some(label));
+    name.add_css_class("kalam-comic-series-detail-label");
+    name.set_size_request(132, -1);
+    name.set_halign(gtk::Align::Start);
+    name.set_xalign(0.0);
+    name.set_valign(gtk::Align::Start);
+    row.append(&name);
+
+    let text = gtk::Label::new(Some(value));
+    text.add_css_class("kalam-comic-series-detail-value");
+    text.set_hexpand(true);
+    text.set_halign(gtk::Align::Start);
+    text.set_xalign(0.0);
+    text.set_wrap(true);
+    text.set_selectable(true);
+    row.append(&text);
+    host.append(&row);
+}
+
+fn comic_series_source_line(series: &ComicSeries) -> String {
+    let source = crate::metadata::SourceId::from_key(series.metadata_source.trim())
+        .map(|source| source.label().to_string())
+        .unwrap_or_else(|| series.metadata_source.trim().to_string());
+    if source.is_empty() {
+        return String::new();
+    }
+    let mut parts = vec![source];
+    if !series.metadata_source_id.trim().is_empty() {
+        parts.push(format!("ID {}", series.metadata_source_id.trim()));
+    }
+    if !series.metadata_fetched_at.trim().is_empty() {
+        parts.push(format!(
+            "fetched {}",
+            series.metadata_fetched_at.trim().chars().take(10).collect::<String>()
+        ));
+    }
+    parts.join(" · ")
+}
+
+fn comic_series_known_line(series: &ComicSeries) -> String {
+    let mut parts = Vec::new();
+    if let Some(volumes) = series.known_volumes.filter(|value| *value > 0) {
+        parts.push(format!(
+            "{volumes} volume{}",
+            if volumes == 1 { "" } else { "s" }
+        ));
+    }
+    if let Some(chapters) = series.known_chapters.filter(|value| *value > 0) {
+        let unit = if series.metadata_source == crate::metadata::SourceId::ComicVine.key() {
+            "issue"
+        } else {
+            "chapter"
+        };
+        parts.push(format!(
+            "{chapters} {unit}{}",
+            if chapters == 1 { "" } else { "s" }
+        ));
+    }
+    parts.join(" · ")
 }
 
 fn build_series_drawer_view(
@@ -494,9 +598,37 @@ fn build_series_drawer_view(
     let author_lbl = gtk::Label::new(Some(&group.authors));
     author_lbl.add_css_class("kalam-subtitle-muted");
     author_lbl.set_halign(gtk::Align::Start);
+    author_lbl.set_wrap(true);
+    author_lbl.set_xalign(0.0);
     info_box.append(&author_lbl);
 
-    let completed_count = group.total_chapters.saturating_sub(group.unread_count);
+    if let Some(series) = &group.series {
+        if !series.original_title.trim().is_empty()
+            && !series
+                .original_title
+                .trim()
+                .eq_ignore_ascii_case(group.series_name.trim())
+        {
+            let original = gtk::Label::new(Some(series.original_title.trim()));
+            original.add_css_class("kalam-comic-series-original");
+            original.set_halign(gtk::Align::Start);
+            original.set_wrap(true);
+            original.set_xalign(0.0);
+            info_box.append(&original);
+        }
+        if !series.manual_fields.is_empty() {
+            let edited = gtk::Label::new(Some("Details edited by hand"));
+            edited.add_css_class("kalam-comic-series-edited");
+            edited.set_halign(gtk::Align::Start);
+            edited.set_valign(gtk::Align::Center);
+            edited.set_tooltip_text(Some(
+                "Fields edited here are left alone when metadata is refreshed.",
+            ));
+            info_box.append(&edited);
+        }
+    }
+
+    let completed_count = group.completed_count;
     let stats_text = format!(
         "{} chapter{} · {} completed · {} unread",
         group.total_chapters,
@@ -520,7 +652,7 @@ fn build_series_drawer_view(
     info_box.append(&pbar);
 
     if let Some(ref next) = group.next_to_read {
-        let resume_lbl = if group.unread_count == 0 && group.total_chapters > 0 {
+        let resume_lbl = if group.all_completed() {
             "Restart Series (Ch. 1)".to_string()
         } else if next.progress > 0 {
             if next.series_index > 0.0 {
@@ -544,8 +676,78 @@ fn build_series_drawer_view(
         info_box.append(&resume_btn);
     }
 
+    if group.series.is_some() {
+        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        actions.set_halign(gtk::Align::Start);
+        actions.set_margin_top(4);
+
+        let find_btn = gtk::Button::with_label("Find metadata");
+        find_btn.add_css_class("kalam-btn-subtle");
+        find_btn.set_tooltip_text(Some(
+            "Search MyAnimeList and Comic Vine for this series",
+        ));
+        let s_find = sender.clone();
+        let title_for_find = group.series_name.clone();
+        find_btn.connect_clicked(move |_| {
+            s_find.input(ComicsMsg::FindSeriesMetadata(title_for_find.clone()));
+        });
+        actions.append(&find_btn);
+
+        let edit_btn = gtk::Button::with_label("Edit details");
+        edit_btn.add_css_class("kalam-btn-subtle");
+        edit_btn.set_tooltip_text(Some("Edit this series by hand"));
+        let s_edit = sender.clone();
+        let title_for_edit = group.series_name.clone();
+        edit_btn.connect_clicked(move |_| {
+            s_edit.input(ComicsMsg::EditSeriesDetails(title_for_edit.clone()));
+        });
+        actions.append(&edit_btn);
+        info_box.append(&actions);
+    }
+
     hero.append(&info_box);
     root_box.append(&hero);
+
+    if let Some(series) = &group.series {
+        let details = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        details.add_css_class("kalam-card");
+        details.add_css_class("kalam-comic-series-details");
+
+        let mut has_detail = false;
+        if !series.description.trim().is_empty() {
+            has_detail = true;
+            let about = gtk::Label::new(Some("About"));
+            about.add_css_class("kalam-title-medium");
+            about.set_halign(gtk::Align::Start);
+            details.append(&about);
+
+            let description = gtk::Label::new(Some(series.description.trim()));
+            description.add_css_class("kalam-comic-series-description");
+            description.set_halign(gtk::Align::Start);
+            description.set_xalign(0.0);
+            description.set_wrap(true);
+            description.set_selectable(true);
+            details.append(&description);
+        }
+
+        let rows = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        append_series_detail(&rows, "Status", &series.status);
+        append_series_detail(&rows, "Type", &series.media_type);
+        append_series_detail(&rows, "Publisher", &series.publisher);
+        append_series_detail(&rows, "Serialization", &series.serialization);
+        append_series_detail(&rows, "Started", &series.published);
+        append_series_detail(&rows, "Ended", &series.end_date);
+        append_series_detail(&rows, "Genres", &series.genres.join(", "));
+        append_series_detail(&rows, "Known", &comic_series_known_line(series));
+        append_series_detail(&rows, "Metadata", &comic_series_source_line(series));
+        if rows.first_child().is_some() {
+            has_detail = true;
+            details.append(&rows);
+        }
+        if has_detail {
+            root_box.append(&details);
+        }
+    }
 
     // Chapters section header
     let sec_header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -1005,11 +1207,104 @@ impl Component for ComicsModel {
                 widgets.scrolled_window.vadjustment().set_value(0.0);
             }
             ComicsMsg::OpenSeriesDrawer(sname) => {
-                self.active_drawer_series = Some(sname);
+                self.active_drawer_series = Some(sname.clone());
                 widgets.scrolled_window.vadjustment().set_value(0.0);
+                // CI screenshot hooks: open the series dialogs over
+                // the drawer the route just staged.
+                match std::env::var("KALAM_DIALOG").as_deref() {
+                    Ok("edit-comic-series") => {
+                        sender.input(ComicsMsg::EditSeriesDetails(sname));
+                    }
+                    Ok("find-comic-series" | "find-comic-series-review") => {
+                        sender.input(ComicsMsg::FindSeriesMetadata(sname));
+                    }
+                    _ => {}
+                }
             }
             ComicsMsg::CloseSeriesDrawer => {
                 self.active_drawer_series = None;
+                widgets.scrolled_window.vadjustment().set_value(0.0);
+            }
+            ComicsMsg::EditSeriesDetails(title) => {
+                let series = self
+                    .series_groups
+                    .iter()
+                    .find(|group| group.series_name.eq_ignore_ascii_case(&title))
+                    .and_then(|group| group.series.clone());
+                match series {
+                    Some(series) => {
+                        let old_title = series.title.clone();
+                        let input_sender = sender.input_sender().clone();
+                        crate::pages::comic_series_metadata::open_edit_comic_series_dialog(
+                            root,
+                            self.service.clone(),
+                            series,
+                            move |new_title| {
+                                let _ = input_sender.send(ComicsMsg::SeriesMetadataSaved {
+                                    old_title: old_title.clone(),
+                                    new_title,
+                                });
+                            },
+                        );
+                    }
+                    None => crate::notify::error(
+                        "Cannot edit this series",
+                        "It has no catalog record yet — reopen the Comics page and try again.",
+                    ),
+                }
+            }
+            ComicsMsg::FindSeriesMetadata(title) => {
+                let series = self
+                    .series_groups
+                    .iter()
+                    .find(|group| group.series_name.eq_ignore_ascii_case(&title))
+                    .and_then(|group| group.series.clone());
+                match series {
+                    Some(series) => {
+                        let old_title = series.title.clone();
+                        let input_sender = sender.input_sender().clone();
+                        // The review screenshot needs a candidate
+                        // without network access; only this env hook
+                        // may invent one.
+                        let staged_candidate =
+                            (std::env::var("KALAM_DIALOG").as_deref()
+                                == Ok("find-comic-series-review"))
+                            .then(|| {
+                                crate::pages::comic_series_metadata::staged_review_candidate(
+                                    &series,
+                                )
+                            });
+                        crate::pages::comic_series_metadata::open_find_comic_series_metadata_dialog(
+                            root,
+                            self.service.clone(),
+                            series,
+                            staged_candidate,
+                            move |new_title| {
+                                let _ = input_sender.send(ComicsMsg::SeriesMetadataSaved {
+                                    old_title: old_title.clone(),
+                                    new_title,
+                                });
+                            },
+                        );
+                    }
+                    None => crate::notify::error(
+                        "Cannot fetch metadata for this series",
+                        "It has no catalog record yet — reopen the Comics page and try again.",
+                    ),
+                }
+            }
+            ComicsMsg::SeriesMetadataSaved {
+                old_title: _old_title,
+                new_title,
+            } => {
+                self.reload();
+                if self
+                    .series_groups
+                    .iter()
+                    .any(|group| group.series_name.eq_ignore_ascii_case(&new_title))
+                {
+                    self.active_drawer_series = Some(new_title);
+                }
                 widgets.scrolled_window.vadjustment().set_value(0.0);
             }
             ComicsMsg::PickFiles => {
@@ -1229,11 +1524,13 @@ mod tests {
 
         // Berserk
         assert_eq!(groups[0].total_chapters, 1);
+        assert_eq!(groups[0].completed_count, 0);
         assert_eq!(groups[0].unread_count, 1);
         assert_eq!(groups[0].next_to_read.as_ref().unwrap().id, 5);
 
         // One Piece chapters sorted: 1, 2, 3, 4
         assert_eq!(groups[1].total_chapters, 4);
+        assert_eq!(groups[1].completed_count, 2); // Ch 3 at 45% is neither
         assert_eq!(groups[1].unread_count, 1); // only Ch 4 is 0%
         let op_ch_ids: Vec<i64> = groups[1].chapters.iter().map(|c| c.id).collect();
         assert_eq!(op_ch_ids, vec![2, 1, 3, 4]);
@@ -1254,9 +1551,27 @@ mod tests {
 
         let (groups, _) = group_comics_into_series(&books);
         assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].completed_count, 2);
         assert_eq!(groups[0].unread_count, 0);
+        assert!(groups[0].all_completed());
         // When all completed, next_to_read is first chapter
         assert_eq!(groups[0].next_to_read.as_ref().unwrap().id, 1);
+    }
+
+    #[test]
+    fn test_started_chapter_is_neither_unread_nor_completed() {
+        let books = vec![
+            make_test_book(1, "Meridian 01", Some("Meridian"), 1.0, 100),
+            make_test_book(2, "Meridian 02", Some("Meridian"), 2.0, 33),
+        ];
+
+        let (groups, _) = group_comics_into_series(&books);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].total_chapters, 2);
+        assert_eq!(groups[0].completed_count, 1);
+        assert_eq!(groups[0].unread_count, 0);
+        assert!(!groups[0].all_completed());
+        assert_eq!(groups[0].next_to_read.as_ref().unwrap().id, 2);
     }
 
     #[test]

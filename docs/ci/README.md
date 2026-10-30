@@ -9,9 +9,10 @@ workflow.
 | Job | Required for success? | Purpose |
 |---|---:|---|
 | `build` | Yes | Format report, Clippy, workspace tests, release build and OCR diagnostic. |
-| `screenshots` | No | Launch the release binary under headless Sway and report reader and tasks routes. |
+| `screenshots` | No | Launch the release binary under headless Sway in six parallel groups and capture the reader, comics, PDF, page and Settings proof frames. |
+| `publish-screenshots` | No | Merge the screenshot groups' short-lived artifacts and commit their reports and settled redesign frames to `ci-logs/`. |
 
-Both jobs run on Ubuntu 26.04. The GTK4 bindings require GTK 4.16 or newer.
+All jobs run on Ubuntu 26.04. The GTK4 bindings require GTK 4.16 or newer.
 
 ## Build job
 
@@ -42,26 +43,45 @@ day. The smoke-test job downloads that binary rather than building it again.
 
 The `screenshots` job depends on a successful build and uses
 `continue-on-error: true`. A compositor or rendering problem therefore does
-not block a correct code change. It runs `docs/ci/screenshot.sh` twice
-under headless Sway with 139 seeded books:
+not block a correct code change. Its 93 captures run as six parallel
+matrix groups — EPUB, comics, PDF, general pages, and two halves of
+Settings — rather than as one serial list. Each group uploads its
+`report.txt` files and settled PNGs as a one-day internal artifact;
+`publish-screenshots` then merges those artifacts and performs the
+single `ci-logs/` commit, so parallel shards never race to push.
 
-- `ROUTE=read-1` opens the first seeded EPUB.
-- `ROUTE=tasks` opens the task manager.
+The workflow remains the source of truth for the exact route/action
+list. In broad terms, the EPUB group uses the 139-book seed, the comics
+and PDF groups use their 20-book fixtures, the pages group covers
+tasks/components/book/series/author, and the Settings groups cover all
+23 pane and notification states.
 
 The seeder creates valid EPUB files in folders named with the same readable
 name and short id as the app. The seed database begins at schema version 1 and
 is migrated by the app on open. The reader route is not counted as successful
 if the app logs `open epub failed`.
 
-Each run captures the requested page more than once, then launches Home for a
-comparison image. Identical captures of the same settled page are expected.
+Each run waits for both the app's route line and a real compositor
+window, applies a short route-dependent minimum dwell, and then looks
+for two coarsely identical frames. `SETTLE` is the upper readiness
+budget, not a fixed sleep; if no stable pair arrives in time, the
+latest frame is retained and the report says so. Home receives the
+same readiness treatment before it is used as the comparison negative.
 A route-accepted log line proves only that the route was parsed; it does not
 prove that the reader opened its book or that the UI is visually correct.
 
-Screenshots and run logs are kept only in the Actions job workspace. The
-workflow does not upload PNG screenshots. It commits the text summaries to
-`ci-logs/reader-latest.txt` and `ci-logs/tasks-latest.txt`, including on
-successful runs. The build job also
+Screenshot groups upload only their reports and settled PNGs as
+short-lived artifacts for the publish job to merge; seeded config
+homes, compositor logs and intermediate candidate frames stay on the
+shard. The workflow commits the text summaries
+to `ci-logs/*-latest.txt`, including on successful runs. The settled
+frames of the redesigned surfaces are the exception to the no-PNG rule:
+the component gallery, the book page and its dialogs, the series page,
+the author page and its dialogs, and the 23 Settings/notification
+captures are committed as `ci-logs/*.png`, because a redesign nobody can
+look at is not verified and the agent cannot download Actions artifacts
+from its sandbox. See [`README-screenshots.md`](README-screenshots.md)
+for the full list. The build job also
 publishes rustfmt, Clippy, test and OCR-probe output under `ci-logs/`.
 
 The summaries are evidence to inspect, not a visual approval. See

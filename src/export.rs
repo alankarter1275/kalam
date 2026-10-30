@@ -63,7 +63,22 @@ impl Catalog {
             for word in &words {
                 let ipa = crate::db::pronunciation_for(&word.word);
                 let entry = self.lookup_entry(&word.word).ok();
-                let pos_str = entry.as_ref().map(|e| e.pos.join(", ")).unwrap_or_default();
+                // Parts of speech ride on the senses now; the export
+                // line wants the word-level list, first-seen order.
+                let pos_str = entry
+                    .as_ref()
+                    .map(|e| {
+                        let mut seen: Vec<&str> = Vec::new();
+                        for sense in &e.senses {
+                            if let Some(pos) = sense.pos.as_deref() {
+                                if !seen.contains(&pos) {
+                                    seen.push(pos);
+                                }
+                            }
+                        }
+                        seen.join(", ")
+                    })
+                    .unwrap_or_default();
 
                 md.push_str(&format!("- **{}**", word.word));
                 if let Some(ipa_text) = ipa {

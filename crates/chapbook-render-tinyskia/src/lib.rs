@@ -59,8 +59,9 @@ impl Renderer {
                     color,
                     radius,
                     blend,
+                    outline,
                 } => {
-                    fill_band(pixmap, rect, *color, *radius, *blend, scale);
+                    fill_band(pixmap, rect, *color, *radius, *blend, *outline, scale);
                 }
                 DisplayOp::GlyphRun {
                     font,
@@ -215,9 +216,10 @@ fn fill_band(
     color: Rgba,
     radius: f32,
     blend: Blend,
+    outline: Option<Rgba>,
     scale: f32,
 ) {
-    if color.is_transparent() {
+    if color.is_transparent() && outline.is_none_or(|c| c.is_transparent()) {
         return;
     }
     let (x, y, w, h) = (
@@ -229,25 +231,55 @@ fn fill_band(
     if !(w > 0.0 && h > 0.0) {
         return;
     }
-    let mut paint = tiny_skia::Paint::default();
-    paint.set_color_rgba8(color.r, color.g, color.b, color.a);
-    paint.anti_alias = true;
-    paint.blend_mode = match blend {
+    let blend_mode = match blend {
         Blend::Normal => tiny_skia::BlendMode::SourceOver,
         Blend::Multiply => tiny_skia::BlendMode::Multiply,
         Blend::Screen => tiny_skia::BlendMode::Screen,
     };
     let r = (radius * scale).min(w / 2.0).min(h / 2.0);
-    let Some(path) = rounded_rect(x, y, w, h, r) else {
-        return;
-    };
-    pixmap.fill_path(
-        &path,
-        &paint,
-        tiny_skia::FillRule::Winding,
-        tiny_skia::Transform::identity(),
-        None,
-    );
+    if !color.is_transparent() {
+        let mut paint = tiny_skia::Paint::default();
+        paint.set_color_rgba8(color.r, color.g, color.b, color.a);
+        paint.anti_alias = true;
+        paint.blend_mode = blend_mode;
+        let Some(path) = rounded_rect(x, y, w, h, r) else {
+            return;
+        };
+        pixmap.fill_path(
+            &path,
+            &paint,
+            tiny_skia::FillRule::Winding,
+            tiny_skia::Transform::identity(),
+            None,
+        );
+    }
+    // The current search match's ring (decision 34): 1 CSS px,
+    // stroked on a path inset by half its width so the whole ring
+    // lands inside the band it rings.
+    if let Some(outline) = outline {
+        if outline.is_transparent() || w <= scale || h <= scale {
+            return;
+        }
+        let half = scale / 2.0;
+        let Some(path) = rounded_rect(
+            x + half,
+            y + half,
+            w - scale,
+            h - scale,
+            (r - half).max(0.0),
+        ) else {
+            return;
+        };
+        let mut paint = tiny_skia::Paint::default();
+        paint.set_color_rgba8(outline.r, outline.g, outline.b, outline.a);
+        paint.anti_alias = true;
+        paint.blend_mode = blend_mode;
+        let stroke = tiny_skia::Stroke {
+            width: scale,
+            ..tiny_skia::Stroke::default()
+        };
+        pixmap.stroke_path(&path, &paint, &stroke, tiny_skia::Transform::identity(), None);
+    }
 }
 
 /// A rectangle with circular corners of radius `r` (`r == 0` is the

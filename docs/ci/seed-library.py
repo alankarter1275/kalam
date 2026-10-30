@@ -26,10 +26,13 @@ smoke-test route is opening a book.
 """
 
 import argparse
+import hashlib
 import io
+import json
 import os
 import pathlib
 import random
+import shutil
 import sqlite3
 import struct
 import sys
@@ -227,11 +230,28 @@ def epub_bytes(title: str, author: str, chapters: int = 6, nested: bool = False)
         f"<navMap>{nav_points}</navMap>\n</ncx>\n"
     )
 
+    # The editor's frames need real material: one used and one unused
+    # image (Reports, Compress images, the image tab), one embedded
+    # font from the repo's own assets (the font tab, Subset fonts),
+    # and an external link in the last chapter (Check external
+    # links). The reader never reaches the last chapter in its own
+    # frames, so the additions stay invisible there.
+    font_bytes = b""
+    font_path = os.path.join("assets", "fonts", "DMMono-Regular.ttf")
+    if os.path.exists(font_path):
+        with open(font_path, "rb") as fh:
+            font_bytes = fh.read()
     manifest = [
         '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
         '<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>',
         '<item id="css" href="style.css" media-type="text/css"/>',
+        '<item id="map" href="images/map.png" media-type="image/png"/>',
+        '<item id="sketch" href="images/sketch.png" media-type="image/png"/>',
     ]
+    if font_bytes:
+        manifest.append(
+            '<item id="font1" href="fonts/DMMono-Regular.ttf" media-type="font/ttf"/>'
+        )
     spine = []
     for n in range(1, chapters + 1):
         manifest.append(
@@ -258,7 +278,16 @@ def epub_bytes(title: str, author: str, chapters: int = 6, nested: bool = False)
         "body { font-family: serif; line-height: 1.5; margin: 1em; }\n"
         "h1 { font-size: 1.4em; }\n"
         "p { margin: 0 0 0.7em 0; text-align: justify; }\n"
+        # Embed fonts' scan reads declarations whether or not they
+        # are used: one family every Linux has, one it never will.
+        '.colophon { font-family: "DejaVu Sans", sans-serif; }\n'
+        'code { font-family: "Missing Demo Font", monospace; }\n'
     )
+    if font_bytes:
+        css = (
+            '@font-face { font-family: "DM Mono"; '
+            'src: url("fonts/DMMono-Regular.ttf"); }\n'
+        ) + css
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
@@ -277,10 +306,20 @@ def epub_bytes(title: str, author: str, chapters: int = 6, nested: bool = False)
         z.writestr("OEBPS/nav.xhtml", nav)
         z.writestr("OEBPS/toc.ncx", ncx)
         z.writestr("OEBPS/style.css", css)
+        z.writestr("OEBPS/images/map.png", png(320, 200, (120, 90, 60)))
+        z.writestr("OEBPS/images/sketch.png", png(160, 160, (70, 100, 130)))
+        if font_bytes:
+            z.writestr("OEBPS/fonts/DMMono-Regular.ttf", font_bytes)
         for n, label in enumerate(labels, start=1):
             body = f"<h1>{escape(label)}</h1>" + "".join(
                 f"<p>{paragraph()}</p>" for _ in range(28)
             )
+            if n == chapters:
+                body += (
+                    '<p><img alt="A map" src="images/map.png"/></p>'
+                    '<p><a href="https://www.gutenberg.org/">'
+                    "Project Gutenberg</a></p>"
+                )
             z.writestr(f"OEBPS/ch{n}.xhtml", xhtml(label, body))
     return buf.getvalue()
 
@@ -360,6 +399,1558 @@ def book_folder_name(authors: str, title: str, book_uuid: str) -> str:
     return f"{prefix} {suffix}"
 
 
+def _add_column_if_missing(conn, table: str, column: str, declaration: str) -> None:
+    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        conn.execute(
+            f"ALTER TABLE {table} ADD COLUMN {column} {declaration}"
+        )
+
+
+<<<<<<< Updated upstream
+def comic_page_png(page: int, chapter: int) -> bytes:
+    """One comic page drawn the way the design boards draw them: a
+    cream sheet with bordered colour panels. Enough structure that a
+    screenshot can tell a page from a placeholder and one page from
+    the next — the panel colours rotate with the page. Scanlines are
+    assembled by slice assignment, so no Pillow is needed."""
+    width, height = 800, 1200
+    base = (234, 224, 205)
+    ink = (28, 25, 22)
+    palette = [
+        (73, 83, 101),
+        (122, 92, 73),
+        (73, 103, 105),
+        (84, 88, 105),
+        (105, 84, 96),
+    ]
+    shift = page + chapter
+    panels = [
+        (40, 40, 760, 430, palette[(shift + 0) % len(palette)]),
+        (40, 470, 380, 820, palette[(shift + 1) % len(palette)]),
+        (420, 470, 760, 820, palette[(shift + 2) % len(palette)]),
+        (40, 860, 760, 1160, palette[(shift + 3) % len(palette)]),
+    ]
+
+    raw = bytearray()
+    base_row = bytes(base) * width
+    for y in range(height):
+        row = bytearray(base_row)
+        for x1, y1, x2, y2, colour in panels:
+            if y1 <= y < y2:
+                if y - y1 < 4 or y2 - y <= 4:
+                    row[x1 * 3:x2 * 3] = bytes(ink) * (x2 - x1)
+                else:
+                    row[x1 * 3:x2 * 3] = bytes(colour) * (x2 - x1)
+                    row[x1 * 3:(x1 + 4) * 3] = bytes(ink) * 4
+                    row[(x2 - 4) * 3:x2 * 3] = bytes(ink) * 4
+        raw.append(0)
+        raw.extend(row)
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + tag
+            + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        )
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(bytes(raw), 6))
+        + chunk(b"IEND", b"")
+    )
+
+
+def cbz_bytes(series: str, author: str, number: int, pages: int = 12) -> bytes:
+    """A genuinely readable CBZ: a ComicInfo.xml plus numbered pages."""
+    buf = io.BytesIO()
+    info = (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        "<ComicInfo>\n"
+        f"<Series>{escape(series)}</Series>\n"
+        f"<Number>{number}</Number>\n"
+        f"<Writer>{escape(author)}</Writer>\n"
+        "</ComicInfo>\n"
+    )
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("ComicInfo.xml", info)
+        for page in range(pages):
+            z.writestr(f"page{page + 1:03d}.png", comic_page_png(page, number))
+    return buf.getvalue()
+
+
+def _pdf_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+# The password fixture's one secret, known to the screenshot
+# action that proves the unlock path. It guards a synthetic book.
+PDF_FIXTURE_PASSWORD = "kalam"
+
+_PDF_PASSWORD_PADDING = bytes.fromhex(
+    "28bf4e5e4e758a4164004e56fffa01082e2e00b6d0683e802f0ca9fe6453697a"
+)
+
+
+def _rc4(key: bytes, data: bytes) -> bytes:
+    state = list(range(256))
+    j = 0
+    for i in range(256):
+        j = (j + state[i] + key[i % len(key)]) & 0xFF
+        state[i], state[j] = state[j], state[i]
+    out = bytearray()
+    i = j = 0
+    for byte in data:
+        i = (i + 1) & 0xFF
+        j = (j + state[i]) & 0xFF
+        state[i], state[j] = state[j], state[i]
+        out.append(byte ^ state[(state[i] + state[j]) & 0xFF])
+    return bytes(out)
+
+
+def _pdf_pad_password(password: bytes) -> bytes:
+    return (password + _PDF_PASSWORD_PADDING)[:32]
+
+
+def _pdf_encryption(password: str, file_id: bytes) -> dict:
+    """The PDF Standard handler, revision 3, at 128 bits.
+
+    Just enough of ISO 32000's password algorithms to make the
+    fixture a real encrypted document MuPDF refuses and then
+    authenticates — no PDF library and no external tool.
+    """
+    permissions = -4
+    key_length = 16
+    padded = _pdf_pad_password(password.encode("ascii"))
+
+    owner_digest = hashlib.md5(padded).digest()
+    for _ in range(50):
+        owner_digest = hashlib.md5(owner_digest).digest()
+    owner_key = owner_digest[:key_length]
+    owner_value = _rc4(owner_key, padded)
+    for round_ in range(1, 20):
+        owner_value = _rc4(
+            bytes(byte ^ round_ for byte in owner_key), owner_value
+        )
+
+    key_digest = hashlib.md5(
+        padded + owner_value + struct.pack("<i", permissions) + file_id
+    ).digest()
+    for _ in range(50):
+        key_digest = hashlib.md5(key_digest[:key_length]).digest()
+    file_key = key_digest[:key_length]
+
+    user_value = _rc4(
+        file_key,
+        hashlib.md5(_PDF_PASSWORD_PADDING + file_id).digest(),
+    )
+    for round_ in range(1, 20):
+        user_value = _rc4(
+            bytes(byte ^ round_ for byte in file_key), user_value
+        )
+    user_value += _PDF_PASSWORD_PADDING[:16]
+
+    return {
+        "file_key": file_key,
+        "owner_value": owner_value,
+        "user_value": user_value,
+        "permissions": permissions,
+    }
+
+
+def _pdf_object_key(file_key: bytes, object_id: int) -> bytes:
+    material = (
+        file_key
+        + object_id.to_bytes(3, "little")
+        + (0).to_bytes(2, "little")
+    )
+    return hashlib.md5(material).digest()[: min(len(file_key) + 5, 16)]
+
+
+def pdf_bytes(
+    title: str, author: str, pages: int = 12, password: str | None = None
+) -> bytes:
+    """A real, hand-built PDF for the PDF-reader screenshot route.
+
+    MuPDF must be able to count and render the pages, search their
+    vector text, walk a linked outline and read catalogue page
+    labels; a byte stub says nothing about any of that. The writer
+    stays dependency-free: compressed
+    content streams, the standard Helvetica face, page destinations
+    and a conventional cross-reference table.
+    """
+    if pages != 12:
+        raise ValueError("the PDF fixture's outline is written for 12 pages")
+
+    width, height = 420, 595
+    objects: dict[int, bytes] = {}
+
+    def add(object_id: int, body) -> None:
+        objects[object_id] = body.encode("ascii") if isinstance(body, str) else body
+
+    catalog_id, pages_id, font_id, outlines_id = 1, 2, 3, 4
+    next_id = 5
+    page_ids: list[int] = []
+    file_id = hashlib.md5(b"kalam-pdf-fixture").digest()
+    encryption = _pdf_encryption(password, file_id) if password else None
+
+    def pdf_string(object_id: int, text: str) -> str:
+        if encryption is None:
+            return f"({_pdf_escape(text)})"
+        encrypted = _rc4(
+            _pdf_object_key(encryption["file_key"], object_id),
+            text.encode("ascii"),
+        )
+        return f"<{encrypted.hex()}>"
+
+    section_by_page = {
+        1: "Preface",
+        2: "The Earth",
+        3: "Structure of the Earth",
+        4: "Plate tectonics",
+        5: "Plate tectonics",
+        6: "Volcanoes",
+        7: "Volcanoes",
+        8: "Oceans",
+        9: "Currents",
+        10: "Atmosphere",
+        11: "Atmosphere",
+        12: "Index",
+    }
+    # The catalogue labels seven roman front-matter pages, then
+    # restarts the text proper at decimal 1 on physical page 8.
+    # The printed furniture follows the same labels, as a real
+    # book's would; stored reading positions stay physical.
+    page_labels = [
+        "i", "ii", "iii", "iv", "v", "vi", "vii", "1", "2", "3", "4", "5"
+    ]
+    body_lines = [
+        "Water moves through soil, stone and living tissue,",
+        "carrying minerals from high ground toward the sea.",
+        "Rivers record every season in their colour and force.",
+        "When rain returns, dry channels answer almost at once.",
+        "The planet keeps its memory in layers of sediment.",
+        "Heat below the crust drives a slow, patient motion.",
+        "Mountains rise where great plates meet and compress.",
+        "Oceans store the warmth that softens coastal winters.",
+        "Air, water and rock exchange matter without pause.",
+        "Every landscape is a temporary agreement among forces.",
+    ]
+
+    for page in range(1, pages + 1):
+        page_id, content_id = next_id, next_id + 1
+        next_id += 2
+        page_ids.append(page_id)
+        section = section_by_page[page]
+        parts = [
+            "0.98 0.97 0.94 rg 0 0 420 595 re f",
+            "0.78 0.35 0.22 rg 0 570 420 25 re f",
+        ]
+        for stripe in range(6):
+            shade = 0.58 + stripe * 0.06
+            parts.append(
+                f"{shade:.3f} {shade * 0.82:.3f} {shade * 0.68:.3f} rg "
+                f"{36 + stripe * 58} 300 50 180 re f"
+            )
+        heading = title if page == 1 else section
+        subheading = (
+            f"by {author}" if page == 1 else f"Page {page_labels[page - 1]}"
+        )
+        parts.append(
+            f"BT /F1 18 Tf 0.15 g 36 535 Td ({_pdf_escape(heading)}) Tj ET"
+        )
+        parts.append(
+            f"BT /F1 10 Tf 0.38 g 36 515 Td ({_pdf_escape(subheading)}) Tj ET"
+        )
+        for offset, line in enumerate(body_lines):
+            y = 260 - offset * 19
+            parts.append(
+                f"BT /F1 10 Tf 0.18 g 36 {y} Td ({_pdf_escape(line)}) Tj ET"
+            )
+        parts.append(
+            f"BT /F1 9 Tf 0.42 g 205 28 Td ({page_labels[page - 1]}) Tj ET"
+        )
+        stream = zlib.compress("\n".join(parts).encode("ascii"))
+        if encryption is not None:
+            stream = _rc4(
+                _pdf_object_key(encryption["file_key"], content_id), stream
+            )
+        add(
+            content_id,
+            f"<< /Length {len(stream)} /Filter /FlateDecode >>\nstream\n".encode(
+                "ascii"
+            )
+            + stream
+            + b"\nendstream",
+        )
+        add(
+            page_id,
+            f"<< /Type /Page /Parent {pages_id} 0 R "
+            f"/MediaBox [0 0 {width} {height}] "
+            f"/Resources << /Font << /F1 {font_id} 0 R >> >> "
+            f"/Contents {content_id} 0 R >>",
+        )
+
+    outline_spec = [
+        ("Preface", 1, []),
+        (
+            "The Earth",
+            2,
+            [
+                ("Structure of the Earth", 3, []),
+                ("Plate tectonics", 4, []),
+                ("Volcanoes", 6, []),
+            ],
+        ),
+        ("Oceans", 8, [("Currents", 9, [])]),
+        ("Atmosphere", 10, []),
+        ("Index", 12, []),
+    ]
+
+    def build_outline(spec):
+        nonlocal next_id
+        object_id = next_id
+        next_id += 1
+        return {
+            "id": object_id,
+            "title": spec[0],
+            "page": spec[1],
+            "children": [build_outline(child) for child in spec[2]],
+        }
+
+    def descendant_count(node) -> int:
+        return sum(1 + descendant_count(child) for child in node["children"])
+
+    outline_roots = [build_outline(spec) for spec in outline_spec]
+
+    def add_outline_items(nodes, parent_id: int) -> None:
+        for index, node in enumerate(nodes):
+            fields = [
+                f"/Title {pdf_string(node['id'], node['title'])}",
+                f"/Parent {parent_id} 0 R",
+                f"/Dest [{page_ids[node['page'] - 1]} 0 R /XYZ 0 {height} 0]",
+            ]
+            if index > 0:
+                fields.append(f"/Prev {nodes[index - 1]['id']} 0 R")
+            if index + 1 < len(nodes):
+                fields.append(f"/Next {nodes[index + 1]['id']} 0 R")
+            if node["children"]:
+                fields.append(f"/First {node['children'][0]['id']} 0 R")
+                fields.append(f"/Last {node['children'][-1]['id']} 0 R")
+                fields.append(f"/Count {descendant_count(node)}")
+            add(node["id"], "<< " + " ".join(fields) + " >>")
+            add_outline_items(node["children"], node["id"])
+
+    add_outline_items(outline_roots, outlines_id)
+    outline_count = sum(1 + descendant_count(node) for node in outline_roots)
+    add(
+        outlines_id,
+        f"<< /Type /Outlines /First {outline_roots[0]['id']} 0 R "
+        f"/Last {outline_roots[-1]['id']} 0 R /Count {outline_count} >>",
+    )
+    add(font_id, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    kids = " ".join(f"{page_id} 0 R" for page_id in page_ids)
+    add(pages_id, f"<< /Type /Pages /Count {pages} /Kids [{kids}] >>")
+    add(
+        catalog_id,
+        f"<< /Type /Catalog /Pages {pages_id} 0 R "
+        f"/Outlines {outlines_id} 0 R /PageMode /UseOutlines "
+        f"/PageLabels << /Nums [0 << /S /r >> 7 << /S /D >>] >> >>",
+    )
+    encrypt_id = None
+    if encryption is not None:
+        encrypt_id = next_id
+        next_id += 1
+        add(
+            encrypt_id,
+            "<< /Filter /Standard /V 2 /R 3 /Length 128 "
+            f"/P {encryption['permissions']} "
+            f"/O <{encryption['owner_value'].hex()}> "
+            f"/U <{encryption['user_value'].hex()}> >>",
+        )
+
+    output = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets: dict[int, int] = {}
+    for object_id in sorted(objects):
+        offsets[object_id] = len(output)
+        output.extend(f"{object_id} 0 obj\n".encode("ascii"))
+        output.extend(objects[object_id])
+        output.extend(b"\nendobj\n")
+    xref_offset = len(output)
+    max_id = max(objects)
+    output.extend(f"xref\n0 {max_id + 1}\n".encode("ascii"))
+    output.extend(b"0000000000 65535 f \n")
+    for object_id in range(1, max_id + 1):
+        output.extend(f"{offsets[object_id]:010d} 00000 n \n".encode("ascii"))
+    trailer = f"<< /Size {max_id + 1} /Root {catalog_id} 0 R"
+    if encrypt_id is not None:
+        trailer += (
+            f" /Encrypt {encrypt_id} 0 R "
+            f"/ID [<{file_id.hex()}> <{file_id.hex()}>]"
+        )
+    trailer += " >>"
+    output.extend(
+        f"trailer\n{trailer}\n"
+        f"startxref\n{xref_offset}\n%%EOF\n".encode("ascii")
+    )
+    return bytes(output)
+
+
+def seed_pdf_fixture(
+    conn,
+    library: pathlib.Path,
+    now: datetime,
+    notes_empty: bool = False,
+    fixture_state: str = "normal",
+) -> int:
+    """Seed the book behind `pdf-read-21`. Returns covers written.
+
+    The PDF route opens the file with MuPDF, so it needs a real
+    outlined, searchable document. With `--books 20`, this is book
+    21, independent of the comic fixture seeded after it. Page 4
+    is both the saved place and a bookmark, and the per-book
+    settings open the board's 4-5 spread at 140%. Those physical
+    pages are labelled iv-v, so every PDF capture also proves the
+    location text's label lead and the Contents labels.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reading_bookmarks (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            chapter_index INTEGER NOT NULL,
+            fraction      REAL    NOT NULL DEFAULT 0.0,
+            label         TEXT    NOT NULL DEFAULT '',
+            created_at    TEXT    NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_prefs (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS annotations (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            kind          TEXT    NOT NULL,
+            chapter_index INTEGER NOT NULL,
+            start_path    TEXT    NOT NULL,
+            start_offset  INTEGER NOT NULL,
+            end_path      TEXT    NOT NULL,
+            end_offset    INTEGER NOT NULL,
+            color         TEXT    NOT NULL DEFAULT 'yellow',
+            style         TEXT    NOT NULL DEFAULT 'solid',
+            text_excerpt  TEXT    NOT NULL DEFAULT '',
+            note          TEXT    NOT NULL DEFAULT '',
+            cfi           TEXT,
+            created_at    TEXT    NOT NULL,
+            updated_at    TEXT    NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS saved_words (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            word          TEXT    NOT NULL,
+            definition    TEXT    NOT NULL,
+            dict_name     TEXT,
+            book_id       INTEGER REFERENCES books(id) ON DELETE SET NULL,
+            chapter_index INTEGER,
+            context_text  TEXT,
+            created_at    TEXT    NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pdf_page_identities (
+            book_id  INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            page_id  TEXT    NOT NULL,
+            position INTEGER NOT NULL,
+            PRIMARY KEY (book_id, page_id),
+            UNIQUE (book_id, position)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pdf_drawings (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id    INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            page_id    TEXT    NOT NULL,
+            kind       TEXT    NOT NULL,
+            color      TEXT    NOT NULL DEFAULT 'ink',
+            opacity    REAL    NOT NULL DEFAULT 1.0,
+            width_pts  REAL    NOT NULL DEFAULT 3.0,
+            geometry   TEXT    NOT NULL DEFAULT '{}',
+            created_at TEXT    NOT NULL,
+            updated_at TEXT    NOT NULL,
+            FOREIGN KEY (book_id, page_id)
+                REFERENCES pdf_page_identities(book_id, page_id)
+                ON DELETE CASCADE
+        )
+        """
+    )
+
+    if fixture_state not in {"normal", "password", "corrupt", "missing"}:
+        raise ValueError(f"unknown PDF fixture state: {fixture_state}")
+    title, author = "The Living Earth", "Ada Meridian"
+    if fixture_state == "password":
+        pdf = pdf_bytes(title, author, password=PDF_FIXTURE_PASSWORD)
+    elif fixture_state == "corrupt":
+        pdf = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\nthis fixture is damaged.\n"
+    else:
+        pdf = pdf_bytes(title, author)
+    book_uuid = str(uuid.uuid4())
+    book_dir = library / book_folder_name(author, title, book_uuid)
+    book_dir.mkdir(parents=True)
+    if fixture_state != "missing":
+        (book_dir / "book.pdf").write_bytes(pdf)
+    (book_dir / "cover.png").write_bytes(png(600, 960, cover_colour(19)))
+
+    stamp = now.isoformat()
+    cursor = conn.execute(
+        "INSERT INTO books (uuid, title, sort_title, authors, series, "
+        "description, format, file_name, file_hash, cover_name, added_at, "
+        "progress) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            book_uuid,
+            title,
+            title.lower(),
+            author,
+            None,
+            "Rivers, plates, oceans and air: the systems that keep a "
+            "planet in motion.",
+            "PDF",
+            "book.pdf",
+            "hash-pdf-000021",
+            "cover.png",
+            stamp,
+            33,
+        ),
+    )
+    book_id = cursor.lastrowid
+
+    # PDF progress stores its one-based page directly: page 4
+    # opens the Plate tectonics spread, bookmarked there.
+    conn.execute(
+        "INSERT INTO reading_progress (book_id, chapter_index, fraction, "
+        "updated_at) VALUES (?,?,?,?)",
+        (book_id, 4, 4 / 12, stamp),
+    )
+    if not notes_empty:
+        conn.executemany(
+            "INSERT INTO reading_bookmarks (book_id, chapter_index, fraction, "
+            "label, created_at) VALUES (?,?,?,?,?)",
+            [
+                (book_id, 4, 4 / 12, "Where the plates meet", stamp),
+                (book_id, 6, 6 / 12, "Volcanoes", stamp),
+                (book_id, 9, 9 / 12, "Currents", stamp),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO annotations (book_id, kind, chapter_index, start_path, "
+            "start_offset, end_path, end_offset, color, style, text_excerpt, note, "
+            "cfi, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                (
+                    book_id, "highlight", 4, "", 0, "", 0, "yellow", "solid",
+                    "Mountains rise where great plates meet and compress.",
+                    "Where the plates meet", None, stamp, stamp,
+                ),
+                (
+                    book_id, "highlight", 5, "", 0, "", 0, "green", "solid",
+                    "Heat below the crust drives a slow, patient motion.",
+                    "", None, stamp, stamp,
+                ),
+                (
+                    book_id, "highlight", 6, "", 0, "", 0, "blue", "solid",
+                    "Every landscape is a temporary agreement among forces.",
+                    "", None, stamp, stamp,
+                ),
+                (
+                    book_id, "highlight", 9, "", 0, "", 0, "pink", "solid",
+                    "Oceans store the warmth that softens coastal winters.",
+                    "", None, stamp, stamp,
+                ),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO saved_words (word, definition, dict_name, book_id, "
+            "chapter_index, context_text, created_at) VALUES (?,?,?,?,?,?,?)",
+            [
+                (
+                    "tectonic",
+                    "relating to the structure and movement of the Earth’s crust",
+                    None, book_id, 4, "Mountains rise where great plates meet", stamp,
+                ),
+                (
+                    "volcano",
+                    "an opening in the Earth’s crust through which lava, ash and gases erupt",
+                    None, book_id, 6, "Volcanoes", stamp,
+                ),
+                (
+                    "magma",
+                    "molten rock beneath the Earth’s surface",
+                    None, book_id, 6, "Heat below the crust", stamp,
+                ),
+                (
+                    "caldera",
+                    "a large crater formed when a volcano collapses after an eruption",
+                    None, book_id, 7, "Volcanoes", stamp,
+                ),
+            ],
+        )
+    if fixture_state == "normal" and not notes_empty:
+        # Drawing proof on the opening spread: stable identities for
+        # every page, then an ink underline and a highlighter swipe
+        # on page 4 and a circled passage on page 5, all in the
+        # 420x595 source points the fixture pages are built in.
+        conn.executemany(
+            "INSERT INTO pdf_page_identities (book_id, page_id, position) "
+            "VALUES (?,?,?)",
+            [(book_id, f"page-{page}", page) for page in range(1, 13)],
+        )
+
+        def stroke(tool, points):
+            return json.dumps(
+                {"type": "stroke", "tool": tool, "points": points},
+                separators=(",", ":"),
+            )
+
+        def geometry(payload):
+            return json.dumps(payload, separators=(",", ":"))
+
+        conn.executemany(
+            "INSERT INTO pdf_drawings (book_id, page_id, kind, color, "
+            "opacity, width_pts, geometry, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                (
+                    book_id,
+                    "page-4",
+                    "pen",
+                    "ink",
+                    1.0,
+                    3.0,
+                    stroke(
+                        "pen",
+                        [
+                            [40, 354], [90, 350], [140, 355], [190, 351],
+                            [240, 355], [290, 350], [340, 354], [365, 352],
+                        ],
+                    ),
+                    stamp,
+                    stamp,
+                ),
+                (
+                    book_id,
+                    "page-4",
+                    "highlighter",
+                    "yellow",
+                    0.6,
+                    14.0,
+                    stroke("highlighter", [[40, 339], [180, 339], [330, 339]]),
+                    stamp,
+                    stamp,
+                ),
+                (
+                    book_id,
+                    "page-5",
+                    "pen",
+                    "blue",
+                    1.0,
+                    3.0,
+                    stroke(
+                        "pen",
+                        [
+                            [95, 150], [150, 132], [230, 130], [300, 145],
+                            [330, 180], [305, 215], [225, 230], [140, 226],
+                            [92, 205], [84, 172], [95, 150],
+                        ],
+                    ),
+                    stamp,
+                    stamp,
+                ),
+                (
+                    book_id,
+                    "page-4",
+                    "shape",
+                    "blue",
+                    0.35,
+                    3.0,
+                    geometry({
+                        "type": "shape",
+                        "shape": "rectangle",
+                        "start": [40, 246],
+                        "end": [365, 286],
+                        "filled": True,
+                    }),
+                    stamp,
+                    stamp,
+                ),
+                (
+                    book_id,
+                    "page-4",
+                    "shape",
+                    "orange",
+                    1.0,
+                    3.0,
+                    geometry({
+                        "type": "shape",
+                        "shape": "arrow",
+                        "start": [318, 326],
+                        "end": [360, 292],
+                        "filled": False,
+                    }),
+                    stamp,
+                    stamp,
+                ),
+                (
+                    book_id,
+                    "page-5",
+                    "text",
+                    "ink",
+                    1.0,
+                    1.0,
+                    geometry({
+                        "type": "text",
+                        "rect": [205, 455, 180, 42],
+                        "text": "Compare with p. 24",
+                        "size": "m",
+                        "paper_background": True,
+                    }),
+                    stamp,
+                    stamp,
+                ),
+                (
+                    book_id,
+                    "page-5",
+                    "sticky",
+                    "yellow",
+                    1.0,
+                    1.0,
+                    geometry({
+                        "type": "sticky",
+                        "point": [92, 272],
+                        "text": "Check this against p. 24",
+                    }),
+                    stamp,
+                    stamp,
+                ),
+            ],
+        )
+    prefs = {
+        f"book.{book_id}.pdf.scroll_mode": "page",
+        f"book.{book_id}.pdf.spread_mode": "odd",
+        f"book.{book_id}.pdf.zoom": "1.40",
+        "reader.pdf.two_page_gap": "0",
+    }
+    conn.executemany(
+        "INSERT OR REPLACE INTO app_prefs (key, value) VALUES (?, ?)",
+        sorted(prefs.items()),
+    )
+    print(
+        f"pdf fixture: book {book_id} "
+        f"(route pdf-read-{book_id}, {fixture_state})"
+    )
+    return 1
+
+
+def seed_comic_fixture(conn, library: pathlib.Path, now: datetime) -> int:
+    """Add the comics reader's drawn state: one series of two real
+    CBZ chapters, the first read, the second open at page 4 of 12
+    with a bookmark on it — so one route (`comic-read-<second id>`)
+    shows the filled ribbon, the series-wide `16 / 24` location,
+    chapter states and a Pages grid with the current page ringed.
+
+    The files live where the importer puts comics (item 2.22):
+    `library/<Series>/0001.cbz` with the cover beside them, and the
+    stored names carry the slash that says so. The comic series /
+    chapter rows are left to the app's own startup migration, which
+    is the path a real library takes. Returns covers written.
+    """
+    _add_column_if_missing(conn, "books", "series_index", "REAL NOT NULL DEFAULT 0")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reading_bookmarks (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            chapter_index INTEGER NOT NULL,
+            fraction      REAL    NOT NULL DEFAULT 0.0,
+            label         TEXT    NOT NULL DEFAULT '',
+            created_at    TEXT    NOT NULL
+        )
+        """
+    )
+
+    series = "The Paper Meridian"
+    author = "Ada Meridian"
+    series_dir = library / series
+    covers_dir = series_dir / "covers"
+    covers_dir.mkdir(parents=True, exist_ok=True)
+
+    chapters = [
+        (1, "The Harbour Bell", 100),
+        (2, "The Salt Road", 33),
+    ]
+    covers_written = 0
+    second_id = None
+    for number, chapter_title, progress in chapters:
+        stem = f"{number:04d}"
+        (series_dir / f"{stem}.cbz").write_bytes(
+            cbz_bytes(series, author, number)
+        )
+        (covers_dir / f"{stem}.png").write_bytes(comic_page_png(0, number))
+        covers_written += 1
+        title = f"{series} - c{number:03d} - {chapter_title}"
+        added = (now - timedelta(days=10 - number)).isoformat()
+        cur = conn.execute(
+            "INSERT INTO books (uuid, title, sort_title, authors, series, "
+            "description, format, file_name, file_hash, cover_name, added_at, "
+            "progress, series_index) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                str(uuid.uuid4()),
+                title,
+                title.lower(),
+                author,
+                series,
+                "",
+                # The catalog stores formats uppercase (`BookFormat::as_str`),
+                # and the comic-series migration matches on that spelling.
+                "CBZ",
+                f"{series}/{stem}.cbz",
+                f"hash-comic-{number:06d}",
+                f"{series}/covers/{stem}.png",
+                added,
+                progress,
+                float(number),
+            ),
+        )
+        if number == 1:
+            conn.execute(
+                "INSERT INTO reading_progress (book_id, chapter_index, "
+                "fraction, updated_at) VALUES (?,?,?,?)",
+                (cur.lastrowid, 11, 1.0, added),
+            )
+        else:
+            second_id = cur.lastrowid
+
+    # Chapter 2 stands open at page 4 (index 3), bookmarked there.
+    stamp = now.isoformat()
+    conn.execute(
+        "INSERT INTO reading_progress (book_id, chapter_index, fraction, "
+        "updated_at) VALUES (?,?,?,?)",
+        (second_id, 3, 4 / 12, stamp),
+    )
+    conn.execute(
+        "INSERT INTO reading_bookmarks (book_id, chapter_index, fraction, "
+        "label, created_at) VALUES (?,?,?,?,?)",
+        (second_id, 3, 4 / 12, "Page 4", stamp),
+    )
+    return covers_written
+
+
+=======
+>>>>>>> Stashed changes
+def seed_series_fixture(conn, library: pathlib.Path, now: datetime, first_index: int) -> int:
+    """Add one coherent series for the series-page screenshot.
+
+    The generic loop deliberately pairs titles, authors and series at
+    random offsets, which is right for grids and wrong for judging a
+    series page. This fixture is the drawn "reading" state instead:
+    Book 1 finished, Book 2 at 42% (the default focus and Continue
+    target), Book 3 unread, and Book 4 present only in the cached
+    listing — so one frame exercises the tick badge, the progress bar,
+    the dashed missing cover, the years and the source line. The cache
+    row is what keeps the screenshot off the network.
+
+    The columns/table it needs postdate schema v1; adding them here is
+    safe because the app's migrations add-if-missing and create-if-absent.
+    Returns the number of covers written.
+    """
+    _add_column_if_missing(conn, "books", "published", "TEXT NOT NULL DEFAULT ''")
+    _add_column_if_missing(conn, "books", "series_index", "REAL NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "books", "finished_at", "TEXT")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS series_cache (
+            series_key TEXT PRIMARY KEY,
+            source     TEXT NOT NULL,
+            fetched_at TEXT NOT NULL,
+            works_json TEXT NOT NULL
+        )
+        """
+    )
+
+    series = "The Glass Meridian"
+    author = "Ada Meridian"
+    owned = [
+        (
+            "The Glass Meridian",
+            1998,
+            100,
+            "2026-10-03T00:00:00Z",
+            "The first voyage beyond the glass meridian, and the chart "
+            "that brought its crew home changed.",
+        ),
+        (
+            "The Salt Meridian",
+            2001,
+            42,
+            None,
+            "Salt, debt and a second crossing: the crew returns to the "
+            "meridian with a chart nobody trusts, a captain keeping one "
+            "secret too many, and a coastline that has moved since the "
+            "first voyage.",
+        ),
+        (
+            "The Iron Meridian",
+            2004,
+            0,
+            None,
+            "An iron fleet, a winter port, and the price of finishing "
+            "the chart.",
+        ),
+    ]
+    works = [
+        {
+            "title": title,
+            "key": "",
+            "cover_path": "",
+            "year": year,
+            "author": author,
+        }
+        for title, year, _progress, _finished, _description in owned
+    ]
+    works.append(
+        {
+            "title": "The Last Meridian",
+            "key": "",
+            "cover_path": "",
+            "year": 2008,
+            "author": author,
+        }
+    )
+
+    covers_written = 0
+    for offset, (title, year, progress, finished_at, description) in enumerate(owned):
+        book_uuid = str(uuid.uuid4())
+        bdir = library / book_folder_name(author, title, book_uuid)
+        bdir.mkdir(parents=True, exist_ok=True)
+        (bdir / "book.epub").write_bytes(epub_bytes(title, author))
+        (bdir / "cover.png").write_bytes(
+            png(600, 960, cover_colour(first_index + offset))
+        )
+        covers_written += 1
+        added = (now - timedelta(days=30 - offset)).isoformat()
+        cur = conn.execute(
+            "INSERT INTO books (uuid, title, sort_title, authors, series, "
+            "description, format, file_name, file_hash, cover_name, added_at, "
+            "progress, published, series_index, finished_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                book_uuid,
+                title,
+                title.lower(),
+                author,
+                series,
+                description,
+                "epub",
+                "book.epub",
+                f"hash-series-{offset:06d}",
+                "cover.png",
+                added,
+                progress,
+                str(year),
+                float(offset + 1),
+                finished_at,
+            ),
+        )
+        if progress == 42:
+            # Chapter 4 of the fixture EPUB's six, for the focused row.
+            conn.execute(
+                "INSERT INTO reading_progress (book_id, chapter_index, "
+                "fraction, updated_at) VALUES (?,?,?,?)",
+                (cur.lastrowid, 3, 0.42, added),
+            )
+
+    # Mirrors `src/db/series.rs::series_key`: the leading article drops
+    # from the series, then both halves (series, full first author)
+    # keep alphanumerics only, lowercased.
+    def _norm(s: str) -> str:
+        return "".join(c for c in s.lower() if c.isalnum())
+
+    series_no_article = series
+    first_word, _, rest = series.partition(" ")
+    if rest and first_word.lower() in ("the", "a", "an"):
+        series_no_article = rest
+    series_key = f"{_norm(series_no_article)}|{_norm(author)}"
+    assert series_key == "glassmeridian|adameridian", series_key
+    conn.execute(
+        "INSERT OR REPLACE INTO series_cache (series_key, source, "
+        "fetched_at, works_json) VALUES (?,?,?,?)",
+        (
+            series_key,
+            "openlibrary",
+            "2026-10-20T00:00:00Z",
+            json.dumps(works),
+        ),
+    )
+    return covers_written
+
+
+def seed_author_fixture(conn, library: pathlib.Path, now: datetime, first_index: int) -> int:
+    """Add the author-page fixture: one author, a cached bibliography
+    with a standalone and a series the reader only partly owns, plus a
+    highlight, a bookmark and a saved word so Highlights and the
+    author-scope dialog have something true to show.
+
+    Same author as the series fixture (Ada Meridian, "The Glass
+    Meridian"), so one author page shows Standalone first (decision
+    107) then the series, In library and Not in library both
+    populated. The bibliography lives in author_profiles.works_json:
+    the page never fetches on open (decision 110), so the cache row
+    is the only source and the screenshot stays off the network.
+
+    Tables it needs postdate schema v1; creating them here is safe
+    because the app's migrations are create-if-absent. Returns the
+    number of covers written.
+    """
+    _add_column_if_missing(conn, "books", "published", "TEXT NOT NULL DEFAULT ''")
+    _add_column_if_missing(conn, "books", "series_index", "REAL NOT NULL DEFAULT 0")
+    _add_column_if_missing(conn, "books", "finished_at", "TEXT")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS author_profiles (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            canonical_name    TEXT NOT NULL,
+            sort_name         TEXT NOT NULL DEFAULT '',
+            normalized_name   TEXT NOT NULL UNIQUE,
+            bio               TEXT NOT NULL DEFAULT '',
+            birth_date        TEXT NOT NULL DEFAULT '',
+            death_date        TEXT NOT NULL DEFAULT '',
+            top_work          TEXT NOT NULL DEFAULT '',
+            top_subjects_json TEXT NOT NULL DEFAULT '[]',
+            openlibrary_key   TEXT NOT NULL DEFAULT '',
+            photo_file        TEXT,
+            work_count        INTEGER NOT NULL DEFAULT 0,
+            works_json        TEXT NOT NULL DEFAULT '[]',
+            fetched_at        TEXT NOT NULL DEFAULT '',
+            source_url        TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS annotations (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            kind          TEXT    NOT NULL,
+            chapter_index INTEGER NOT NULL,
+            start_path    TEXT    NOT NULL,
+            start_offset  INTEGER NOT NULL,
+            end_path      TEXT    NOT NULL,
+            end_offset    INTEGER NOT NULL,
+            color         TEXT    NOT NULL DEFAULT 'yellow',
+            style         TEXT    NOT NULL DEFAULT 'solid',
+            text_excerpt  TEXT    NOT NULL DEFAULT '',
+            note          TEXT    NOT NULL DEFAULT '',
+            cfi           TEXT,
+            created_at    TEXT    NOT NULL,
+            updated_at    TEXT    NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS reading_bookmarks (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            chapter_index INTEGER NOT NULL,
+            fraction      REAL    NOT NULL DEFAULT 0.0,
+            label         TEXT    NOT NULL DEFAULT '',
+            created_at    TEXT    NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS saved_words (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            word          TEXT    NOT NULL,
+            definition    TEXT    NOT NULL,
+            dict_name     TEXT,
+            book_id       INTEGER REFERENCES books(id) ON DELETE SET NULL,
+            chapter_index INTEGER,
+            context_text  TEXT,
+            created_at    TEXT    NOT NULL
+        );
+        """
+    )
+
+    author = "Ada Meridian"
+
+    def norm(s: str) -> str:
+        # Mirrors normalize_bits in src/author.rs: lowercase, alphanumerics only.
+        return "".join(c for c in s.lower() if c.isalnum())
+
+    assert norm(author) == "adameridian"
+
+    # Standalones the reader owns: one finished (the highlight's home),
+    # one barely begun. Either may or may not appear in the
+    # bibliography below; both match it by title (decision 110).
+    standalone = [
+        ("Chart of Small Hours", 1992, 100, "2026-09-12T00:00:00Z"),
+        ("The Wintering Harbour", 2010, 12, None),
+    ]
+    covers_written = 0
+    highlight_book = None
+    for offset, (title, year, progress, finished_at) in enumerate(standalone):
+        book_uuid = str(uuid.uuid4())
+        bdir = library / book_folder_name(author, title, book_uuid)
+        bdir.mkdir(parents=True, exist_ok=True)
+        (bdir / "book.epub").write_bytes(epub_bytes(title, author))
+        (bdir / "cover.png").write_bytes(
+            png(600, 960, cover_colour(first_index + offset))
+        )
+        covers_written += 1
+        added = (now - timedelta(days=60 - offset)).isoformat()
+        cur = conn.execute(
+            "INSERT INTO books (uuid, title, sort_title, authors, series, "
+            "description, format, file_name, file_hash, cover_name, added_at, "
+            "progress, published, series_index, finished_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                book_uuid,
+                title,
+                title.lower(),
+                author,
+                None,
+                "",
+                "epub",
+                "book.epub",
+                f"hash-author-{offset:06d}",
+                "cover.png",
+                added,
+                progress,
+                str(year),
+                0.0,
+                finished_at,
+            ),
+        )
+        if highlight_book is None:
+            highlight_book = cur.lastrowid
+
+    # (title, year, series_name, series_position) — the cached
+    # bibliography. Owned: both standalones and Meridian 1–3 (from the
+    # series fixture). Missing: Meridian 4, one standalone, and both
+    # "Signal Books" — so the Not-in-library group holds exactly one
+    # series card, standalone-first.
+    works = [
+        ("Chart of Small Hours", 1992, "", ""),
+        ("The Wintering Harbour", 2010, "", ""),
+        ("The Glass Meridian", 1998, "The Glass Meridian", "1"),
+        ("The Salt Meridian", 2001, "The Glass Meridian", "2"),
+        ("The Iron Meridian", 2004, "The Glass Meridian", "3"),
+        ("The Last Meridian", 2008, "The Glass Meridian", "4"),
+        ("A Field Guide to Leaving", 2015, "", ""),
+        ("Signals in the Static", 2018, "The Signal Books", "1"),
+        ("The Quiet Frequency", 2021, "The Signal Books", "2"),
+    ]
+    works_json = json.dumps(
+        [
+            {
+                "title": title,
+                "first_publish_year": year,
+                "subjects": [],
+                "cover_id": None,
+                "cover_file": None,
+                "work_key": "",
+                "series_key": "",
+                "series_name": series_name,
+                "series_position": position,
+                "rating_average": None,
+            }
+            for title, year, series_name, position in works
+        ]
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO author_profiles (canonical_name, sort_name, "
+        "normalized_name, bio, birth_date, death_date, top_work, "
+        "top_subjects_json, openlibrary_key, photo_file, work_count, "
+        "works_json, fetched_at, source_url) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            author,
+            "Meridian, Ada",
+            norm(author),
+            "Ada Meridian (born 1962) writes seafaring fiction about maps, "
+            "debts, and the harbours people leave behind. Chart of Small "
+            "Hours, her first novel, began a career of quiet crossings; "
+            "The Glass Meridian followed its charts to a coastline that "
+            "would not sit still. She lives in Reykjavík and is said to "
+            "draft every first chapter on a boat, in pencil, badly.",
+            "1962-03-14",
+            "",
+            "The Glass Meridian",
+            '["Sea voyages", "Maps", "Fiction"]',
+            "/authors/OL0000000A",
+            None,
+            len(works),
+            works_json,
+            "2026-10-20T00:00:00Z",
+            "https://openlibrary.org/authors/OL0000000A",
+        ),
+    )
+
+    stamp = "2026-03-14T00:00:00Z"
+    conn.execute(
+        "INSERT INTO annotations (book_id, kind, chapter_index, start_path, "
+        "start_offset, end_path, end_offset, color, style, text_excerpt, "
+        "note, cfi, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            highlight_book,
+            "highlight",
+            3,
+            "p[1]",
+            0,
+            "p[1]",
+            0,
+            "yellow",
+            "solid",
+            "The chart only lies to those who insist the harbour stay put.",
+            "",
+            None,
+            stamp,
+            stamp,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO reading_bookmarks (book_id, chapter_index, fraction, "
+        "label, created_at) VALUES (?,?,?,?,?)",
+        (highlight_book, 2, 0.5, "The tolling bell", stamp),
+    )
+    conn.execute(
+        "INSERT INTO saved_words (word, definition, dict_name, book_id, "
+        "chapter_index, context_text, created_at) VALUES (?,?,?,?,?,?,?)",
+        (
+            "fathom",
+            "A unit of depth: six feet; also, to understand fully.",
+            None,
+            highlight_book,
+            3,
+            "She could not fathom the chart's patience.",
+            stamp,
+        ),
+    )
+    return covers_written
+
+
+def seed_settings_fixture(
+    conn,
+    library: pathlib.Path,
+    root: pathlib.Path,
+    now: datetime,
+    *,
+    empty_dictionaries: bool = False,
+) -> None:
+    """Add the populated states the redesigned Settings panes photograph.
+
+    A bare seeded catalog can only show the empty/default half of most
+    panes. This fixture supplies the other designed states without driving
+<<<<<<< Updated upstream
+    the UI: two shelves and a watch rule routed into them, rejected
+    Google Books/MyAnimeList credentials beside a present Comic Vine
+    key, three EPUB original backups, and a libraries
+=======
+    the UI: two shelves and a watch rule routed into them, a rejected
+    Google Books key, three EPUB original backups, and a libraries
+>>>>>>> Stashed changes
+    registry holding the active library, a second folder that can be
+    opened, and one whose folder is missing.
+
+    The registry and bundled-dictionary markers are config-side state, so
+    they are written under XDG_CONFIG_HOME. `screenshot.sh` gives every
+    invocation a fresh config home; without that, the first run's
+    dictionary markers would make every later fresh catalog look as though
+    its bundled packs had already been installed and then removed.
+
+    The dictionary rows themselves are seeded directly into the catalog.
+    The first Settings captures instead cleared the installed markers and
+    let the app's startup task install the bundled packs — but that task
+    finishes about a second after the Settings snapshot is taken and
+    nothing refreshes the pane, so the populated drag/remove frames came
+    out byte-identical to the empty one. Seeding rows (with the packs'
+    real entry counts) and marking them installed keeps the pane honest
+    from the first frame; the empty variant just skips the rows.
+    """
+    stamp = now.isoformat()
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS app_prefs (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS shelves (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+            kind        TEXT    NOT NULL DEFAULT 'manual',
+            description TEXT    NOT NULL DEFAULT '',
+            rules       TEXT    NOT NULL DEFAULT '',
+            position    INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT    NOT NULL,
+            updated_at  TEXT    NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS dictionaries (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT    NOT NULL UNIQUE,
+            lang        TEXT,
+            entry_count INTEGER NOT NULL DEFAULT 0,
+            added_at    TEXT    NOT NULL,
+            priority    INTEGER NOT NULL DEFAULT 100
+        );
+        CREATE TABLE IF NOT EXISTS dict_entries (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            dict_id    INTEGER NOT NULL REFERENCES dictionaries(id) ON DELETE CASCADE,
+            word       TEXT    NOT NULL COLLATE NOCASE,
+            definition TEXT    NOT NULL,
+            key        TEXT
+        );
+        """
+    )
+
+    # The four bundled packs in their install order (src/dict.rs):
+    # priority decides who speaks first, lower first. Entry counts are
+    # the bundled TSVs' line counts, so the rows read like the real
+    # packs. No entries are seeded — the pane photographs the list,
+    # and no Settings capture looks a word up.
+    conn.execute("DELETE FROM dict_entries")
+    conn.execute("DELETE FROM dictionaries")
+    if not empty_dictionaries:
+        for name, count, priority in (
+            ("English WordNet 2025", 127284, 10),
+            ("English Idioms and Expressions", 1024, 20),
+            ("English Synonyms (WordNet 3.0)", 110365, 30),
+            ("English Antonyms (WordNet 3.0)", 6621, 40),
+        ):
+            conn.execute(
+                "INSERT INTO dictionaries (name, lang, entry_count, added_at, priority) "
+                "VALUES (?, 'en', ?, ?, ?)",
+                (name, count, stamp, priority),
+            )
+
+    shelf_ids = []
+    for position, name in enumerate(("New arrivals", "Comics inbox")):
+        cur = conn.execute(
+            "INSERT OR REPLACE INTO shelves "
+            "(name, kind, description, rules, position, created_at, updated_at) "
+            "VALUES (?, 'manual', '', '', ?, ?, ?)",
+            (name, position, stamp, stamp),
+        )
+        shelf_ids.append(cur.lastrowid)
+
+    watch_dir = root / "watch-fixture"
+    watch_dir.mkdir(parents=True, exist_ok=True)
+    watch_rules = [
+        {
+            "id": "ci-settings-watch-folder",
+            "path": str(watch_dir),
+            "enabled": True,
+            "import_epub": True,
+            "epub_shelf_id": shelf_ids[0],
+            "import_pdf": True,
+            "pdf_shelf_id": None,
+            "import_comics": True,
+            "comics_shelf_id": shelf_ids[1],
+            "subfolder_shelves": True,
+            "cleanup_original": False,
+        }
+    ]
+    prefs = {
+        "import.watch_folder_rules": json.dumps(watch_rules),
+        "meta.googlebooks.enabled": "1",
+        "meta.googlebooks.key": "AIza-fixture-key",
+        "meta.googlebooks.country": "GB",
+        "meta.googlebooks.key_rejected": "1",
+<<<<<<< Updated upstream
+        "meta.myanimelist.enabled": "1",
+        "meta.myanimelist.client_id": "fixture-mal-client-id",
+        "meta.myanimelist.client_id_rejected": "1",
+        "meta.comicvine.enabled": "1",
+        "meta.comicvine.key": "fixture-comic-vine-key",
+        "meta.comicvine.key_rejected": "0",
+=======
+>>>>>>> Stashed changes
+    }
+    for key, value in prefs.items():
+        conn.execute(
+            "INSERT INTO app_prefs (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
+    # list_backups scans the whole library tree, including folders left by
+    # earlier seeds in the shared CI data home. Clear those first so the
+    # Book files pane reports this fixture's three backups, not however
+    # many screenshot runs happened before it in the same job.
+    for stale in library.glob("*/*.orig"):
+        stale.unlink()
+    for epub in sorted(library.glob("*/book.epub"))[:3]:
+        shutil.copyfile(epub, epub.with_name("book.epub.orig"))
+
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    config_root = (
+        pathlib.Path(config_home)
+        if config_home
+        else pathlib.Path.home() / ".config"
+    )
+    config_dir = config_root / "kalam"
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    work_library = root.parent / "kalam-work"
+    work_library.mkdir(parents=True, exist_ok=True)
+    missing_library = root.parent / "kalam-missing"
+    shutil.rmtree(missing_library, ignore_errors=True)
+    registry = {
+        "libraries": [
+            {"name": "CI library", "path": str(root)},
+            {"name": "Work", "path": str(work_library)},
+            {"name": "Archive", "path": str(missing_library)},
+        ],
+        "active": 0,
+    }
+    (config_dir / "libraries.json").write_text(
+        json.dumps(registry, indent=2) + "\n", encoding="utf-8"
+    )
+
+    global_prefs_path = config_dir / "prefs.json"
+    try:
+        global_prefs = json.loads(global_prefs_path.read_text(encoding="utf-8"))
+        if not isinstance(global_prefs, dict):
+            global_prefs = {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        global_prefs = {}
+    # The rows above stand in for the installed packs (or, in the empty
+    # variant, for packs installed and since removed), so the startup
+    # installer must stay out of either photograph.
+    marker = "installed"
+    for key in (
+        "bundled_dictionary_english_wordnet_2025",
+        "bundled_dictionary_english_idioms_2024",
+        "bundled_dictionary_english_synonyms_3_0",
+        "bundled_dictionary_english_antonyms_3_0",
+    ):
+        global_prefs[key] = marker
+    global_prefs_path.write_text(
+        json.dumps(global_prefs, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def seed_reader_fixture(conn, now: datetime) -> None:
+    """A three-word dictionary for the reader screenshots (EPUB T4).
+
+    The full packs install at startup and finish *after* a snapshot is
+    taken, so a capture cannot wait for them. This plants the four
+    bundled packs as catalog rows plus just enough entries for the
+    dictionary frames: "bank" carries two parts of speech, a fold of
+    extra noun senses, quoted examples, synonym/antonym chips and two
+    idiom cards; "river" exists so the missing frame's "riv" lookup
+    has a did-you-mean to offer; "shore" gives the bank chips a real
+    word to wander to. Sense blobs use the bundled WordNet shape the
+    parser in src/db/dictionaries.rs reads.
+    """
+    import json
+
+    stamp = now.isoformat()
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS dictionaries (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT    NOT NULL UNIQUE,
+            lang        TEXT,
+            entry_count INTEGER NOT NULL DEFAULT 0,
+            added_at    TEXT    NOT NULL,
+            priority    INTEGER NOT NULL DEFAULT 100
+        );
+        CREATE TABLE IF NOT EXISTS dict_entries (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            dict_id    INTEGER NOT NULL REFERENCES dictionaries(id) ON DELETE CASCADE,
+            word       TEXT    NOT NULL COLLATE NOCASE,
+            definition TEXT    NOT NULL,
+            key        TEXT
+        );
+        CREATE TABLE IF NOT EXISTS combined_words (
+            key     TEXT    PRIMARY KEY COLLATE NOCASE,
+            word    TEXT    NOT NULL,
+            dict_id INTEGER NOT NULL REFERENCES dictionaries(id) ON DELETE CASCADE,
+            senses  TEXT    NOT NULL
+        );
+        """
+    )
+    packs = {}
+    for name, count, priority in (
+        ("English WordNet 2025", 127284, 10),
+        ("English Idioms and Expressions", 1024, 20),
+        ("English Synonyms (WordNet 3.0)", 110365, 30),
+        ("English Antonyms (WordNet 3.0)", 6621, 40),
+    ):
+        conn.execute(
+            "INSERT OR IGNORE INTO dictionaries (name, lang, entry_count, added_at, priority) "
+            "VALUES (?, 'en', ?, ?, ?)",
+            (name, count, stamp, priority),
+        )
+        packs[name] = conn.execute(
+            "SELECT id FROM dictionaries WHERE name = ?", (name,)
+        ).fetchone()[0]
+    wordnet = packs["English WordNet 2025"]
+
+    bank = (
+        'noun:; 1. the land alongside a river or lake '
+        '"they sat on the bank and watched the water"; '
+        "2. a financial institution that keeps money and lends it at interest "
+        '"she kept her savings in the local bank"; '
+        "3. a long raised mound of earth or snow; "
+        "4. an amount of something kept in reserve "
+        '"a bank of cloud was building in the west"; '
+        "5. a row of similar things, such as lights or dials; "
+        "verb:; 1. to put money into a bank; "
+        '2. to tilt sideways while turning "the plane banked into the cloud"'
+    )
+    river = (
+        "noun:; 1. a large natural stream of water flowing to the sea "
+        '"the river bends below the village"; '
+        "2. a large quantity of something flowing steadily"
+    )
+    shore = (
+        "noun:; 1. the land along the edge of a sea, lake or wide river "
+        '"they walked the shore at dusk"'
+    )
+    for word, blob in (("bank", bank), ("river", river), ("shore", shore)):
+        conn.execute(
+            "INSERT OR REPLACE INTO combined_words (key, word, dict_id, senses) "
+            "VALUES (?, ?, ?, ?)",
+            (word, word, wordnet, json.dumps([blob])),
+        )
+
+    # The auxiliary packs speak through dict_entries; chip lists hide in
+    # "synonyms: a, b, c" definitions, idioms are ordinary rows whose
+    # word contains the headword as a token.
+    entries = (
+        ("English Synonyms (WordNet 3.0)", "bank", "bank",
+         "synonyms: shore, edge, brink, reserve, savings"),
+        ("English Antonyms (WordNet 3.0)", "bank", "bank",
+         "antonyms: spend, borrow"),
+        ("English Idioms and Expressions", "bank on", "bank on",
+         "to rely on something happening or proving true"),
+        ("English Idioms and Expressions", "break the bank", "break the bank",
+         "to cost more than one can afford"),
+    )
+    for pack, word, key, definition in entries:
+        conn.execute(
+            "INSERT INTO dict_entries (dict_id, word, definition, key) "
+            "VALUES (?, ?, ?, ?)",
+            (packs[pack], word, definition, key),
+        )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--books", type=int, default=139)
@@ -368,6 +1959,55 @@ def main() -> int:
         type=int,
         default=17,
         help="every Nth book gets no cover at all (a real and untidy state)",
+    )
+    ap.add_argument(
+        "--series-fixture",
+        action="store_true",
+        help="add the coherent 3-of-4 series the series-page screenshot opens",
+    )
+    ap.add_argument(
+        "--author-fixture",
+        action="store_true",
+        help="add the cached bibliography + marks the author-page screenshot opens",
+    )
+    ap.add_argument(
+<<<<<<< Updated upstream
+        "--pdf-fixture",
+        action="store_true",
+        help="add the real outlined PDF the PDF-reader screenshots open",
+    )
+    ap.add_argument(
+        "--pdf-notes-empty",
+        action="store_true",
+        help="with --pdf-fixture, seed no highlights, bookmarks or saved words",
+    )
+    ap.add_argument(
+        "--pdf-fixture-state",
+        choices=("normal", "password", "corrupt", "missing"),
+        default="normal",
+        help="with --pdf-fixture, seed an encrypted, damaged or absent file",
+    )
+    ap.add_argument(
+        "--comic-fixture",
+        action="store_true",
+        help="add the two-chapter CBZ series the comics reader screenshots open",
+    )
+    ap.add_argument(
+=======
+>>>>>>> Stashed changes
+        "--reader-fixture",
+        action="store_true",
+        help="seed the tiny dictionary the reader popover screenshots look up",
+    )
+    ap.add_argument(
+        "--settings-fixture",
+        action="store_true",
+        help="add populated libraries, watch, metadata and backup states for Settings",
+    )
+    ap.add_argument(
+        "--settings-empty-dicts",
+        action="store_true",
+        help="with --settings-fixture, seed no dictionaries (the empty state)",
     )
     args = ap.parse_args()
 
@@ -500,10 +2140,50 @@ def main() -> int:
                 (book_id, i % 12, ((i * 7) % 101) / 100.0, added),
             )
 
+    total_books = args.books
+    if args.series_fixture:
+        covers_written += seed_series_fixture(conn, library, now, args.books)
+        total_books += 3
+
+    if args.author_fixture:
+        covers_written += seed_author_fixture(
+            conn, library, now, args.books + (3 if args.series_fixture else 0)
+        )
+        total_books += 2
+
+<<<<<<< Updated upstream
+    if args.pdf_fixture:
+        covers_written += seed_pdf_fixture(
+            conn,
+            library,
+            now,
+            notes_empty=args.pdf_notes_empty,
+            fixture_state=args.pdf_fixture_state,
+        )
+        total_books += 1
+
+    if args.comic_fixture:
+        covers_written += seed_comic_fixture(conn, library, now)
+        total_books += 2
+
+=======
+>>>>>>> Stashed changes
+    if args.reader_fixture:
+        seed_reader_fixture(conn, now)
+
+    if args.settings_fixture or args.settings_empty_dicts:
+        seed_settings_fixture(
+            conn,
+            library,
+            root,
+            now,
+            empty_dictionaries=args.settings_empty_dicts,
+        )
+
     conn.commit()
     conn.close()
 
-    print(f"seed-library: {args.books} books, {covers_written} covers -> {root}")
+    print(f"seed-library: {total_books} books, {covers_written} covers -> {root}")
     return 0
 
 

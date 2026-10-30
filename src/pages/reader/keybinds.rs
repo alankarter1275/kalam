@@ -22,7 +22,7 @@ use std::rc::Rc;
 
 use gtk::gdk;
 
-use super::types::{LeftSidebarTab, ReaderMsg, RightSidebarTab};
+use super::types::{NotesFilter, ReaderMsg};
 use crate::db::Catalog;
 
 /// One of Kalam's reader actions.
@@ -89,7 +89,7 @@ impl ReaderAction {
             ReaderAction::Settings => "Settings",
             ReaderAction::Highlights => "Highlights",
             ReaderAction::Words => "Saved words",
-            ReaderAction::Bookmark => "Add a bookmark",
+            ReaderAction::Bookmark => "Toggle the bookmark ribbon",
             ReaderAction::JumpBack => "Jump back",
             ReaderAction::Search => "Search the book",
         }
@@ -125,11 +125,11 @@ impl ReaderAction {
             ReaderAction::PrevChapter => ReaderMsg::PrevChapter,
             ReaderAction::FontUp => ReaderMsg::FontDelta(1),
             ReaderAction::FontDown => ReaderMsg::FontDelta(-1),
-            ReaderAction::Contents => ReaderMsg::SwitchLeftTab(LeftSidebarTab::Toc),
-            ReaderAction::Settings => ReaderMsg::SwitchLeftTab(LeftSidebarTab::Settings),
-            ReaderAction::Highlights => ReaderMsg::SwitchRightTab(RightSidebarTab::Highlights),
-            ReaderAction::Words => ReaderMsg::SwitchRightTab(RightSidebarTab::Words),
-            ReaderAction::Bookmark => ReaderMsg::AddBookmark,
+            ReaderAction::Contents => ReaderMsg::OpenContents,
+            ReaderAction::Settings => ReaderMsg::OpenSettingsPanel,
+            ReaderAction::Highlights => ReaderMsg::OpenNotes(NotesFilter::Highlights),
+            ReaderAction::Words => ReaderMsg::OpenNotes(NotesFilter::Words),
+            ReaderAction::Bookmark => ReaderMsg::ToggleBookmark,
             ReaderAction::JumpBack => ReaderMsg::JumpBack,
             ReaderAction::Search => ReaderMsg::ToggleSearch,
         }
@@ -306,11 +306,23 @@ impl KeyBindings {
             .unwrap_or_else(|| action.default_binding())
     }
 
+    /// Which action already holds `binding`, if any — the conflict
+    /// test behind decision 24: a taken key is refused at capture,
+    /// naming its owner, rather than silently changing hands.
+    pub(crate) fn owner_of(&self, binding: &KeyBinding) -> Option<ReaderAction> {
+        ReaderAction::ALL
+            .into_iter()
+            .find(|action| self.binding(*action) == *binding)
+    }
+
     /// Bind `action` to `binding`, taking the key from whatever held it.
     ///
     /// The action that loses its key becomes unbound rather than being
     /// dropped from the table: dropped, it would fall back to the key it
-    /// shipped with and quietly take the key back.
+    /// shipped with and quietly take the key back. The capture UI
+    /// refuses a held key before ever calling this (decision 24); the
+    /// displacement below is what keeps a *stored* table that still
+    /// has one key on two actions from firing both.
     pub(crate) fn bind(&mut self, action: ReaderAction, binding: KeyBinding) {
         for slot in self.map.values_mut() {
             if *slot == binding {
@@ -437,6 +449,19 @@ mod tests {
             "None",
             "a displaced action is unbound, not restored to its default"
         );
+    }
+
+    #[test]
+    fn a_held_key_names_its_owner() {
+        // Decision 24: the capture UI refuses a taken key by owner
+        // rather than stealing it, so the lookup must know whose a
+        // key is — including keys an action only holds by default.
+        let bindings = KeyBindings::defaults();
+        assert_eq!(
+            bindings.owner_of(&KeyBinding::plain(gdk::Key::d)),
+            Some(ReaderAction::Define)
+        );
+        assert_eq!(bindings.owner_of(&KeyBinding::plain(gdk::Key::F9)), None);
     }
 
     #[test]

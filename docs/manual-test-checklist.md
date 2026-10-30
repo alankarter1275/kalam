@@ -90,6 +90,12 @@ Prepare a small library containing:
   available.
 - [ ] If the book has series/chapter metadata, confirm the series and chapter
   information are shown consistently in the library and reader.
+- [ ] Save a named Reading/Image preset, change the panel, reapply the
+  preset, and confirm the same page is rebuilt with the preset. Save the
+  same name again and confirm it replaces rather than duplicates it.
+- [ ] From a comic-series drawer, hand-edit details, then use Find
+  metadata and confirm those hand-edited fields stay locked in review
+  while other fields can still be selected.
 
 ## Bubbles and split reading
 
@@ -106,6 +112,10 @@ Prepare a small library containing:
 - [ ] When network access is available, search Open Library or Google Books
   from the metadata editor. Preview a result and apply it only through the
   editor's confirmation flow.
+- [ ] With comic credentials saved in Settings, search MyAnimeList and
+  Comic Vine from a comic-series drawer, review individual fields before
+  applying, and confirm chapter titles/covers were not rewritten. Reopen
+  Find metadata and use Refresh linked record on the stored source ID.
 - [ ] When offline, confirm the library, readers and offline dictionary remain
   usable. Remote source browsing and downloads are not available because no
   online source implementation is registered.

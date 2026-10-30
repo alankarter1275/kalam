@@ -1,10 +1,9 @@
 //! ReaderModel struct definition.
 
 use super::types::*;
-use crate::db::{Annotation, DictEntry, ReadingBookmark, SavedWord};
-use crate::epub_book::ReadingTheme;
+use crate::db::{Annotation, AnnotationStyle, DictEntry, HighlightColor, ReadingBookmark, SavedWord};
 use crate::service::LibraryService;
-use gtk::glib;
+use kalam_reader::ReaderPalette;
 use std::path::PathBuf;
 
 pub struct ReaderModel {
@@ -20,7 +19,9 @@ pub struct ReaderModel {
     pub(crate) chapter_titles: Vec<String>,
     pub(crate) chapter: usize,
     pub(crate) fraction: f64,
-    pub(crate) theme: ReadingTheme,
+    /// The page's resolved palette (decisions 19/145): the app theme,
+    /// or the book's own theme when it keeps one.
+    pub(crate) palette: ReaderPalette,
     pub(crate) font_px: u32,
     pub(crate) line_height: f32,
     pub(crate) column_px: u32,
@@ -64,7 +65,16 @@ pub struct ReaderModel {
     /// the number going up.
     pub(crate) back_depth: usize,
     pub(crate) selection_chip: Option<gtk::Popover>,
+    /// The open annotation editor (decision 29), in its own slot: its
+    /// closed-autosave lands by message, and that message must only
+    /// ever clear this popover, never a chip raised after it.
+    pub(crate) annotation_popover: Option<gtk::Popover>,
     pub(crate) word_preview_popover: Option<gtk::Popover>,
+    /// The read-only note shown while a highlight's dot is hovered
+    /// (decision 29), and the annotation it belongs to — so motion
+    /// inside the same dot does not rebuild it.
+    pub(crate) note_preview_popover: Option<gtk::Popover>,
+    pub(crate) note_preview_id: Option<i64>,
     pub(crate) word_memory_scope: String,
     /// Roadmap 2.5: the footnote card, while it stands.
     pub(crate) note_popover: Option<gtk::Popover>,
@@ -86,68 +96,100 @@ pub struct ReaderModel {
     pub(crate) annotation_note_draft: Option<(i64, String)>,
     pub(crate) bookmarks: Vec<ReadingBookmark>,
     pub(crate) saved_words: Vec<SavedWord>,
+    /// The reading session's deletions, last several, for Ctrl+Z
+    /// (decision 30). Rows as they stood, so an undo is a restore,
+    /// not a fresh mark.
+    pub(crate) deleted_marks: Vec<DeletedMark>,
     pub(crate) dict_query: String,
     pub(crate) dict_results: Vec<DictEntry>,
     pub(crate) dict_lookup_word: Option<String>,
     pub(crate) dict_lookup_def: Option<String>,
     pub(crate) dict_context: Option<String>,
+    /// In-popup navigation (decision 31): words the reader wandered
+    /// from via synonym/antonym/did-you-mean chips, most recent last.
+    /// A fresh lookup from the page empties it.
+    pub(crate) dict_back_stack: Vec<String>,
     pub(crate) last_selection: Option<String>,
+    /// The colour and style a fresh highlight takes (decision 26):
+    /// wherever the selection chip's dots and the annotation popover
+    /// last left them, kept across sessions as plain prefs.
+    pub(crate) last_highlight_color: HighlightColor,
+    pub(crate) last_highlight_style: AnnotationStyle,
     pub(crate) session_id: Option<i64>,
     pub(crate) session_start: std::time::Instant,
     pub(crate) session_start_pct: i64,
     pub(crate) left_tab: LeftSidebarTab,
-    pub(crate) right_tab: RightSidebarTab,
     pub(crate) left_sidebar_open: bool,
     pub(crate) right_sidebar_open: bool,
+    pub(crate) notes_filter: NotesFilter,
     pub(crate) highlight_filter: HighlightFilter,
     pub(crate) word_scope: WordScope,
     pub(crate) settings_pane: ReaderSettingsPane,
-    pub(crate) ui_prefs: ReaderUiPrefs,
+    /// The book's own reading settings, when it keeps them (decision
+    /// 147). `Some` is the "Settings for this book" switch; the rest
+    /// of the settings fields mirror it while it stands.
+    pub(crate) book_override: Option<super::book_settings::BookReadingSettings>,
+    /// The book's own theme id, when its page does not follow the
+    /// app theme (decision 145).
+    pub(crate) theme_override: Option<String>,
+    /// The Back+Bubble unit's shown state (decision 15).
     pub(crate) show_back_button: bool,
-    pub(crate) show_bottom_pill: bool,
-    pub(crate) left_close_timer: Option<glib::SourceId>,
-    pub(crate) right_close_timer: Option<glib::SourceId>,
-    pub(crate) left_close_token: u64,
-    pub(crate) right_close_token: u64,
+    /// Pointer resting in the top-left zone or on the unit itself.
+    pub(crate) back_hover: bool,
+    /// Generation for the Back unit's reveal/hide timers; a timer only
+    /// acts while its generation is still current.
+    pub(crate) back_gen: u64,
+    /// The Back pill with its Bubble slide-out, built at open.
+    pub(crate) back_unit: Option<crate::widgets::slide_out_pill::SlideOutPill>,
+    /// Pointer over the location text: it names the chapter (17).
+    pub(crate) location_hover: bool,
     pub(crate) left_sidebar_shell: Option<gtk::Revealer>,
     pub(crate) right_sidebar_shell: Option<gtk::Revealer>,
     pub(crate) left_sidebar_box: Option<gtk::Box>,
     pub(crate) right_sidebar_box: Option<gtk::Box>,
-    pub(crate) back_dock: Option<gtk::Box>,
-    pub(crate) bottom_dock: Option<gtk::Box>,
     pub(crate) left_stack: gtk::Stack,
-    pub(crate) right_stack: gtk::Stack,
     pub(crate) toc_scroll: gtk::ScrolledWindow,
     pub(crate) toc_list: gtk::Box,
-    pub(crate) highlights_list: gtk::Box,
-    pub(crate) bookmarks_list: gtk::Box,
-    pub(crate) words_list: gtk::Box,
+    /// The one list the Notes tab renders into, whatever its filter.
+    pub(crate) notes_list: gtk::Box,
+    pub(crate) notes_filter_buttons: Vec<(NotesFilter, gtk::Button)>,
+    /// The contextual control rows under the Notes chips, shown one
+    /// at a time by the standing filter.
+    pub(crate) notes_highlights_controls: gtk::Box,
+    pub(crate) notes_bookmarks_controls: gtk::Box,
+    pub(crate) notes_words_controls: gtk::Box,
     pub(crate) settings_stack: gtk::Stack,
     pub(crate) settings_pane_buttons: Vec<(ReaderSettingsPane, gtk::Button)>,
     pub(crate) font_size_label: gtk::Label,
     pub(crate) line_height_label: gtk::Label,
     pub(crate) column_width_label: gtk::Label,
-    pub(crate) theme_dots: Vec<(ReadingTheme, gtk::Button)>,
-    pub(crate) ui_controls: Vec<(ReaderUiSetting, ReaderUiSettingControls)>,
     pub(crate) highlight_filter_buttons: Vec<(HighlightFilter, gtk::Button)>,
     pub(crate) word_scope_buttons: Vec<(WordScope, gtk::Button)>,
-    pub(crate) ui_css_provider: gtk::CssProvider,
+    pub(crate) preview_body: gtk::Label,
+    pub(crate) preview_column: gtk::Box,
+    /// The preview's words: this book's own where the chapter could
+    /// be read, the app's sample otherwise.
+    pub(crate) preview_text: String,
+    pub(crate) set_book_override_switch: std::rc::Rc<dyn Fn(bool)>,
+    pub(crate) set_book_theme_choice: super::types::BookThemeSetter,
+    pub(crate) use_defaults_btn: gtk::Button,
+    pub(crate) keybind_hint: gtk::Label,
     pub(crate) search_active: bool,
     pub(crate) search_query: String,
+    /// The engine's whole-book results; the Chapter / Book switch
+    /// (decision 34) is a view over them, never a second search.
     pub(crate) search_results: Vec<kalam_reader::SearchResult>,
+    /// Position inside the *scoped* results, not the raw list.
     pub(crate) search_index: usize,
-    pub(crate) search_popover: Option<gtk::Popover>,
-    pub(crate) search_list_box: Option<gtk::ListBox>,
-    pub(crate) search_popover_badge: Option<gtk::Label>,
+    pub(crate) search_scope: SearchScope,
+    /// The bar's Chapter / Book switch, kept so closing the bar can
+    /// put it back on Chapter (the standing choice, decision 34).
+    pub(crate) search_scope_control: Option<crate::widgets::segmented::SegmentedControl>,
     pub(crate) lightbox_active: bool,
     pub(crate) lightbox_popover: Option<gtk::Popover>,
     pub(crate) lightbox_pixbuf: Option<gdk_pixbuf::Pixbuf>,
     pub(crate) lightbox_zoom: f64,
     pub(crate) lightbox_rotation: f64,
-    pub(crate) back_hide_timer: Option<glib::SourceId>,
-    pub(crate) bottom_hide_timer: Option<glib::SourceId>,
-    pub(crate) mouse_in_top_edge: bool,
-    pub(crate) mouse_in_bottom_edge: bool,
 }
 
 impl ReaderModel {
@@ -155,6 +197,59 @@ impl ReaderModel {
     pub(crate) fn with_view(&self, f: impl FnOnce(&kalam_reader::ReaderView)) {
         if let Some(view) = &self.view {
             f(view);
+        }
+    }
+
+    /// The whole-book results the standing Chapter / Book scope can
+    /// see, as indices into `search_results` (decision 34).
+    pub(crate) fn scoped_search_indices(&self) -> Vec<usize> {
+        scoped_search_indices(
+            self.search_results.iter().map(|res| res.chapter),
+            self.search_scope,
+            self.chapter,
+        )
+    }
+
+    pub(crate) fn scoped_search_len(&self) -> usize {
+        self.scoped_search_indices().len()
+    }
+
+    /// The current match's index into the raw result list, if the
+    /// scoped position still lands on one.
+    pub(crate) fn current_search_result_index(&self) -> Option<usize> {
+        self.scoped_search_indices()
+            .get(self.search_index)
+            .copied()
+    }
+
+    pub(crate) fn search_no_matches(&self) -> bool {
+        search_has_no_matches(&self.search_query, self.scoped_search_len())
+    }
+
+    pub(crate) fn search_count_label(&self) -> String {
+        search_count_text(
+            &self.search_query,
+            self.scoped_search_len(),
+            self.search_index,
+        )
+    }
+
+    /// Keep a deletion for Ctrl+Z (decision 30): the last several,
+    /// for this reading session only.
+    pub(crate) fn remember_deleted(&mut self, mark: DeletedMark) {
+        const KEPT: usize = 20;
+        self.deleted_marks.push(mark);
+        if self.deleted_marks.len() > KEPT {
+            self.deleted_marks.remove(0);
+        }
+    }
+
+    /// Back to Chapter, switch included (decision 34): every fresh
+    /// bar starts there, whatever the last one was left on.
+    pub(crate) fn reset_search_scope(&mut self) {
+        self.search_scope = SearchScope::Chapter;
+        if let Some(control) = &self.search_scope_control {
+            control.set_selected(0);
         }
     }
 }

@@ -899,6 +899,167 @@ pub fn build_book_grid_selectable(
     shell
 }
 
+/// §50 List view: a scrollable column of rows, one per book. Column headers
+/// are clickable to sort (`on_sort`); clicking a row opens the book, or
+/// toggles its selection when selection mode is on. Built from plain GTK
+/// rows and buttons so it leans on the widgets the rest of the app already
+/// uses.
+pub fn build_book_list(
+    books: &[Book],
+    columns: &[crate::pages::all_books::ListColumn],
+    selection_mode: bool,
+    selected_books: &std::collections::HashSet<i64>,
+    on_open: std::rc::Rc<dyn Fn(i64)>,
+    on_toggle_select: std::rc::Rc<dyn Fn(i64)>,
+    on_sort: std::rc::Rc<dyn Fn(crate::pages::all_books::ListColumn)>,
+) -> gtk::Widget {
+    let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    list.add_css_class("kalam-book-list");
+    list.set_hexpand(true);
+    list.set_vexpand(false);
+
+    // Header row: one clickable button per visible column, to sort (§50).
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    header.add_css_class("kalam-book-list-header-row");
+    header.set_hexpand(true);
+    header.set_height_request(36);
+    for col in columns {
+        let btn = gtk::Button::with_label(col.label());
+        btn.add_css_class("kalam-book-list-header");
+        btn.set_hexpand(true);
+        btn.set_halign(gtk::Align::Start);
+        btn.set_valign(gtk::Align::Center);
+        let c = *col;
+        let sort = on_sort.clone();
+        btn.connect_clicked(move |_| sort(c));
+        header.append(&btn);
+    }
+    list.append(&header);
+
+    let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
+    list.append(&separator);
+
+    let selected_books = selected_books.clone();
+    for book in books {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        row.add_css_class("kalam-book-list-row");
+        row.set_hexpand(true);
+        row.set_valign(gtk::Align::Center);
+        let selected = selected_books.contains(&book.id);
+        if selected {
+            row.add_css_class("selected");
+        }
+
+        for col in columns {
+            let cell: gtk::Widget = match col {
+                crate::pages::all_books::ListColumn::Title => text_cell(&book.title),
+                crate::pages::all_books::ListColumn::Author => text_cell(book.authors_display()),
+                crate::pages::all_books::ListColumn::Format => text_cell(book.format.as_str()),
+                crate::pages::all_books::ListColumn::Size => {
+                    let bytes = std::fs::metadata(&book.file_path)
+                        .ok()
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    let size = if bytes == 0 {
+                        "—".to_string()
+                    } else {
+                        format_size(bytes)
+                    };
+                    text_cell(&size)
+                }
+                crate::pages::all_books::ListColumn::Added => text_cell(&book.added_at),
+                crate::pages::all_books::ListColumn::Rating => {
+                    let rating = rating_text(book.rating);
+                    text_cell(&rating)
+                }
+                crate::pages::all_books::ListColumn::Status => progress_cell(book.progress),
+            };
+            row.append(&cell);
+        }
+
+        let id = book.id;
+        let open = on_open.clone();
+        let toggle = on_toggle_select.clone();
+        let sel = selection_mode;
+        let click = gtk::GestureClick::new();
+        click.set_button(1);
+        click.connect_released(move |_, _, _, _| {
+            if sel {
+                toggle(id);
+            } else {
+                open(id);
+            }
+        });
+        row.add_controller(click);
+        row.set_cursor_from_name(Some("pointer"));
+
+        list.append(&row);
+    }
+
+    list.upcast()
+}
+
+/// A single-line, ellipsizing list cell.
+fn text_cell(text: &str) -> gtk::Widget {
+    let lbl = gtk::Label::new(Some(text));
+    lbl.add_css_class("kalam-book-list-cell");
+    lbl.set_hexpand(true);
+    lbl.set_halign(gtk::Align::Start);
+    lbl.set_valign(gtk::Align::Center);
+    lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    lbl.set_margin_start(8);
+    lbl.set_xalign(0.0);
+    lbl.upcast()
+}
+
+/// The Status column's progress cell.
+fn progress_cell(progress: u8) -> gtk::Widget {
+    let pb = gtk::ProgressBar::new();
+    pb.add_css_class("kalam-book-list-cell");
+    pb.set_hexpand(true);
+    pb.set_valign(gtk::Align::Center);
+    pb.set_fraction(progress as f64 / 100.0);
+    pb.set_text(Some(&format!("{}%", progress)));
+    pb.set_margin_start(8);
+    pb.upcast()
+}
+
+/// Human-readable file size.
+fn format_size(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    let mut size = bytes as f64;
+    let mut i = 0usize;
+    while size >= 1024.0 && i < UNITS.len() - 1 {
+        size /= 1024.0;
+        i += 1;
+    }
+    if i == 0 {
+        format!("{} {}", bytes, UNITS[i])
+    } else {
+        format!("{:.1} {}", size, UNITS[i])
+    }
+}
+
+/// Star text for a 0..=10 half-star rating (`0` = unrated).
+fn rating_text(rating: u8) -> String {
+    if rating == 0 {
+        return "—".to_string();
+    }
+    let full = (rating / 2) as usize;
+    let half = !rating.is_multiple_of(2);
+    let mut s = String::with_capacity(5);
+    for _ in 0..full.min(5) {
+        s.push('★');
+    }
+    if half && full < 5 {
+        s.push('✦');
+    }
+    while s.len() < 5 {
+        s.push('☆');
+    }
+    s
+}
+
 /// Fixed `w`×`h` cover (always the same size — with or without an image).
 ///
 /// Decodes on the spot. Right for the one-or-two covers on a detail page,
@@ -917,6 +1078,69 @@ pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
     }
 
     frame.append(&placeholder_for(w, h));
+    frame.upcast()
+}
+
+/// [`cover_widget`] with a caller-supplied no-cover face.
+///
+/// The generic placeholder cannot know a book's title or author. The
+/// redesign's cover-state component supplies its generated text cover here,
+/// while this module remains the only place that knows how an image is
+/// decoded and framed. `fallback` is called only when no picture can be
+/// decoded synchronously.
+pub fn cover_widget_or_else(
+    path: Option<&Path>,
+    w: i32,
+    h: i32,
+    fallback: impl FnOnce() -> gtk::Widget,
+) -> gtk::Widget {
+    let frame = new_cover_frame(w, h);
+
+    if let Some(path) = path {
+        if path.is_file() {
+            if let Some(picture) = scaled_cover_picture(path, w, h) {
+                frame.append(&picture);
+                return frame.upcast();
+            }
+        }
+    }
+
+    frame.append(&fallback());
+    frame.upcast()
+}
+
+/// Deferred counterpart to [`cover_widget_or_else`]: the caller's generated
+/// cover is the underlay from the first frame, and a transparent picture
+/// above it receives the decoded texture in place. As with the original
+/// deferred path, the swap is a repaint, never a relayout.
+pub fn cover_widget_deferred_or_else(
+    path: Option<&Path>,
+    w: i32,
+    h: i32,
+    fallback: impl FnOnce() -> gtk::Widget,
+) -> gtk::Widget {
+    if !crate::preload::preload_enabled() {
+        return cover_widget_or_else(path, w, h, fallback);
+    }
+
+    let (frame, picture) = new_deferred_overlay_frame(w, h, &fallback());
+
+    if let Some(path) = path {
+        if path.is_file() {
+            let key = (path.to_string_lossy().to_string(), w, h);
+            if let Some(texture) = COVER_CACHE.with(|c| c.borrow_mut().get(&key)) {
+                picture.set_paintable(Some(&texture));
+                return frame.upcast();
+            }
+            PENDING_FRAMES.with(|p| {
+                p.borrow_mut().push(PendingFrame {
+                    key,
+                    picture: picture.downgrade(),
+                });
+            });
+        }
+    }
+
     frame.upcast()
 }
 
@@ -1006,6 +1230,28 @@ fn new_deferred_frame(w: i32, h: i32) -> (gtk::Box, gtk::Picture) {
     frame.set_overflow(gtk::Overflow::Hidden);
     let picture = cover_picture(w, h);
     frame.append(&picture);
+    (frame, picture)
+}
+
+/// The fallback-aware deferred frame. `GtkOverlay` is needed because the
+/// generated text cover is a real widget tree, not a background gradient;
+/// the paintless picture still sits above it at the same fixed size.
+fn new_deferred_overlay_frame(
+    w: i32,
+    h: i32,
+    underlay: &gtk::Widget,
+) -> (gtk::Overlay, gtk::Picture) {
+    let frame = gtk::Overlay::new();
+    frame.add_css_class("kalam-cover-frame");
+    frame.set_size_request(w, h);
+    frame.set_hexpand(false);
+    frame.set_vexpand(false);
+    frame.set_halign(gtk::Align::Center);
+    frame.set_valign(gtk::Align::Start);
+    frame.set_overflow(gtk::Overflow::Hidden);
+    frame.set_child(Some(underlay));
+    let picture = cover_picture(w, h);
+    frame.add_overlay(&picture);
     (frame, picture)
 }
 

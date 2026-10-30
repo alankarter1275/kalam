@@ -14,10 +14,10 @@
 //!   as one scrolling strip. See `view.rs`; the strip's arithmetic is in
 //!   `scroll.rs`, the chapter divider it draws between chapters in
 //!   `divider.rs`.
-//! * [`KalamPrefs`] / [`KalamTheme`] / [`HighlightColor`] — Kalam's
-//!   reading preferences and colours, copied from Kalam's own source, and
-//!   the one function that turns them into engine settings. See
-//!   `prefs.rs`.
+//! * [`KalamPrefs`] / [`ReaderPalette`] / [`HighlightColor`] — Kalam's
+//!   reading preferences, the resolved colours the app hands over from
+//!   its token table, and the one function that turns them into engine
+//!   settings. See `prefs.rs`.
 //! * The bundled fonts (Literata and Noto Sans, compiled in). See
 //!   `fonts.rs`.
 //!
@@ -44,11 +44,11 @@ mod scroll;
 mod view;
 
 pub use chapbook_core::{
-    ChapbookError, LayeredLocator, Point, Quote, Rect, Size, TocEntry, LOCATOR_VERSION,
+    ChapbookError, LayeredLocator, Point, Quote, Rect, Rgba, Size, TocEntry, LOCATOR_VERSION,
 };
 pub use chapbook_reader::Highlight;
-pub use fonts::{font_source, SANS_FONT};
-pub use prefs::{HighlightColor, KalamPrefs, KalamTheme, BODY_FONT};
+pub use fonts::{available_font_families, font_source, BUNDLED_FONT_FILES, SANS_FONT};
+pub use prefs::{HighlightColor, KalamPrefs, KalamTheme, ReaderPalette, BODY_FONT};
 pub use view::{
     NewHighlight, ReaderOptions, ReaderView, ReadingMode, ReadingPosition,
     SearchResult, SelectedText, DEFAULT_CACHE_BUDGET,

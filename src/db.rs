@@ -11,7 +11,9 @@ use thiserror::Error;
 
 mod annotations;
 mod authors;
+mod pdf_annotations;
 mod dictionaries;
+mod editor;
 mod history;
 mod lookup_history;
 mod metadata;
@@ -25,23 +27,28 @@ mod stats;
 
 mod tags;
 
+pub use editor::EditorVersion;
 pub use tags::BulkMetadataEdit;
 pub(crate) use series::heuristic_series_key;
 pub use dictionaries::{
-    likely_sense_index, EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME,
-    BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
+    EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME,
+    BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
 };
 // Only the engine's tests name `Sense` directly; keep it out of the non-test
 // build so it is not an unused import.
 #[cfg(test)]
 pub use dictionaries::Sense;
-pub use history::{LibrarySession, SessionRow};
+#[allow(unused_imports)]
+pub use history::{LibrarySession, SessionRow, TimelineLane, TimelineSession};
 pub use lookup_history::DictLookup;
 #[allow(unused_imports)]
 pub use pronunciation::pronunciation_for;
 #[allow(unused_imports)]
 pub use search::{build_search_sql, parse_search_query, RatingOp, SearchFilter, StatusFilter};
-pub use series::{series_key, SeriesWork};
+pub use series::{
+    remove_comic_series_cover, series_key, write_comic_series_cover, ComicSeriesEdit,
+    ComicSeriesMetadataPatch, ComicSeriesUpdateOutcome, SeriesWork,
+};
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -53,6 +60,16 @@ pub enum DbError {
     ContentSearch(String),
     #[error("ocr cache: {0}")]
     OcrCache(String),
+    #[error("pdf annotation: {0}")]
+    PdfAnnotation(String),
+    /// A rejected author edit/merge. The message is written for the
+    /// person who asked for the change, so it is shown as-is.
+    #[error("{0}")]
+    Author(String),
+    /// A rejected comic-series edit or metadata application, likewise
+    /// written for the person who asked for the change.
+    #[error("{0}")]
+    ComicSeries(String),
 }
 
 pub type Result<T> = std::result::Result<T, DbError>;
@@ -71,7 +88,16 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v17 = purge comic bubble-OCR rows from page_ocr_cache (feature removed in 2.17;
 ///          the table itself stays because scanned-PDF OCR still uses it)
 /// · v18 = legacy EPUB edit-patch rows (retained for sidecar compatibility)
-pub const SCHEMA_VERSION: i64 = 18;
+/// · v19 = the "underline" highlight *colour* retires into the underline
+///          *style* (decision 28): colour='underline' rows become
+///          style='underline' in the default yellow
+/// · v20 = stable PDF page identities and page-anchored drawing objects
+///          (decisions 66, 69 and 72)
+/// · v21 = hand-edited author fields, locked against metadata refresh
+///          (decisions 48 and 112)
+/// · v22 = fetched comic-series metadata, its source link and cover,
+///          and hand-edited field locks (decisions 46 and 48)
+pub const SCHEMA_VERSION: i64 = 22;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -203,6 +229,207 @@ pub struct ReadingBookmark {
     pub created_at: String,
 }
 
+/// One physical PDF page's durable identity (decisions 69 and 72).
+///
+/// Page-bound drawing objects name the page they live on by `page_id`;
+/// `position` is only that page's current place in the file (1-based).
+/// A later page edit can move positions without moving the objects off
+/// the pages they were drawn on.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PdfPageIdentity {
+    pub page_id: String,
+    pub position: usize,
+}
+
+/// The geometry of one object drawn on a PDF page, in source-page
+/// points. The JSON stored in SQLite is this enum verbatim, so a new
+/// object kind is a new variant rather than a schema change.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PdfDrawingGeometry {
+    Stroke {
+        /// `pen` or `highlighter` (decision 66).
+        tool: String,
+        points: Vec<(f32, f32)>,
+    },
+    Shape {
+        /// `rectangle`, `ellipse`, `line` or `arrow`.
+        shape: String,
+        start: (f32, f32),
+        end: (f32, f32),
+        filled: bool,
+    },
+    Text {
+        /// `(x, y, width, height)` in source-page points.
+        rect: (f32, f32, f32, f32),
+        text: String,
+        /// `s`, `m` or `l`.
+        size: String,
+        paper_background: bool,
+    },
+    Sticky {
+        point: (f32, f32),
+        text: String,
+    },
+}
+
+impl PdfDrawingGeometry {
+    /// The stored `kind` column's value for this geometry.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Stroke { tool, .. } if tool == "highlighter" => "highlighter",
+            Self::Stroke { .. } => "pen",
+            Self::Shape { .. } => "shape",
+            Self::Text { .. } => "text",
+            Self::Sticky { .. } => "sticky",
+        }
+    }
+
+    /// Move the whole object by a source-space delta.
+    pub fn translate(&mut self, dx: f32, dy: f32) {
+        match self {
+            Self::Stroke { points, .. } => {
+                for point in points {
+                    point.0 += dx;
+                    point.1 += dy;
+                }
+            }
+            Self::Shape { start, end, .. } => {
+                start.0 += dx;
+                start.1 += dy;
+                end.0 += dx;
+                end.1 += dy;
+            }
+            Self::Text { rect, .. } => {
+                rect.0 += dx;
+                rect.1 += dy;
+            }
+            Self::Sticky { point, .. } => {
+                point.0 += dx;
+                point.1 += dy;
+            }
+        }
+    }
+
+    /// Turn the whole object with its page (decision 69), in the
+    /// page's old displayed space of `page_width` × `page_height`
+    /// points. A clockwise quarter turn is the same mapping the
+    /// reader's own view rotation uses to carry a source point to
+    /// the screen, so a stroke stays over the words it was drawn
+    /// on after the file's `/Rotate` catches up with it.
+    ///
+    /// A text box keeps only its new axis-aligned home: its words
+    /// are re-set upright in the page's new orientation when they
+    /// are next painted, exactly as they would be had the page
+    /// always stood that way.
+    pub fn rotate_clockwise(
+        &mut self,
+        degrees: i32,
+        page_width: f32,
+        page_height: f32,
+    ) {
+        if page_width <= 0.0 || page_height <= 0.0 {
+            return;
+        }
+        let turn = |point: (f32, f32)| match degrees.rem_euclid(360) {
+            90 => (page_height - point.1, point.0),
+            180 => (page_width - point.0, page_height - point.1),
+            270 => (point.1, page_width - point.0),
+            _ => point,
+        };
+        match self {
+            Self::Stroke { points, .. } => {
+                for point in points {
+                    *point = turn(*point);
+                }
+            }
+            Self::Shape { start, end, .. } => {
+                *start = turn(*start);
+                *end = turn(*end);
+            }
+            Self::Text { rect, .. } => {
+                let corners = [
+                    turn((rect.0, rect.1)),
+                    turn((rect.0 + rect.2, rect.1)),
+                    turn((rect.0, rect.1 + rect.3)),
+                    turn((rect.0 + rect.2, rect.1 + rect.3)),
+                ];
+                let min_x = corners.iter().map(|p| p.0).fold(f32::MAX, f32::min);
+                let min_y = corners.iter().map(|p| p.1).fold(f32::MAX, f32::min);
+                let max_x = corners.iter().map(|p| p.0).fold(f32::MIN, f32::max);
+                let max_y = corners.iter().map(|p| p.1).fold(f32::MIN, f32::max);
+                *rect = (min_x, min_y, max_x - min_x, max_y - min_y);
+            }
+            Self::Sticky { point, .. } => {
+                *point = turn(*point);
+            }
+        }
+    }
+}
+
+/// One saved PDF drawing object. Colour names are the five highlight
+/// hues plus `ink` (decision 67); width and geometry are source-page
+/// points, never display pixels.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PdfDrawing {
+    pub id: i64,
+    pub book_id: i64,
+    pub page_id: String,
+    pub color: String,
+    pub opacity: f64,
+    pub width_pts: f64,
+    pub geometry: PdfDrawingGeometry,
+    pub created_at: String,
+    #[allow(dead_code)] // written on update; no edited-at stamp is shown yet
+    pub updated_at: String,
+}
+
+/// How much of the reader's own work sits on a set of PDF pages.
+/// The delete prompt (decision 69) is only owed when this is not
+/// empty, and its copy names these counts — so they are kept by
+/// kind rather than summed into one vague "annotations".
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PdfPageBoundCounts {
+    pub highlights: usize,
+    pub quotes: usize,
+    pub notes: usize,
+    pub drawings: usize,
+    pub bookmarks: usize,
+}
+
+impl PdfPageBoundCounts {
+    pub fn is_empty(&self) -> bool {
+        self.highlights == 0
+            && self.quotes == 0
+            && self.notes == 0
+            && self.drawings == 0
+            && self.bookmarks == 0
+    }
+}
+
+/// One surviving page whose drawings must turn with it when a
+/// page edit is applied: the page's identity, its size in the
+/// orientation the drawings were made against, and the staged
+/// clockwise turn.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PdfPageRotationRewrite {
+    pub page_id: String,
+    pub page_width: f32,
+    pub page_height: f32,
+    pub clockwise_degrees: i32,
+}
+
+/// Everything the catalog rewrites when a PDF page edit lands:
+/// the book's pages named by identity in their new order (a name
+/// the book does not have yet is an inserted page; a name it has
+/// that is missing here is a deleted one), and the turns its
+/// surviving pages' drawings must make.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PdfPageEditRewrite {
+    pub ordered_page_ids: Vec<String>,
+    pub rotations: Vec<PdfPageRotationRewrite>,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct AuthorWork {
     pub title: String,
@@ -244,6 +471,51 @@ pub struct AuthorProfile {
     pub aliases: Vec<String>,
     pub fetched_at: String,
     pub source_url: String,
+    /// Profile fields the reader edited by hand. A later metadata fetch
+    /// keeps these values instead of replacing them (decision 48). The
+    /// strings are the `AUTHOR_FIELD_*` constants below.
+    pub manual_fields: Vec<String>,
+}
+
+/// Names recorded in [`AuthorProfile::manual_fields`].
+pub const AUTHOR_FIELD_NAME: &str = "name";
+pub const AUTHOR_FIELD_SORT_NAME: &str = "sort_name";
+pub const AUTHOR_FIELD_BIO: &str = "bio";
+pub const AUTHOR_FIELD_BIRTH_DATE: &str = "birth_date";
+pub const AUTHOR_FIELD_DEATH_DATE: &str = "death_date";
+pub const AUTHOR_FIELD_ALIASES: &str = "aliases";
+pub const AUTHOR_FIELD_PHOTO: &str = "photo";
+
+/// What an Edit author save should do with the portrait. `Replace`
+/// carries a file name inside the authors directory; the service layer
+/// writes the image there before the catalog transaction begins.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum AuthorPhotoEdit {
+    #[default]
+    Keep,
+    Remove,
+    Replace(String),
+}
+
+/// The editable author fields, as one value so the rename, the profile
+/// rewrite and the field locks are decided together in one transaction.
+#[derive(Debug, Clone, Default)]
+pub struct AuthorEdit {
+    pub name: String,
+    pub sort_name: String,
+    pub bio: String,
+    pub birth_date: String,
+    pub death_date: String,
+    pub aliases: Vec<String>,
+    pub photo: AuthorPhotoEdit,
+}
+
+/// The result of an author edit or merge: the name the author page
+/// should show now, and how many book rows were rewritten to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthorEditOutcome {
+    pub name: String,
+    pub books_updated: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -758,6 +1030,38 @@ impl Catalog {
             CREATE INDEX IF NOT EXISTS idx_reading_bookmarks_book
                 ON reading_bookmarks(book_id, chapter_index, created_at DESC);
 
+            -- v20: stable PDF page identities (decision 69). A drawing
+            -- names a page by identity; position is only where that page
+            -- currently sits, so a later page edit moves positions, not
+            -- the drawings off their pages.
+            CREATE TABLE IF NOT EXISTS pdf_page_identities (
+                book_id  INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                page_id  TEXT    NOT NULL,
+                position INTEGER NOT NULL,
+                PRIMARY KEY (book_id, page_id),
+                UNIQUE (book_id, position)
+            );
+
+            -- v20: objects drawn on PDF pages (decisions 66, 72).
+            -- Geometry is the PdfDrawingGeometry JSON in source-page
+            -- points; SQLite stays the truth and kalam.json its backup.
+            CREATE TABLE IF NOT EXISTS pdf_drawings (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id    INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                page_id    TEXT    NOT NULL,
+                kind       TEXT    NOT NULL,
+                color      TEXT    NOT NULL DEFAULT 'ink',
+                opacity    REAL    NOT NULL DEFAULT 1.0,
+                width_pts  REAL    NOT NULL DEFAULT 3.0,
+                geometry   TEXT    NOT NULL,
+                created_at TEXT    NOT NULL,
+                updated_at TEXT    NOT NULL,
+                FOREIGN KEY (book_id, page_id)
+                    REFERENCES pdf_page_identities(book_id, page_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_pdf_drawings_book_page
+                ON pdf_drawings(book_id, page_id, id);
+
             CREATE TABLE IF NOT EXISTS dictionaries (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 name        TEXT    NOT NULL UNIQUE,
@@ -901,7 +1205,10 @@ impl Catalog {
                 work_count        INTEGER NOT NULL DEFAULT 0,
                 works_json        TEXT NOT NULL DEFAULT '[]',
                 fetched_at        TEXT NOT NULL DEFAULT '',
-                source_url        TEXT NOT NULL DEFAULT ''
+                source_url        TEXT NOT NULL DEFAULT '',
+                -- v21: fields edited by hand in Edit author; a metadata
+                -- refresh must not overwrite them (decision 48).
+                manual_fields_json TEXT NOT NULL DEFAULT '[]'
             );
             CREATE INDEX IF NOT EXISTS idx_author_profiles_name
                 ON author_profiles(canonical_name COLLATE NOCASE);
@@ -916,7 +1223,7 @@ impl Catalog {
                 ON author_aliases(author_id);
 
             -- v10: series listings fetched from Open Library, one row per
-            -- series so the book page's series float caches first-time only.
+            -- series so the series page caches first-time only.
             CREATE TABLE IF NOT EXISTS series_cache (
                 series_key TEXT PRIMARY KEY,
                 source     TEXT NOT NULL,
@@ -967,7 +1274,27 @@ impl Catalog {
                 status         TEXT NOT NULL DEFAULT 'Ongoing',
                 created_at     TEXT NOT NULL,
                 updated_at     TEXT NOT NULL,
-                last_read_at   TEXT
+                last_read_at   TEXT,
+                -- v22: fetched comic-series metadata (decision 46).
+                -- Credits/genres/manual locks are JSON lists; the
+                -- manual list names COMIC_SERIES_FIELD_* values a
+                -- refresh must not overwrite (decision 48).
+                original_title TEXT NOT NULL DEFAULT '',
+                credits_json   TEXT NOT NULL DEFAULT '[]',
+                publisher      TEXT NOT NULL DEFAULT '',
+                serialization  TEXT NOT NULL DEFAULT '',
+                published      TEXT NOT NULL DEFAULT '',
+                end_date       TEXT NOT NULL DEFAULT '',
+                media_type     TEXT NOT NULL DEFAULT '',
+                genres_json    TEXT NOT NULL DEFAULT '[]',
+                known_volumes  INTEGER NOT NULL DEFAULT 0,
+                known_chapters INTEGER NOT NULL DEFAULT 0,
+                metadata_source TEXT NOT NULL DEFAULT '',
+                metadata_source_id TEXT NOT NULL DEFAULT '',
+                metadata_source_url TEXT NOT NULL DEFAULT '',
+                metadata_fetched_at TEXT NOT NULL DEFAULT '',
+                manual_fields_json TEXT NOT NULL DEFAULT '[]',
+                cover_file     TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_comic_series_sort_title 
                 ON comic_series(sort_title);
@@ -994,6 +1321,11 @@ impl Catalog {
                 content,
                 tokenize = 'unicode61 remove_diacritics 2'
             );
+
+            -- v15b: Term-frequency vocabulary for the saved-words sphere (§52).
+            -- fts5vocab('row' mode) gives one row per distinct term with its
+            -- total occurrence count across all indexed content.
+            CREATE VIRTUAL TABLE IF NOT EXISTS book_content_vocab USING fts5vocab(book_content_fts, row);
 
             CREATE TABLE IF NOT EXISTS book_search_index_status (
                 book_id        INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
@@ -1038,6 +1370,16 @@ impl Catalog {
             );
             CREATE INDEX IF NOT EXISTS idx_patches_book
                 ON patches(book_id, status);
+            CREATE TABLE IF NOT EXISTS editor_snapshots (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                label         TEXT NOT NULL,
+                file_name     TEXT NOT NULL,
+                files_changed INTEGER NOT NULL DEFAULT 0,
+                created_at    TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_editor_snapshots_book
+                ON editor_snapshots(book_id, id);
             "#,
         )?;
 
@@ -1120,6 +1462,37 @@ impl Catalog {
         // Unified annotation system: style column (solid, underline, squiggly, strikeout)
         add_column_if_missing(&conn, "annotations", "style", "TEXT NOT NULL DEFAULT 'solid'")?;
 
+        // v21: hand-edited author fields (see AUTHOR_FIELD_*).
+        add_column_if_missing(
+            &conn,
+            "author_profiles",
+            "manual_fields_json",
+            "TEXT NOT NULL DEFAULT '[]'",
+        )?;
+
+        // v22: fetched comic-series metadata and its hand-edited
+        // locks (decisions 46/48, COMIC_SERIES_FIELD_*).
+        for (column, ty) in [
+            ("original_title", "TEXT NOT NULL DEFAULT ''"),
+            ("credits_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("publisher", "TEXT NOT NULL DEFAULT ''"),
+            ("serialization", "TEXT NOT NULL DEFAULT ''"),
+            ("published", "TEXT NOT NULL DEFAULT ''"),
+            ("end_date", "TEXT NOT NULL DEFAULT ''"),
+            ("media_type", "TEXT NOT NULL DEFAULT ''"),
+            ("genres_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("known_volumes", "INTEGER NOT NULL DEFAULT 0"),
+            ("known_chapters", "INTEGER NOT NULL DEFAULT 0"),
+            ("metadata_source", "TEXT NOT NULL DEFAULT ''"),
+            ("metadata_source_id", "TEXT NOT NULL DEFAULT ''"),
+            ("metadata_source_url", "TEXT NOT NULL DEFAULT ''"),
+            ("metadata_fetched_at", "TEXT NOT NULL DEFAULT ''"),
+            ("manual_fields_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("cover_file", "TEXT"),
+        ] {
+            add_column_if_missing(&conn, "comic_series", column, ty)?;
+        }
+
         let version: Option<i64> = conn
             .query_row("SELECT version FROM schema_version LIMIT 1", [], |r| {
                 r.get(0)
@@ -1142,6 +1515,25 @@ impl Catalog {
                 if v < 17 {
                     conn.execute(
                         "DELETE FROM page_ocr_cache WHERE file_fingerprint LIKE '%:%:%'",
+                        [],
+                    )?;
+                }
+                // v19 (decision 28): "underline" was a sixth highlight
+                // *colour*; the underline *style* covers it, and the
+                // chip now offers five colours × four styles. Rows whose
+                // style never said anything of its own take the style;
+                // a row that deliberately paired the colour with another
+                // style keeps that style and only loses the colour name.
+                if v < 19 {
+                    conn.execute(
+                        "UPDATE annotations SET style = 'underline', color = 'yellow' \
+                         WHERE lower(color) = 'underline' \
+                           AND (style = '' OR lower(style) = 'solid')",
+                        [],
+                    )?;
+                    conn.execute(
+                        "UPDATE annotations SET color = 'yellow' \
+                         WHERE lower(color) = 'underline'",
                         [],
                     )?;
                 }
@@ -1187,6 +1579,21 @@ impl Catalog {
             |r| r.get(0),
         )?;
         Ok(count)
+    }
+
+    /// Top terms by frequency across all indexed book content, for the
+    /// saved-words sphere (§52). Returns at most `limit` (term, count) pairs.
+    pub fn top_vocab_terms(&self, limit: i64) -> Result<Vec<(String, i64)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT term, cnt FROM book_content_vocab
+             ORDER BY cnt DESC, term ASC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })?;
+        Ok(rows.flatten().collect())
     }
 
     /// Record a spaced-repetition answer (0 = again, 1 = good, 2 = easy) with a
@@ -2620,6 +3027,39 @@ mod tests {
             })
             .unwrap();
         assert_eq!(v, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn v19_retires_the_underline_colour_into_the_style() {
+        // Decision 28: "underline" the colour becomes underline the
+        // style in the default yellow — unless the row already carried
+        // a deliberate style of its own, which it keeps.
+        let cat = Catalog::open_in_memory().unwrap();
+        let book = seed(&cat, "Underline Migration", "A", &[]);
+        {
+            let conn = cat.conn();
+            for (style, text) in [("solid", "plain"), ("squiggly", "wavy")] {
+                conn.execute(
+                    "INSERT INTO annotations \
+                     (book_id, kind, chapter_index, start_path, start_offset, \
+                      end_path, end_offset, color, style, text_excerpt, note, \
+                      created_at, updated_at) \
+                     VALUES (?1, 'highlight', 0, '', 0, '', 1, 'underline', ?2, ?3, '', '', '')",
+                    params![book, style, text],
+                )
+                .unwrap();
+            }
+            conn.execute("UPDATE schema_version SET version = 18", [])
+                .unwrap();
+        }
+        cat.migrate().unwrap();
+        let rows = cat.get_annotations_for_book(book).unwrap();
+        let plain = rows.iter().find(|r| r.text_excerpt == "plain").unwrap();
+        assert_eq!(plain.style, "underline");
+        assert_eq!(plain.color, "yellow");
+        let wavy = rows.iter().find(|r| r.text_excerpt == "wavy").unwrap();
+        assert_eq!(wavy.style, "squiggly", "a deliberate style survives");
+        assert_eq!(wavy.color, "yellow");
     }
 
     #[test]

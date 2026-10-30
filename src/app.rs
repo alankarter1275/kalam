@@ -2,29 +2,34 @@
 
 use crate::db::Catalog;
 use crate::models::{LibrarySection, NavItem, Route};
+use crate::shortcuts::ShortcutAction;
 use crate::pages::{downloads::DownloadsModel, 
-    all_books::{AllBooksModel, AllBooksOut},
+    all_books::{AllBooksModel, AllBooksMsg, AllBooksOut},
     analytics::AnalyticsModel,
     author::{AuthorPageModel, AuthorPageOut},
+    authors::{AuthorsModel, AuthorsOut},
     book::{BookPageModel, BookPageOut},
     book_float::{BookFloatModel, BookFloatOut},
     comics::{ComicsModel, ComicsMsg, ComicsOut},
     browse::{BrowseModel, BrowseOut},
     remote_detail::{RemoteDetailModel, RemoteDetailOut, RemoteDetailInit},
     comics_reader::{ComicsReaderModel, ComicsReaderOut},
+    component_preview::ComponentPreviewModel,
     history::{HistoryModel, HistoryOut},
     home::{HomeOut, HomePageModel},
     library::{LibraryOut, LibraryPageModel},
     lookup_history::LookupHistoryModel,
     placeholder::PlaceholderPageModel,
     pdf_reader::{PdfReaderInit, PdfReaderModel, PdfReaderOut},
+    editor_picker::{EditorPickerModel, EditorPickerMsg, EditorPickerOut},
+    epub_editor::{EpubEditorModel, EpubEditorOut},
     reader::{ReaderModel, ReaderOut},
     reading_list::{ReadingListModel, ReadingListOut},
     review::{ReviewModel, ReviewOut},
     saved_quotes::{SavedQuotesModel, SavedQuotesOut},
     saved_words::{SavedWordsModel, SavedWordsOut},
-    series_float::{SeriesFloatModel, SeriesFloatOut},
-    settings::SettingsPageModel,
+    series::{SeriesPageInit, SeriesPageModel, SeriesPageOut},
+    settings::{SettingsMsg, SettingsPageModel, SettingsTab},
     shelf_detail::{ShelfDetailModel, ShelfDetailOut},
     shelves_grid::{ShelvesGridModel, ShelvesOut},
     tags::{TagBooksModel, TagBooksOut, TagsModel, TagsOut},
@@ -32,20 +37,26 @@ use crate::pages::{downloads::DownloadsModel,
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::rc::Rc;
 use std::sync::Arc;
-
-/// How often the sidebar badge re-reads the task registry.
-///
-/// Half a second: quick enough that starting an import changes the badge
-/// before you look away, cheap enough to leave running forever. It reads a
-/// `Mutex<Vec<..>>` of single-digit length and nothing else.
-const TASK_TICK: std::time::Duration = std::time::Duration::from_millis(500);
 
 #[derive(Debug)]
 pub enum AppMsg {
     Navigate(NavItem),
     Push(Route),
+    /// "Show books in library" (author page, decision 112): push the
+    /// All Books section with the author search already typed in.
+    ShowInLibrary {
+        query: String,
+    },
     Back,
+    /// One app-wide shortcut from the decision-155 registry. The root
+    /// key handler resolves the chord; this dispatch owns the route.
+    Shortcut(crate::shortcuts::ShortcutAction),
+    /// A shortcut-started import finished. Routed through the model so
+    /// completion can refresh a listing without rebuilding a reader
+    /// or resetting the Settings page that launched it.
+    ShortcutImportFinished(crate::pages::all_books::ImportTally),
     OpenBookDialog {
         book_id: i64,
     },
@@ -54,29 +65,11 @@ pub enum AppMsg {
         book_id: i64,
     },
     CloseBookDialog,
-    /// Toggle the `w` task dialog.
-    ToggleTasksFloat,
-    /// Re-read the task registry: refreshes the sidebar badge and, when the
-    /// `w` dialog is open, its rows. One tick drives both.
-    TasksTick,
-    /// Open the series float from the book page's Series link.
-    OpenSeriesFloat {
-        series: String,
-        first_author: String,
-    },
-    /// Open the highlights & quotes panel (in-app float) from the book page.
-    OpenAnnotationsFloat {
-        book_id: i64,
-    },
     /// Open the shelves checklist panel (in-app float).
     OpenShelvesFloat {
         book_id: i64,
         /// True when opened from the book float — closing returns there.
         from_book_float: bool,
-    },
-    /// Open the tags panel (in-app float) from the book page.
-    OpenTagsFloat {
-        book_id: i64,
     },
     /// Rebuild the page on screen if the catalog changed under it.
     RefreshCurrentPage,
@@ -132,8 +125,10 @@ enum PageSlot {
     TagBooks(Controller<TagBooksModel>),
     Analytics(Controller<AnalyticsModel>),
     TaskManager(Controller<TaskManagerModel>),
+    Authors(Controller<AuthorsModel>),
     Author(Controller<AuthorPageModel>),
     Book(Controller<BookPageModel>),
+    Series(Controller<SeriesPageModel>),
     Reader(Controller<ReaderModel>),
     PdfReader(Controller<PdfReaderModel>),
     Comics(Controller<ComicsModel>),
@@ -141,14 +136,19 @@ enum PageSlot {
     RemoteBrowse(Controller<BrowseModel>),
     RemoteDetail(Controller<RemoteDetailModel>),
     Settings(Controller<SettingsPageModel>),
+    ComponentPreview(Controller<ComponentPreviewModel>),
     Placeholder(Controller<PlaceholderPageModel>),
     Downloads(Controller<DownloadsModel>),
+    EditorPicker(Controller<EditorPickerModel>),
+    EpubEditor(Controller<EpubEditorModel>),
 }
 
 impl PageSlot {
     fn widget(&self) -> gtk::Widget {
         match self {
             PageSlot::Downloads(c) => c.widget().clone().upcast(),
+            PageSlot::EditorPicker(c) => c.widget().clone().upcast(),
+            PageSlot::EpubEditor(c) => c.widget().clone().upcast(),
             PageSlot::Home(c) => c.widget().clone().upcast(),
             PageSlot::Library(c) => c.widget().clone().upcast(),
             PageSlot::AllBooks(c) => c.widget().clone().upcast(),
@@ -164,8 +164,10 @@ impl PageSlot {
             PageSlot::TagBooks(c) => c.widget().clone().upcast(),
             PageSlot::Analytics(c) => c.widget().clone().upcast(),
             PageSlot::TaskManager(c) => c.widget().clone().upcast(),
+            PageSlot::Authors(c) => c.widget().clone().upcast(),
             PageSlot::Author(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
+            PageSlot::Series(c) => c.widget().clone().upcast(),
             PageSlot::Reader(c) => c.widget().clone().upcast(),
             PageSlot::PdfReader(c) => c.widget().clone().upcast(),
             PageSlot::Comics(c) => c.widget().clone().upcast(),
@@ -173,6 +175,7 @@ impl PageSlot {
             PageSlot::RemoteBrowse(c) => c.widget().clone().upcast(),
             PageSlot::RemoteDetail(c) => c.widget().clone().upcast(),
             PageSlot::Settings(c) => c.widget().clone().upcast(),
+            PageSlot::ComponentPreview(c) => c.widget().clone().upcast(),
             PageSlot::Placeholder(c) => c.widget().clone().upcast(),
         }
     }
@@ -185,21 +188,12 @@ enum Floating {
     // component alive until it closes — see the enum doc.
     #[allow(dead_code)]
     Book(Controller<BookFloatModel>),
-    #[allow(dead_code)]
-    Series(Controller<SeriesFloatModel>),
-    /// Highlights & quotes — a plain widget panel, nothing to keep alive.
-    Annotations,
     /// Shelves checklist — a plain widget panel, nothing to keep alive.
     /// `return_to` holds the book id when the panel was opened from the book
     /// float, so closing it hands control back to that float, not the page.
     Shelves {
         return_to: Option<i64>,
     },
-    /// Tags panel — a plain widget panel, nothing to keep alive.
-    Tags,
-    /// The `w` task dialog. Holds the box its rows are drawn into so the
-    /// app-wide tick can repaint it.
-    Tasks,
 }
 
 pub struct AppModel {
@@ -218,20 +212,6 @@ pub struct AppModel {
     /// the UI lag: revisiting Home or Library reconstructed dozens of widgets
     /// and re-ran their queries. Cached pages are unparented rather than
     /// destroyed, so returning to one costs nothing.
-    /// The sidebar's task button. Its face is the badge: a tick when idle, a
-    /// count when busy, a warning when something recent failed.
-    tasks_btn: gtk::Button,
-    /// Last badge painted, so an unchanged state does not rebuild the child
-    /// widget twice a second.
-    tasks_badge: crate::pages::task_manager::Badge,
-    /// The `w` dialog's row host and its cancel callback, while it is open.
-    tasks_dialog: Option<(gtk::Box, crate::pages::task_manager::CancelFn)>,
-    /// Held, not used — hence the underscore, which is what exempts a field
-    /// from the dead-code lint that `-D warnings` turns into a build failure.
-    /// Dropping a `SourceId` is not documented to detach its source and this
-    /// codebase has never settled the question, so the one timer the badge
-    /// depends on keeps its handle.
-    _tasks_tick: gtk::glib::SourceId,
     cache: Vec<(String, PageSlot)>,
     /// Catalog write counter at the time each cached page was built — the
     /// *page-cache* token, which ignores reading activity (see
@@ -260,13 +240,22 @@ fn cache_key(route: &Route) -> Option<String> {
         Route::Module(NavItem::Library) => Some("library".into()),
         Route::Module(NavItem::Shelves) | Route::ShelvesGrid => Some("shelves".into()),
         Route::Module(NavItem::Settings) => Some("settings".into()),
+        // The authors index changes with every book edit and author
+        // merge; rebuild it rather than serving a cached roster.
+        Route::Module(NavItem::Authors) | Route::AuthorsIndex => None,
+        // The picker carries each book's edited state; the workspace
+        // owns buffers and undo history. Neither may be cache-served.
+        Route::Module(NavItem::Editor) => None,
         Route::Module(item) => Some(format!("mod:{}", item.label())),
+        Route::ComponentPreview => Some("components".into()),
         // Everything below reflects data the user is actively changing.
         Route::LibrarySection(_)
         | Route::ShelfDetail { .. }
         | Route::TagBooks { .. }
         | Route::AuthorPage { .. }
         | Route::BookPage { .. }
+        | Route::EditorWorkspace { .. }
+        | Route::SeriesPage { .. }
         | Route::ComicSeries { .. }
         | Route::Reader { .. }
         | Route::PdfReader { .. }
@@ -284,7 +273,7 @@ impl AppModel {
     }
 
     fn show_back_chip(&self) -> bool {
-        !self.history.is_empty() && !self.route.is_reader()
+        !self.history.is_empty() && !self.route.owns_its_surface()
     }
 
     fn close_floating(&mut self) {
@@ -294,40 +283,6 @@ impl AppModel {
         self.float_host.set_visible(false);
         self.float_scrim.set_visible(false);
         self.floating = None;
-        // Stop repainting rows into a box that is no longer on screen.
-        self.tasks_dialog = None;
-    }
-
-    /// Open the `w` task dialog: what is running right now, with progress and
-    /// a cancel button each. Deliberately narrower than the full page — no
-    /// "recently finished" list, no status line. It answers "what is happening
-    /// and can I stop it", and the sidebar button is how you get to the rest.
-    fn open_tasks_floating(&mut self, sender: &ComponentSender<Self>) {
-        let _span = crate::timing::measure("dialog_open:tasks_float");
-        let _activity = crate::timing::activity("dialog_open:tasks_float");
-        self.close_floating();
-
-        let s = sender.input_sender().clone();
-        let on_cancel: crate::pages::task_manager::CancelFn = std::rc::Rc::new(move |id| {
-            crate::tasks::cancel(id);
-            // Repaint now rather than waiting for the next tick, so the row
-            // responds to the click instead of half a second later.
-            s.send(AppMsg::TasksTick).ok();
-        });
-
-        let (panel, list) = crate::pages::task_manager::build_tasks_dialog(on_cancel.clone());
-        panel.set_size_request(400, 320);
-        panel.set_hexpand(false);
-        panel.set_vexpand(false);
-        panel.set_halign(gtk::Align::Center);
-        panel.set_valign(gtk::Align::Center);
-        self.float_host.append(&panel);
-        self.float_scrim.set_visible(true);
-        self.float_host.set_visible(true);
-        panel.grab_focus();
-
-        self.tasks_dialog = Some((list, on_cancel));
-        self.floating = Some(Floating::Tasks);
     }
 
     fn open_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
@@ -375,63 +330,6 @@ impl AppModel {
         self.floating = Some(Floating::Book(ctrl));
     }
 
-    /// The series float, opened from the book page's Series link.
-    fn open_series_floating(
-        &mut self,
-        series: String,
-        first_author: String,
-        sender: &ComponentSender<Self>,
-    ) {
-        let _span = crate::timing::measure("dialog_open:series_float");
-        let _activity = crate::timing::activity("dialog_open:series_float");
-        self.close_floating();
-
-        let ctrl = SeriesFloatModel::builder()
-            .launch((self.catalog.clone(), series, first_author))
-            .forward(sender.input_sender(), |out| match out {
-                SeriesFloatOut::OpenBook { book_id } => AppMsg::FloatOpenFull { book_id },
-            });
-
-        let float = ctrl.widget().clone();
-        float.set_size_request(560, 560);
-        float.set_hexpand(false);
-        float.set_vexpand(false);
-        float.set_halign(gtk::Align::Center);
-        float.set_valign(gtk::Align::Center);
-        self.float_host.append(&float);
-        self.float_scrim.set_visible(true);
-        self.float_host.set_visible(true);
-        float.grab_focus();
-
-        self.floating = Some(Floating::Series(ctrl));
-    }
-
-    /// The highlights & quotes panel, opened from the book page. Like the
-    /// other floats it lives in the in-app float layer — never a separate
-    /// window — so the compositor can't move it to another workspace.
-    fn open_annotations_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
-        let _span = crate::timing::measure("dialog_open:annotations_float");
-        let _activity = crate::timing::activity("dialog_open:annotations_float");
-        self.close_floating();
-
-        let s = sender.clone();
-        let panel =
-            crate::pages::book::build_annotations_panel(self.catalog.clone(), book_id, move || {
-                s.input(AppMsg::CloseBookDialog)
-            });
-        panel.set_size_request(460, 480);
-        panel.set_hexpand(false);
-        panel.set_vexpand(false);
-        panel.set_halign(gtk::Align::Center);
-        panel.set_valign(gtk::Align::Center);
-        self.float_host.append(&panel);
-        self.float_scrim.set_visible(true);
-        self.float_host.set_visible(true);
-        panel.grab_focus();
-
-        self.floating = Some(Floating::Annotations);
-    }
-
     fn open_shelves_floating(
         &mut self,
         book_id: i64,
@@ -460,29 +358,6 @@ impl AppModel {
         self.floating = Some(Floating::Shelves {
             return_to: from_book_float.then_some(book_id),
         });
-    }
-
-    fn open_tags_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
-        let _span = crate::timing::measure("dialog_open:tags_float");
-        let _activity = crate::timing::activity("dialog_open:tags_float");
-        self.close_floating();
-
-        let s = sender.clone();
-        let panel =
-            crate::pages::book::build_tags_panel(self.catalog.clone(), book_id, move || {
-                s.input(AppMsg::CloseBookDialog)
-            });
-        panel.set_size_request(380, 420);
-        panel.set_hexpand(false);
-        panel.set_vexpand(false);
-        panel.set_halign(gtk::Align::Center);
-        panel.set_valign(gtk::Align::Center);
-        self.float_host.append(&panel);
-        self.float_scrim.set_visible(true);
-        self.float_host.set_visible(true);
-        panel.grab_focus();
-
-        self.floating = Some(Floating::Tags);
     }
 
     fn build_page(
@@ -514,6 +389,12 @@ impl AppModel {
                         HomeOut::ComicSeries { series_name } => {
                             AppMsg::Push(Route::ComicSeries { series_name })
                         }
+                        HomeOut::Search { .. } => {
+                            // Open the full search page (All Books) with the query.
+                            // Query wiring to All Books search is deferred to the
+                            // search page implementation (chat 10).
+                            AppMsg::Push(Route::LibrarySection(LibrarySection::AllBooks))
+                        }
                     },
                 );
                 PageSlot::Home(ctrl)
@@ -523,6 +404,7 @@ impl AppModel {
                     sender.input_sender(),
                     |out| match out {
                         LibraryOut::Section(sec) => AppMsg::Push(Route::LibrarySection(sec)),
+                        LibraryOut::Shelves => AppMsg::Push(Route::ShelvesGrid),
                         LibraryOut::Book { book_id } => AppMsg::Push(Route::BookPage { book_id }),
                         LibraryOut::BookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
                         LibraryOut::Read { book_id } => AppMsg::OpenReader { book_id },
@@ -549,6 +431,7 @@ impl AppModel {
                         AllBooksOut::ComicSeries { series_name } => {
                             AppMsg::Push(Route::ComicSeries { series_name })
                         }
+                        AllBooksOut::OpenShelves => AppMsg::Push(Route::ShelvesGrid),
                     },
                 );
                 PageSlot::AllBooks(ctrl)
@@ -685,6 +568,16 @@ impl AppModel {
                     });
                 PageSlot::TagBooks(ctrl)
             }
+            Route::Module(NavItem::Authors) | Route::AuthorsIndex => {
+                let ctrl = AuthorsModel::builder()
+                    .launch(crate::service::LibraryService::new(catalog.clone()))
+                    .forward(sender.input_sender(), |out| match out {
+                        AuthorsOut::OpenAuthor { name } => {
+                            AppMsg::Push(Route::AuthorPage { author: name })
+                        }
+                    });
+                PageSlot::Authors(ctrl)
+            }
             Route::AuthorPage { author } => {
                 let ctrl = AuthorPageModel::builder()
                     .launch((catalog.clone(), author.clone()))
@@ -692,11 +585,27 @@ impl AppModel {
                         AuthorPageOut::OpenBook { book_id } => {
                             AppMsg::Push(Route::BookPage { book_id })
                         }
-                        AuthorPageOut::OpenBookDialog { book_id } => {
-                            AppMsg::OpenBookDialog { book_id }
-                        }
                         AuthorPageOut::ComicSeries { series_name } => {
                             AppMsg::Push(Route::ComicSeries { series_name })
+                        }
+                        AuthorPageOut::OpenSeries {
+                            series,
+                            first_author,
+                        } => AppMsg::Push(Route::SeriesPage {
+                            series,
+                            first_author,
+                        }),
+                        AuthorPageOut::OpenShelf { shelf_id } => {
+                            AppMsg::Push(Route::ShelfDetail { shelf_id })
+                        }
+                        AuthorPageOut::OpenReaderAt { book_id, chapter } => {
+                            AppMsg::OpenReaderAt {
+                                book_id,
+                                chapter: Some(chapter),
+                            }
+                        }
+                        AuthorPageOut::ShowInLibrary { query } => {
+                            AppMsg::ShowInLibrary { query }
                         }
                     });
                 PageSlot::Author(ctrl)
@@ -705,7 +614,7 @@ impl AppModel {
                 let id = *book_id;
                 let cat_for_series = catalog.clone();
                 let ctrl = BookPageModel::builder()
-                    .launch((catalog.clone(), id))
+                    .launch((crate::service::LibraryService::new(catalog.clone()), id))
                     .forward(sender.input_sender(), move |out| match out {
                         BookPageOut::OpenReader => AppMsg::OpenReader { book_id: id },
                         BookPageOut::OpenAuthor { name } => {
@@ -719,21 +628,43 @@ impl AppModel {
                             if let Ok(Some(s)) = cat_for_series.get_comic_series_by_title(&series) {
                                 AppMsg::Push(Route::ComicSeries { series_name: s.title })
                             } else {
-                                AppMsg::OpenSeriesFloat {
+                                AppMsg::Push(Route::SeriesPage {
                                     series,
                                     first_author,
-                                }
+                                })
                             }
                         }
-                        BookPageOut::ViewHighlights => AppMsg::OpenAnnotationsFloat { book_id: id },
-                        BookPageOut::ShowShelves => AppMsg::OpenShelvesFloat {
-                            book_id: id,
-                            from_book_float: false,
-                        },
-                        BookPageOut::ShowTags => AppMsg::OpenTagsFloat { book_id: id },
                         BookPageOut::Deleted { .. } => AppMsg::Back,
+                        BookPageOut::EditBook => {
+                            AppMsg::Push(Route::EditorWorkspace { book_id: id })
+                        }
                     });
                 PageSlot::Book(ctrl)
+            }
+            Route::SeriesPage {
+                series,
+                first_author,
+            } => {
+                let init = SeriesPageInit {
+                    service: crate::service::LibraryService::new(catalog.clone()),
+                    series: series.clone(),
+                    first_author: first_author.clone(),
+                };
+                let ctrl = SeriesPageModel::builder()
+                    .launch(init)
+                    .forward(sender.input_sender(), |out| match out {
+                        SeriesPageOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                        SeriesPageOut::OpenReader { book_id } => {
+                            AppMsg::OpenReader { book_id }
+                        }
+                        SeriesPageOut::OpenAuthor { name } => {
+                            AppMsg::Push(Route::AuthorPage { author: name })
+                        }
+                        SeriesPageOut::Back => AppMsg::Back,
+                    });
+                PageSlot::Series(ctrl)
             }
             Route::Reader { book_id } => {
                 let id = *book_id;
@@ -746,6 +677,11 @@ impl AppModel {
                         }
                         ReaderOut::OpenAuthor { name } => {
                             AppMsg::Push(Route::AuthorPage { author: name })
+                        }
+                        // The book head's pencil (decision 20): out to
+                        // the book's own page, the book left in place.
+                        ReaderOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
                         }
                     });
                 PageSlot::Reader(ctrl)
@@ -885,6 +821,10 @@ impl AppModel {
                     .detach();
                 PageSlot::Settings(ctrl)
             }
+            Route::ComponentPreview => {
+                let ctrl = ComponentPreviewModel::builder().launch(()).detach();
+                PageSlot::ComponentPreview(ctrl)
+            }
             Route::Module(NavItem::RemoteBrowse) => {
                 let init = crate::pages::browse::BrowseInit {
                     manager: source_manager.clone(),
@@ -953,6 +893,27 @@ impl AppModel {
                     });
                 PageSlot::RemoteDetail(ctrl)
             }
+            Route::Module(NavItem::Editor) => {
+                let ctrl = EditorPickerModel::builder()
+                    .launch(crate::service::LibraryService::new(catalog.clone()))
+                    .forward(sender.input_sender(), |out| match out {
+                        EditorPickerOut::OpenEditor { book_id } => {
+                            AppMsg::Push(Route::EditorWorkspace { book_id })
+                        }
+                    });
+                PageSlot::EditorPicker(ctrl)
+            }
+            Route::EditorWorkspace { book_id } => {
+                let ctrl = EpubEditorModel::builder()
+                    .launch((
+                        crate::service::LibraryService::new(catalog.clone()),
+                        *book_id,
+                    ))
+                    .forward(sender.input_sender(), |out| match out {
+                        EpubEditorOut::Leave => AppMsg::Back,
+                    });
+                PageSlot::EpubEditor(ctrl)
+            }
         }
     }
 
@@ -983,6 +944,7 @@ impl AppModel {
             Route::Reader { .. }
                 | Route::PdfReader { .. }
                 | Route::ComicsReader { .. }
+                | Route::EditorWorkspace { .. }
         );
         self.detach_current(content_host);
 
@@ -1278,7 +1240,7 @@ impl Component for AppModel {
                                 set_overlay_scrolling: true,
                                 set_hscrollbar_policy: gtk::PolicyType::Never,
                                 #[watch]
-                                set_vscrollbar_policy: if model.route.is_reader() {
+                                set_vscrollbar_policy: if model.route.owns_its_surface() {
                                     gtk::PolicyType::Never
                                 } else {
                                     gtk::PolicyType::Automatic
@@ -1351,25 +1313,7 @@ impl Component for AppModel {
         float_host.set_visible(false);
 
         let cache_token = catalog.page_cache_token();
-        // Built before the model because the model owns both. Appended to the
-        // rail further down, once `widgets` exists.
-        let tasks_btn = gtk::Button::new();
-        tasks_btn.add_css_class("kalam-nav-btn");
-        tasks_btn.set_halign(gtk::Align::Center);
-        tasks_btn.set_hexpand(false);
-        tasks_btn.set_focus_on_click(false);
-        tasks_btn.set_widget_name("nav-Tasks");
-        let badge0 = crate::pages::task_manager::badge();
-        crate::pages::task_manager::apply_badge(&tasks_btn, badge0);
-
-        let tick_sender = sender.input_sender().clone();
         let watch_sender = sender.input_sender().clone();
-        let tasks_tick = gtk::glib::timeout_add_local(TASK_TICK, move || {
-            match tick_sender.send(AppMsg::TasksTick) {
-                Ok(()) => gtk::glib::ControlFlow::Continue,
-                Err(_) => gtk::glib::ControlFlow::Break,
-            }
-        });
 
         let bubbles = crate::bubbles::BubbleManager::new(catalog.clone(), sender.clone());
         let watch_folder = Some(crate::watch_folder::WatchFolderService::new(
@@ -1386,10 +1330,6 @@ impl Component for AppModel {
             floating: None,
             float_scrim: float_scrim.clone(),
             float_host: float_host.clone(),
-            tasks_btn,
-            tasks_badge: badge0,
-            tasks_dialog: None,
-            _tasks_tick: tasks_tick,
             cache: Vec::new(),
             cache_token,
             force_rebuild_next: false,
@@ -1403,6 +1343,20 @@ impl Component for AppModel {
         widgets.content_overlay.add_overlay(model.bubbles.scrim_widget());
         widgets.content_overlay.add_overlay(model.bubbles.window_widget());
         widgets.content_overlay.add_overlay(model.bubbles.bubble_widget());
+
+        // The rail bell (decision 148): its panel and outside-click
+        // catcher float over the whole window beside the rail, so
+        // they live on the root overlay. The button joins the rail's
+        // bottom stack below, once it exists.
+        let notifications = crate::widgets::notification_panel::NotificationPanel::new();
+        widgets.root_overlay.add_overlay(&notifications.catcher());
+        widgets.root_overlay.add_overlay(&notifications.revealer());
+        notifications.attach_escape(&root);
+        crate::notify::on_history_changed(std::rc::Rc::new({
+            let notifications = notifications.clone();
+            move || notifications.refresh()
+        }));
+        notifications.refresh();
 
         // Clicking the dimmed area closes the float. The scrim already
         // swallowed those clicks so they could not reach the page behind it;
@@ -1451,39 +1405,186 @@ impl Component for AppModel {
         });
         root.add_controller(close_float_key);
 
-        // `w` toggles the task dialog, matching yazi.
-        //
-        // Scoped away from the reader by doing nothing special: the reader
-        // binds `w` to its Words tab on its own widget, its controller runs
-        // first because key events travel up from the focused widget, and it
-        // returns `Stop`. So this never sees the keypress while reading --
-        // which is the owner's choice, recorded in roadmap 1.14 along with the
-        // consequence that the sidebar is hidden there too.
-        let tasks_key = gtk::EventControllerKey::new();
-        let s_tasks = sender.clone();
-        let key_root_tasks = root.clone();
-        tasks_key.connect_key_pressed(move |_, keyval, _, _| {
-            use gtk::gdk::Key;
-            if keyval != Key::w && keyval != Key::W {
+        // The rebindable app shortcuts (decision 155). This remains a
+        // bubble-phase handler on the window: page and reader handlers
+        // get first claim on the keys they own (notably Ctrl+F inside a
+        // book), and only an unclaimed press reaches the shell table.
+        // The table is the same shared copy Settings edits, so a
+        // successful recording changes this handler's next keypress.
+        let app_shortcut_key = gtk::EventControllerKey::new();
+        let shortcut_bindings = crate::shortcuts::shared(&model.catalog);
+        let s_shortcuts = sender.clone();
+        let key_root_shortcuts = root.clone();
+        let notifications_shortcuts = notifications.clone();
+        let float_host_shortcuts = model.float_host.clone();
+        app_shortcut_key.connect_key_pressed(move |_, keyval, _, state| {
+            use crate::shortcuts::ShortcutAction;
+
+            let (action, binding) = {
+                let table = shortcut_bindings.borrow();
+                let Some(action) = table.action_for(keyval, state) else {
+                    return gtk::glib::Propagation::Proceed;
+                };
+                (action, table.binding(action))
+            };
+
+            // There is no app-wide undo stack yet. Leaving the press
+            // unclaimed also preserves the local Ctrl+Z undo that does
+            // exist (for example, the Tag dialog's own history).
+            if action == ShortcutAction::UndoDelete {
                 return gtk::glib::Propagation::Proceed;
             }
-            // Never swallow a letter someone is typing into a search box.
-            let focused = gtk::prelude::GtkWindowExt::focus(&key_root_tasks);
+
+            let focused = gtk::prelude::GtkWindowExt::focus(&key_root_shortcuts);
             let typing = focused
                 .map(|w| {
-                    w.is::<gtk::Text>() || w.is::<gtk::Entry>() || w.is::<gtk::SearchEntry>()
+                    w.is::<gtk::Editable>()
+                        || w.is::<gtk::Text>()
+                        || w.is::<gtk::TextView>()
                 })
                 .unwrap_or(false);
-            if typing {
+            if typing && !binding.fires_while_typing() {
                 return gtk::glib::Propagation::Proceed;
             }
-            s_tasks.input(AppMsg::ToggleTasksFloat);
+
+            match action {
+                ShortcutAction::Notifications => {
+                    notifications_shortcuts.toggle();
+                    return gtk::glib::Propagation::Stop;
+                }
+                ShortcutAction::ClosePanel => {
+                    if notifications_shortcuts.is_open() {
+                        notifications_shortcuts.close();
+                        return gtk::glib::Propagation::Stop;
+                    }
+                    if float_host_shortcuts.is_visible() {
+                        s_shortcuts.input(AppMsg::CloseBookDialog);
+                        return gtk::glib::Propagation::Stop;
+                    }
+                    // Reader and page panels own their close keys for
+                    // now; do not swallow a press the shell cannot use.
+                    return gtk::glib::Propagation::Proceed;
+                }
+                _ => {}
+            }
+
+            // A shell action replaces the bell panel rather than
+            // navigating underneath its outside-click catcher.
+            if notifications_shortcuts.is_open() {
+                notifications_shortcuts.close();
+            }
+            s_shortcuts.input(AppMsg::Shortcut(action));
             gtk::glib::Propagation::Stop
         });
-        root.add_controller(tasks_key);
+        root.add_controller(app_shortcut_key);
+
+        // The rebindable app shortcuts (decision 155). This remains a
+        // bubble-phase handler on the window: page and reader handlers
+        // get first claim on the keys they own (notably Ctrl+F inside a
+        // book), and only an unclaimed press reaches the shell table.
+        // The table is the same shared copy Settings edits, so a
+        // successful recording changes this handler's next keypress.
+        let app_shortcut_key = gtk::EventControllerKey::new();
+        let shortcut_bindings = crate::shortcuts::shared(&model.catalog);
+        let s_shortcuts = sender.clone();
+        let key_root_shortcuts = root.clone();
+        let notifications_shortcuts = notifications.clone();
+        let float_host_shortcuts = model.float_host.clone();
+        app_shortcut_key.connect_key_pressed(move |_, keyval, _, state| {
+            use crate::shortcuts::ShortcutAction;
+
+            let (action, binding) = {
+                let table = shortcut_bindings.borrow();
+                let Some(action) = table.action_for(keyval, state) else {
+                    return gtk::glib::Propagation::Proceed;
+                };
+                (action, table.binding(action))
+            };
+
+            // There is no app-wide undo stack yet. Leaving the press
+            // unclaimed also preserves the local Ctrl+Z undo that does
+            // exist (for example, the Tag dialog's own history).
+            if action == ShortcutAction::UndoDelete {
+                return gtk::glib::Propagation::Proceed;
+            }
+
+            let focused = gtk::prelude::GtkWindowExt::focus(&key_root_shortcuts);
+            let typing = focused
+                .map(|w| {
+                    w.is::<gtk::Editable>()
+                        || w.is::<gtk::Text>()
+                        || w.is::<gtk::TextView>()
+                })
+                .unwrap_or(false);
+            if typing && !binding.fires_while_typing() {
+                return gtk::glib::Propagation::Proceed;
+            }
+
+            match action {
+                ShortcutAction::Notifications => {
+                    notifications_shortcuts.toggle();
+                    return gtk::glib::Propagation::Stop;
+                }
+                ShortcutAction::ClosePanel => {
+                    if notifications_shortcuts.is_open() {
+                        notifications_shortcuts.close();
+                        return gtk::glib::Propagation::Stop;
+                    }
+                    if float_host_shortcuts.is_visible() {
+                        s_shortcuts.input(AppMsg::CloseBookDialog);
+                        return gtk::glib::Propagation::Stop;
+                    }
+                    // Reader and page panels own their close keys for
+                    // now; do not swallow a press the shell cannot use.
+                    return gtk::glib::Propagation::Proceed;
+                }
+                _ => {}
+            }
+
+            // A shell action replaces the bell panel rather than
+            // navigating underneath its outside-click catcher.
+            if notifications_shortcuts.is_open() {
+                notifications_shortcuts.close();
+            }
+            s_shortcuts.input(AppMsg::Shortcut(action));
+            gtk::glib::Propagation::Stop
+        });
+        root.add_controller(app_shortcut_key);
 
         // From here on, any notify::* call lands on screen.
         crate::notify::attach(widgets.toast_host.clone());
+
+        // §66 Toast "View" link (decision 184): error toasts can carry a View
+        // link that opens the notification panel.
+        let notifications_for_view = notifications.clone();
+        crate::notify::set_view_action(Rc::new(move || {
+            notifications_for_view.toggle();
+        }));
+
+        // CI screenshot states for the rail bell: no route reaches the
+        // floating panel, and a fresh seeded launch has no history to
+        // show. `notifications` seeds ordinary events (Today and
+        // Earlier) and opens the actual panel; `notifications-empty`
+        // clears any startup housekeeping entry and opens it empty;
+        // `notifications-dot` seeds the same events but leaves the
+        // panel closed, so the bell carries its unseen dot.
+        if let Ok(state @ ("notifications" | "notifications-empty" | "notifications-dot")) =
+            std::env::var("KALAM_DIALOG").as_deref()
+        {
+            let panel = notifications.clone();
+            let with_events = state != "notifications-empty";
+            let open_panel = state != "notifications-dot";
+            gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
+                if with_events {
+                    crate::notify::seed_screenshot_history();
+                } else {
+                    crate::notify::clear_history();
+                }
+                if open_panel && !panel.is_open() {
+                    panel.toggle();
+                }
+            });
+        }
 
         // Any reading session still marked open belongs to a previous process
         // that died before it could close one. Reap them now, before anything
@@ -1509,7 +1610,18 @@ impl Component for AppModel {
             }
         }
 
-        widgets.brand.append(&brand_logo());
+        // The brand mark is rasterized in the accent colour (a texture
+        // cannot inherit CSS), so it re-rasterizes on every theme install.
+        // The listener lives as long as the process — so does the rail.
+        let brand_image = brand_logo(crate::theme::current(&model.catalog).accent);
+        widgets.brand.append(&brand_image);
+        crate::theme::on_theme_applied(std::rc::Rc::new(
+            move |theme: &crate::theme::Theme| {
+                if let Some(texture) = brand_texture(theme.accent) {
+                    brand_image.set_paintable(Some(&texture));
+                }
+            },
+        ));
 
         let popover_list = widgets.download_popover_list.clone();
         widgets.download_popover.connect_visible_notify(move |popover| {
@@ -1551,17 +1663,7 @@ impl Component for AppModel {
             }
         });
 
-        // Above Settings, on the same end of the rail. Prepended rather than
-        // appended so the order is Tasks then Settings; `bottom_nav` holds
-        // nothing else since Downloads was hidden.
-        {
-            let btn = model.tasks_btn.clone();
-            let s = sender.clone();
-            btn.connect_clicked(move |_| s.input(AppMsg::Push(Route::LibrarySection(
-                LibrarySection::TaskManager,
-            ))));
-            widgets.bottom_nav.prepend(&btn);
-        }
+        widgets.bottom_nav.append(&notifications.button());
 
         for item in NavItem::ALL {
             let btn = make_nav_button(*item, *item == NavItem::Home);
@@ -1617,7 +1719,11 @@ impl Component for AppModel {
         // a CI script should not look like an application crash.
         if let Some(name) = std::env::var_os("KALAM_ROUTE") {
             let name = name.to_string_lossy().to_string();
-            match route_by_name(&name) {
+            match series_route_for_book(&model.catalog, &name)
+                .or_else(|| comic_series_route_for_book(&model.catalog, &name))
+                .or_else(|| author_route_for_book(&model.catalog, &name))
+                .or_else(|| route_by_name(&name))
+            {
                 Some(route) => {
                     eprintln!("kalam: KALAM_ROUTE={name} — navigating");
                     sender.input(AppMsg::Push(route));
@@ -1652,12 +1758,13 @@ impl Component for AppModel {
         widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
-        _root: &Self::Root,
+        root: &Self::Root,
     ) {
         match msg {
             AppMsg::Navigate(item) => {
                 let route = match item {
                     NavItem::Shelves => Route::ShelvesGrid,
+                    NavItem::Authors => Route::AuthorsIndex,
                     other => Route::Module(other),
                 };
                 self.close_floating();
@@ -1666,6 +1773,18 @@ impl Component for AppModel {
             AppMsg::Push(route) => {
                 self.close_floating();
                 self.swap_page(&widgets.content_host, route, true, &sender);
+            }
+            AppMsg::ShowInLibrary { query } => {
+                self.close_floating();
+                self.swap_page(
+                    &widgets.content_host,
+                    Route::LibrarySection(LibrarySection::AllBooks),
+                    true,
+                    &sender,
+                );
+                if let Some(PageSlot::AllBooks(ctrl)) = &self.page {
+                    let _ = ctrl.sender().send(AllBooksMsg::SetQuery(query));
+                }
             }
             AppMsg::Back => {
                 if let Some(prev) = self.history.pop() {
@@ -1687,6 +1806,7 @@ impl Component for AppModel {
                         Route::Reader { .. }
                             | Route::PdfReader { .. }
                             | Route::ComicsReader { .. }
+                            | Route::EditorWorkspace { .. }
                     );
 
                     self.detach_current(&widgets.content_host);
@@ -1695,26 +1815,159 @@ impl Component for AppModel {
                     let page = self.take_or_build(&sender);
                     widgets.content_host.append(&page.widget());
                     self.page = Some(page);
+                    // A cached picker must re-read which books were
+                    // edited (its rows carry the edited state).
+                    if let Some(PageSlot::EditorPicker(ctrl)) = &self.page {
+                        let _ = ctrl.sender().send(EditorPickerMsg::Refresh);
+                    }
                     sync_content_classes(&widgets.content_host, &self.route, self.show_back_chip());
+                }
+            }
+            AppMsg::Shortcut(action) => {
+                use crate::shortcuts::ShortcutAction;
+
+                match action {
+                    ShortcutAction::GoHome => {
+                        self.close_floating();
+                        self.swap_page(
+                            &widgets.content_host,
+                            Route::Module(NavItem::Home),
+                            false,
+                            &sender,
+                        );
+                    }
+                    ShortcutAction::GoLibrary => {
+                        self.close_floating();
+                        self.swap_page(
+                            &widgets.content_host,
+                            Route::Module(NavItem::Library),
+                            false,
+                            &sender,
+                        );
+                    }
+                    ShortcutAction::GoEditor => {
+                        self.close_floating();
+                        self.swap_page(
+                            &widgets.content_host,
+                            Route::Module(NavItem::Editor),
+                            false,
+                            &sender,
+                        );
+                    }
+                    ShortcutAction::OpenSettings => {
+                        self.close_floating();
+                        self.swap_page(
+                            &widgets.content_host,
+                            Route::Module(NavItem::Settings),
+                            false,
+                            &sender,
+                        );
+                    }
+                    ShortcutAction::Back => {
+                        if self.floating.is_some() {
+                            sender.input(AppMsg::CloseBookDialog);
+                        } else {
+                            sender.input(AppMsg::Back);
+                        }
+                    }
+                    ShortcutAction::SearchLibrary => {
+                        // In a book, Ctrl+F remains Find in book; the
+                        // reader's handlers normally claim it before
+                        // this shell dispatch can run.
+                        if !self.route.is_reader() {
+                            self.close_floating();
+                            if self.route
+                                != Route::LibrarySection(LibrarySection::AllBooks)
+                            {
+                                self.swap_page(
+                                    &widgets.content_host,
+                                    Route::LibrarySection(LibrarySection::AllBooks),
+                                    true,
+                                    &sender,
+                                );
+                            }
+                            if let Some(PageSlot::AllBooks(ctrl)) = &self.page {
+                                let _ = ctrl.sender().send(AllBooksMsg::FocusSearch);
+                            }
+                        }
+                    }
+                    ShortcutAction::ImportFiles => {
+                        open_shortcut_import_files(root, &self.catalog, &sender);
+                    }
+                    ShortcutAction::ImportFolder => {
+                        open_shortcut_import_folder(root, &self.catalog, &sender);
+                    }
+                    ShortcutAction::Fullscreen => {
+                        if root.is_fullscreen() {
+                            root.unfullscreen();
+                        } else {
+                            root.fullscreen();
+                        }
+                    }
+                    ShortcutAction::ShowShortcuts => {
+                        // The cheat-sheet overlay is not drawn yet; the
+                        // editable pane is the same registry and is the
+                        // useful interim surface for this binding.
+                        self.close_floating();
+                        if self.route != Route::Module(NavItem::Settings) {
+                            self.swap_page(
+                                &widgets.content_host,
+                                Route::Module(NavItem::Settings),
+                                false,
+                                &sender,
+                            );
+                        }
+                        if let Some(PageSlot::Settings(ctrl)) = &self.page {
+                            let _ = ctrl
+                                .sender()
+                                .send(SettingsMsg::SelectTab(SettingsTab::Shortcuts));
+                        }
+                    }
+                    ShortcutAction::Quit => root.close(),
+                    // Notifications and ClosePanel are handled in the
+                    // key handler, where their widgets live; UndoDelete
+                    // is stored ahead of a global undo stack.
+                    ShortcutAction::Notifications
+                    | ShortcutAction::UndoDelete
+                    | ShortcutAction::ClosePanel => {}
+                }
+            }
+            AppMsg::ShortcutImportFinished(tally) => {
+                if let Some(PageSlot::AllBooks(ctrl)) = &self.page {
+                    // All Books already knows how to reload and report
+                    // an import; hand it the tally rather than rebuild
+                    // the page and lose its search state.
+                    let _ = ctrl.sender().send(AllBooksMsg::ImportFinished(tally));
+                } else {
+                    if tally.imported > 0 {
+                        crate::notify::success(
+                            "Import finished",
+                            &crate::pages::all_books::import_summary(&tally),
+                        );
+                    }
+                    let refresh_listing = matches!(
+                        self.route,
+                        Route::Module(
+                            NavItem::Home
+                                | NavItem::Library
+                                | NavItem::Shelves
+                                | NavItem::Comics,
+                        ) | Route::ShelvesGrid
+                            | Route::LibrarySection(_)
+                            | Route::ComicSeries { .. }
+                    );
+                    if refresh_listing {
+                        self.refresh_if_stale(&widgets.content_host, &sender);
+                    }
                 }
             }
             AppMsg::OpenBookDialog { book_id } => {
                 self.open_floating(book_id, &sender);
             }
-            AppMsg::OpenSeriesFloat {
-                series,
-                first_author,
-            } => {
-                self.open_series_floating(series, first_author, &sender);
-            }
-            AppMsg::OpenAnnotationsFloat { book_id } => {
-                self.open_annotations_floating(book_id, &sender);
-            }
             AppMsg::OpenShelvesFloat {
                 book_id,
                 from_book_float,
             } => self.open_shelves_floating(book_id, from_book_float, &sender),
-            AppMsg::OpenTagsFloat { book_id } => self.open_tags_floating(book_id, &sender),
             AppMsg::FloatOpenFull { book_id } => {
                 self.close_floating();
                 self.swap_page(
@@ -1723,23 +1976,6 @@ impl Component for AppModel {
                     true,
                     &sender,
                 );
-            }
-            AppMsg::ToggleTasksFloat => {
-                if matches!(self.floating, Some(Floating::Tasks)) {
-                    self.close_floating();
-                } else {
-                    self.open_tasks_floating(&sender);
-                }
-            }
-            AppMsg::TasksTick => {
-                let state = crate::pages::task_manager::badge();
-                if state != self.tasks_badge {
-                    crate::pages::task_manager::apply_badge(&self.tasks_btn, state);
-                    self.tasks_badge = state;
-                }
-                if let Some((list, on_cancel)) = &self.tasks_dialog {
-                    crate::pages::task_manager::fill_tasks_dialog(list, on_cancel);
-                }
             }
             AppMsg::CloseBookDialog => {
                 // A shelves panel opened from the book float hands control
@@ -1844,22 +2080,171 @@ impl Component for AppModel {
     }
 }
 
-/// The sidebar wordmark: the Kalam logo.
-///
-/// Embedded with `include_bytes!` rather than read from disk so the binary
-/// stays self-contained — there is no install step that would place an asset
-/// directory next to it.
-fn brand_logo() -> gtk::Image {
-    const LOGO: &[u8] = include_bytes!("../assets/logo.png");
-    // Matches the nav glyphs, a shade larger so the mark still leads the rail.
-    const LOGO_PX: i32 = 24;
+/// The file half of the shell's Import EPUB shortcut. The native
+/// chooser itself is undesigned and stays native; importing reuses
+/// All Books' worker so duplicates, failures and task reporting do
+/// not acquire a second implementation at the window level.
+fn open_shortcut_import_files(
+    root: &gtk::Window,
+    catalog: &Arc<Catalog>,
+    sender: &ComponentSender<AppModel>,
+) {
+    let dialog = gtk::FileDialog::builder()
+        .title("Import EPUB books")
+        .modal(true)
+        .build();
 
-    let bytes = gtk::glib::Bytes::from_static(LOGO);
-    let image = match gtk::gdk::Texture::from_bytes(&bytes) {
-        Ok(texture) => gtk::Image::from_paintable(Some(&texture)),
-        // A corrupt asset should not stop the app from starting.
-        Err(_) => gtk::Image::new(),
-    };
+    let filter = gtk::FileFilter::new();
+    filter.set_name(Some("Books, Comics, & PDFs (*.epub, *.cbz, *.cbr, *.pdf)"));
+    filter.add_suffix("epub");
+    filter.add_suffix("cbz");
+    filter.add_suffix("cbr");
+    filter.add_suffix("pdf");
+    filter.add_mime_type("application/epub+zip");
+    filter.add_mime_type("application/x-cbz");
+    filter.add_mime_type("application/x-cbr");
+    filter.add_mime_type("application/pdf");
+    let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+    filters.append(&filter);
+    dialog.set_filters(Some(&filters));
+
+    let catalog = catalog.clone();
+    let sender = sender.clone();
+    dialog.open_multiple(
+        Some(root),
+        gtk::gio::Cancellable::NONE,
+        move |result| {
+            if let Ok(files) = result {
+                let mut paths = Vec::new();
+                for i in 0..files.n_items() {
+                    if let Some(file) =
+                        files.item(i).and_then(|obj| obj.downcast::<gtk::gio::File>().ok())
+                    {
+                        if let Some(path) = file.path() {
+                            paths.push(path);
+                        }
+                    }
+                }
+                if !paths.is_empty() {
+                    start_shortcut_import(catalog, paths, sender);
+                }
+            }
+        },
+    );
+}
+
+/// The folder half of the Import shortcut pair. Scanning the chosen
+/// folder is disk work, so it runs as a task; the import starts only
+/// when the supported-file list lands back on the main thread.
+fn open_shortcut_import_folder(
+    root: &gtk::Window,
+    catalog: &Arc<Catalog>,
+    sender: &ComponentSender<AppModel>,
+) {
+    let dialog = gtk::FileDialog::builder()
+        .title("Import books from a folder")
+        .modal(true)
+        .build();
+
+    let catalog = catalog.clone();
+    let sender = sender.clone();
+    dialog.select_folder(
+        Some(root),
+        gtk::gio::Cancellable::NONE,
+        move |result| {
+            if let Ok(folder) = result {
+                if let Some(path) = folder.path() {
+                    let scan_catalog = catalog.clone();
+                    let scan_sender = sender.clone();
+                    crate::tasks::spawn(
+                        "Scanning folder for books",
+                        move |_| collect_shortcut_import_files(path),
+                        |_| {},
+                        move |paths| {
+                            if paths.is_empty() {
+                                crate::notify::info(
+                                    "No books found in that folder",
+                                    "Choose a folder containing EPUB, PDF, CBZ or CBR files.",
+                                );
+                            } else {
+                                start_shortcut_import(scan_catalog, paths, scan_sender);
+                            }
+                        },
+                    );
+                }
+            }
+        },
+    );
+}
+
+fn start_shortcut_import(
+    catalog: Arc<Catalog>,
+    paths: Vec<std::path::PathBuf>,
+    sender: ComponentSender<AppModel>,
+) {
+    crate::pages::all_books::spawn_import(
+        catalog,
+        paths,
+        |_, _, _| {},
+        move |tally| {
+            sender.input(AppMsg::ShortcutImportFinished(tally));
+        },
+    );
+}
+
+fn collect_shortcut_import_files(root: std::path::PathBuf) -> Vec<std::path::PathBuf> {
+    let mut pending = vec![root];
+    let mut files = Vec::new();
+
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                pending.push(path);
+            } else if file_type.is_file() {
+                let extension = path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.to_ascii_lowercase())
+                    .unwrap_or_default();
+                if matches!(extension.as_str(), "epub" | "pdf" | "cbz" | "cbr") {
+                    files.push(path);
+                }
+            }
+        }
+    }
+
+    files.sort();
+    files
+}
+
+/// The sidebar wordmark: the Kalam logo (calligraphic K, one SVG path,
+/// materialized from `docs/design/logo-svg.md`).
+///
+/// Embedded with `include_str!` rather than read from disk so the binary
+/// stays self-contained — there is no install step that would place an asset
+/// directory next to it. The path fills with `currentColor`; a texture has no
+/// CSS colour to inherit, so the current accent is substituted before
+/// rasterizing. So the colour does not freeze as a startup snapshot, `init`
+/// registers a [`crate::theme::on_theme_applied`] listener that re-rasterizes
+/// the mark on every theme install. (A symbolic theme icon would recolour
+/// for free, but `icons::init` is deferred to idle for its theme-rescan
+/// cost, and the rail is on screen before that runs.)
+fn brand_logo(accent: &str) -> gtk::Image {
+    // design-system §5: the loop is a hairline, so check it at 38px. The
+    // 68px rail is drawn around this size.
+    const LOGO_PX: i32 = 38;
+
+    let image = gtk::Image::new();
+    if let Some(texture) = brand_texture(accent) {
+        image.set_paintable(Some(&texture));
+    }
     // gtk::Image, not gtk::Picture. A Picture's natural size is the texture's
     // own size, and both set_size_request and CSS min-width are *floors*, so a
     // 128px texture drew at 128px and stretched the whole rail. Image with
@@ -1871,10 +2256,32 @@ fn brand_logo() -> gtk::Image {
     image
 }
 
+/// Rasterize the logo in one accent colour. `None` only when the embedded
+/// asset is corrupt; the app should still start, just without its mark.
+/// Shared with the Settings About pane, which shows the same mark larger.
+pub(crate) fn brand_texture(accent: &str) -> Option<gtk::gdk::Texture> {
+    const LOGO_SVG: &str = include_str!("../assets/logo.svg");
+
+    let svg = LOGO_SVG.replace("currentColor", accent);
+    let bytes = gtk::glib::Bytes::from_owned(svg.into_bytes());
+    gtk::gdk::Texture::from_bytes(&bytes).ok()
+}
+
+/// Map a rail entry to its global shortcut action, if any.
+fn nav_shortcut(item: NavItem) -> Option<ShortcutAction> {
+    match item {
+        NavItem::Home => Some(ShortcutAction::GoHome),
+        NavItem::Library => Some(ShortcutAction::GoLibrary),
+        NavItem::Editor => Some(ShortcutAction::GoEditor),
+        NavItem::Settings => Some(ShortcutAction::OpenSettings),
+        _ => None,
+    }
+}
+
 fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     // Icon only. The rail is too narrow for a readable caption, and the
     // tooltip already carries the page name.
-    let icon = crate::icons::symbolic_with_classes(item.icon(), 18, &["kalam-nav-icon"]);
+    let icon = crate::icons::symbolic_with_classes(item.icon(), 22, &["kalam-nav-icon"]);
     icon.set_halign(gtk::Align::Center);
     icon.set_valign(gtk::Align::Center);
 
@@ -1886,13 +2293,19 @@ fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     if active {
         btn.add_css_class("active");
     }
-    btn.set_tooltip_text(Some(item.label()));
+    let mut tip = item.label().to_string();
+    if let Some(action) = nav_shortcut(item) {
+        if let Some(label) = action.shortcut_label() {
+            tip.push_str(&format!(" ({label})"));
+        }
+    }
+    btn.set_tooltip_text(Some(&tip));
     btn.set_focus_on_click(false);
     btn
 }
 
 fn sync_content_classes(content_host: &gtk::Box, route: &Route, show_back_chip: bool) {
-    if route.is_reader() || matches!(route, Route::Module(NavItem::Settings)) {
+    if route.owns_its_surface() || matches!(route, Route::Module(NavItem::Settings)) {
         content_host.add_css_class("kalam-content-flush");
     } else {
         content_host.remove_css_class("kalam-content-flush");
@@ -2031,6 +2444,90 @@ fn update_nav_styles(container: &gtk::Box, active: NavItem) {
     }
 }
 
+/// The series route a `KALAM_ROUTE=series-book-<id>` value refers to.
+///
+/// A series route carries a name and an author, neither of which belongs
+/// in a shell variable; the anchor book's id does, and the book supplies
+/// both — exactly the identity its own Series link would open. Kept out
+/// of `route_by_name` because that map is deliberately pure (its tests
+/// resolve names without a catalog).
+fn series_route_for_book(catalog: &Catalog, name: &str) -> Option<Route> {
+    let normalized = name.trim().to_ascii_lowercase();
+    let book_id = normalized
+        .strip_prefix("series-book-")?
+        .parse::<i64>()
+        .ok()
+        .filter(|id| *id > 0)?;
+    let book = catalog.get_book(book_id).ok().flatten()?;
+    let series = book.series?.trim().to_string();
+    if series.is_empty() {
+        return None;
+    }
+    let first_author = book
+        .authors
+        .split(',')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    Some(Route::SeriesPage {
+        series,
+        first_author,
+    })
+}
+
+/// The comic-series route a `KALAM_ROUTE=comic-series-book-<id>` value
+/// refers to: the drawer for the series that chapter belongs to. The
+/// relational series wins; an unmigrated chapter falls back to the
+/// same series name its Comics grouping would infer.
+fn comic_series_route_for_book(catalog: &Catalog, name: &str) -> Option<Route> {
+    let normalized = name.trim().to_ascii_lowercase();
+    let book_id = normalized
+        .strip_prefix("comic-series-book-")?
+        .parse::<i64>()
+        .ok()
+        .filter(|id| *id > 0)?;
+    if let Some((series, _chapter)) = catalog.get_comic_series_for_book(book_id).ok().flatten() {
+        return Some(Route::ComicSeries {
+            series_name: series.title,
+        });
+    }
+    let book = catalog.get_book(book_id).ok().flatten()?;
+    let series_name = book
+        .series
+        .as_deref()
+        .map(str::trim)
+        .filter(|series| !series.is_empty())
+        .map(|series| crate::comics::sanitize_comic_series(series).0)
+        .filter(|series| !series.trim().is_empty())
+        .or_else(|| crate::comics::parse_comic_title(&book.title).series)?;
+    Some(Route::ComicSeries { series_name })
+}
+
+/// The author route a `KALAM_ROUTE=author-book-<id>` value refers to: the
+/// anchor book's first author, exactly what its own author link opens.
+/// Same catalog-dependent reasoning as [`series_route_for_book`].
+fn author_route_for_book(catalog: &Catalog, name: &str) -> Option<Route> {
+    let normalized = name.trim().to_ascii_lowercase();
+    let book_id = normalized
+        .strip_prefix("author-book-")?
+        .parse::<i64>()
+        .ok()
+        .filter(|id| *id > 0)?;
+    let book = catalog.get_book(book_id).ok().flatten()?;
+    let author = book
+        .authors
+        .split(',')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if author.is_empty() {
+        return None;
+    }
+    Some(Route::AuthorPage { author })
+}
+
 /// The route a `KALAM_ROUTE=<name>` value refers to, if any.
 ///
 /// Names are the lowercase page names a person would say out loud, not the
@@ -2043,6 +2540,21 @@ fn update_nav_styles(container: &gtk::Box, active: NavItem) {
 /// and guessing one would photograph some other page while looking right.
 fn route_by_name(name: &str) -> Option<Route> {
     let name = name.trim().to_ascii_lowercase();
+    // The PDF reader is its own route (MuPDF raster pages, unlike
+    // the EPUB engine behind `read-`), so the screenshot loop
+    // spells it out — and the same for comics below.
+    if let Some(id) = name.strip_prefix("pdf-read-") {
+        let book_id = id.parse::<i64>().ok().filter(|id| *id > 0)?;
+        return Some(Route::PdfReader { book_id });
+    }
+    if let Some(id) = name.strip_prefix("comic-read-") {
+        let book_id = id.parse::<i64>().ok().filter(|id| *id > 0)?;
+        return Some(Route::ComicsReader { book_id });
+    }
+    if let Some(id) = name.strip_prefix("edit-book-") {
+        let book_id = id.parse::<i64>().ok().filter(|id| *id > 0)?;
+        return Some(Route::EditorWorkspace { book_id });
+    }
     for (prefix, reader) in [("book-", false), ("read-", true)] {
         if let Some(id) = name.strip_prefix(prefix) {
             // A positive integer or nothing. `book-`, `book-abc` and `book--1`
@@ -2058,11 +2570,14 @@ fn route_by_name(name: &str) -> Option<Route> {
     let route = match name.as_str() {
         "home" => Route::Module(NavItem::Home),
         "library" => Route::Module(NavItem::Library),
+        "authors" => Route::AuthorsIndex,
+        "editor" => Route::Module(NavItem::Editor),
         "downloads" => Route::Module(NavItem::Downloads),
         "comics" => Route::Module(NavItem::Comics),
         "browse" => Route::Module(NavItem::RemoteBrowse),
         "fanfiction" => Route::Module(NavItem::Fanfiction),
         "settings" => Route::Module(NavItem::Settings),
+        "components" => Route::ComponentPreview,
         "shelves" => Route::ShelvesGrid,
         "all-books" | "allbooks" => Route::LibrarySection(LibrarySection::AllBooks),
         "reading-list" => Route::LibrarySection(LibrarySection::ReadingList),
@@ -2084,11 +2599,14 @@ fn known_route_names() -> Vec<&'static str> {
     vec![
         "home",
         "library",
+        "authors",
+        "editor",
         "downloads",
         "comics",
         "browse",
         "fanfiction",
         "settings",
+        "components",
         "shelves",
         "all-books",
         "reading-list",
@@ -2102,9 +2620,18 @@ fn known_route_names() -> Vec<&'static str> {
     ]
 }
 
-/// The two names that take an id, for the error message only. They are not in
+/// The names that take an id, for the error message only. They are not in
 /// `known_route_names` because that list is asserted to resolve as it stands.
-const ROUTE_ID_FORMS: [&str; 2] = ["book-<id>", "read-<id>"];
+const ROUTE_ID_FORMS: [&str; 8] = [
+    "book-<id>",
+    "edit-book-<id>",
+    "read-<id>",
+    "pdf-read-<id>",
+    "comic-read-<id>",
+    "series-book-<id>",
+    "comic-series-book-<id>",
+    "author-book-<id>",
+];
 
 /// A short static label per route, for the `route_open:` timing span and the
 /// stall watchdog's activity stack (`timing::activity`). Every route gets
@@ -2118,12 +2645,16 @@ fn route_label(route: &Route) -> &'static str {
     match route {
         Route::Module(NavItem::Home) => "route_open:home",
         Route::Module(NavItem::Library) => "route_open:library",
+        Route::Module(NavItem::Authors) => "route_open:authors",
         Route::Module(NavItem::Shelves) => "route_open:shelves",
         Route::Module(NavItem::Downloads) => "route_open:downloads",
         Route::Module(NavItem::Comics) => "route_open:comics",
+        Route::Module(NavItem::Editor) => "route_open:editor",
+        Route::EditorWorkspace { .. } => "route_open:editor_workspace",
         Route::Module(NavItem::RemoteBrowse) => "route_open:remote_browse",
         Route::Module(NavItem::Fanfiction) => "route_open:fanfiction",
         Route::Module(NavItem::Settings) => "route_open:settings",
+        Route::ComponentPreview => "route_open:component_preview",
         Route::LibrarySection(LibrarySection::AllBooks) => "route_open:all_books",
         Route::LibrarySection(LibrarySection::ReadingList) => "route_open:reading_list",
         Route::LibrarySection(LibrarySection::History) => "route_open:history",
@@ -2137,8 +2668,10 @@ fn route_label(route: &Route) -> &'static str {
         Route::ShelvesGrid => "route_open:shelves_grid",
         Route::ShelfDetail { .. } => "route_open:shelf_detail",
         Route::TagBooks { .. } => "route_open:tag_books",
+        Route::AuthorsIndex => "route_open:authors",
         Route::AuthorPage { .. } => "route_open:author",
         Route::BookPage { .. } => "route_open:book",
+        Route::SeriesPage { .. } => "route_open:series",
         Route::RemoteDetail { .. } => "route_open:remote_detail",
         Route::RemoteReader { .. } => "route_open:remote_reader",
         Route::Reader { .. } => "route_open:reader",
@@ -2174,9 +2707,15 @@ mod tests {
             .into_iter()
             .filter_map(|name| route_by_name(name).as_ref().map(route_label))
             .collect();
-        for name in ["book-1", "read-1"] {
+        for name in ["book-1", "read-1", "pdf-read-1", "comic-read-1", "edit-book-1"] {
             labels.push(route_label(&route_by_name(name).expect("id form resolves")));
         }
+        // `series-book-<id>` resolves through the catalog, so its route is
+        // built by hand here.
+        labels.push(route_label(&Route::SeriesPage {
+            series: "Alpha".into(),
+            first_author: "An Author".into(),
+        }));
         let unique: std::collections::HashSet<&'static str> =
             labels.iter().copied().collect();
         assert_eq!(
@@ -2195,6 +2734,7 @@ mod tests {
             route_by_name("settings"),
             Some(Route::Module(NavItem::Settings))
         );
+        assert_eq!(route_by_name("components"), Some(Route::ComponentPreview));
         assert_eq!(route_by_name("shelves"), Some(Route::ShelvesGrid));
         assert_eq!(
             route_by_name("all-books"),
@@ -2204,6 +2744,19 @@ mod tests {
             route_by_name("analytics"),
             Some(Route::LibrarySection(LibrarySection::Analytics))
         );
+    }
+
+    #[test]
+    fn shelves_live_on_the_rail() {
+        // Per §56, Shelves is a rail entry alongside Home/Library/Comics/Editor;
+        // My Library remains the entry point for shelf detail pages.
+        assert!(NavItem::ALL.contains(&NavItem::Shelves));
+        assert_eq!(Route::ShelvesGrid.sidebar_item(), NavItem::Shelves);
+        assert_eq!(
+            Route::ShelfDetail { shelf_id: 1 }.sidebar_item(),
+            NavItem::Shelves
+        );
+        assert_eq!(route_by_name("shelves"), Some(Route::ShelvesGrid));
     }
 
     #[test]
@@ -2226,7 +2779,15 @@ mod tests {
             route_by_name("  READ-12 "),
             Some(Route::Reader { book_id: 12 })
         );
-        for name in ["book", "reader", "book-", "read-", "book-abc", "book-1x", "read--1"] {
+        assert_eq!(
+            route_by_name("pdf-read-7"),
+            Some(Route::PdfReader { book_id: 7 })
+        );
+        assert_eq!(
+            route_by_name("comic-read-7"),
+            Some(Route::ComicsReader { book_id: 7 })
+        );
+        for name in ["book", "reader", "book-", "read-", "book-abc", "book-1x", "read--1", "pdf-read-", "pdf-read-x", "pdf-7", "comic-read-", "comic-read-x", "comic-7"] {
             assert_eq!(route_by_name(name), None, "{name:?} must not resolve");
         }
     }

@@ -1,141 +1,151 @@
 use crate::db::Catalog;
 use crate::dict;
-use crate::paths::{catalog_db, data_dir, dictionaries_dir, library_dir};
+use crate::paths::{catalog_db, data_dir, dictionaries_dir};
 use crate::service::{LibraryService, SettingsSnapshot};
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::sync::Arc;
 
+/// One Settings pane (decision 144). The variants are called tabs for
+/// historical reasons only; the page is the section-41 pane list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
     Appearance,
-    Storage,
-    Dictionaries,
+    Reading,
+    Libraries,
+    DataExport,
     BookFiles,
+    WatchFolders,
+    Dictionaries,
     Metadata,
-    Notifications,
+    Integrations,
+    Shortcuts,
+    About,
 }
 
 impl SettingsTab {
+    /// Stable lowercase name, for widget names and the
+    /// `KALAM_SETTINGS_PANE` screenshot hook.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Appearance => "appearance",
+            Self::Reading => "reading",
+            Self::Libraries => "libraries",
+            Self::DataExport => "data-export",
+            Self::BookFiles => "book-files",
+            Self::WatchFolders => "watch-folders",
+            Self::Dictionaries => "dictionaries",
+            Self::Metadata => "metadata",
+            Self::Integrations => "integrations",
+            Self::Shortcuts => "shortcuts",
+            Self::About => "about",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        [
+            Self::Appearance,
+            Self::Reading,
+            Self::Libraries,
+            Self::DataExport,
+            Self::BookFiles,
+            Self::WatchFolders,
+            Self::Dictionaries,
+            Self::Metadata,
+            Self::Integrations,
+            Self::Shortcuts,
+            Self::About,
+        ]
+        .into_iter()
+        .find(|tab| tab.id() == id)
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Appearance => "Appearance",
-            Self::Storage => "Storage & Backup",
+            Self::Reading => "Reading",
+            Self::Libraries => "Libraries and storage",
+            Self::DataExport => "Data and export",
+            Self::BookFiles => "Book files",
+            Self::WatchFolders => "Watch folders",
             Self::Dictionaries => "Dictionaries",
-            Self::BookFiles => "Book Files",
-            Self::Metadata => "Metadata Sources",
-            Self::Notifications => "Notifications",
+            Self::Metadata => "Metadata sources",
+            Self::Integrations => "Integrations",
+            Self::Shortcuts => "Shortcuts",
+            Self::About => "About",
         }
     }
 
-    pub fn icon(self) -> &'static str {
+    /// The Meta line under the pane title (design-system section 41).
+    /// About carries its own heading block instead and hides the pair.
+    pub fn meta_line(self) -> &'static str {
         match self {
-            Self::Appearance => "applications-graphics-symbolic",
-            Self::Storage => "drive-harddisk-symbolic",
-            Self::Dictionaries => "book-open-symbolic",
-            Self::BookFiles => "text-x-generic-symbolic",
-            Self::Metadata => "system-search-symbolic",
-            Self::Notifications => "preferences-system-notifications-symbolic",
-        }
-    }
-
-    pub fn subtitle(self) -> &'static str {
-        match self {
-            Self::Appearance => "Every theme is dark. Changes apply immediately.",
-            Self::Storage => {
-                "Manage where Kalam stores your catalog database, library EPUB files, backups, and reader cache."
+            Self::Appearance => {
+                "One choice of palette, in light or dark. Changes apply immediately."
             }
+            Self::Reading => "Defaults for every book. A book can still keep its own.",
+            Self::Libraries => {
+                "Every library has its own books and database. Settings and dictionaries are shared."
+            }
+            Self::DataExport => "Where Kalam keeps your data, and how to take it with you.",
+            Self::BookFiles => "What Kalam may write inside your EPUB files.",
+            Self::WatchFolders => "Folders Kalam checks for new books.",
             Self::Dictionaries => {
-                "Data locations and offline dictionary packs for lookup in the reader."
-            }
-            Self::BookFiles => {
-                "Manage EPUB file metadata writeback and original backup files."
+                "The first dictionary that has a word answers. The list is shared by every library."
             }
             Self::Metadata => {
-                "Used by Edit metadata. Results from every enabled source are merged and badged with their origin."
+                "Used by Edit metadata. Nothing is fetched when a page opens."
             }
-            Self::Notifications => {
-                "History log of recent activity, alerts, and toasts."
-            }
+            Self::Integrations => "Downloads, sources and plugins arrive in a later release.",
+            Self::Shortcuts => "Every key can be rebound. A key already taken is refused.",
+            Self::About => "",
         }
     }
 }
 
-/// The settings nav rail, grouped exactly like the reference design.
-const NAV_GROUPS: &[(&str, &[SettingsTab])] = &[
+/// The pane list, grouped per decision 144.
+const PANE_GROUPS: &[(&str, &[SettingsTab])] = &[
     ("Appearance", &[SettingsTab::Appearance]),
+    ("Reading", &[SettingsTab::Reading]),
     (
         "Library",
         &[
-            SettingsTab::Storage,
-            SettingsTab::Dictionaries,
+            SettingsTab::Libraries,
+            SettingsTab::DataExport,
             SettingsTab::BookFiles,
+            SettingsTab::WatchFolders,
+            SettingsTab::Dictionaries,
         ],
     ),
-    ("Sources", &[SettingsTab::Metadata]),
-    ("App", &[SettingsTab::Notifications]),
-];
-
-/// Theme families for the picker: (base id, display name, description,
-/// label prefix used to derive each variant's short name).
-const THEME_FAMILIES: &[(&str, &str, &str, &str)] = &[
     (
-        "onedark",
-        "One Dark",
-        "Warm-tinted greys, soft blue accent. The default.",
-        "One Dark",
+        "Sources",
+        &[SettingsTab::Metadata, SettingsTab::Integrations],
     ),
     (
-        "tokyonight",
-        "Tokyo Night",
-        "Deep indigo, high-chroma violet and blue accents.",
-        "Tokyo Night",
-    ),
-    (
-        "everforest",
-        "Everforest",
-        "Low-saturation greens and warm greys. Easy on the eyes.",
-        "Everforest",
-    ),
-    (
-        "catppuccin",
-        "Catppuccin Mocha",
-        "Soft pastels on a near-black lavender base.",
-        "Catppuccin",
-    ),
-    (
-        "gruvbox",
-        "Gruvbox",
-        "Warm retro browns and ochres — a classic.",
-        "Gruvbox",
-    ),
-    (
-        "ayu",
-        "Ayu",
-        "Muted slate with a distinctive amber accent.",
-        "Ayu",
-    ),
-    (
-        "nord",
-        "Nord",
-        "Cool arctic blue-greys. No darker variant — already deep.",
-        "Nord",
+        "App",
+        &[
+            SettingsTab::Shortcuts,
+            SettingsTab::About,
+        ],
     ),
 ];
-
-const THEME_BUTTON_PREFIX: &str = "theme-btn-";
-const THEME_BADGE_PREFIX: &str = "theme-badge-";
-const THEME_CHECK_PREFIX: &str = "theme-check-";
 
 #[derive(Debug)]
 pub enum SettingsMsg {
     SelectTab(SettingsTab),
-    ClearNotifications,
     ImportDict,
     DeleteDict(i64),
-    /// Reorder the merged-store priority (Phase 9): id, delta (−1 up / +1 down).
+    /// Reorder the merged-store priority after a drag: id, signed distance.
     MoveDict(i64, i64),
+    /// Bring back any removed packs shipped in the binary (decision 152).
+    RestoreBundledDicts,
     Refresh,
+    /// A library-list or backups change needs the disk reads redone:
+    /// the FS worker runs again and `FsLoaded` rebuilds the panes
+    /// that show them.
+    ReloadFs,
     /// The DB snapshot arrived from the worker (7.1 step 2c). Boxed because
     /// it carries the dictionary list; it is sent once at open and again
     /// after a dict import / delete / move.
@@ -150,10 +160,22 @@ pub enum SettingsMsg {
 /// them: the per-book sidecar survey, the libraries registry file, and the
 /// EPUB backup listing. The same split `BookPageSnapshot::file_size` made —
 /// `LibraryService` stays DB-pure, the FS question rides with the page.
+/// One known library's on-disk state, gathered with the registry by
+/// the FS worker so the Libraries pane never stats the disk itself.
+#[derive(Debug)]
+pub struct LibraryState {
+    /// The folder is not there (decision 149's missing state).
+    pub folder_missing: bool,
+    /// Book count read from the folder's own database, when it has one.
+    pub books: Option<i64>,
+}
+
 #[derive(Debug)]
 pub struct SettingsFs {
     pub survey: crate::sidecar::SidecarSurvey,
     pub registry: crate::libraries::LibraryRegistry,
+    /// Aligned by index with `registry.libraries`.
+    pub library_states: Vec<LibraryState>,
     pub epub_backups: Vec<(std::path::PathBuf, u64)>,
 }
 
@@ -161,14 +183,15 @@ pub struct SettingsPageModel {
     catalog: Arc<Catalog>,
     service: LibraryService,
     /// The DB snapshot (2c): None until the worker's first answer, which is
-    /// also the signal that tabs may build.
+    /// also the signal that panes may build.
     snapshot: Option<SettingsSnapshot>,
     /// The slower disk reads, in their own task. Rows that want them show
     /// "Checking…" until this lands.
     fs: Option<SettingsFs>,
-    /// Tabs whose widgets are already built. Only the active tab builds at
-    /// `Loaded`; the rest build on first visit from the snapshot in hand —
-    /// the old `init` built all six at open, which is what the ~500 ms was.
+    /// Panes whose widgets are already built. Only the active pane builds
+    /// at `Loaded`; the rest build on first visit from the snapshot in
+    /// hand — the old `init` built all six tabs at open, which is what
+    /// the ~500 ms was.
     built_tabs: Vec<SettingsTab>,
     active_tab: SettingsTab,
 }
@@ -187,154 +210,143 @@ impl Component for SettingsPageModel {
             set_hexpand: true,
             set_vexpand: true,
 
-            // Left settings navigation rail, grouped.
+            // The pane list (design-system section 41): 240 wide, 56 in
+            // from the left and top, on plain bg.
+            #[name = "nav_list"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
-                add_css_class: "kalam-settings-nav",
-                set_spacing: 2,
+                add_css_class: "kalam-settings-panes",
+                set_margin_start: 56,
+                set_margin_top: 56,
+                set_width_request: 240,
                 set_hexpand: false,
                 set_vexpand: true,
-
-                #[name = "nav_list"]
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 2,
-                },
-
-                gtk::Box {
-                    set_vexpand: true,
-                },
+                set_valign: gtk::Align::Start,
             },
 
-            // Right category content area.
+            // The content column: 640 wide, 64 right of the list.
             #[name = "scroller"]
             gtk::ScrolledWindow {
                 set_hexpand: true,
                 set_vexpand: true,
                 set_hscrollbar_policy: gtk::PolicyType::Never,
-                set_vscrollbar_policy: gtk::PolicyType::Automatic,
+                set_vscrollbar_policy: gtk::PolicyType::External,
 
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    add_css_class: "kalam-settings-content",
-                    set_spacing: 16,
-                    set_hexpand: true,
+                    add_css_class: "kalam-settings-column",
+                    set_margin_start: 64,
+                    set_margin_top: 56,
+                    set_margin_bottom: 56,
+                    set_width_request: 640,
+                    set_halign: gtk::Align::Start,
+                    set_hexpand: false,
 
                     #[name = "tab_title"]
                     gtk::Label {
-                        add_css_class: "kalam-page-title",
-                        set_halign: gtk::Align::Start,
-                    },
-
-                    #[name = "tab_subtitle"]
-                    gtk::Label {
-                        add_css_class: "kalam-page-sub",
+                        add_css_class: "kalam-ui-display",
                         set_halign: gtk::Align::Start,
                         set_wrap: true,
                     },
 
-                    // 1. Appearance
-                    #[name = "appearance_box"]
+                    #[name = "tab_meta"]
+                    gtk::Label {
+                        add_css_class: "kalam-ui-meta",
+                        add_css_class: "kalam-settings-Meta",
+                        set_halign: gtk::Align::Start,
+                        set_wrap: true,
+                    },
+
+                    #[name = "appearance_content"]
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 16,
+                        add_css_class: "kalam-settings-pane",
                         #[watch]
                         set_visible: model.active_tab == SettingsTab::Appearance,
-
-                        #[name = "theme_grid"]
-                        gtk::Grid {
-                            set_column_homogeneous: true,
-                            set_row_spacing: 12,
-                            set_column_spacing: 12,
-                            set_hexpand: true,
-                        },
                     },
 
-                    // 2. Storage & Backup
-                    #[name = "storage_box"]
+                    #[name = "reading_content"]
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 16,
+                        add_css_class: "kalam-settings-pane",
                         #[watch]
-                        set_visible: model.active_tab == SettingsTab::Storage,
-
-                        #[name = "paths_host"]
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 16,
-                        },
-
-                        #[name = "backup_row"]
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 16,
-                        },
-
-                        #[name = "export_row"]
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 16,
-                        },
+                        set_visible: model.active_tab == SettingsTab::Reading,
                     },
 
-                    // 3. Dictionaries
-                    #[name = "dicts_box"]
+                    #[name = "libraries_content"]
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 16,
+                        add_css_class: "kalam-settings-pane",
                         #[watch]
-                        set_visible: model.active_tab == SettingsTab::Dictionaries,
-
-                        #[name = "dict_list"]
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 16,
-                        },
+                        set_visible: model.active_tab == SettingsTab::Libraries,
                     },
 
-                    // 4. Book Files
-                    #[name = "book_files_box"]
+                    #[name = "data_content"]
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 16,
+                        add_css_class: "kalam-settings-pane",
+                        #[watch]
+                        set_visible: model.active_tab == SettingsTab::DataExport,
+                    },
+
+                    #[name = "book_files_content"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        add_css_class: "kalam-settings-pane",
                         #[watch]
                         set_visible: model.active_tab == SettingsTab::BookFiles,
-
-                        #[name = "file_write_row"]
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 16,
-                        },
                     },
 
-                    // 5. Metadata Sources
-                    #[name = "metadata_box"]
+                    #[name = "watch_content"]
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 16,
+                        add_css_class: "kalam-settings-pane",
+                        #[watch]
+                        set_visible: model.active_tab == SettingsTab::WatchFolders,
+                    },
+
+                    #[name = "dict_list"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        add_css_class: "kalam-settings-pane",
+                        #[watch]
+                        set_visible: model.active_tab == SettingsTab::Dictionaries,
+                    },
+
+                    #[name = "source_list"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        add_css_class: "kalam-settings-pane",
                         #[watch]
                         set_visible: model.active_tab == SettingsTab::Metadata,
-
-                        #[name = "source_list"]
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 16,
-                        },
                     },
 
-                    // 6. Notifications
-                    #[name = "notifications_box"]
+                    #[name = "integrations_content"]
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 16,
+                        add_css_class: "kalam-settings-pane",
                         #[watch]
-                        set_visible: model.active_tab == SettingsTab::Notifications,
+                        set_visible: model.active_tab == SettingsTab::Integrations,
+                    },
 
-                        #[name = "notify_list"]
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 16,
-                        },
+                    #[name = "shortcuts_content"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        add_css_class: "kalam-settings-pane",
+                        #[watch]
+                        set_visible: model.active_tab == SettingsTab::Shortcuts,
+                    },
+
+                    // About carries its own heading block (decision
+                    // 156), so its pane sits flush under the hidden
+                    // title pair.
+                    #[name = "about_content"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        add_css_class: "kalam-settings-pane",
+                        add_css_class: "flush",
+                        #[watch]
+                        set_visible: model.active_tab == SettingsTab::About,
                     },
                 },
             },
@@ -349,9 +361,15 @@ impl Component for SettingsPageModel {
         // Skeleton only (7.1 step 2c). The old init read ten prefs and
         // tables and built all six tabs' widgets before the page could
         // appear — the measured 465-522 ms. Now every host paints a
-        // loading row, the reads run on workers, and only the active tab
-        // builds when the snapshot lands.
-        let active_tab = SettingsTab::Appearance;
+        // loading row, the reads run on workers, and only the active
+        // pane builds when the snapshot lands.
+        //
+        // The screenshot loop can preselect a pane:
+        // KALAM_SETTINGS_PANE=reading (decision-144 ids).
+        let active_tab = std::env::var("KALAM_SETTINGS_PANE")
+            .ok()
+            .and_then(|id| SettingsTab::from_id(id.trim()))
+            .unwrap_or(SettingsTab::Appearance);
         let service = LibraryService::new(catalog.clone());
         let model = SettingsPageModel {
             catalog,
@@ -364,15 +382,19 @@ impl Component for SettingsPageModel {
         let widgets = view_output!();
 
         widgets.tab_title.set_label(active_tab.label());
-        widgets.tab_subtitle.set_label(active_tab.subtitle());
+        widgets.tab_meta.set_label(active_tab.meta_line());
+        let chrome = active_tab != SettingsTab::About;
+        widgets.tab_title.set_visible(chrome);
+        widgets.tab_meta.set_visible(chrome);
 
-        for (group, tabs) in NAV_GROUPS.iter() {
-            let group_label = gtk::Label::new(Some(*group));
-            group_label.add_css_class("kalam-settings-group");
+        for (group, tabs) in PANE_GROUPS.iter() {
+            let group_label = gtk::Label::new(Some(&group.to_uppercase()));
+            group_label.add_css_class("kalam-ui-label");
+            group_label.add_css_class("kalam-settings-group-label");
             group_label.set_halign(gtk::Align::Start);
             widgets.nav_list.append(&group_label);
             for tab in tabs.iter() {
-                let btn = make_tab_button(*tab, *tab == active_tab);
+                let btn = make_pane_item(*tab, *tab == active_tab);
                 let tab_copy = *tab;
                 let s = sender.clone();
                 btn.connect_clicked(move |_| s.input(SettingsMsg::SelectTab(tab_copy)));
@@ -381,19 +403,28 @@ impl Component for SettingsPageModel {
             }
         }
 
-        // The skeleton's moving parts: one loading row per host, cleared by
-        // whichever build runs into it first (2b learned this on Home —
-        // without them, unfilled sections paint as if empty).
-        widgets.theme_grid.attach(&loading_label(), 0, 0, 1, 1);
-        widgets.paths_host.append(&loading_label());
-        widgets.dict_list.append(&loading_label());
-        widgets.file_write_row.append(&loading_label());
-        widgets.source_list.append(&loading_label());
-        widgets.notify_list.append(&loading_label());
+        // The skeleton's moving parts: one loading row per host, cleared
+        // by whichever build runs into it first (2b learned this on Home
+        // — without them, unfilled sections paint as if empty).
+        for host in [
+            &widgets.appearance_content,
+            &widgets.reading_content,
+            &widgets.libraries_content,
+            &widgets.data_content,
+            &widgets.book_files_content,
+            &widgets.watch_content,
+            &widgets.dict_list,
+            &widgets.source_list,
+            &widgets.integrations_content,
+            &widgets.shortcuts_content,
+            &widgets.about_content,
+        ] {
+            host.append(&loading_label());
+        }
 
         // Two workers: the fast DB snapshot fills the page, the
-        // disk-flavored extras follow in their own task so they never delay
-        // the fill.
+        // disk-flavored extras follow in their own task so they never
+        // delay the fill.
         request_snapshot(&model.service, &sender);
         request_fs(&model.catalog, &sender);
         ComponentParts { model, widgets }
@@ -410,29 +441,26 @@ impl Component for SettingsPageModel {
             SettingsMsg::SelectTab(tab) => {
                 self.active_tab = tab;
                 widgets.tab_title.set_label(tab.label());
-                widgets.tab_subtitle.set_label(tab.subtitle());
+                widgets.tab_meta.set_label(tab.meta_line());
+                let chrome = tab != SettingsTab::About;
+                widgets.tab_title.set_visible(chrome);
+                widgets.tab_meta.set_visible(chrome);
                 update_tab_styles(&widgets.nav_list, tab);
-                // The notifications log is in-memory session state, so it
-                // rebuilds on every visit (its old behavior); every other
-                // tab builds once from the snapshot already in the model.
-                if tab == SettingsTab::Notifications {
-                    build_notifications(&widgets.notify_list, &sender);
-                } else if !self.built_tabs.contains(&tab) && self.snapshot.is_some() {
+                // Every pane builds once from the snapshot already in
+                // the model.
+                if !self.built_tabs.contains(&tab) && self.snapshot.is_some() {
                     self.build_tab(tab, widgets, &sender);
                     self.mark_built(tab);
                 }
                 widgets.scroller.vadjustment().set_value(0.0);
             }
-            SettingsMsg::ClearNotifications => {
-                crate::notify::clear_history();
-                build_notifications(&widgets.notify_list, &sender);
-            }
             SettingsMsg::Refresh => {
-                // A dictionary import finished: re-read on the worker (the
-                // old path re-read `list_dictionaries` inline) and refresh
-                // the activity log while we are here, exactly as before.
+                // A dictionary import finished: re-read on the worker
+                // (the old path re-read `list_dictionaries` inline).
                 request_snapshot(&self.service, &sender);
-                build_notifications(&widgets.notify_list, &sender);
+            }
+            SettingsMsg::ReloadFs => {
+                request_fs(&self.catalog, &sender);
             }
             SettingsMsg::Loaded(snap) => {
                 let snap = *snap;
@@ -442,27 +470,28 @@ impl Component for SettingsPageModel {
                     crate::notify::error("Could not list your dictionaries", err);
                 }
                 self.snapshot = Some(snap);
-                // (Re)build the active tab: the first arrival fills it,
+                // (Re)build the active pane: the first arrival fills it,
                 // later ones (after a dict import / delete / move) refresh
-                // whatever is on screen. The dict tab also refreshes when
-                // built but hidden, matching the old Refresh behavior.
+                // whatever is on screen. The dictionaries pane also
+                // refreshes when built but hidden, matching the old
+                // Refresh behavior.
                 self.build_tab(self.active_tab, widgets, &sender);
                 self.mark_built(self.active_tab);
                 if self.active_tab != SettingsTab::Dictionaries
                     && self.built_tabs.contains(&SettingsTab::Dictionaries)
                 {
                     if let Some(snap) = &self.snapshot {
-                        rebuild_dicts(&widgets.dict_list, &snap.dicts, &sender);
+                        build_dictionaries_pane(&widgets.dict_list, &snap.dicts, &sender);
                     }
                 }
             }
             SettingsMsg::FsLoaded(fs) => {
-                // The slow disk reads landed. Tabs already built get their
-                // rows refreshed in place; tabs not yet visited will simply
-                // build with real data when they are first opened.
+                // The slow disk reads landed. Panes already built get
+                // their rows refreshed in place; panes not yet visited
+                // will simply build with real data when first opened.
                 self.fs = Some(*fs);
-                if self.built_tabs.contains(&SettingsTab::Storage) {
-                    self.build_tab(SettingsTab::Storage, widgets, &sender);
+                if self.built_tabs.contains(&SettingsTab::Libraries) {
+                    self.build_tab(SettingsTab::Libraries, widgets, &sender);
                 }
                 if self.built_tabs.contains(&SettingsTab::BookFiles) {
                     self.build_tab(SettingsTab::BookFiles, widgets, &sender);
@@ -578,29 +607,62 @@ impl Component for SettingsPageModel {
                 }
                 request_snapshot(&self.service, &sender);
             }
+            SettingsMsg::RestoreBundledDicts => {
+                let catalog = self.catalog.clone();
+                let done_sender = sender.input_sender().clone();
+                crate::tasks::spawn(
+                    "Restoring dictionary packs",
+                    move |reporter| {
+                        let result = dict::restore_bundled_dictionaries(&catalog)
+                            .map_err(|err| format!("{err:#}"));
+                        if result.is_err() {
+                            reporter.fail();
+                        }
+                        result
+                    },
+                    |_| {},
+                    move |result| {
+                        match result {
+                            Ok(()) => crate::notify::success(
+                                "Bundled packs restored",
+                                "The dictionaries that ship with Kalam are available again.",
+                            ),
+                            Err(detail) => {
+                                crate::notify::error("Could not restore dictionary packs", &detail)
+                            }
+                        }
+                        let _ = done_sender.send(SettingsMsg::Refresh);
+                    },
+                );
+            }
         }
         self.update_view(widgets, sender);
     }
 }
 
-fn make_tab_button(tab: SettingsTab, active: bool) -> gtk::Button {
-    let box_content = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+/// One pane-list item (design-system section 41): flat 34 high, the
+/// label in text-2, and for the active pane a 3px accent bar at the
+/// left with the label bold in text. The bar and weight are CSS on
+/// the button's `active` class.
+fn make_pane_item(tab: SettingsTab, active: bool) -> gtk::Button {
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
 
-    let icon = crate::icons::symbolic_with_classes(tab.icon(), 16, &["kalam-settings-tab-icon"]);
-    icon.set_halign(gtk::Align::Center);
-    box_content.append(&icon);
+    let bar = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    bar.add_css_class("kalam-settings-pane-bar");
+    content.append(&bar);
 
     let label = gtk::Label::new(Some(tab.label()));
+    label.add_css_class("kalam-settings-pane-item-label");
     label.set_halign(gtk::Align::Start);
-    box_content.append(&label);
+    label.set_valign(gtk::Align::Center);
+    content.append(&label);
 
     let btn = gtk::Button::new();
-    btn.set_child(Some(&box_content));
-    btn.add_css_class("kalam-settings-tab");
+    btn.set_child(Some(&content));
+    btn.add_css_class("kalam-settings-pane-item");
     if active {
         btn.add_css_class("active");
     }
-    btn.set_focus_on_click(false);
     btn
 }
 
@@ -612,6 +674,39 @@ fn loading_label() -> gtk::Label {
     label.add_css_class("kalam-muted");
     label.set_halign(gtk::Align::Start);
     label
+}
+
+/// Empty a box of every child. Builders run into cleared hosts so a
+/// rebuild never stacks a second copy of a pane under the first.
+fn clear_box(host: &gtk::Box) {
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+}
+
+/// CI screenshot hooks for states no route or pane id can reach: a
+/// confirmation opened from a row button, or a dropdown left open. The
+/// delay lets the freshly built pane enter the window before the click
+/// or popup is replayed; outside the screenshot loop the environment
+/// variable is unset and these helpers do nothing.
+fn click_button_for_screenshot(button: &gtk::Button, state: &'static str) {
+    if std::env::var("KALAM_DIALOG").as_deref() != Ok(state) {
+        return;
+    }
+    let button = button.clone();
+    gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
+        button.emit_clicked();
+    });
+}
+
+fn popup_menu_for_screenshot(button: &gtk::MenuButton, state: &'static str) {
+    if std::env::var("KALAM_DIALOG").as_deref() != Ok(state) {
+        return;
+    }
+    let button = button.clone();
+    gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(900), move || {
+        button.popup();
+    });
 }
 
 /// Ask the worker for the DB snapshot. Called at init and after a dict
@@ -640,10 +735,26 @@ fn request_fs(catalog: &Arc<Catalog>, sender: &ComponentSender<SettingsPageModel
     let s = sender.input_sender().clone();
     crate::tasks::spawn_internal(
         "Checking storage",
-        move |_reporter| SettingsFs {
-            survey: crate::sidecar::survey(&catalog),
-            registry: crate::libraries::load_registry(),
-            epub_backups: crate::epub_metadata::list_backups(),
+        move |_reporter| {
+            let registry = crate::libraries::load_registry();
+            // Each known library's folder state and book count ride
+            // along: both are disk reads (the count opens that
+            // library's database read-only), and the pane's rows are
+            // built from them without touching the disk.
+            let library_states = registry
+                .libraries
+                .iter()
+                .map(|lib| LibraryState {
+                    folder_missing: !lib.path.is_dir(),
+                    books: crate::libraries::library_book_count(&lib.path),
+                })
+                .collect();
+            SettingsFs {
+                survey: crate::sidecar::survey(&catalog),
+                registry,
+                library_states,
+                epub_backups: crate::epub_metadata::list_backups(),
+            }
         },
         |_| {},
         move |fs| {
@@ -652,31 +763,36 @@ fn request_fs(catalog: &Arc<Catalog>, sender: &ComponentSender<SettingsPageModel
     );
 }
 
-/// The span/watchdog name for one tab's build. Static per tab because
+/// The span/watchdog name for one pane's build. Static per pane because
 /// `timing::measure` takes `&'static str`.
 fn settings_fill_label(tab: SettingsTab) -> &'static str {
     match tab {
         SettingsTab::Appearance => "settings_fill:appearance",
-        SettingsTab::Storage => "settings_fill:storage",
-        SettingsTab::Dictionaries => "settings_fill:dictionaries",
+        SettingsTab::Reading => "settings_fill:reading",
+        SettingsTab::Libraries => "settings_fill:libraries",
+        SettingsTab::DataExport => "settings_fill:data_export",
         SettingsTab::BookFiles => "settings_fill:book_files",
+        SettingsTab::WatchFolders => "settings_fill:watch_folders",
+        SettingsTab::Dictionaries => "settings_fill:dictionaries",
         SettingsTab::Metadata => "settings_fill:metadata",
-        SettingsTab::Notifications => "settings_fill:notifications",
+        SettingsTab::Integrations => "settings_fill:integrations",
+        SettingsTab::Shortcuts => "settings_fill:shortcuts",
+        SettingsTab::About => "settings_fill:about",
     }
 }
 
 impl SettingsPageModel {
-    /// Build (or rebuild) one tab's widgets from the snapshot already in
+    /// Build (or rebuild) one pane's widgets from the snapshot already in
     /// the model — no reads happen here. Every call is measured and
-    /// announced under its own `settings_fill:<tab>` name so a field run
-    /// shows the per-tab split the old single `route_open:settings` number
-    /// hid.
+    /// announced under its own `settings_fill:<pane>` name so a field run
+    /// shows the per-pane split the old single `route_open:settings`
+    /// number hid.
     ///
     /// Every caller guarantees a snapshot is in hand: `SelectTab` checks,
-    /// `Loaded` just set one, and `FsLoaded` only rebuilds tabs that are
+    /// `Loaded` just set one, and `FsLoaded` only rebuilds panes that are
     /// already built — which took a snapshot to build. A missing snapshot
     /// would be a broken invariant; the panic ratchet forbids adding an
-    /// `expect` for it, so the tab stays on its loading row instead — a
+    /// `expect` for it, so the pane stays on its loading row instead — a
     /// state impossible to miss in QA, and one that cannot corrupt
     /// anything on the way.
     fn build_tab(
@@ -693,34 +809,69 @@ impl SettingsPageModel {
         let _a = crate::timing::activity(label);
         match tab {
             SettingsTab::Appearance => {
-                build_theme_picker(&widgets.theme_grid, &self.catalog, &snap.theme_id);
+                clear_box(&widgets.appearance_content);
+                build_appearance(&widgets.appearance_content, &self.catalog, &snap.theme_id);
             }
-            SettingsTab::Storage => {
-                build_paths(
-                    &widgets.paths_host,
+            SettingsTab::Reading => {
+                clear_box(&widgets.reading_content);
+                build_reading(&widgets.reading_content, &self.catalog, snap);
+            }
+            SettingsTab::Libraries => {
+                clear_box(&widgets.libraries_content);
+                build_libraries_pane(
+                    &widgets.libraries_content,
                     &self.catalog,
-                    self.fs.as_ref().map(|fs| &fs.registry),
-                    self.fs.as_ref().map(|fs| &fs.survey),
+                    self.fs.as_ref(),
+                    sender,
                 );
-                build_backup(&widgets.backup_row, &self.catalog);
-                build_export(&widgets.export_row, &self.catalog);
             }
-            SettingsTab::Dictionaries => {
-                rebuild_dicts(&widgets.dict_list, &snap.dicts, sender);
+            SettingsTab::DataExport => {
+                clear_box(&widgets.data_content);
+                build_data_pane(&widgets.data_content, &self.catalog);
             }
             SettingsTab::BookFiles => {
-                build_file_write(
-                    &widgets.file_write_row,
+                clear_box(&widgets.book_files_content);
+                build_book_files_pane(
+                    &widgets.book_files_content,
                     &self.catalog,
                     snap,
                     self.fs.as_ref().map(|fs| fs.epub_backups.as_slice()),
+                    sender,
                 );
             }
-            SettingsTab::Metadata => {
-                build_sources(&widgets.source_list, &self.catalog, snap);
+            SettingsTab::WatchFolders => {
+                clear_box(&widgets.watch_content);
+                build_watch_sections(
+                    &widgets.watch_content,
+                    &WatchPaneStore {
+                        catalog: self.catalog.clone(),
+                    },
+                    &snap.watch_rules,
+                    &snap.shelves,
+                );
             }
-            SettingsTab::Notifications => {
-                build_notifications(&widgets.notify_list, sender);
+            SettingsTab::Dictionaries => {
+                build_dictionaries_pane(&widgets.dict_list, &snap.dicts, sender);
+            }
+            SettingsTab::Metadata => {
+                clear_box(&widgets.source_list);
+                build_sources_pane(&widgets.source_list, &self.service, snap);
+            }
+            SettingsTab::Integrations => {
+                clear_box(&widgets.integrations_content);
+                build_integrations(&widgets.integrations_content);
+            }
+            SettingsTab::Shortcuts => {
+                clear_box(&widgets.shortcuts_content);
+                let save_catalog = self.catalog.clone();
+                let save: ShortcutSave = Rc::new(move |action, binding| {
+                    save_catalog.set_pref(&action.pref_key(), &binding.to_pref());
+                });
+                build_shortcuts(&widgets.shortcuts_content, &self.catalog, save);
+            }
+            SettingsTab::About => {
+                clear_box(&widgets.about_content);
+                build_about(&widgets.about_content, &self.catalog);
             }
         }
     }
@@ -749,819 +900,1389 @@ fn update_tab_styles(container: &gtk::Box, active: SettingsTab) {
     }
 }
 
-/// One card with an accent icon, a title, an optional description, a hairline
-/// divider, and a body host the caller fills with rows. Appended to `host`.
-fn section_card(host: &gtk::Box, icon_name: &str, title: &str, desc: Option<&str>) -> gtk::Box {
-    let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    card.add_css_class("kalam-section-card");
+// ---------------------------------------------------------------------------
+// Section-41 building blocks: Label heading + outlined section of
+// 48-high hairline rows, label/caption left, control right.
+// ---------------------------------------------------------------------------
 
-    let head = gtk::Box::new(gtk::Orientation::Vertical, 3);
-    head.add_css_class("kalam-section-head");
-    let title_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    let icon = crate::icons::symbolic_with_classes(icon_name, 16, &["kalam-section-icon"]);
-    title_row.append(&icon);
-    let title_label = gtk::Label::new(Some(title));
-    title_label.add_css_class("kalam-section-title");
-    title_label.set_halign(gtk::Align::Start);
-    title_row.append(&title_label);
-    head.append(&title_row);
-    if let Some(text) = desc {
-        let desc_label = gtk::Label::new(Some(text));
-        desc_label.add_css_class("kalam-section-desc");
-        desc_label.set_wrap(true);
-        desc_label.set_xalign(0.0);
-        desc_label.set_halign(gtk::Align::Start);
-        head.append(&desc_label);
+use crate::appearance::{HeadingFont, InterfaceFont, ReduceMotion, TextSize};
+use crate::widgets::dialog::{
+    confirmation_dialog, dialog_shell, present_dialog, text_field, ConfirmationKind, DialogSize,
+};
+use crate::widgets::dropdown::{dropdown, DropdownOption};
+use crate::widgets::in_app_dialog::DialogExit;
+use crate::widgets::pill_button::{boxed_ghost_button, ghost_button, icon_button, primary_button};
+use crate::widgets::segmented::{segmented_control, SegmentedSize};
+
+/// Append one outlined section (design-system sections 14 and 41) to
+/// the pane and return the rows box. A section after the first sits
+/// 24 below whatever came before it.
+fn pane_section_box(host: &gtk::Box, heading: Option<&str>) -> gtk::Box {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    if host.first_child().is_some() {
+        wrap.set_margin_top(24);
     }
-    card.append(&head);
+    if let Some(heading) = heading {
+        let label = gtk::Label::new(Some(&heading.to_uppercase()));
+        label.add_css_class("kalam-ui-label");
+        label.set_halign(gtk::Align::Start);
+        label.set_margin_bottom(8);
+        wrap.append(&label);
+    }
+    let rows = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    rows.add_css_class("kalam-settings-section");
+    wrap.append(&rows);
+    host.append(&wrap);
+    rows
+}
 
-    let divider = gtk::Separator::new(gtk::Orientation::Horizontal);
-    divider.add_css_class("kalam-section-divider");
-    card.append(&divider);
+/// A section with its Label-style heading (section 41).
+fn pane_section(host: &gtk::Box, heading: &str) -> gtk::Box {
+    pane_section_box(host, Some(heading))
+}
 
-    let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    body.add_css_class("kalam-section-body");
-    card.append(&body);
+/// A section with no heading, for panes whose first box follows a
+/// heading block of its own (About).
+fn pane_section_bare(host: &gtk::Box) -> gtk::Box {
+    pane_section_box(host, None)
+}
+
+/// A section whose heading is a row of its own rather than a Label:
+/// a watch folder's path, which is user text and keeps its own case,
+/// with that folder's Remove action at the right (decision 151).
+fn pane_section_custom_heading(host: &gtk::Box, heading: &gtk::Box) -> gtk::Box {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    if host.first_child().is_some() {
+        wrap.set_margin_top(24);
+    }
+    heading.set_margin_bottom(8);
+    wrap.append(heading);
+    let rows = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    rows.add_css_class("kalam-settings-section");
+    wrap.append(&rows);
+    host.append(&wrap);
+    rows
+}
+
+/// The dashed state card (design-system section 10): a centred
+/// Card-title heading and Meta line, with the caller's action(s)
+/// appended to the returned card.
+fn dashed_state_card(host: &gtk::Box, title: &str, meta: Option<&str>) -> gtk::Box {
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    card.add_css_class("kalam-settings-state-card");
+
+    let heading = gtk::Label::new(Some(title));
+    heading.add_css_class("kalam-ui-card-title");
+    heading.set_halign(gtk::Align::Center);
+    heading.set_xalign(0.5);
+    heading.set_wrap(true);
+    card.append(&heading);
+
+    if let Some(text) = meta {
+        let line = gtk::Label::new(Some(text));
+        line.add_css_class("kalam-ui-meta");
+        line.set_halign(gtk::Align::Center);
+        line.set_xalign(0.5);
+        line.set_wrap(true);
+        card.append(&line);
+    }
 
     host.append(&card);
-    body
+    card
 }
 
-/// Label + description on the left, one control on the right. Hairlines
-/// between rows come from CSS, so rows simply stack.
-fn setting_row(body: &gtk::Box, label: &str, desc: &str, right: &impl IsA<gtk::Widget>) {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
-    row.add_css_class("kalam-setting-row");
+/// One 48-high row: label over an optional caption at the left,
+/// expanding so the caller's control lands at the right.
+fn pane_row(rows: &gtk::Box, label: &str, caption: Option<&str>) -> gtk::Box {
+    pane_row_inner(rows, label, caption.map(|text| (text, false))).0
+}
 
-    let left = gtk::Box::new(gtk::Orientation::Vertical, 3);
-    left.set_hexpand(true);
-    let label_widget = gtk::Label::new(Some(label));
-    label_widget.add_css_class("kalam-setting-label");
-    label_widget.set_halign(gtk::Align::Start);
-    label_widget.set_xalign(0.0);
-    left.append(&label_widget);
-    let desc_widget = gtk::Label::new(Some(desc));
-    desc_widget.add_css_class("kalam-setting-desc");
-    desc_widget.set_wrap(true);
-    desc_widget.set_xalign(0.0);
-    desc_widget.set_halign(gtk::Align::Start);
-    left.append(&desc_widget);
-    row.append(&left);
+/// A row whose caption is a warning in the accent — section 44's
+/// missing state ("Folder not found").
+fn pane_row_alert(rows: &gtk::Box, label: &str, caption: &str) -> gtk::Box {
+    pane_row_inner(rows, label, Some((caption, true))).0
+}
 
-    let control = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+/// The row builder behind both, returning the caption label as well
+/// for rows whose caption changes in place (the reader-cache size).
+fn pane_row_inner(
+    rows: &gtk::Box,
+    label: &str,
+    caption: Option<(&str, bool)>,
+) -> (gtk::Box, Option<gtk::Label>) {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    row.add_css_class("kalam-settings-row");
+
+    let copy = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    copy.set_valign(gtk::Align::Center);
+    copy.set_hexpand(true);
+    let text = gtk::Label::new(Some(label));
+    text.add_css_class("kalam-settings-row-label");
+    text.set_halign(gtk::Align::Start);
+    text.set_xalign(0.0);
+    text.set_wrap(true);
+    copy.append(&text);
+    let caption_label = caption.map(|(caption, accent)| {
+        let cap = gtk::Label::new(Some(caption));
+        cap.add_css_class("kalam-ui-caption");
+        if accent {
+            cap.add_css_class("accent");
+        }
+        cap.set_halign(gtk::Align::Start);
+        cap.set_xalign(0.0);
+        cap.set_wrap(true);
+        copy.append(&cap);
+        cap
+    });
+    row.append(&copy);
+    rows.append(&row);
+    (row, caption_label)
+}
+
+/// A row with its control appended, vertically centred.
+fn pane_row_with(
+    rows: &gtk::Box,
+    label: &str,
+    caption: Option<&str>,
+    control: &impl IsA<gtk::Widget>,
+) {
+    let row = pane_row(rows, label, caption);
     control.set_valign(gtk::Align::Center);
-    control.append(right);
-    row.append(&control);
-
-    body.append(&row);
+    row.append(control);
 }
 
-/// The app's pill switch. `on_toggle` fires only for user changes: the
-/// initial state is set before the handler is attached.
-pub(crate) fn toggle_switch(initial: bool, on_toggle: impl Fn(bool) + 'static) -> gtk::Switch {
+/// The section-44 chip: 28 high, 11px. Plain for "Not available yet",
+/// accent for the marks of honour ("Open", "Speaks first").
+fn settings_chip(text: &str, accent: bool) -> gtk::Label {
+    let chip = gtk::Label::new(Some(text));
+    chip.add_css_class("kalam-settings-chip");
+    if accent {
+        chip.add_css_class("accent");
+    }
+    chip.set_valign(gtk::Align::Center);
+    chip
+}
+
+/// The bare stepper control for a section-41 row: two round buttons
+/// around a value label, the shape the reader's own setting rows use.
+/// `format` renders the value (line height travels in tenths).
+fn stepper_control(
+    label: &str,
+    min: i32,
+    max: i32,
+    step: i32,
+    initial: i32,
+    format: impl Fn(i32) -> String + 'static,
+    on_change: impl Fn(i32) + 'static,
+) -> gtk::Box {
+    let value = Rc::new(Cell::new(initial.clamp(min, max)));
+    let format = Rc::new(format);
+    let on_change = Rc::new(on_change);
+    let step = step.max(1);
+
+    let root = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    root.set_valign(gtk::Align::Center);
+
+    let make_step = |delta: i32, icon: &str, verb: &str| {
+        let value = value.clone();
+        let on_change = on_change.clone();
+        icon_button(
+            icon,
+            &format!("{verb} {label}"),
+            crate::style::size::COMPACT,
+            true,
+            move || {
+                let next = (value.get() + delta).clamp(min, max);
+                if next != value.get() {
+                    value.set(next);
+                    on_change(next);
+                }
+            },
+        )
+    };
+    let minus = make_step(-step, "list-remove-symbolic", "Decrease");
+    let plus = make_step(step, "list-add-symbolic", "Increase");
+
+    let value_label = gtk::Label::new(Some(&format(value.get())));
+    value_label.add_css_class("kalam-ui-stepper-value");
+    value_label.set_xalign(0.5);
+    value_label.set_valign(gtk::Align::Center);
+
+    // icon_button owns the click that moves the value; these second
+    // handlers mirror it into the label and the end stops, the same
+    // arrangement `setting_row::stepper_row` uses.
+    for button in [&minus, &plus] {
+        let value = value.clone();
+        let format = format.clone();
+        let value_label = value_label.clone();
+        let minus = minus.clone();
+        let plus = plus.clone();
+        button.connect_clicked(move |_| {
+            let current = value.get();
+            value_label.set_label(&format(current));
+            minus.set_sensitive(current > min);
+            plus.set_sensitive(current < max);
+        });
+    }
+    minus.set_sensitive(value.get() > min);
+    plus.set_sensitive(value.get() < max);
+
+    root.append(&minus);
+    root.append(&value_label);
+    root.append(&plus);
+    root
+}
+
+// ---------------------------------------------------------------------------
+// Appearance: the section-42 palette picker and Text and motion
+// (decisions 145 and 146).
+// ---------------------------------------------------------------------------
+
+/// One mini-page card's live state, shared between its draw callback,
+/// its hover/focus controllers and every card's click handler (which
+/// moves the selection as a set).
+struct PaletteCardState {
+    area: gtk::DrawingArea,
+    selected: Rc<Cell<bool>>,
+    theme_id: &'static str,
+}
+
+/// The paint area's bleed around the 64-high card: room for the 2px
+/// ring at 2 offset and for the tick badge standing 7 outside the
+/// top-right corner (section 42).
+const CARD_BLEED: f64 = 8.0;
+
+/// Parse a theme hex literal (`#rrggbb`) into Cairo components.
+/// Anything else is a theme-authoring bug; painting mid-grey keeps
+/// the picker usable and the wrong colour impossible to miss.
+fn hex_components(hex: &str) -> (f64, f64, f64) {
+    let digits = hex.trim_start_matches('#');
+    let pair = |index: usize| -> f64 {
+        digits
+            .get(index..index + 2)
+            .and_then(|s| u8::from_str_radix(s, 16).ok())
+            .map(|v| v as f64 / 255.0)
+            .unwrap_or(0.5)
+    };
+    (pair(0), pair(2), pair(4))
+}
+
+fn hex_source(cr: &gtk::cairo::Context, hex: &str, alpha: f64) {
+    let (r, g, b) = hex_components(hex);
+    cr.set_source_rgba(r, g, b, alpha);
+}
+
+/// One palette's box in the 2 x 2 grid: the name in Label style, then
+/// its Light and Dark mini-page cards side by side.
+fn palette_box(
+    palette: crate::theme::Palette,
+    resolved: &crate::theme::Theme,
+    catalog: &Arc<Catalog>,
+    cards: &Rc<RefCell<Vec<Rc<PaletteCardState>>>>,
+) -> gtk::Box {
+    let block = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    block.add_css_class("kalam-settings-palette-box");
+
+    let name = gtk::Label::new(Some(&palette.label().to_uppercase()));
+    name.add_css_class("kalam-ui-label");
+    name.set_halign(gtk::Align::Start);
+    name.set_margin_bottom(4);
+    block.append(&name);
+
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    row.set_homogeneous(true);
+    row.append(&palette_card(
+        palette.light(),
+        "Light",
+        resolved,
+        catalog,
+        cards,
+    ));
+    row.append(&palette_card(palette.dark(), "Dark", resolved, catalog, cards));
+    block.append(&row);
+    block
+}
+
+/// One mini-page card (section 42): custom-drawn because it paints
+/// another palette's colours — that mode's `bg`, three 4px lines
+/// (text at 50% and 30%, accent at 30% width) — with the current
+/// theme's accent ring and tick badge marking the standing choice.
+fn palette_card(
+    theme: crate::theme::Theme,
+    mode_name: &str,
+    resolved: &crate::theme::Theme,
+    catalog: &Arc<Catalog>,
+    cards: &Rc<RefCell<Vec<Rc<PaletteCardState>>>>,
+) -> gtk::Box {
+    let selected = Rc::new(Cell::new(theme.id == resolved.id));
+    let hovered = Rc::new(Cell::new(false));
+    let focused = Rc::new(Cell::new(false));
+
+    // The ring and badge are painted in the *current* theme's colours;
+    // hidden probe labels resolve them off the installed CSS, so a
+    // theme switch recolours the picker without a rebuild.
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    let accent_probe = crate::widgets::paint::color_probe("kalam-ui-token-accent");
+    let fill_probe = crate::widgets::paint::color_probe("kalam-ui-token-accent-fill");
+    let dim_probe = crate::widgets::paint::color_probe("kalam-ui-token-text-dim");
+    outer.append(&accent_probe);
+    outer.append(&fill_probe);
+    outer.append(&dim_probe);
+
+    let area = gtk::DrawingArea::new();
+    area.set_hexpand(true);
+    area.set_size_request(-1, 64 + (CARD_BLEED * 2.0) as i32);
+    area.set_draw_func({
+        let selected = selected.clone();
+        let hovered = hovered.clone();
+        let focused = focused.clone();
+        let accent_probe = accent_probe.clone();
+        let fill_probe = fill_probe.clone();
+        let dim_probe = dim_probe.clone();
+        move |_area, cr, width, height| {
+            use crate::widgets::paint;
+            let (w, h) = (width as f64, height as f64);
+            let card_w = (w - CARD_BLEED * 2.0).max(0.0);
+            let card_h = (h - CARD_BLEED * 2.0).max(0.0);
+
+            // The ring: accent when selected or keyboard-focused, a
+            // text-2 ring on hover (sections 12, 42, 46).
+            let ring = if selected.get() || focused.get() {
+                Some(paint::probe_color(&accent_probe))
+            } else if hovered.get() {
+                Some(paint::probe_color(&dim_probe))
+            } else {
+                None
+            };
+            if let Some(colour) = ring {
+                paint::set_source(cr, colour, 1.0);
+                cr.set_line_width(2.0);
+                paint::rounded_rect(
+                    cr,
+                    CARD_BLEED - 3.0,
+                    CARD_BLEED - 3.0,
+                    card_w + 6.0,
+                    card_h + 6.0,
+                    12.0,
+                );
+                let _ = cr.stroke();
+            }
+
+            // The mini page itself, in the other palette's colours.
+            hex_source(cr, theme.bg, 1.0);
+            paint::rounded_rect(cr, CARD_BLEED, CARD_BLEED, card_w, card_h, 10.0);
+            let _ = cr.fill_preserve();
+            hex_source(cr, theme.border, 1.0);
+            cr.set_line_width(1.0);
+            let _ = cr.stroke();
+
+            let inner_x = CARD_BLEED + 10.0;
+            let inner_w = (card_w - 20.0).max(0.0);
+            for (i, (fraction, hex, alpha)) in [
+                (0.68, theme.text, 0.5),
+                (0.48, theme.text, 0.3),
+                (0.30, theme.accent, 1.0),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                hex_source(cr, hex, alpha);
+                paint::rounded_rect(
+                    cr,
+                    inner_x,
+                    CARD_BLEED + 12.0 + i as f64 * 12.0,
+                    inner_w * fraction,
+                    4.0,
+                    2.0,
+                );
+                let _ = cr.fill();
+            }
+
+            // The tick badge: 18 across, accent-fill, a white tick,
+            // standing 7 outside the top-right corner.
+            if selected.get() {
+                let cx = CARD_BLEED + card_w - 2.0;
+                let cy = CARD_BLEED + 2.0;
+                paint::set_source(cr, paint::probe_color(&fill_probe), 1.0);
+                cr.arc(cx, cy, 9.0, 0.0, std::f64::consts::TAU);
+                let _ = cr.fill();
+                cr.set_source_rgb(1.0, 1.0, 1.0);
+                cr.set_line_width(1.8);
+                cr.set_line_cap(gtk::cairo::LineCap::Round);
+                cr.set_line_join(gtk::cairo::LineJoin::Round);
+                cr.move_to(cx - 4.0, cy + 0.2);
+                cr.line_to(cx - 1.2, cy + 3.2);
+                cr.line_to(cx + 4.0, cy - 3.0);
+                let _ = cr.stroke();
+            }
+        }
+    });
+
+    let button = gtk::Button::new();
+    button.add_css_class("kalam-settings-palette-card");
+    button.set_child(Some(&area));
+    button.set_tooltip_text(Some(theme.label));
+    button.update_property(&[gtk::accessible::Property::Label(theme.label)]);
+
+    let motion = gtk::EventControllerMotion::new();
+    {
+        let hovered_enter = hovered.clone();
+        let area_enter = area.clone();
+        motion.connect_enter(move |_, _, _| {
+            hovered_enter.set(true);
+            area_enter.queue_draw();
+        });
+        let hovered_leave = hovered.clone();
+        let area_leave = area.clone();
+        motion.connect_leave(move |_| {
+            hovered_leave.set(false);
+            area_leave.queue_draw();
+        });
+    }
+    area.add_controller(motion);
+
+    let focus = gtk::EventControllerFocus::new();
+    {
+        let focused_enter = focused.clone();
+        let area_enter = area.clone();
+        focus.connect_enter(move |_| {
+            focused_enter.set(true);
+            area_enter.queue_draw();
+        });
+        let focused_leave = focused.clone();
+        let area_leave = area.clone();
+        focus.connect_leave(move |_| {
+            focused_leave.set(false);
+            area_leave.queue_draw();
+        });
+    }
+    button.add_controller(focus);
+
+    let state = Rc::new(PaletteCardState {
+        area: area.clone(),
+        selected: selected.clone(),
+        theme_id: theme.id,
+    });
+    cards.borrow_mut().push(state);
+
+    {
+        let catalog = catalog.clone();
+        let cards = cards.clone();
+        button.connect_clicked(move |_| {
+            // One choice of palette and mode (decision 145): the card
+            // always writes a concrete Light or Dark. A stored System
+            // choice is only ever *displayed* here, as the card it
+            // currently resolves to.
+            let next = crate::theme::ThemeChoice::from(&theme);
+            crate::theme::save_and_apply_choice(&catalog, &next);
+            for card in cards.borrow().iter() {
+                card.selected.set(card.theme_id == theme.id);
+                card.area.queue_draw();
+            }
+            crate::notify::success("Theme changed", &next.label());
+        });
+    }
+
+    let caption = gtk::Label::new(Some(mode_name));
+    caption.add_css_class("kalam-ui-caption");
+    caption.set_halign(gtk::Align::Center);
+
+    outer.append(&button);
+    outer.append(&caption);
+    outer
+}
+
+fn build_appearance(host: &gtk::Box, catalog: &Arc<Catalog>, active_theme_id: &str) {
+    // Cards mark the *resolved* theme, so a stored System choice
+    // still shows which of its palette's two modes is on screen.
+    let resolved = crate::theme::choice_by_id(active_theme_id).resolve();
+
+    let grid = gtk::Grid::new();
+    grid.set_column_homogeneous(true);
+    grid.set_column_spacing(16);
+    grid.set_row_spacing(16);
+    host.append(&grid);
+
+    let cards: Rc<RefCell<Vec<Rc<PaletteCardState>>>> = Rc::new(RefCell::new(Vec::new()));
+    for (i, palette) in crate::theme::Palette::ALL.iter().enumerate() {
+        let slot = i as i32;
+        let block = palette_box(*palette, &resolved, catalog, &cards);
+        grid.attach(&block, slot % 2, slot / 2, 1, 1);
+    }
+
+    // Text and motion (decision 146): two dropdowns, two small
+    // segmented switches, all writing the global `ui.*` prefs.
+    let rows = pane_section(host, "Text and motion");
+    let choices = crate::appearance::choices(catalog);
+
+    {
+        let catalog = catalog.clone();
+        let font = dropdown(
+            "Interface font",
+            vec![
+                DropdownOption::new("DM Sans"),
+                DropdownOption::new("System font"),
+            ],
+            match choices.font {
+                InterfaceFont::DmSans => 0,
+                InterfaceFont::System => 1,
+            },
+            None,
+            move |index| {
+                crate::appearance::set_interface_font(
+                    &catalog,
+                    if index == 1 {
+                        InterfaceFont::System
+                    } else {
+                        InterfaceFont::DmSans
+                    },
+                );
+            },
+            || {},
+        );
+        pane_row_with(&rows, "Interface font", None, &font.widget());
+    }
+
+    {
+        let catalog = catalog.clone();
+        let heading = dropdown(
+            "Heading font",
+            vec![
+                DropdownOption::new("Playfair Display"),
+                DropdownOption::new("Same as interface"),
+            ],
+            match choices.heading_font {
+                HeadingFont::Playfair => 0,
+                HeadingFont::Interface => 1,
+            },
+            None,
+            move |index| {
+                crate::appearance::set_heading_font(
+                    &catalog,
+                    if index == 1 {
+                        HeadingFont::Interface
+                    } else {
+                        HeadingFont::Playfair
+                    },
+                );
+            },
+            || {},
+        );
+        pane_row_with(&rows, "Heading font", None, &heading.widget());
+    }
+
+    {
+        let catalog = catalog.clone();
+        let size = segmented_control(
+            &["Small", "Default", "Large"],
+            match choices.text_size {
+                TextSize::Small => 0,
+                TextSize::Default => 1,
+                TextSize::Large => 2,
+            },
+            SegmentedSize::Small,
+            move |index| {
+                crate::appearance::set_text_size(
+                    &catalog,
+                    match index {
+                        0 => TextSize::Small,
+                        2 => TextSize::Large,
+                        _ => TextSize::Default,
+                    },
+                );
+            },
+        );
+        pane_row_with(&rows, "Text size", None, &size.widget());
+    }
+
+    {
+        let catalog = catalog.clone();
+        let motion = segmented_control(
+            &["System", "On", "Off"],
+            match choices.reduce_motion {
+                ReduceMotion::System => 0,
+                ReduceMotion::On => 1,
+                ReduceMotion::Off => 2,
+            },
+            SegmentedSize::Small,
+            move |index| {
+                crate::appearance::set_reduce_motion(
+                    &catalog,
+                    match index {
+                        1 => ReduceMotion::On,
+                        2 => ReduceMotion::Off,
+                        _ => ReduceMotion::System,
+                    },
+                );
+            },
+        );
+        pane_row_with(&rows, "Reduce motion", None, &motion.widget());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Reading: the global reading defaults (decision 147). Every control
+// writes the same global `reader.*` prefs the reader opens books
+// with, and the preview card answers as they move.
+// ---------------------------------------------------------------------------
+
+pub(crate) const PREVIEW_TEXT: &str = "The train slowed as it crossed the river, and for a moment the whole \
+valley seemed to hold its breath. Mara marked her page with one finger and watched the water \
+move below, dark and unhurried, carrying the last of the evening light toward the sea.";
+
+fn build_reading(host: &gtk::Box, catalog: &Arc<Catalog>, snap: &SettingsSnapshot) {
+    // The live preview: a chapter heading over sample page text set
+    // in the standing choices. Typeface, size, line height and
+    // alignment render through Pango; the column width is shown true
+    // until the card's own width (600 inside the padding) caps it,
+    // the way a narrow window would cap the book.
+    let family = Rc::new(RefCell::new(
+        snap.reader_font_family
+            .clone()
+            .unwrap_or_else(|| kalam_reader::BODY_FONT.to_string()),
+    ));
+    let font_px = Rc::new(Cell::new(snap.reader_font_px as i32));
+    let line_tenths = Rc::new(Cell::new(
+        (snap.reader_line_height * 10.0).round() as i32,
+    ));
+    let column_px = Rc::new(Cell::new(snap.reader_column_px as i32));
+    let justify = Rc::new(Cell::new(snap.reader_justify));
+
+    let preview = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    preview.add_css_class("kalam-settings-preview");
+    let column = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    column.set_halign(gtk::Align::Center);
+    let heading = gtk::Label::new(Some("Chapter One"));
+    heading.add_css_class("kalam-ui-section-title");
+    heading.set_halign(gtk::Align::Start);
+    heading.set_xalign(0.0);
+    column.append(&heading);
+    let body = gtk::Label::new(None);
+    body.set_wrap(true);
+    body.set_xalign(0.0);
+    // A wrapping label's natural width is its one-line width — here a
+    // 250-character paragraph — and that natural width is what widened
+    // the whole 640 content column to the window edge in the tranche-5
+    // captures. Ask for a one-character natural width and let the
+    // refresh below cap it to the standing column width instead.
+    body.set_width_chars(1);
+    column.append(&body);
+    preview.append(&column);
+    host.append(&preview);
+
+    let refresh: Rc<dyn Fn()> = {
+        let body = body.clone();
+        let column = column.clone();
+        let family = family.clone();
+        let font_px = font_px.clone();
+        let line_tenths = line_tenths.clone();
+        let column_px = column_px.clone();
+        let justify = justify.clone();
+        Rc::new(move || {
+            let line_height = format!("{:.1}", line_tenths.get() as f64 / 10.0);
+            // `reader.font_px` is device pixels; a Pango font size is
+            // points. Naming the px value as points (the old
+            // `font="… 17"`) set the preview a third too large at the
+            // usual 96 dpi. Pango markup `size` is thousandths of a
+            // point, so px × 750 is the same em at 96 dpi.
+            body.set_markup(&format!(
+                "<span font_family=\"{}\" size=\"{}\" line_height=\"{line_height}\">{}</span>",
+                gtk::glib::markup_escape_text(&family.borrow()),
+                font_px.get() * 750,
+                gtk::glib::markup_escape_text(PREVIEW_TEXT),
+            ));
+            body.set_justify(if justify.get() {
+                gtk::Justification::Fill
+            } else {
+                gtk::Justification::Left
+            });
+            let width = column_px.get().min(600);
+            // Cap the natural width at the standing column (an average
+            // glyph is about half an em wide) so the preview can never
+            // widen the pane past its 640 column again.
+            body.set_max_width_chars(((width * 2) / font_px.get().max(1)).clamp(20, 120));
+            column.set_size_request(width, -1);
+        })
+    };
+    refresh();
+
+    // Typography.
+    let rows = pane_section(host, "Typography");
+    {
+        // The picker's list is the snapshot's session-free family
+        // list; a stored family missing from it (picked from a book's
+        // own @font-face faces in the reader) joins so the standing
+        // choice always shows with its tick.
+        let mut names = snap.typefaces.clone();
+        let current = family.borrow().clone();
+        if !names.contains(&current) {
+            names.push(current.clone());
+            names.sort();
+        }
+        let selected = names.iter().position(|n| *n == current).unwrap_or(0);
+        let options: Vec<DropdownOption> = names
+            .iter()
+            .map(|name| DropdownOption::in_font(name.clone(), name.clone()))
+            .collect();
+        let names = Rc::new(names);
+        let catalog = catalog.clone();
+        let family = family.clone();
+        let refresh = refresh.clone();
+        let typeface = dropdown(
+            "Typeface",
+            options,
+            selected,
+            None,
+            move |index| {
+                if let Some(name) = names.get(index) {
+                    catalog.set_pref("reader.font_family", name);
+                    *family.borrow_mut() = name.clone();
+                    refresh();
+                }
+            },
+            || {},
+        );
+        popup_menu_for_screenshot(&typeface.widget(), "typeface-dropdown");
+        pane_row_with(&rows, "Typeface", None, &typeface.widget());
+    }
+    {
+        let catalog = catalog.clone();
+        let font_px = font_px.clone();
+        let refresh = refresh.clone();
+        let size = stepper_control(
+            "Size",
+            13,
+            24,
+            1,
+            font_px.get(),
+            |v| v.to_string(),
+            move |v| {
+                catalog.set_pref("reader.font_px", &v.to_string());
+                font_px.set(v);
+                refresh();
+            },
+        );
+        pane_row_with(&rows, "Size", None, &size);
+    }
+    {
+        let catalog = catalog.clone();
+        let line_tenths = line_tenths.clone();
+        let refresh = refresh.clone();
+        let line = stepper_control(
+            "Line height",
+            13,
+            25,
+            1,
+            line_tenths.get(),
+            |v| format!("{:.1}", v as f64 / 10.0),
+            move |v| {
+                catalog.set_pref("reader.line_height", &format!("{:.1}", v as f32 / 10.0));
+                line_tenths.set(v);
+                refresh();
+            },
+        );
+        pane_row_with(&rows, "Line height", None, &line);
+    }
+
+    // Layout.
+    let rows = pane_section(host, "Layout");
+    {
+        let catalog = catalog.clone();
+        let column_px = column_px.clone();
+        let refresh = refresh.clone();
+        let column = stepper_control(
+            "Column width",
+            400,
+            860,
+            20,
+            column_px.get(),
+            |v| v.to_string(),
+            move |v| {
+                catalog.set_pref("reader.column_px", &v.to_string());
+                column_px.set(v);
+                refresh();
+            },
+        );
+        pane_row_with(&rows, "Column width", None, &column);
+    }
+    {
+        let catalog = catalog.clone();
+        let justify = justify.clone();
+        let refresh = refresh.clone();
+        let alignment = segmented_control(
+            &["Left", "Justified"],
+            usize::from(justify.get()),
+            SegmentedSize::Small,
+            move |index| {
+                let on = index == 1;
+                catalog.set_pref("reader.justify", if on { "1" } else { "0" });
+                justify.set(on);
+                refresh();
+            },
+        );
+        pane_row_with(&rows, "Alignment", None, &alignment.widget());
+    }
+
+    // Behaviour.
+    let rows = pane_section(host, "Behaviour");
+    {
+        let ask = gtk::Switch::new();
+        ask.set_active(snap.reader_ask_impression);
+        ask.update_property(&[gtk::accessible::Property::Label(
+            "Ask for an impression when I finish a book",
+        )]);
+        let catalog = catalog.clone();
+        ask.connect_active_notify(move |sw| {
+            catalog.set_pref(
+                "reader.ask_impression",
+                if sw.is_active() { "1" } else { "0" },
+            );
+        });
+        pane_row_with(
+            &rows,
+            "Ask for an impression when I finish a book",
+            None,
+            &ask,
+        );
+    }
+    {
+        let scopes = ["library", "series", "book", "off"];
+        let selected = scopes
+            .iter()
+            .position(|s| *s == snap.reader_word_memory_scope)
+            .unwrap_or(0);
+        let catalog = catalog.clone();
+        let memory = segmented_control(
+            &["Library", "Series", "Book", "Off"],
+            selected,
+            SegmentedSize::Small,
+            move |index| {
+                if let Some(scope) = scopes.get(index) {
+                    catalog.set_pref("reader.word_memory_scope", scope);
+                }
+            },
+        );
+        pane_row_with(&rows, "Word memory", None, &memory.widget());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Integrations: designed now, built in Part 2 (decision 154). Every
+// control is present and disabled.
+// ---------------------------------------------------------------------------
+
+fn build_integrations(host: &gtk::Box) {
+    let rows = pane_section(host, "Content sources");
+    for name in ["AO3", "Royal Road", "MangaDex"] {
+        let row = pane_row(&rows, name, None);
+        row.append(&settings_chip("Not available yet", false));
+        let sw = gtk::Switch::new();
+        sw.set_sensitive(false);
+        sw.set_valign(gtk::Align::Center);
+        sw.update_property(&[gtk::accessible::Property::Label(name)]);
+        row.append(&sw);
+    }
+
+    let rows = pane_section(host, "Plugins");
+    let _ = pane_row(&rows, "No plugins installed", None);
+    let add = boxed_ghost_button("Add plugin", || {});
+    add.set_sensitive(false);
+    add.set_halign(gtk::Align::Start);
+    add.set_margin_top(12);
+    host.append(&add);
+
+    let rows = pane_section(host, "Downloads");
+    let row = pane_row(&rows, "Download folder", None);
+    let change = boxed_ghost_button("Change", || {});
+    change.set_sensitive(false);
+    change.set_valign(gtk::Align::Center);
+    row.append(&change);
+    let at_once = stepper_control("Downloads at once", 1, 8, 1, 3, |v| v.to_string(), |_| {});
+    at_once.set_sensitive(false);
+    pane_row_with(&rows, "Downloads at once", None, &at_once);
+}
+
+//---------------------------------------------------------------------------
+// Shortcuts (decision 155): the app-wide registry in `src/shortcuts.rs`,
+// rendered as four outlined groups of 40-high key rows. The chip cluster
+// is a button; clicking it arms a capture controller on that button.
+// One recording at a time, a conflict is refused in the accent line
+// under its group, and a successful press updates the shell's shared
+// table before the preference is saved.
+// ---------------------------------------------------------------------------
+
+use crate::shortcuts::{ShortcutAction, ShortcutBinding, ShortcutBindings, SHORTCUT_GROUPS};
+
+type ShortcutSave = Rc<dyn Fn(ShortcutAction, ShortcutBinding)>;
+type ShortcutControls = Rc<RefCell<Vec<ShortcutControl>>>;
+type ShortcutConflicts = Rc<RefCell<Vec<gtk::Label>>>;
+
+struct ShortcutControl {
+    action: ShortcutAction,
+    button: gtk::Button,
+}
+
+fn build_shortcuts(host: &gtk::Box, catalog: &Catalog, save: ShortcutSave) {
+    let bindings = crate::shortcuts::shared(catalog);
+    let recording = Rc::new(Cell::new(None::<ShortcutAction>));
+    let controls: ShortcutControls = Rc::new(RefCell::new(Vec::new()));
+    let conflicts: ShortcutConflicts = Rc::new(RefCell::new(Vec::new()));
+
+    for (group_index, (group, actions)) in SHORTCUT_GROUPS.iter().enumerate() {
+        let rows = pane_section(host, group);
+        for action in actions.iter().copied() {
+            let row = pane_row(&rows, action.label(), None);
+            row.add_css_class("key");
+            row.set_widget_name(&format!("shortcut-{}", action.id()));
+
+            let button = gtk::Button::new();
+            button.add_css_class("kalam-settings-key-bind");
+            button.set_widget_name(&format!("shortcut-bind-{}", action.id()));
+            button.set_valign(gtk::Align::Center);
+            button.set_can_focus(true);
+            let binding = bindings.borrow().binding(action);
+            set_shortcut_face(&button, action, &binding, false);
+            controls.borrow_mut().push(ShortcutControl {
+                action,
+                button: button.clone(),
+            });
+
+            {
+                let bindings_click = bindings.clone();
+                let recording_click = recording.clone();
+                let controls_click = controls.clone();
+                let conflicts_click = conflicts.clone();
+                button.connect_clicked(move |button| {
+                    if recording_click.get() == Some(action) {
+                        recording_click.set(None);
+                    } else {
+                        recording_click.set(Some(action));
+                        button.grab_focus();
+                    }
+                    clear_shortcut_conflicts(&conflicts_click);
+                    refresh_shortcut_faces(
+                        &controls_click.borrow(),
+                        &bindings_click.borrow(),
+                        recording_click.get(),
+                    );
+                });
+            }
+
+            let keys = gtk::EventControllerKey::new();
+            keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+            {
+                let bindings_key = bindings.clone();
+                let recording_key = recording.clone();
+                let controls_key = controls.clone();
+                let conflicts_key = conflicts.clone();
+                let save_key = save.clone();
+                keys.connect_key_pressed(move |_, keyval, _, state| {
+                    if recording_key.get() != Some(action) {
+                        return gtk::glib::Propagation::Proceed;
+                    }
+                    // Escape is the cancel gesture for every row except
+                    // the one whose job is Escape itself; that row can
+                    // still be cancelled by clicking its chips again.
+                    if keyval == gtk::gdk::Key::Escape && action != ShortcutAction::ClosePanel {
+                        recording_key.set(None);
+                        clear_shortcut_conflicts(&conflicts_key);
+                        refresh_shortcut_faces(
+                            &controls_key.borrow(),
+                            &bindings_key.borrow(),
+                            recording_key.get(),
+                        );
+                        return gtk::glib::Propagation::Stop;
+                    }
+                    // A lone modifier yields no binding and leaves the
+                    // recorder armed for the rest of the chord.
+                    let Some(candidate) = ShortcutBinding::capture(keyval, state) else {
+                        return gtk::glib::Propagation::Stop;
+                    };
+                    let conflict = {
+                        let mut table = bindings_key.borrow_mut();
+                        table.try_bind(action, candidate.clone()).err()
+                    };
+                    if let Some(owner) = conflict {
+                        show_shortcut_conflict(
+                            &conflicts_key,
+                            group_index,
+                            &format!(
+                                "{} is already used by {}.",
+                                candidate.display_label(),
+                                owner.label()
+                            ),
+                        );
+                        refresh_shortcut_faces(
+                            &controls_key.borrow(),
+                            &bindings_key.borrow(),
+                            recording_key.get(),
+                        );
+                        return gtk::glib::Propagation::Stop;
+                    }
+
+                    recording_key.set(None);
+                    save_key(action, candidate);
+                    clear_shortcut_conflicts(&conflicts_key);
+                    refresh_shortcut_faces(
+                        &controls_key.borrow(),
+                        &bindings_key.borrow(),
+                        recording_key.get(),
+                    );
+                    gtk::glib::Propagation::Stop
+                });
+            }
+            button.add_controller(keys);
+
+            let focus = gtk::EventControllerFocus::new();
+            {
+                let bindings_focus = bindings.clone();
+                let recording_focus = recording.clone();
+                let controls_focus = controls.clone();
+                let conflicts_focus = conflicts.clone();
+                focus.connect_leave(move |_| {
+                    if recording_focus.get() == Some(action) {
+                        recording_focus.set(None);
+                        clear_shortcut_conflicts(&conflicts_focus);
+                        refresh_shortcut_faces(
+                            &controls_focus.borrow(),
+                            &bindings_focus.borrow(),
+                            recording_focus.get(),
+                        );
+                    }
+                });
+            }
+            button.add_controller(focus);
+
+            row.append(&button);
+        }
+
+        let conflict = gtk::Label::new(None);
+        conflict.add_css_class("kalam-settings-shortcut-conflict");
+        conflict.set_widget_name(&format!("shortcut-conflict-{group_index}"));
+        conflict.set_halign(gtk::Align::Start);
+        conflict.set_xalign(0.0);
+        conflict.set_wrap(true);
+        conflict.set_visible(false);
+        host.append(&conflict);
+        conflicts.borrow_mut().push(conflict);
+    }
+
+    // CI screenshot state: Go to Home is recording, and the candidate
+    // just pressed was Search the library's standing key. Replaying the
+    // recorder's own refresh/conflict helpers photographs the exact
+    // refused state without changing either binding.
+    if std::env::var("KALAM_DIALOG").as_deref() == Ok("shortcut-recording") {
+        let action = ShortcutAction::GoHome;
+        let candidate = bindings.borrow().binding(ShortcutAction::SearchLibrary);
+        recording.set(Some(action));
+        show_shortcut_conflict(
+            &conflicts,
+            0,
+            &format!(
+                "{} is already used by {}.",
+                candidate.display_label(),
+                ShortcutAction::SearchLibrary.label()
+            ),
+        );
+        refresh_shortcut_faces(&controls.borrow(), &bindings.borrow(), recording.get());
+    }
+}
+
+fn set_shortcut_face(
+    button: &gtk::Button,
+    action: ShortcutAction,
+    binding: &ShortcutBinding,
+    recording: bool,
+) {
+    let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    chips.set_valign(gtk::Align::Center);
+    chips.set_can_target(false);
+    if recording {
+        chips.append(&crate::widgets::chip::key_chip("Press a key…", true));
+    } else {
+        for part in binding.display_parts() {
+            chips.append(&crate::widgets::chip::key_chip(&part, false));
+        }
+    }
+    button.set_child(Some(&chips));
+    button.set_tooltip_text(Some(if recording {
+        "Press a key, or Escape to cancel"
+    } else {
+        "Click, then press the key you want"
+    }));
+    let accessible = if recording {
+        format!("Recording a key for {}", action.label())
+    } else {
+        format!(
+            "Rebind {} (currently {})",
+            action.label(),
+            binding.display_label()
+        )
+    };
+    button.update_property(&[gtk::accessible::Property::Label(&accessible)]);
+}
+
+fn refresh_shortcut_faces(
+    controls: &[ShortcutControl],
+    bindings: &ShortcutBindings,
+    recording: Option<ShortcutAction>,
+) {
+    for control in controls {
+        set_shortcut_face(
+            &control.button,
+            control.action,
+            &bindings.binding(control.action),
+            recording == Some(control.action),
+        );
+    }
+}
+
+fn clear_shortcut_conflicts(conflicts: &ShortcutConflicts) {
+    for label in conflicts.borrow().iter() {
+        label.set_label("");
+        label.set_visible(false);
+    }
+}
+
+fn show_shortcut_conflict(conflicts: &ShortcutConflicts, group_index: usize, text: &str) {
+    clear_shortcut_conflicts(conflicts);
+    if let Some(label) = conflicts.borrow().get(group_index) {
+        label.set_label(text);
+        label.set_visible(true);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// About (decision 156).
+// ---------------------------------------------------------------------------
+
+fn build_about(host: &gtk::Box, catalog: &Arc<Catalog>) {
+    let logo = gtk::Image::new();
+    logo.set_pixel_size(64);
+    logo.set_halign(gtk::Align::Start);
+    if let Some(texture) = crate::app::brand_texture(crate::theme::current(catalog).accent) {
+        logo.set_paintable(Some(&texture));
+    }
+    // The mark is rasterized in the accent; keep it in step with the
+    // palette the way the rail mark does.
+    {
+        let logo = logo.clone();
+        crate::theme::on_theme_applied(Rc::new(move |theme: &crate::theme::Theme| {
+            if let Some(texture) = crate::app::brand_texture(theme.accent) {
+                logo.set_paintable(Some(&texture));
+            }
+        }));
+    }
+    host.append(&logo);
+
+    let name = gtk::Label::new(Some("Kalam"));
+    name.add_css_class("kalam-ui-display");
+    name.set_halign(gtk::Align::Start);
+    name.set_margin_top(16);
+    host.append(&name);
+
+    let version = gtk::Label::new(Some(&format!(
+        "Version {}",
+        env!("CARGO_PKG_VERSION")
+    )));
+    version.add_css_class("kalam-ui-meta");
+    version.set_halign(gtk::Align::Start);
+    version.set_margin_top(8);
+    host.append(&version);
+
+    let rows = pane_section_bare(host);
+    let licence = gtk::Label::new(Some("See the README in the source"));
+    licence.add_css_class("kalam-ui-meta");
+    pane_row_with(&rows, "Licence", None, &licence);
+
+    let source = gtk::LinkButton::with_label(
+        "https://github.com/alankarter1275/kalam",
+        "github.com/alankarter1275/kalam",
+    );
+    source.add_css_class("kalam-settings-link");
+    pane_row_with(&rows, "Source code", None, &source);
+
+    let show = {
+        let host = host.clone();
+        boxed_ghost_button("Show licences", move || show_licences_dialog(&host))
+    };
+    pane_row_with(&rows, "Dictionary credits", None, &show);
+}
+
+/// The bundled dictionary packs' attribution and licence texts,
+/// compiled in so the credits travel with the binary.
+const DICTIONARY_NOTICES: &str = concat!(
+    include_str!("../../resources/dictionaries/english-wordnet-2025.NOTICE.txt"),
+    "\n\n",
+    include_str!("../../resources/dictionaries/english-wordnet-2025.LICENSE.md"),
+    "\n\n",
+    include_str!("../../resources/dictionaries/english-wordnet-2025.WNDB_License.txt"),
+    "\n\n————————————\n\n",
+    include_str!("../../resources/dictionaries/wordnet-3.0-synonyms.NOTICE.txt"),
+    "\n\n————————————\n\n",
+    include_str!("../../resources/dictionaries/wordnet-3.0-exc.NOTICE.txt"),
+    "\n\n————————————\n\n",
+    include_str!("../../resources/dictionaries/english-idioms-2024.NOTICE.txt"),
+    "\n\n",
+    include_str!("../../resources/dictionaries/english-idioms-2024.LICENSE.md"),
+    "\n\n————————————\n\n",
+    include_str!("../../resources/dictionaries/cmudict-0.7a.NOTICE.txt"),
+);
+
+fn show_licences_dialog(anchor: &gtk::Box) {
+    let shell = dialog_shell(
+        DialogSize::List,
+        Some("The dictionary packs Kalam bundles, and the terms they arrived under."),
+    );
+    let scroll = gtk::ScrolledWindow::new();
+    scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::External);
+    scroll.set_vexpand(true);
+    let text = gtk::Label::new(Some(DICTIONARY_NOTICES));
+    text.add_css_class("kalam-settings-licences");
+    text.set_wrap(true);
+    text.set_xalign(0.0);
+    text.set_halign(gtk::Align::Fill);
+    text.set_selectable(true);
+    scroll.set_child(Some(&text));
+    shell.body().append(&scroll);
+
+    let slot: Rc<RefCell<Option<crate::widgets::in_app_dialog::InAppDialog>>> =
+        Rc::new(RefCell::new(None));
+    let close = {
+        let slot = slot.clone();
+        boxed_ghost_button("Close", move || {
+            if let Some(dialog) = slot.borrow().clone() {
+                dialog.close();
+            }
+        })
+    };
+    shell.footer().append(&close);
+
+    match present_dialog(
+        anchor,
+        "Dictionary credits",
+        DialogExit::OwnButtons,
+        &shell,
+    ) {
+        Some(dialog) => *slot.borrow_mut() = Some(dialog),
+        None => crate::notify::error(
+            "Could not open the dialog",
+            "The licences dialog could not be opened.",
+        ),
+    }
+}
+// ---------------------------------------------------------------------------
+// Libraries and storage, Data and export, Book files (decision 149).
+// ---------------------------------------------------------------------------
+
+/// The switches in the new rows: plain `Gtk.Switch`, the initial state
+/// set before the handler attaches so it only ever reports changes.
+fn row_switch(label: &str, initial: bool, on_toggle: impl Fn(bool) + 'static) -> gtk::Switch {
     let sw = gtk::Switch::new();
     sw.set_active(initial);
     sw.set_valign(gtk::Align::Center);
-    sw.add_css_class("kalam-switch");
+    sw.set_tooltip_text(Some(label));
+    sw.update_property(&[gtk::accessible::Property::Label(label)]);
     sw.connect_active_notify(move |sw| on_toggle(sw.is_active()));
     sw
 }
 
-/// A pill chip label: `kalam-chip` plus one colour class.
-fn chip_label(text: &str, class: &str) -> gtk::Label {
-    let label = gtk::Label::new(Some(text));
-    label.add_css_class("kalam-chip");
-    label.add_css_class(class);
-    label.set_valign(gtk::Align::Center);
-    label
-}
-
-/// Attach a generated CSS class carrying literal per-theme colours.
-///
-/// The provider is registered on the display rather than on a widget-local
-/// StyleContext so it survives theme switches without using the deprecated
-/// widget style-context API.
-fn add_styled_class(widget: &impl IsA<gtk::Widget>, class: &str, decls: &str) {
-    let provider = gtk::CssProvider::new();
-    provider.load_from_string(&format!(".{class} {{ {decls} }}"));
-    if let Some(display) = gtk::gdk::Display::default() {
-        gtk::style_context_add_provider_for_display(
-            &display,
-            &provider,
-            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-        );
-    }
-    widget.add_css_class(class);
-}
-
-/// Theme families in a 2-column grid; each family is a raised block holding
-/// one card per variant.
-fn build_theme_picker(host: &gtk::Grid, catalog: &Arc<Catalog>, active: &str) {
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-    // `active` arrives from the snapshot (7.1 step 2c); the catalog stays
-    // for the save-and-apply callbacks, which are click-time writes.
-    let mut slot = 0;
-    for (family_key, name, desc, prefix) in THEME_FAMILIES.iter() {
-        let family = themes_for_family(family_key);
-        if family.is_empty() {
-            continue;
+fn build_libraries_pane(
+    host: &gtk::Box,
+    catalog: &Arc<Catalog>,
+    fs: Option<&SettingsFs>,
+    sender: &ComponentSender<SettingsPageModel>,
+) {
+    let rows = pane_section(host, "Libraries");
+    match fs {
+        None => {
+            // The registry file rides the slow worker; until it lands
+            // the section says so rather than guessing "no libraries".
+            let _ = pane_row(&rows, "Libraries", Some("Reading the library list…"));
         }
-        let block = theme_family_block(&family, name, desc, prefix, active, host, catalog);
-        host.attach(&block, slot % 2, slot / 2, 1, 1);
-        slot += 1;
+        Some(fs) if fs.registry.libraries.is_empty() => {
+            let path = crate::paths::legacy_data_dir()
+                .to_string_lossy()
+                .into_owned();
+            let row = pane_row(&rows, "Default library", Some(&path));
+            row.set_tooltip_text(Some(&path));
+            row.append(&settings_chip("Open", true));
+        }
+        Some(fs) => {
+            for (index, lib) in fs.registry.libraries.iter().enumerate() {
+                library_row(&rows, lib, index, fs, sender);
+            }
+        }
     }
-}
 
-/// Group theme ids into the families shown in Settings.
-///
-/// Most families are `base` + `base-darker`, but Ayu's shipped ids are
-/// `ayumirage` and `ayu-darker`, so this cannot rely on a simple `base-`
-/// prefix match.
-fn themes_for_family(family_key: &str) -> Vec<&'static crate::theme::Theme> {
-    crate::theme::ALL
-        .iter()
-        .filter(|theme| theme_family_key(theme) == family_key)
-        .collect()
-}
+    let add = {
+        let s = sender.clone();
+        let anchor = rows.clone();
+        boxed_ghost_button("Add library…", move || add_library_flow(&anchor, &s))
+    };
+    add.set_halign(gtk::Align::Start);
+    add.set_margin_top(12);
+    host.append(&add);
 
-fn theme_family_key(theme: &crate::theme::Theme) -> &'static str {
-    if theme.id.starts_with("onedark") {
-        "onedark"
-    } else if theme.id.starts_with("tokyonight") {
-        "tokyonight"
-    } else if theme.id.starts_with("everforest") {
-        "everforest"
-    } else if theme.id.starts_with("catppuccin") {
-        "catppuccin"
-    } else if theme.id.starts_with("gruvbox") {
-        "gruvbox"
-    } else if theme.id.starts_with("ayu") {
-        "ayu"
-    } else if theme.id == "nord" {
-        "nord"
-    } else {
-        theme.id
-    }
-}
-
-fn active_theme_badge(theme: &crate::theme::Theme) -> &'static str {
-    if theme.id == crate::theme::DEFAULT.id {
-        "default"
-    } else {
-        "current"
-    }
-}
-
-fn visit_widget_tree(widget: &gtk::Widget, visit: &mut impl FnMut(&gtk::Widget)) {
-    visit(widget);
-    let mut child = widget.first_child();
-    while let Some(node) = child {
-        let next = node.next_sibling();
-        visit_widget_tree(&node, visit);
-        child = next;
-    }
-}
-
-/// Update the picker in place after a theme change.
-///
-/// Rebuilding the entire grid after every click caused the Appearance tab to
-/// visibly blink. The preview cards are static samples, so only the selected
-/// state needs to change.
-fn update_theme_picker_state(host: &gtk::Grid, active: &crate::theme::Theme) {
-    let root: gtk::Widget = host.clone().upcast();
-    visit_widget_tree(&root, &mut |widget| {
-        if let Ok(btn) = widget.clone().downcast::<gtk::Button>() {
-            let name = btn.widget_name();
-            let Some(theme_id) = name.strip_prefix(THEME_BUTTON_PREFIX) else {
-                return;
+    // Recovery: how much of this library could be rebuilt from its
+    // book folders alone. The number is on screen because the promise
+    // is only worth something if it can be checked.
+    let rows = pane_section(host, "Recovery");
+    let (caption, can_write) = match fs.map(|f| &f.survey) {
+        None => ("Checking your books' backup coverage…".to_string(), false),
+        Some(survey) if survey.books == 0 => ("No books yet.".to_string(), false),
+        Some(survey) => {
+            let mut text = if survey.missing() == 0 && survey.damaged == 0 {
+                format!("All {} books have a backup copy.", survey.books)
+            } else {
+                format!(
+                    "{} of {} books have a backup copy.",
+                    survey.recoverable, survey.books
+                )
             };
-            let is_active = theme_id == active.id;
-            if let Some(card) = btn.child().and_then(|w| w.downcast::<gtk::Box>().ok()) {
-                if is_active {
-                    card.add_css_class("active");
-                } else {
-                    card.remove_css_class("active");
-                }
+            if survey.damaged > 0 {
+                text += &format!(
+                    " {} backup copies cannot be read.",
+                    survey.damaged
+                );
             }
-            return;
+            (text, survey.missing() > 0)
         }
-
-        let name = widget.widget_name();
-        if let Some(theme_id) = name.strip_prefix(THEME_BADGE_PREFIX) {
-            if let Ok(label) = widget.clone().downcast::<gtk::Label>() {
-                if theme_id == active.id {
-                    label.set_label(active_theme_badge(active));
-                    label.remove_css_class("kalam-theme-variant-off");
-                } else {
-                    label.set_label("");
-                    label.add_css_class("kalam-theme-variant-off");
-                }
-            }
-        } else if let Some(theme_id) = name.strip_prefix(THEME_CHECK_PREFIX) {
-            widget.set_opacity(if theme_id == active.id { 1.0 } else { 0.0 });
-        }
-    });
-}
-
-fn theme_family_block(
-    family: &[&crate::theme::Theme],
-    name: &str,
-    desc: &str,
-    prefix: &str,
-    active: &str,
-    host: &gtk::Grid,
-    catalog: &Arc<Catalog>,
-) -> gtk::Box {
-    let block = gtk::Box::new(gtk::Orientation::Vertical, 6);
-    block.add_css_class("kalam-theme-family-card");
-
-    let name_label = gtk::Label::new(Some(name));
-    name_label.add_css_class("kalam-theme-family-name");
-    name_label.set_halign(gtk::Align::Start);
-    block.append(&name_label);
-
-    let desc_label = gtk::Label::new(Some(desc));
-    desc_label.add_css_class("kalam-theme-family-desc");
-    desc_label.set_wrap(true);
-    desc_label.set_xalign(0.0);
-    desc_label.set_halign(gtk::Align::Start);
-    block.append(&desc_label);
-
-    let variants = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    variants.set_homogeneous(true);
-    for theme in family {
-        variants.append(&theme_variant_button(theme, prefix, active, host, catalog));
-    }
-    block.append(&variants);
-    block
-}
-
-/// One clickable theme card: variant name, mini UI preview, swatch strip,
-/// and a ✓ seal on the active theme.
-fn theme_variant_button(
-    theme: &crate::theme::Theme,
-    prefix: &str,
-    active: &str,
-    host: &gtk::Grid,
-    catalog: &Arc<Catalog>,
-) -> gtk::Button {
-    let is_active = theme.id == active;
-    let raw = theme
-        .label
-        .strip_prefix(prefix)
-        .unwrap_or(theme.label)
-        .trim()
-        .trim_matches(|c| c == '(' || c == ')' || c == ' ');
-    let variant: &str = if raw.is_empty() { "Normal" } else { raw };
-
-    let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
-    card.add_css_class("kalam-theme-card");
-    if is_active {
-        card.add_css_class("active");
-    }
-    add_styled_class(
-        &card,
-        &format!("kalam-tc-bg-{}", theme.id),
-        &format!(
-            "background-color: {}; border-color: {};",
-            theme.bg, theme.border
-        ),
-    );
-
-    // Name row: variant name, current/default tag, spacer, ✓ seal.
-    let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    let name_label = gtk::Label::new(Some(variant));
-    name_label.add_css_class("kalam-theme-name");
-    add_styled_class(
-        &name_label,
-        &format!("kalam-tc-name-{}", theme.id),
-        &format!("color: {};", theme.text),
-    );
-    name_label.set_halign(gtk::Align::Start);
-    name_row.append(&name_label);
-    let tag = gtk::Label::new(Some(if is_active {
-        active_theme_badge(theme)
-    } else {
-        ""
-    }));
-    tag.set_widget_name(&format!("{THEME_BADGE_PREFIX}{}", theme.id));
-    tag.add_css_class("kalam-theme-variant");
-    if !is_active {
-        tag.add_css_class("kalam-theme-variant-off");
-    }
-    add_styled_class(
-        &tag,
-        &format!("kalam-tc-variant-{}", theme.id),
-        &format!("color: {};", theme.text_dim),
-    );
-    tag.set_width_chars(7);
-    tag.set_max_width_chars(7);
-    tag.set_xalign(0.0);
-    tag.set_valign(gtk::Align::Center);
-    name_row.append(&tag);
-    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    spacer.set_hexpand(true);
-    name_row.append(&spacer);
-    let check =
-        crate::icons::symbolic_with_classes("object-select-symbolic", 12, &["kalam-theme-check"]);
-    check.set_widget_name(&format!("{THEME_CHECK_PREFIX}{}", theme.id));
-    check.set_opacity(if is_active { 1.0 } else { 0.0 });
-    check.set_valign(gtk::Align::Center);
-    add_styled_class(
-        &check,
-        &format!("kalam-tc-chk-{}", theme.id),
-        &format!("background-color: {}; color: {};", theme.accent, theme.bg),
-    );
-    name_row.append(&check);
-    card.append(&name_row);
-
-    // Mini preview: sidebar rail with two dots + main bars and a card.
-    let preview = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    preview.add_css_class("kalam-theme-preview");
-    preview.set_overflow(gtk::Overflow::Hidden);
-    preview.set_height_request(52);
-
-    let rail = gtk::Box::new(gtk::Orientation::Vertical, 4);
-    rail.set_size_request(18, -1);
-    add_styled_class(
-        &rail,
-        &format!("kalam-tc-rail-{}", theme.id),
-        &format!("background-color: {};", theme.sidebar),
-    );
-    let dot_accent = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    dot_accent.set_size_request(6, 6);
-    dot_accent.set_margin_top(6);
-    dot_accent.set_halign(gtk::Align::Center);
-    add_styled_class(
-        &dot_accent,
-        &format!("kalam-tc-dot-a-{}", theme.id),
-        &format!("background-color: {}; border-radius: 999px;", theme.accent),
-    );
-    rail.append(&dot_accent);
-    let dot_border = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    dot_border.set_size_request(6, 6);
-    dot_border.set_halign(gtk::Align::Center);
-    add_styled_class(
-        &dot_border,
-        &format!("kalam-tc-dot-b-{}", theme.id),
-        &format!("background-color: {}; border-radius: 999px;", theme.border),
-    );
-    rail.append(&dot_border);
-    preview.append(&rail);
-
-    let main = gtk::Box::new(gtk::Orientation::Vertical, 4);
-    main.add_css_class("kalam-theme-preview-main");
-    main.set_hexpand(true);
-    let bar1 = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    bar1.set_size_request(55, 4);
-    bar1.set_halign(gtk::Align::Start);
-    add_styled_class(
-        &bar1,
-        &format!("kalam-tc-bar1-{}", theme.id),
-        &format!("background-color: {}; border-radius: 999px;", theme.border),
-    );
-    main.append(&bar1);
-    let mini = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    mini.set_hexpand(true);
-    mini.set_size_request(-1, 18);
-    add_styled_class(
-        &mini,
-        &format!("kalam-tc-card-{}", theme.id),
-        &format!(
-            "background-color: {}; border: 1px solid {}; border-radius: 4px;",
-            theme.surface, theme.border
-        ),
-    );
-    main.append(&mini);
-    let bar2 = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    bar2.set_size_request(35, 4);
-    bar2.set_halign(gtk::Align::Start);
-    add_styled_class(
-        &bar2,
-        &format!("kalam-tc-bar2-{}", theme.id),
-        &format!("background-color: {}; border-radius: 999px;", theme.border),
-    );
-    main.append(&bar2);
-    preview.append(&main);
-    card.append(&preview);
-
-    // Swatch strip: surface2 / surface / border / accent / text.
-    let swatches = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    for (slot, colour) in [
-        theme.surface_2,
-        theme.surface,
-        theme.border,
-        theme.accent,
-        theme.text,
-    ]
-    .iter()
-    .enumerate()
-    {
-        let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        cell.set_hexpand(true);
-        cell.set_size_request(-1, 5);
-        add_styled_class(
-            &cell,
-            &format!("kalam-tc-s{slot}-{}", theme.id),
-            &format!("background-color: {colour}; border-radius: 999px;"),
-        );
-        swatches.append(&cell);
-    }
-    card.append(&swatches);
-
-    let btn = gtk::Button::new();
-    btn.set_child(Some(&card));
-    btn.set_widget_name(&format!("{THEME_BUTTON_PREFIX}{}", theme.id));
-    btn.add_css_class("kalam-theme-btn");
-    btn.set_tooltip_text(Some(theme.label));
-
-    let host = host.clone();
-    let catalog = catalog.clone();
-    let chosen = *theme;
-    btn.connect_clicked(move |_| {
-        crate::theme::save_and_apply(&catalog, &chosen);
-        update_theme_picker_state(&host, &chosen);
-        crate::notify::success("Theme changed", chosen.label);
-    });
-    btn
-}
-
-/// Data locations: four label/desc rows with mono path boxes.
-fn build_paths(
-    host: &gtk::Box,
-    catalog: &Arc<Catalog>,
-    registry: Option<&crate::libraries::LibraryRegistry>,
-    survey: Option<&crate::sidecar::SidecarSurvey>,
-) {
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-    build_libraries(host, registry);
-    build_recovery(host, catalog, survey);
-
-    let body = section_card(
-        host,
-        "folder-symbolic",
-        "Data locations",
-        Some("These paths are set at first run. Moving data requires copying the files manually."),
-    );
-    let items = [
-        (
-            "Data Directory",
-            "Base folder for Kalam application data",
-            data_dir().to_string_lossy().into_owned(),
-        ),
-        (
-            "Catalog Database",
-            "SQLite database storing library books, shelves, tags, and reading progress",
-            catalog_db().to_string_lossy().into_owned(),
-        ),
-        (
-            "Library Files",
-            "Directory where EPUB books and extracted covers are stored",
-            library_dir().to_string_lossy().into_owned(),
-        ),
-        (
-            "Dictionaries Directory",
-            "Location for offline StarDict, SQLite, and TSV dictionary packs",
-            dictionaries_dir().to_string_lossy().into_owned(),
-        ),
-    ];
-    for (title, sub, path) in items {
-        setting_row(&body, title, sub, &path_box(&path));
-    }
-}
-
-/// P6.5 — the libraries card: which library is open, and the ones you know.
-///
-/// Deliberately a plain list plus "Add", not a full manager. Switching
-/// re-launches rather than swapping underneath a running UI: pages hold open
-/// database handles and half-drawn covers, so repointing mid-session would
-/// leave them reading one library and writing to another.
-fn build_libraries(host: &gtk::Box, reg: Option<&crate::libraries::LibraryRegistry>) {
-    // The registry file is read by the page's slow worker (2c); until it
-    // lands this card says so rather than guessing "no libraries".
-    let Some(reg) = reg else {
-        let body = section_card(
-            host,
-            "library-symbolic",
-            "Libraries",
-            Some("A library is a folder holding its own books, covers and database."),
-        );
-        setting_row(&body, "Libraries", "Reading the library list…", &loading_label());
-        return;
     };
-    let body = section_card(
-        host,
-        "library-symbolic",
-        "Libraries",
-        Some(concat!(
-            "A library is a folder holding its own books, covers and database. ",
-            "Books in one library do not appear in another. Copy the folder to ",
-            "another machine and it opens there."
-        )),
-    );
-
-    if reg.libraries.is_empty() {
-        setting_row(
-            &body,
-            "Default library",
-            "No library has been chosen, so Kalam is using its original folder.",
-            &path_box(&crate::paths::legacy_data_dir().to_string_lossy()),
-        );
-    } else {
-        let active = reg.active;
-        for (i, lib) in reg.libraries.iter().enumerate() {
-            let open_now = active == Some(i);
-
-            // Path, then Open / Forget. Grouped in one row so a long path
-            // cannot push the buttons off the edge.
-            let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            controls.set_valign(gtk::Align::Center);
-            controls.append(&path_box(&lib.path.to_string_lossy()));
-
-            if !open_now {
-                let open = gtk::Button::with_label("Open");
-                open.add_css_class("kalam-btn-outlined");
-                open.set_valign(gtk::Align::Center);
-                let name = lib.name.clone();
-                open.connect_clicked(move |btn| {
-                    // Ask first. Switching restarts the app, which closes
-                    // whatever the user is reading -- doing that from a single
-                    // unlabelled click would be rude.
-                    let window = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
-                    let dialog = gtk::AlertDialog::builder()
-                        .modal(true)
-                        .message(format!("Open “{name}”?"))
-                        .detail(concat!(
-                            "Kalam will restart to open the other library. ",
-                            "Anything you are reading will be closed; your ",
-                            "place is saved."
-                        ))
-                        .buttons(vec![
-                            "Cancel".to_string(),
-                            "Restart and open".to_string(),
-                        ])
-                        .cancel_button(0)
-                        .default_button(1)
-                        .build();
-
-                    let name = name.clone();
-                    dialog.choose(
-                        window.as_ref(),
-                        gtk::gio::Cancellable::NONE,
-                        move |answer| {
-                            // Escape and the Cancel button both land here as
-                            // an error or index 0. `glib::Error` is not
-                            // comparable, so match rather than `!= Ok(1)`.
-                            if !matches!(answer, Ok(1)) {
-                                return;
-                            }
-                            let mut reg = crate::libraries::load_registry();
-                            if !reg.select(i) {
-                                // The registry changed under us -- another
-                                // window, or a hand edit. Saying so beats
-                                // silently doing nothing.
-                                crate::notify::error(
-                                    "Could not switch library",
-                                    "The library list changed. Reopen Settings and try again.",
-                                );
-                                return;
-                            }
-                            if let Err(err) = crate::libraries::save_registry(&reg) {
-                                crate::notify::error(
-                                    "Could not save the library list",
-                                    &err.to_string(),
-                                );
-                                return;
-                            }
-                            // Only restart once the choice is safely on disk;
-                            // restarting first would reopen the old library
-                            // and look like the click did nothing.
-                            let err = crate::libraries::restart_now();
-                            crate::notify::error(
-                                "Could not restart",
-                                &format!("“{name}” will open next time you start Kalam. ({err})"),
-                            );
-                        },
-                    );
-                });
-                controls.append(&open);
-            }
-
-            let forget = gtk::Button::with_label("Forget");
-            forget.add_css_class("kalam-btn-outlined");
-            forget.set_valign(gtk::Align::Center);
-            let fname = lib.name.clone();
-            forget.connect_clicked(move |_| {
-                let mut reg = crate::libraries::load_registry();
-                if !reg.forget(i) {
-                    crate::notify::error(
-                        "Could not remove that library",
-                        "The library list changed. Reopen Settings and try again.",
-                    );
-                    return;
-                }
-                match crate::libraries::save_registry(&reg) {
-                    // Say plainly that the books are untouched. "Forget" and
-                    // "delete my library" must never be confusable.
-                    Ok(()) => crate::notify::info(
-                        "Library removed from the list",
-                        &format!("“{fname}” — the folder and its books were not touched."),
-                    ),
-                    Err(err) => {
-                        crate::notify::error("Could not save the library list", &err.to_string())
-                    }
-                }
-            });
-            controls.append(&forget);
-
-            setting_row(
-                &body,
-                &lib.name,
-                if open_now {
-                    "Open now"
-                } else {
-                    "Opens on next launch when selected"
-                },
-                &controls,
-            );
-        }
-    }
-
-    // Adding a library is the one action wired up so far. Switching and
-    // forgetting need the relaunch flow and a confirmation, which come next.
-    let add = gtk::Button::with_label("Add library…");
-    add.add_css_class("kalam-btn-outlined");
-    add.set_valign(gtk::Align::Center);
-    add.connect_clicked(move |btn| {
-        // `FileDialog`, matching the rest of this file -- the older
-        // `FileChooserNative` needs the dialog kept alive by hand.
-        let dialog = gtk::FileDialog::builder()
-            .title("Choose a folder for the library")
-            .modal(true)
-            .build();
-        let window = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
-        dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
-            let Ok(folder) = res else { return };
-            let Some(path) = folder.path() else { return };
-
-            // Named after the folder: the user already chose a meaningful name
-            // when they picked where to put it, and asking twice for the same
-            // information is a step nobody wants.
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "Library".to_string());
-
-            // Say which of the two things just happened. "Added a library" is
-            // ambiguous between "started an empty one" and "found my books",
-            // and getting that wrong is alarming in one direction and
-            // confusing in the other.
-            let existing = crate::libraries::looks_like_a_library(&path);
-
-            let mut reg = crate::libraries::load_registry();
-            reg.add_or_select(&name, &path);
-            match crate::libraries::save_registry(&reg) {
-                Ok(()) => crate::notify::info(
-                    if existing {
-                        "Existing library found"
-                    } else {
-                        "New library created"
-                    },
-                    &format!("“{name}” — restart Kalam to open it."),
-                ),
-                Err(err) => {
-                    crate::notify::error("Could not save the library list", &err.to_string());
-                }
-            }
-        });
-    });
-    setting_row(
-        &body,
-        "Add a library",
-        concat!(
-            "Pick a folder. An empty folder starts a new library; ",
-            "an existing Kalam library folder is reopened."
-        ),
-        &add,
-    );
-}
-
-/// How much of this library could be rebuilt from its folders alone.
-///
-/// The point of `kalam.json` is that losing `catalog.db` should not lose your
-/// tags, highlights and reading positions. That promise is only worth
-/// something if it is checkable — the backups are written on code paths that
-/// could quietly stop running, and nobody would notice until the day they
-/// mattered. So the number is on screen.
-fn build_recovery(
-    host: &gtk::Box,
-    catalog: &Arc<Catalog>,
-    survey: Option<&crate::sidecar::SidecarSurvey>,
-) {
-    // The survey reads one sidecar file per book — the heaviest read on the
-    // whole page, which is exactly why it runs on the page's slow worker
-    // (2c). Until it lands the row says so instead of claiming "No books".
-    let Some(survey) = survey else {
-        let body = section_card(
-            host,
-            "document-save-symbolic",
-            "Recovery",
-            Some(concat!(
-                "Each book folder keeps a kalam.json copy of its details, tags, ",
-                "highlights and reading position. If the catalog database is ever ",
-                "lost, this is what a rebuild would use."
-            )),
-        );
-        setting_row(
-            &body,
-            "Books with a backup copy",
-            "Checking your books' backup coverage…",
-            &loading_label(),
-        );
-        return;
-    };
-    let body = section_card(
-        host,
-        "document-save-symbolic",
-        "Recovery",
-        Some(concat!(
-            "Each book folder keeps a kalam.json copy of its details, tags, ",
-            "highlights and reading position. If the catalog database is ever ",
-            "lost, this is what a rebuild would use."
-        )),
-    );
-
-    let missing = survey.missing();
-    let summary = if survey.books == 0 {
-        "No books yet.".to_string()
-    } else if missing == 0 && survey.damaged == 0 {
-        format!("All {} books have a backup copy.", survey.books)
-    } else {
-        let mut parts = vec![format!("{} of {} covered", survey.recoverable, survey.books)];
-        if missing > 0 {
-            parts.push(format!("{missing} missing"));
-        }
-        if survey.damaged > 0 {
-            parts.push(format!("{} unreadable", survey.damaged));
-        }
-        parts.join(" · ")
-    };
-
-    let backfill = gtk::Button::with_label("Write missing copies");
-    backfill.add_css_class("kalam-btn-outlined");
-    backfill.set_valign(gtk::Align::Center);
-    backfill.set_sensitive(missing > 0);
-    {
+    let write = {
         let catalog = catalog.clone();
-        backfill.connect_clicked(move |btn| {
+        let s = sender.clone();
+        boxed_ghost_button("Write missing copies", move || {
             let written = crate::sidecar::backfill_missing(&catalog);
-            btn.set_sensitive(false);
             crate::notify::info(
                 "Backup copies written",
                 &format!("{written} book folders updated."),
             );
-        });
-    }
-    setting_row(&body, "Books with a backup copy", &summary, &backfill);
-}
+            s.input(SettingsMsg::ReloadFs);
+        })
+    };
+    write.set_sensitive(can_write);
+    pane_row_with(
+        &rows,
+        "Books with a backup copy",
+        Some(&caption),
+        &write,
+    );
 
-/// A mono path box; long paths ellipsize but stay selectable and have the
-/// full path as a tooltip.
-fn path_box(path: &str) -> gtk::Box {
-    let wrap = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    wrap.add_css_class("kalam-settings-path-box");
-    let label = gtk::Label::new(Some(path));
-    label.set_selectable(true);
-    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    label.set_max_width_chars(34);
-    label.set_tooltip_text(Some(path));
-    wrap.append(&label);
-    wrap
-}
-
-/// Back up the catalog, and clear the reader cache.
-fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-    let body = section_card(host, "folder-download-symbolic", "Backup & cache", None);
-
-    let backup_btn = gtk::Button::with_label("Back up library…");
-    backup_btn.add_css_class("kalam-btn-outlined");
-    backup_btn.set_valign(gtk::Align::Center);
-    {
+    // Backup and cache.
+    let rows = pane_section(host, "Backup and cache");
+    let backup = {
         let catalog = catalog.clone();
-        backup_btn.connect_clicked(move |btn| {
+        let anchor = rows.clone();
+        boxed_ghost_button("Back up library…", move || {
             let dialog = gtk::FileDialog::builder()
                 .title("Save library backup")
                 .modal(true)
                 .initial_name(format!("kalam-backup-{}.db", today_stamp()))
                 .build();
-            let window = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+            let window = anchor
+                .root()
+                .and_then(|r| r.downcast::<gtk::Window>().ok());
             let catalog = catalog.clone();
             dialog.save(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
                 let Ok(file) = res else { return };
@@ -1580,28 +2301,269 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
                     }
                 }
             });
-        });
+        })
+    };
+    pane_row_with(
+        &rows,
+        "Back up library",
+        Some("A snapshot of the catalog database: metadata, annotations, shelves and reading history."),
+        &backup,
+    );
+    cache_row(&rows);
+}
+
+/// One library's row: name over path and book count, the open one
+/// carrying the accent chip and the rest their Open/Forget pair — or
+/// the missing-folder state with Locate folder in place of Open.
+fn library_row(
+    rows: &gtk::Box,
+    lib: &crate::libraries::LibraryEntry,
+    index: usize,
+    fs: &SettingsFs,
+    sender: &ComponentSender<SettingsPageModel>,
+) {
+    let state = fs.library_states.get(index);
+    let missing = state.is_some_and(|s| s.folder_missing);
+    let open_now = fs.registry.active == Some(index);
+    let path_text = lib.path.display().to_string();
+
+    if missing {
+        let row = pane_row_alert(rows, &lib.name, "Folder not found");
+        row.set_tooltip_text(Some(&path_text));
+        let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        controls.set_valign(gtk::Align::Center);
+        controls.append(&locate_library_button(index, &lib.name, rows, sender));
+        controls.append(&forget_library_button(index, &lib.name, sender));
+        row.append(&controls);
+        return;
     }
-    setting_row(
-        &body,
-        "Back up library database",
-        "Creates a snapshot of catalog.db containing all metadata, annotations, shelves, ratings, and reading history.",
-        &backup_btn,
+
+    let caption = match state.and_then(|s| s.books) {
+        Some(n) => format!(
+            "{path_text} · {n} book{}",
+            if n == 1 { "" } else { "s" }
+        ),
+        None => path_text.clone(),
+    };
+    let row = pane_row(rows, &lib.name, Some(&caption));
+    row.set_tooltip_text(Some(&path_text));
+    if open_now {
+        row.append(&settings_chip("Open", true));
+        return;
+    }
+    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    controls.set_valign(gtk::Align::Center);
+    controls.append(&open_library_button(index, &lib.name, rows));
+    controls.append(&forget_library_button(index, &lib.name, sender));
+    row.append(&controls);
+}
+
+/// Open another library, behind the restart prompt (decision 149).
+/// Switching re-launches rather than swapping underneath a running
+/// UI: pages hold open database handles and half-drawn covers, so
+/// repointing mid-session would leave them reading one library and
+/// writing to another.
+fn open_library_button(index: usize, name: &str, anchor: &gtk::Box) -> gtk::Button {
+    let name = name.to_string();
+    let anchor = anchor.clone();
+    let button = boxed_ghost_button("Open", move || {
+        let confirm_name = name.clone();
+        let _ = confirmation_dialog(
+            &anchor,
+            &format!("Open {name}?"),
+            "Kalam restarts to open this library. Your books are not changed.",
+            "Cancel",
+            "Restart and open",
+            ConfirmationKind::Primary,
+            move || {
+                let mut reg = crate::libraries::load_registry();
+                if !reg.select(index) {
+                    // The registry changed under us — another window, or
+                    // a hand edit. Saying so beats doing nothing.
+                    crate::notify::error(
+                        "Could not switch library",
+                        "The library list changed. Reopen Settings and try again.",
+                    );
+                    return;
+                }
+                if let Err(err) = crate::libraries::save_registry(&reg) {
+                    crate::notify::error(
+                        "Could not save the library list",
+                        &err.to_string(),
+                    );
+                    return;
+                }
+                // Only restart once the choice is safely on disk;
+                // restarting first would reopen the old library and
+                // look like the click did nothing.
+                let err = crate::libraries::restart_now();
+                crate::notify::error(
+                    "Could not restart",
+                    &format!(
+                        "“{confirm_name}” will open next time you start Kalam. ({err})"
+                    ),
+                );
+            },
+        );
+    });
+    click_button_for_screenshot(&button, "open-library");
+    button
+}
+
+/// Forget a library: direct, no confirm (decision 150) — it only
+/// edits the list, and the toast says the books are untouched so
+/// "forget" and "delete my library" are never confusable.
+fn forget_library_button(
+    index: usize,
+    name: &str,
+    sender: &ComponentSender<SettingsPageModel>,
+) -> gtk::Button {
+    let name = name.to_string();
+    let s = sender.clone();
+    boxed_ghost_button("Forget", move || {
+        let mut reg = crate::libraries::load_registry();
+        if !reg.forget(index) {
+            crate::notify::error(
+                "Could not remove that library",
+                "The library list changed. Reopen Settings and try again.",
+            );
+            return;
+        }
+        match crate::libraries::save_registry(&reg) {
+            Ok(()) => {
+                crate::notify::info(
+                    "Library removed from the list",
+                    &format!("“{name}” — the folder and its books were not touched."),
+                );
+                s.input(SettingsMsg::ReloadFs);
+            }
+            Err(err) => {
+                crate::notify::error("Could not save the library list", &err.to_string())
+            }
+        }
+    })
+}
+
+/// Locate folder: point the entry at the library's new home. The
+/// picked folder must actually hold a library — repointing at a
+/// random folder would trade a clear "not found" for a silent empty
+/// library on next launch.
+fn locate_library_button(
+    index: usize,
+    name: &str,
+    anchor: &gtk::Box,
+    sender: &ComponentSender<SettingsPageModel>,
+) -> gtk::Button {
+    let name = name.to_string();
+    let anchor = anchor.clone();
+    let s = sender.clone();
+    boxed_ghost_button("Locate folder…", move || {
+        let dialog = gtk::FileDialog::builder()
+            .title("Locate the library folder")
+            .modal(true)
+            .build();
+        let window = anchor
+            .root()
+            .and_then(|r| r.downcast::<gtk::Window>().ok());
+        let name = name.clone();
+        let s = s.clone();
+        dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+            let Ok(folder) = res else { return };
+            let Some(path) = folder.path() else { return };
+            if !crate::libraries::looks_like_a_library(&path) {
+                crate::notify::error(
+                    "Not a Kalam library",
+                    "That folder does not hold a library. Pick the folder the library moved to.",
+                );
+                return;
+            }
+            let mut reg = crate::libraries::load_registry();
+            if !reg.relocate(index, &path) {
+                crate::notify::error(
+                    "Could not update that library",
+                    "The library list changed. Reopen Settings and try again.",
+                );
+                return;
+            }
+            match crate::libraries::save_registry(&reg) {
+                Ok(()) => {
+                    crate::notify::success("Library located", &name);
+                    s.input(SettingsMsg::ReloadFs);
+                }
+                Err(err) => {
+                    crate::notify::error("Could not save the library list", &err.to_string())
+                }
+            }
+        });
+    })
+}
+
+/// Add library: pick a folder — an empty one starts a new library,
+/// an existing Kalam library folder is reopened — named after the
+/// folder, because the user already chose a meaningful name when
+/// they picked where to put it.
+fn add_library_flow(anchor: &gtk::Box, sender: &ComponentSender<SettingsPageModel>) {
+    let dialog = gtk::FileDialog::builder()
+        .title("Choose a folder for the library")
+        .modal(true)
+        .build();
+    let window = anchor
+        .root()
+        .and_then(|r| r.downcast::<gtk::Window>().ok());
+    let s = sender.clone();
+    dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+        let Ok(folder) = res else { return };
+        let Some(path) = folder.path() else { return };
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Library".to_string());
+        // Say which of the two things just happened: "added a library"
+        // is ambiguous between "started an empty one" and "found my
+        // books", and getting that wrong alarms in one direction.
+        let existing = crate::libraries::looks_like_a_library(&path);
+        let mut reg = crate::libraries::load_registry();
+        reg.add_or_select(&name, &path);
+        match crate::libraries::save_registry(&reg) {
+            Ok(()) => {
+                crate::notify::info(
+                    if existing {
+                        "Existing library found"
+                    } else {
+                        "New library created"
+                    },
+                    &format!("“{name}” — restart Kalam to open it."),
+                );
+                s.input(SettingsMsg::ReloadFs);
+            }
+            Err(err) => {
+                crate::notify::error("Could not save the library list", &err.to_string());
+            }
+        }
+    });
+}
+
+/// The reader-cache row. Its caption is the size, which changes in
+/// place when the cache is cleared — hence building through
+/// `pane_row_inner` for the caption label.
+fn cache_row(rows: &gtk::Box) {
+    let size = crate::paths::reader_cache_size();
+    let size_text = crate::epub_metadata::human_size(size);
+    let (row, caption) = pane_row_inner(
+        rows,
+        "Reader cache",
+        Some((&size_text, false)),
     );
 
-    let right = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-    right.set_valign(gtk::Align::Center);
-    let size = crate::paths::reader_cache_size();
-    let cache_badge = chip_label(&crate::epub_metadata::human_size(size), "kalam-chip-neutral");
-    right.append(&cache_badge);
-    let clear = gtk::Button::with_label("Clear cache");
-    clear.add_css_class("kalam-btn-danger");
-    clear.set_sensitive(size > 0);
-    {
-        let cache_badge = cache_badge.clone();
-        clear.connect_clicked(move |btn| {
+    let clear = boxed_ghost_button("Clear", {
+        let caption = caption.clone();
+        move || {
             let (files, freed) = crate::paths::clear_reader_cache();
-            cache_badge.set_label(&format!("Freed {}", crate::epub_metadata::human_size(freed)));
+            if let Some(caption) = &caption {
+                caption.set_label(&crate::epub_metadata::human_size(
+                    crate::paths::reader_cache_size(),
+                ));
+            }
             crate::notify::info(
                 "Reader cache cleared",
                 &format!(
@@ -1610,32 +2572,47 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
                     crate::epub_metadata::human_size(freed)
                 ),
             );
-            btn.set_sensitive(false);
-        });
-    }
-    right.append(&clear);
-    setting_row(
-        &body,
-        "Extracted EPUB cache",
-        "Unzipped copies of your books, kept so chapter lists and book details do not re-open the same EPUB every time. Safe to clear; they are rebuilt when a page needs them.",
-        &right,
-    );
+        }
+    });
+    // The ghost button's own handler runs first (it connected first);
+    // this one then re-reads the size for the end stop.
+    clear.connect_clicked(move |btn| {
+        btn.set_sensitive(crate::paths::reader_cache_size() > 0);
+    });
+    clear.set_sensitive(size > 0);
+    clear.set_valign(gtk::Align::Center);
+    row.append(&clear);
 }
 
-/// Export saved reading data and quotes to Markdown, from Settings.
-fn build_export(host: &gtk::Box, catalog: &Arc<Catalog>) {
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
+fn build_data_pane(host: &gtk::Box, catalog: &Arc<Catalog>) {
+    // The four places Kalam keeps things (decision 149): read-only
+    // rows, each with a Show that opens the file manager there. The
+    // bool is whether the path is itself a folder (Show opens it) or
+    // a file (Show opens the folder holding it).
+    let rows = pane_section(host, "Locations");
+    let locations: [(&str, std::path::PathBuf, bool); 4] = [
+        ("Library folder", data_dir(), true),
+        ("Catalog database", catalog_db(), false),
+        ("Dictionaries", dictionaries_dir(), true),
+        (
+            "App settings",
+            crate::libraries::global_prefs_path(),
+            false,
+        ),
+    ];
+    for (label, path, is_dir) in locations {
+        let show = {
+            let path = path.clone();
+            boxed_ghost_button("Show", move || show_location(&path, is_dir))
+        };
+        pane_row_with(&rows, label, Some(&path.to_string_lossy()), &show);
     }
-    let body = section_card(host, "document-save-symbolic", "Export", None);
 
-    let export_all_btn = gtk::Button::with_label("Export All Data");
-    export_all_btn.add_css_class("kalam-btn-outlined");
-    export_all_btn.set_valign(gtk::Align::Center);
-    {
+    let rows = pane_section(host, "Export");
+    let export_all = {
         let catalog = catalog.clone();
-        export_all_btn.connect_clicked(move |_| {
-            // Same rule as the quotes export above.
+        boxed_ghost_button("Export…", move || {
+            let catalog = catalog.clone();
             crate::tasks::spawn(
                 "Exporting reading data",
                 {
@@ -1653,30 +2630,30 @@ fn build_export(host: &gtk::Box, catalog: &Arc<Catalog>) {
                 |_| {},
                 |res| match res {
                     Ok((count, path)) => crate::notify::success(
-                        &format!("{count} item{} exported", if count == 1 { "" } else { "s" }),
+                        &format!(
+                            "{count} item{} exported",
+                            if count == 1 { "" } else { "s" }
+                        ),
                         &path.display().to_string(),
                     ),
-                    Err(err) => crate::notify::error("Could not export reading data", &err),
+                    Err(err) => {
+                        crate::notify::error("Could not export reading data", &err)
+                    }
                 },
             );
-        });
-    }
-    setting_row(
-        &body,
-        "Export All Data to Markdown",
-        "Saves vocabulary, quotes, and highlights to ~/Kalam-Export.md",
-        &export_all_btn,
+        })
+    };
+    pane_row_with(
+        &rows,
+        "Export all data",
+        Some("Vocabulary, quotes and highlights to a Markdown file."),
+        &export_all,
     );
 
-    let export_btn = gtk::Button::with_label("Export quotes");
-    export_btn.add_css_class("kalam-btn-outlined");
-    export_btn.set_valign(gtk::Align::Center);
-    {
+    let export_quotes = {
         let catalog = catalog.clone();
-        export_btn.connect_clicked(move |_| {
-            // The export reads the catalog and writes a file: on a task,
-            // per ARCH.md. `catalog` is cloned per click because the
-            // handler can fire more than once.
+        boxed_ghost_button("Export…", move || {
+            let catalog = catalog.clone();
             crate::tasks::spawn(
                 "Exporting quotes",
                 {
@@ -1695,632 +2672,1135 @@ fn build_export(host: &gtk::Box, catalog: &Arc<Catalog>) {
                     Err(err) => crate::notify::error("Could not export quotes", &err),
                 },
             );
-        });
-    }
-    setting_row(
-        &body,
-        "Export quotes to Markdown",
-        "Saves all saved quotes to ~/Quotes.md",
-        &export_btn,
+        })
+    };
+    pane_row_with(
+        &rows,
+        "Export quotes",
+        Some("Saved quotes to a Markdown file."),
+        &export_quotes,
     );
 }
 
-/// Installed dictionary packs: icon, name, mono meta, Remove — plus the
-/// filled Import button in the card footer.
-fn rebuild_dicts(
-    host: &gtk::Box,
-    dicts: &[crate::db::Dictionary],
-    sender: &ComponentSender<SettingsPageModel>,
-) {
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-    let body = section_card(
-        host,
-        "book-open-symbolic",
-        "Installed packs",
-        Some("StarDict (.ifo/.idx/.dict), SQLite (.db), and TSV formats are supported."),
-    );
-
-    if dicts.is_empty() {
-        let empty = gtk::Label::new(Some(
-            "No dictionaries yet. Import StarDict, SQLite or TSV packs for offline lookup (D key in the reader).",
-        ));
-        empty.add_css_class("kalam-placeholder");
-        empty.set_wrap(true);
-        empty.set_xalign(0.0);
-        body.append(&empty);
+/// Open the file manager at a data location: the folder itself for
+/// folders, the containing folder for files.
+fn show_location(path: &std::path::Path, is_dir: bool) {
+    let file = gtk::gio::File::for_path(path);
+    let launcher = gtk::FileLauncher::new(Some(&file));
+    let done = |res: Result<(), gtk::glib::Error>| {
+        if let Err(err) = res {
+            crate::notify::error("Could not show that location", &err.to_string());
+        }
+    };
+    if is_dir {
+        launcher.launch(
+            None::<&gtk::Window>,
+            None::<&gtk::gio::Cancellable>,
+            done,
+        );
     } else {
-        let last = dicts.len() - 1;
-        for (index, d) in dicts.iter().enumerate() {
-            let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-            row.add_css_class("kalam-setting-row");
-
-            let icon = gtk::Box::new(gtk::Orientation::Vertical, 0);
-            icon.add_css_class("kalam-dict-icon");
-            icon.set_size_request(32, 32);
-            icon.set_halign(gtk::Align::Center);
-            icon.set_valign(gtk::Align::Center);
-            icon.append(&crate::icons::symbolic_with_classes(
-                "book-open-symbolic",
-                16,
-                &["kalam-dict-icon-glyph"],
-            ));
-            row.append(&icon);
-
-            let info = gtk::Box::new(gtk::Orientation::Vertical, 2);
-            info.set_hexpand(true);
-            let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            let name_label = gtk::Label::new(Some(&d.name));
-            name_label.add_css_class("kalam-setting-label");
-            name_label.set_halign(gtk::Align::Start);
-            name_label.set_xalign(0.0);
-            name_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            name_row.append(&name_label);
-            // Phase 9: the top of the list is what the merged store consults
-            // first — say so, or the ordering is unexplained.
-            if index == 0 {
-                name_row.append(&chip_label("speaks first", "kalam-chip-info"));
-            }
-            info.append(&name_row);
-            let meta = match &d.lang {
-                Some(lang) => format!("{lang} · {} entries", d.entry_count),
-                None => format!("{} entries", d.entry_count),
-            };
-            let meta_label = gtk::Label::new(Some(&meta));
-            meta_label.add_css_class("kalam-dict-meta");
-            meta_label.set_halign(gtk::Align::Start);
-            meta_label.set_xalign(0.0);
-            info.append(&meta_label);
-            row.append(&info);
-
-            let id = d.id;
-            let up = gtk::Button::new();
-            up.set_child(Some(&crate::icons::symbolic_with_classes(
-                "go-up-symbolic",
-                16,
-                &["kalam-inline-icon"],
-            )));
-            up.add_css_class("kalam-mini-btn");
-            up.set_valign(gtk::Align::Center);
-            up.set_sensitive(index > 0);
-            up.set_tooltip_text(Some("Speak before the dictionaries above"));
-            {
-                let s = sender.clone();
-                up.connect_clicked(move |_| s.input(SettingsMsg::MoveDict(id, -1)));
-            }
-            row.append(&up);
-
-            let down = gtk::Button::new();
-            down.set_child(Some(&crate::icons::symbolic_with_classes(
-                "go-down-symbolic",
-                16,
-                &["kalam-inline-icon"],
-            )));
-            down.add_css_class("kalam-mini-btn");
-            down.set_valign(gtk::Align::Center);
-            down.set_sensitive(index < last);
-            down.set_tooltip_text(Some("Speak after the dictionaries below"));
-            {
-                let s = sender.clone();
-                down.connect_clicked(move |_| s.input(SettingsMsg::MoveDict(id, 1)));
-            }
-            row.append(&down);
-
-            let remove = gtk::Button::with_label("Remove");
-            remove.add_css_class("kalam-btn-danger");
-            remove.add_css_class("kalam-btn-sm");
-            remove.set_valign(gtk::Align::Center);
-            let s = sender.clone();
-            remove.connect_clicked(move |_| s.input(SettingsMsg::DeleteDict(id)));
-            row.append(&remove);
-
-            body.append(&row);
-        }
-    }
-
-    let footer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    footer.add_css_class("kalam-card-footer");
-    let import_btn = gtk::Button::new();
-    import_btn.set_child(Some(&crate::icons::labelled(
-        "list-add-symbolic",
-        16,
-        "Import dictionary",
-        6,
-    )));
-    import_btn.add_css_class("kalam-btn-filled");
-    {
-        let s = sender.clone();
-        import_btn.connect_clicked(move |_| s.input(SettingsMsg::ImportDict));
-    }
-    footer.append(&import_btn);
-    let refresh_btn = gtk::Button::new();
-    refresh_btn.set_child(Some(&crate::icons::symbolic_with_classes(
-        "view-refresh-symbolic",
-        16,
-        &["kalam-inline-icon"],
-    )));
-    refresh_btn.add_css_class("kalam-btn-ghost");
-    refresh_btn.set_tooltip_text(Some("Rescan dictionary packs"));
-    {
-        let s = sender.clone();
-        refresh_btn.connect_clicked(move |_| s.input(SettingsMsg::Refresh));
-    }
-    footer.append(&refresh_btn);
-    body.append(&footer);
-}
-
-fn build_shelf_dropdown(
-    shelves: &[(Option<i64>, String)],
-    current_shelf_id: Option<i64>,
-    on_change: impl Fn(Option<i64>) + 'static,
-) -> gtk::DropDown {
-    let titles: Vec<&str> = shelves.iter().map(|(_, name)| name.as_str()).collect();
-    let drop = gtk::DropDown::from_strings(&titles);
-    drop.set_valign(gtk::Align::Center);
-
-    let init_idx = shelves
-        .iter()
-        .position(|(id, _)| *id == current_shelf_id)
-        .unwrap_or(0);
-    drop.set_selected(init_idx as u32);
-
-    let shelves_map = shelves.to_vec();
-    drop.connect_selected_notify(move |combo| {
-        let idx = combo.selected() as usize;
-        if let Some((shelf_id, _)) = shelves_map.get(idx) {
-            on_change(*shelf_id);
-        }
-    });
-
-    drop
-}
-
-/// Re-render from live data — the click paths (add / remove a watch folder)
-/// still read inline, as they always did; this wrapper keeps them working.
-fn render_watch_cards(container: &gtk::Box, catalog: &std::sync::Arc<crate::db::Catalog>) {
-    let rules = crate::watch_folder::load_watch_rules(catalog);
-    let shelves = catalog.list_shelves().unwrap_or_default();
-    render_watch_cards_with(container, catalog, &rules, &shelves);
-}
-
-/// Build the watch-folder cards from data the caller already holds: the
-/// page's snapshot on first build (7.1 step 2c — no read happens on the UI
-/// thread there), or a fresh click-time read through the wrapper above.
-fn render_watch_cards_with(
-    container: &gtk::Box,
-    catalog: &std::sync::Arc<crate::db::Catalog>,
-    rules: &[crate::watch_folder::WatchFolderRule],
-    shelves: &[crate::db::Shelf],
-) {
-    while let Some(child) = container.first_child() {
-        container.remove(&child);
-    }
-
-    let mut shelf_choices: Vec<(Option<i64>, String)> =
-        vec![(None, "Library Default (No shelf)".to_string())];
-    for s in shelves {
-        shelf_choices.push((Some(s.id), s.name.clone()));
-    }
-
-    if rules.is_empty() {
-        let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        placeholder.set_margin_top(12);
-        placeholder.set_margin_bottom(12);
-
-        let empty = gtk::Label::new(Some(
-            "No watch folders configured yet.\nClick “+ Add Watch Folder” to monitor folders and route books to shelves.",
-        ));
-        empty.add_css_class("kalam-placeholder");
-        empty.set_wrap(true);
-        empty.set_justify(gtk::Justification::Center);
-        placeholder.append(&empty);
-        container.append(&placeholder);
-        return;
-    }
-
-    for rule in rules {
-        let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        card.add_css_class("kalam-watch-card");
-
-        // Header: Path + Switch + Remove
-        let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        header.add_css_class("kalam-watch-card-header");
-
-        let folder_icon = gtk::Image::from_icon_name("folder-symbolic");
-        header.append(&folder_icon);
-
-        let path_display = rule.path.to_string_lossy().into_owned();
-        let path_chip = chip_label(&path_display, "kalam-chip-neutral");
-        path_chip.set_tooltip_text(Some(&path_display));
-        header.append(&path_chip);
-
-        let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        spacer.set_hexpand(true);
-        header.append(&spacer);
-
-        let sw = toggle_switch(rule.enabled, {
-            let cat = catalog.clone();
-            let rule_id = rule.id.clone();
-            move |active| {
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                    r.enabled = active;
-                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    crate::watch_folder::request_reload();
-                }
-            }
-        });
-        sw.set_tooltip_text(Some("Enable or pause monitoring for this folder"));
-        header.append(&sw);
-
-        let remove_btn = gtk::Button::from_icon_name("user-trash-symbolic");
-        remove_btn.add_css_class("flat");
-        remove_btn.add_css_class("danger");
-        remove_btn.set_tooltip_text(Some("Remove this watch folder"));
-        {
-            let cat = catalog.clone();
-            let cont = container.clone();
-            let rule_id = rule.id.clone();
-            remove_btn.connect_clicked(move |_| {
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                all_rules.retain(|r| r.id != rule_id);
-                crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                crate::watch_folder::request_reload();
-                render_watch_cards(&cont, &cat);
-            });
-        }
-        header.append(&remove_btn);
-        card.append(&header);
-
-        // Format row 1: EPUB
-        let row_epub = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        row_epub.add_css_class("kalam-watch-format-row");
-        row_epub.set_valign(gtk::Align::Center);
-
-        let epub_check = gtk::CheckButton::with_label("Novels & Ebooks (EPUB)");
-        epub_check.set_active(rule.import_epub);
-        epub_check.add_css_class("kalam-watch-format-label");
-        row_epub.append(&epub_check);
-
-        let arrow_epub = gtk::Label::new(Some("Put into:"));
-        arrow_epub.add_css_class("kalam-setting-desc");
-        row_epub.append(&arrow_epub);
-
-        let epub_drop = build_shelf_dropdown(
-            &shelf_choices,
-            rule.epub_shelf_id,
-            {
-                let cat = catalog.clone();
-                let rule_id = rule.id.clone();
-                move |sid| {
-                    let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                    if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                        r.epub_shelf_id = sid;
-                        crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    }
-                }
-            },
+        launcher.open_containing_folder(
+            None::<&gtk::Window>,
+            None::<&gtk::gio::Cancellable>,
+            done,
         );
-        epub_drop.set_sensitive(rule.import_epub);
-        row_epub.append(&epub_drop);
-
-        {
-            let cat = catalog.clone();
-            let rule_id = rule.id.clone();
-            let drop_ref = epub_drop.clone();
-            epub_check.connect_toggled(move |chk| {
-                let active = chk.is_active();
-                drop_ref.set_sensitive(active);
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                    r.import_epub = active;
-                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    crate::watch_folder::request_reload();
-                }
-            });
-        }
-        card.append(&row_epub);
-
-        // Format row 2: PDF
-        let row_pdf = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        row_pdf.add_css_class("kalam-watch-format-row");
-        row_pdf.set_valign(gtk::Align::Center);
-
-        let pdf_check = gtk::CheckButton::with_label("Documents & Papers (PDF)");
-        pdf_check.set_active(rule.import_pdf);
-        pdf_check.add_css_class("kalam-watch-format-label");
-        row_pdf.append(&pdf_check);
-
-        let arrow_pdf = gtk::Label::new(Some("Put into:"));
-        arrow_pdf.add_css_class("kalam-setting-desc");
-        row_pdf.append(&arrow_pdf);
-
-        let pdf_drop = build_shelf_dropdown(
-            &shelf_choices,
-            rule.pdf_shelf_id,
-            {
-                let cat = catalog.clone();
-                let rule_id = rule.id.clone();
-                move |sid| {
-                    let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                    if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                        r.pdf_shelf_id = sid;
-                        crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    }
-                }
-            },
-        );
-        pdf_drop.set_sensitive(rule.import_pdf);
-        row_pdf.append(&pdf_drop);
-
-        {
-            let cat = catalog.clone();
-            let rule_id = rule.id.clone();
-            let drop_ref = pdf_drop.clone();
-            pdf_check.connect_toggled(move |chk| {
-                let active = chk.is_active();
-                drop_ref.set_sensitive(active);
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                    r.import_pdf = active;
-                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    crate::watch_folder::request_reload();
-                }
-            });
-        }
-        card.append(&row_pdf);
-
-        // Format row 3: Comics (CBZ / CBR)
-        let row_comics = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        row_comics.add_css_class("kalam-watch-format-row");
-        row_comics.set_valign(gtk::Align::Center);
-
-        let comics_check = gtk::CheckButton::with_label("Comics & Manga (CBZ/CBR)");
-        comics_check.set_active(rule.import_comics);
-        comics_check.add_css_class("kalam-watch-format-label");
-        row_comics.append(&comics_check);
-
-        let arrow_comics = gtk::Label::new(Some("Put into:"));
-        arrow_comics.add_css_class("kalam-setting-desc");
-        row_comics.append(&arrow_comics);
-
-        let comics_drop = build_shelf_dropdown(
-            &shelf_choices,
-            rule.comics_shelf_id,
-            {
-                let cat = catalog.clone();
-                let rule_id = rule.id.clone();
-                move |sid| {
-                    let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                    if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                        r.comics_shelf_id = sid;
-                        crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    }
-                }
-            },
-        );
-        comics_drop.set_sensitive(rule.import_comics);
-        row_comics.append(&comics_drop);
-
-        {
-            let cat = catalog.clone();
-            let rule_id = rule.id.clone();
-            let drop_ref = comics_drop.clone();
-            comics_check.connect_toggled(move |chk| {
-                let active = chk.is_active();
-                drop_ref.set_sensitive(active);
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                    r.import_comics = active;
-                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                    crate::watch_folder::request_reload();
-                }
-            });
-        }
-        card.append(&row_comics);
-
-        // Options: Subfolder shelves + Clean up
-        let options_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        options_box.set_margin_top(4);
-
-        let subfolder_check = gtk::CheckButton::with_label(
-            "Automatically create shelves from subfolders (e.g. Manga/One Piece ➔ \"One Piece\")",
-        );
-        subfolder_check.set_active(rule.subfolder_shelves);
-        {
-            let cat = catalog.clone();
-            let rule_id = rule.id.clone();
-            subfolder_check.connect_toggled(move |chk| {
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                    r.subfolder_shelves = chk.is_active();
-                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                }
-            });
-        }
-        options_box.append(&subfolder_check);
-
-        let cleanup_check = gtk::CheckButton::with_label(
-            "Clean up: delete original file from folder after safe import",
-        );
-        cleanup_check.set_active(rule.cleanup_original);
-        {
-            let cat = catalog.clone();
-            let rule_id = rule.id.clone();
-            cleanup_check.connect_toggled(move |chk| {
-                let mut all_rules = crate::watch_folder::load_watch_rules(&cat);
-                if let Some(r) = all_rules.iter_mut().find(|r| r.id == rule_id) {
-                    r.cleanup_original = chk.is_active();
-                    crate::watch_folder::save_watch_rules(&cat, &all_rules);
-                }
-            });
-        }
-        options_box.append(&cleanup_check);
-
-        card.append(&options_box);
-        container.append(&card);
     }
 }
 
-/// Toggle for writing metadata back into the EPUB itself, and deleting backups.
-fn build_file_write(
+fn build_book_files_pane(
     host: &gtk::Box,
     catalog: &Arc<Catalog>,
     snap: &SettingsSnapshot,
     epub_backups: Option<&[(std::path::PathBuf, u64)]>,
+    sender: &ComponentSender<SettingsPageModel>,
 ) {
-    use crate::epub_metadata::set_write_enabled;
+    let rows = pane_section_bare(host);
 
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-
-    // 1. EPUB Sanitizer / Polish Engine. Every initial state below comes
-    // from the snapshot (7.1 step 2c); the catalog stays for the
-    // click-time writes.
-    let polish_body = section_card(
-        host,
-        "edit-clear-symbolic",
-        "EPUB polish & sanitizer",
-        Some("Clean, repair, and normalize EPUB files when importing into Kalam."),
+    let clean = row_switch(
+        "Clean EPUBs on import",
+        snap.clean_on_import,
+        {
+            let catalog = catalog.clone();
+            move |on| crate::epub_sanitizer::set_clean_on_import(&catalog, on)
+        },
     );
-    {
-        let catalog = catalog.clone();
-        let sw = toggle_switch(snap.clean_on_import, move |on| {
-            crate::epub_sanitizer::set_clean_on_import(&catalog, on);
-        });
-        setting_row(
-            &polish_body,
-            "Sanitize and polish EPUBs on import",
-            "On: automatically removes toxic styles (tiny fonts, forced black/white colors, fixed margins), repairs malformed XML tags, and regenerates missing Table of Contents (toc.ncx) so books look consistent and readable. Off: EPUBs are stored untouched as imported.",
-            &sw,
-        );
-    }
-
-    // 2. Auto-Import Watch Folders (Multi-folder routing)
-    let watch_body = section_card(
-        host,
-        "folder-download-symbolic",
-        "Auto-import watch folders",
-        Some("Automatically import and organize new books and comics added to folders on your computer."),
+    pane_row_with(
+        &rows,
+        "Clean EPUBs on import",
+        Some("Removes forced fonts and colours and repairs the markup as books arrive."),
+        &clean,
     );
-    {
-        let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        top_row.set_valign(gtk::Align::Center);
 
-        let add_btn = gtk::Button::with_label("+ Add Watch Folder");
-        add_btn.add_css_class("kalam-btn-subtle");
+    let write = row_switch(
+        "Write edits into the EPUB",
+        snap.writeback_enabled,
+        {
+            let catalog = catalog.clone();
+            move |on| crate::epub_metadata::set_write_enabled(&catalog, on)
+        },
+    );
+    pane_row_with(
+        &rows,
+        "Write edits into the EPUB",
+        Some("Edit metadata also updates the book file, so other readers see your changes. The original is kept once."),
+        &write,
+    );
 
-        let cards_container = gtk::Box::new(gtk::Orientation::Vertical, 10);
-
-        let catalog_add = catalog.clone();
-        let cc_add = cards_container.clone();
-        add_btn.connect_clicked(move |btn| {
-            let root = btn.root();
-            let window = root.and_then(|r| r.downcast::<gtk::Window>().ok());
-            let dialog = gtk::FileDialog::builder()
-                .title("Select Folder to Watch")
-                .modal(true)
-                .build();
-
-            let cat = catalog_add.clone();
-            let cc = cc_add.clone();
-            dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
-                let Ok(folder) = res else { return };
-                let Some(path) = folder.path() else { return };
-                let mut rules = crate::watch_folder::load_watch_rules(&cat);
-                if rules.iter().any(|r| r.path == path) {
-                    crate::notify::info("Watch Folder", "This folder is already in your watch list.");
-                    return;
-                }
-                rules.push(crate::watch_folder::WatchFolderRule::new(path));
-                crate::watch_folder::save_watch_rules(&cat, &rules);
-                crate::watch_folder::request_reload();
-                render_watch_cards(&cc, &cat);
-            });
-        });
-        top_row.append(&add_btn);
-
-        watch_body.append(&top_row);
-
-        render_watch_cards_with(
-            &cards_container,
-            catalog,
-            &snap.watch_rules,
-            &snap.shelves,
-        );
-        watch_body.append(&cards_container);
-    }
-
-    // 3. EPUB writeback & backups
-    let body = section_card(host, "text-x-generic-symbolic", "EPUB writeback", None);
-
-    {
-        let catalog = catalog.clone();
-        let sw = toggle_switch(snap.writeback_enabled, move |on| {
-            set_write_enabled(&catalog, on);
-        });
-        setting_row(
-            &body,
-            "Also write metadata into the EPUB file",
-            "On: saving in Edit metadata also updates the book file, so Calibre and other readers see your changes. The untouched original is kept once as <name>.epub.orig, and the new file is only swapped in after it is verified. Off: edits stay inside Kalam and your files are never modified.",
-            &sw,
-        );
-    }
-
-    let right = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-    right.set_valign(gtk::Align::Center);
-    // The backup listing is a directory walk, so it rides the page's slow
-    // worker (2c); until it lands the chip says so and delete stays off.
-    let summary_text = match epub_backups {
-        None => "Checking…".to_string(),
+    let (caption, count, total) = match epub_backups {
+        None => ("Checking…".to_string(), 0usize, 0u64),
+        Some([]) => ("No backups kept".to_string(), 0, 0),
         Some(backups) => {
             let total: u64 = backups.iter().map(|(_, size)| size).sum();
-            if backups.is_empty() {
-                "No originals kept".to_string()
-            } else {
+            (
                 format!(
-                    "{} original{} · {}",
+                    "{} file{} · {}",
                     backups.len(),
                     if backups.len() == 1 { "" } else { "s" },
                     crate::epub_metadata::human_size(total)
-                )
+                ),
+                backups.len(),
+                total,
+            )
+        }
+    };
+    let delete = {
+        let s = sender.clone();
+        let anchor = rows.clone();
+        boxed_ghost_button("Delete backups…", move || {
+            let s = s.clone();
+            let _ = confirmation_dialog(
+                &anchor,
+                "Delete original backups?",
+                &format!(
+                    "{count} file{} ({}) will be deleted. The books in your library are not changed. This cannot be undone.",
+                    if count == 1 { "" } else { "s" },
+                    crate::epub_metadata::human_size(total)
+                ),
+                "Cancel",
+                "Delete backups",
+                ConfirmationKind::Destructive,
+                move || {
+                    let (count, freed) = crate::epub_metadata::delete_backups();
+                    crate::notify::info(
+                        "Original backups deleted",
+                        &format!(
+                            "Removed {count} backup{} · freed {}",
+                            if count == 1 { "" } else { "s" },
+                            crate::epub_metadata::human_size(freed)
+                        ),
+                    );
+                    s.input(SettingsMsg::ReloadFs);
+                },
+            );
+        })
+    };
+    delete.set_sensitive(count > 0);
+    click_button_for_screenshot(&delete, "delete-backups");
+    pane_row_with(&rows, "Original backups", Some(&caption), &delete);
+}
+
+// ---------------------------------------------------------------------------
+// Watch folders (decision 151).
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy)]
+enum WatchShelfKind {
+    Epub,
+    Pdf,
+    Comics,
+}
+
+impl WatchShelfKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Epub => "Books (EPUB)",
+            Self::Pdf => "Documents (PDF)",
+            Self::Comics => "Comics",
+        }
+    }
+
+    fn shelf_id(self, rule: &crate::watch_folder::WatchFolderRule) -> Option<i64> {
+        match self {
+            Self::Epub => rule.epub_shelf_id,
+            Self::Pdf => rule.pdf_shelf_id,
+            Self::Comics => rule.comics_shelf_id,
+        }
+    }
+
+    fn set_shelf(self, rule: &mut crate::watch_folder::WatchFolderRule, shelf_id: Option<i64>) {
+        // Decision 151 replaces the old per-format checkboxes with the
+        // routing choice itself: choosing where a format goes also says
+        // that format is imported.
+        match self {
+            Self::Epub => {
+                rule.epub_shelf_id = shelf_id;
+                rule.import_epub = true;
+            }
+            Self::Pdf => {
+                rule.pdf_shelf_id = shelf_id;
+                rule.import_pdf = true;
+            }
+            Self::Comics => {
+                rule.comics_shelf_id = shelf_id;
+                rule.import_comics = true;
+            }
+        }
+    }
+}
+
+/// The one catalog handle every watch-folder action shares. The pane's
+/// widgets outlive the builder that made them, so their callbacks clone
+/// this small context instead of threading the handle through each
+/// helper separately.
+#[derive(Clone)]
+struct WatchPaneStore {
+    catalog: Arc<Catalog>,
+}
+
+impl WatchPaneStore {
+    fn update_rule(
+        &self,
+        rule_id: &str,
+        reload: bool,
+        change: impl FnOnce(&mut crate::watch_folder::WatchFolderRule),
+    ) {
+        let mut rules = crate::watch_folder::load_watch_rules(&self.catalog);
+        if let Some(rule) = rules.iter_mut().find(|rule| rule.id == rule_id) {
+            change(rule);
+            crate::watch_folder::save_watch_rules(&self.catalog, &rules);
+            if reload {
+                crate::watch_folder::request_reload();
+            }
+        }
+    }
+
+    fn refresh(&self, container: &gtk::Box) {
+        clear_box(container);
+        let rules = crate::watch_folder::load_watch_rules(&self.catalog);
+        let shelves = self.catalog.list_shelves().unwrap_or_default();
+        build_watch_sections(container, self, &rules, &shelves);
+    }
+}
+
+fn build_watch_sections(
+    container: &gtk::Box,
+    store: &WatchPaneStore,
+    rules: &[crate::watch_folder::WatchFolderRule],
+    shelves: &[crate::db::Shelf],
+) {
+    if rules.is_empty() {
+        let card = dashed_state_card(
+            container,
+            "No watch folders",
+            Some("Kalam can check a folder for new books and add them automatically."),
+        );
+        let add = {
+            let store = store.clone();
+            let container = container.clone();
+            boxed_ghost_button("Add watch folder…", move || {
+                add_watch_folder_flow(&container, &store)
+            })
+        };
+        add.set_halign(gtk::Align::Center);
+        card.append(&add);
+        return;
+    }
+
+    for (rule_index, rule) in rules.iter().enumerate() {
+        let heading = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let path_text = rule.path.to_string_lossy().into_owned();
+        let path = gtk::Label::new(Some(&path_text));
+        path.add_css_class("kalam-settings-folder-heading");
+        path.set_hexpand(true);
+        path.set_halign(gtk::Align::Start);
+        path.set_xalign(0.0);
+        path.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        path.set_tooltip_text(Some(&path_text));
+        heading.append(&path);
+
+        let remove = {
+            let store = store.clone();
+            let container = container.clone();
+            let rule_id = rule.id.clone();
+            ghost_button("Remove", move || {
+                let mut rules = crate::watch_folder::load_watch_rules(&store.catalog);
+                rules.retain(|rule| rule.id != rule_id);
+                crate::watch_folder::save_watch_rules(&store.catalog, &rules);
+                crate::watch_folder::request_reload();
+                store.refresh(&container);
+            })
+        };
+        remove.set_valign(gtk::Align::Center);
+        heading.append(&remove);
+
+        let rows = pane_section_custom_heading(container, &heading);
+        for kind in [
+            WatchShelfKind::Epub,
+            WatchShelfKind::Pdf,
+            WatchShelfKind::Comics,
+        ] {
+            let picker = watch_shelf_dropdown(container, store, rule, shelves, kind);
+            if rule_index == 0 && matches!(kind, WatchShelfKind::Epub) {
+                popup_menu_for_screenshot(&picker, "watch-dropdown");
+            }
+            pane_row_with(&rows, kind.label(), None, &picker);
+        }
+
+        let subfolders = row_switch("Shelves from subfolders", rule.subfolder_shelves, {
+            let store = store.clone();
+            let rule_id = rule.id.clone();
+            move |on| {
+                store.update_rule(&rule_id, false, |rule| {
+                    rule.subfolder_shelves = on;
+                });
+            }
+        });
+        pane_row_with(&rows, "Shelves from subfolders", None, &subfolders);
+
+        let cleanup = row_switch(
+            "Delete the original after import",
+            rule.cleanup_original,
+            {
+                let store = store.clone();
+                let rule_id = rule.id.clone();
+                move |on| {
+                    store.update_rule(&rule_id, false, |rule| {
+                        rule.cleanup_original = on;
+                    });
+                }
+            },
+        );
+        pane_row_with(&rows, "Delete the original after import", None, &cleanup);
+
+        // The board has no pause control, but removing the folder was
+        // previously the only replacement for one. Keep that existing
+        // behavior as one extra row rather than silently dropping it.
+        let enabled = row_switch("Watch this folder", rule.enabled, {
+            let store = store.clone();
+            let rule_id = rule.id.clone();
+            move |on| {
+                store.update_rule(&rule_id, true, |rule| {
+                    rule.enabled = on;
+                });
+            }
+        });
+        pane_row_with(&rows, "Watch this folder", None, &enabled);
+    }
+
+    let add = {
+        let store = store.clone();
+        let container = container.clone();
+        boxed_ghost_button("Add watch folder…", move || {
+            add_watch_folder_flow(&container, &store)
+        })
+    };
+    add.set_halign(gtk::Align::Start);
+    add.set_margin_top(12);
+    container.append(&add);
+}
+
+fn watch_shelf_dropdown(
+    container: &gtk::Box,
+    store: &WatchPaneStore,
+    rule: &crate::watch_folder::WatchFolderRule,
+    shelves: &[crate::db::Shelf],
+    kind: WatchShelfKind,
+) -> gtk::MenuButton {
+    let mut choices = vec![(None, "No shelf".to_string())];
+    choices.extend(
+        shelves
+            .iter()
+            .map(|shelf| (Some(shelf.id), shelf.name.clone())),
+    );
+    let selected = choices
+        .iter()
+        .position(|(shelf_id, _)| *shelf_id == kind.shelf_id(rule))
+        .unwrap_or(0);
+    let options = choices
+        .iter()
+        .map(|(_, name)| DropdownOption::new(name.clone()))
+        .collect();
+    let label = format!("Shelf for {}", kind.label());
+
+    let on_change = {
+        let store = store.clone();
+        let rule_id = rule.id.clone();
+        let choices = choices.clone();
+        move |index: usize| {
+            if let Some((shelf_id, _)) = choices.get(index) {
+                let shelf_id = *shelf_id;
+                store.update_rule(&rule_id, true, |rule| {
+                    kind.set_shelf(rule, shelf_id);
+                });
             }
         }
     };
-    let summary = chip_label(&summary_text, "kalam-chip-neutral");
-    right.append(&summary);
-    let clean = gtk::Button::with_label("Delete backups");
-    clean.add_css_class("kalam-btn-danger");
-    clean.set_sensitive(epub_backups.is_some_and(|b| !b.is_empty()));
+    let on_footer = {
+        let store = store.clone();
+        let container = container.clone();
+        let rule_id = rule.id.clone();
+        move || {
+            new_shelf_dialog(&container, &store, &container, rule_id.clone(), kind);
+        }
+    };
+
+    dropdown(&label, options, selected, Some("New shelf…"), on_change, on_footer).widget()
+}
+
+fn new_shelf_dialog(
+    anchor: &gtk::Box,
+    store: &WatchPaneStore,
+    container: &gtk::Box,
+    rule_id: String,
+    kind: WatchShelfKind,
+) {
+    let shell = dialog_shell(
+        DialogSize::Form,
+        Some(&format!("It will be used for {} from this folder.", kind.label())),
+    );
+    let field = text_field("Shelf name", "e.g. New arrivals", "");
+    shell.body().append(&field.widget());
+
+    let slot: Rc<RefCell<Option<crate::widgets::in_app_dialog::InAppDialog>>> =
+        Rc::new(RefCell::new(None));
+    let close = {
+        let slot = slot.clone();
+        Rc::new(move || {
+            if let Some(dialog) = slot.borrow().clone() {
+                dialog.close();
+            }
+        })
+    };
+
+    let create = {
+        let store = store.clone();
+        let container = container.clone();
+        let field = field.clone();
+        let close = close.clone();
+        Rc::new(move || {
+            let name = field.value().trim().to_string();
+            if name.is_empty() {
+                field.entry().grab_focus();
+                return;
+            }
+            match store
+                .catalog
+                .create_shelf(&name, crate::db::ShelfKind::Manual, "", "")
+            {
+                Ok(shelf_id) => {
+                    store.update_rule(&rule_id, true, |rule| {
+                        kind.set_shelf(rule, Some(shelf_id));
+                    });
+                    close();
+                    crate::notify::success("Shelf created", &name);
+                    store.refresh(&container);
+                }
+                Err(err) => {
+                    crate::notify::error("Could not create that shelf", &err.to_string());
+                }
+            }
+        })
+    };
+
     {
-        let summary = summary.clone();
-        clean.connect_clicked(move |btn| {
-            let (count, freed) = crate::epub_metadata::delete_backups();
-            summary.set_label(&format!(
-                "Deleted {count} backup{}, freed {}.",
-                if count == 1 { "" } else { "s" },
-                crate::epub_metadata::human_size(freed)
-            ));
+        let create = create.clone();
+        field.entry().connect_activate(move |_| create());
+    }
+    shell.footer().append(&boxed_ghost_button("Cancel", {
+        let close = close.clone();
+        move || close()
+    }));
+    shell.footer().append(&primary_button("Create shelf", {
+        let create = create.clone();
+        move || create()
+    }));
+
+    match present_dialog(anchor, "New shelf", DialogExit::UnsavedInput, &shell) {
+        Some(dialog) => {
+            *slot.borrow_mut() = Some(dialog);
+            field.entry().grab_focus();
+        }
+        None => crate::notify::error(
+            "Could not open the dialog",
+            "The new shelf dialog could not be opened.",
+        ),
+    }
+}
+
+fn add_watch_folder_flow(anchor: &gtk::Box, store: &WatchPaneStore) {
+    let dialog = gtk::FileDialog::builder()
+        .title("Select folder to watch")
+        .modal(true)
+        .build();
+    let window = anchor
+        .root()
+        .and_then(|root| root.downcast::<gtk::Window>().ok());
+    let store = store.clone();
+    let container = anchor.clone();
+    dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+        let Ok(folder) = res else { return };
+        let Some(path) = folder.path() else { return };
+        let mut rules = crate::watch_folder::load_watch_rules(&store.catalog);
+        if rules.iter().any(|rule| rule.path == path) {
             crate::notify::info(
-                "Original backups deleted",
-                &format!(
-                    "Removed {count} backup{} · freed {}",
-                    if count == 1 { "" } else { "s" },
-                    crate::epub_metadata::human_size(freed)
-                ),
+                "Already watching that folder",
+                "This folder is already in your watch list.",
             );
-            btn.set_sensitive(false);
+            return;
+        }
+        rules.push(crate::watch_folder::WatchFolderRule::new(path));
+        crate::watch_folder::save_watch_rules(&store.catalog, &rules);
+        crate::watch_folder::request_reload();
+        store.refresh(&container);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Dictionaries (decision 152).
+// ---------------------------------------------------------------------------
+
+fn set_dictionary_drop_indicator(row: &gtk::Box, y: f64) {
+    if y < row.height() as f64 / 2.0 {
+        row.add_css_class("drop-before");
+        row.remove_css_class("drop-after");
+    } else {
+        row.remove_css_class("drop-before");
+        row.add_css_class("drop-after");
+    }
+}
+
+fn clear_dictionary_drop_indicator(row: &gtk::Box) {
+    row.remove_css_class("drop-before");
+    row.remove_css_class("drop-after");
+}
+
+fn build_dictionaries_pane(
+    host: &gtk::Box,
+    dicts: &[crate::db::Dictionary],
+    sender: &ComponentSender<SettingsPageModel>,
+) {
+    use gtk::glib::prelude::{StaticType, ToValue};
+
+    clear_box(host);
+
+    if dicts.is_empty() {
+        let card = dashed_state_card(
+            host,
+            "No dictionaries",
+            Some("Import a pack, or bring back the dictionaries that ship with Kalam."),
+        );
+        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        actions.set_halign(gtk::Align::Center);
+        let import = {
+            let sender = sender.clone();
+            primary_button("Import dictionary", move || sender.input(SettingsMsg::ImportDict))
+        };
+        actions.append(&import);
+        let restore = {
+            let sender = sender.clone();
+            boxed_ghost_button("Restore bundled packs", move || {
+                sender.input(SettingsMsg::RestoreBundledDicts)
+            })
+        };
+        actions.append(&restore);
+        card.append(&actions);
+        return;
+    }
+
+    let rows = pane_section_bare(host);
+    let order = Rc::new(
+        dicts
+            .iter()
+            .map(|dictionary| dictionary.id)
+            .collect::<Vec<_>>(),
+    );
+
+    for (index, dictionary) in dicts.iter().enumerate() {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        row.add_css_class("kalam-settings-row");
+        row.add_css_class("dict");
+
+        let handle = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        handle.add_css_class("kalam-settings-dict-handle");
+        handle.set_size_request(28, 56);
+        handle.set_valign(gtk::Align::Fill);
+        // GTK CSS has no `cursor` property (the stylesheet's attempt was
+        // a parser warning in every log); cursors are widget state.
+        handle.set_cursor_from_name(Some("grab"));
+        handle.set_tooltip_text(Some(&format!("Drag to reorder {}", dictionary.name)));
+        handle.update_property(&[gtk::accessible::Property::Label(&format!(
+            "Drag to reorder {}",
+            dictionary.name
+        ))]);
+        let handle_icon = gtk::Image::from_icon_name("list-drag-handle-symbolic");
+        handle_icon.add_css_class("kalam-settings-dict-handle-icon");
+        handle_icon.set_pixel_size(16);
+        handle_icon.set_halign(gtk::Align::Center);
+        handle_icon.set_valign(gtk::Align::Center);
+        handle.append(&handle_icon);
+        row.append(&handle);
+
+        let provider = gtk::gdk::ContentProvider::for_value(&dictionary.id.to_value());
+        let source = gtk::DragSource::new();
+        source.set_actions(gtk::gdk::DragAction::MOVE);
+        source.set_content(Some(&provider));
+        {
+            let row_begin = row.clone();
+            source.connect_drag_begin(move |source, _drag| {
+                row_begin.set_opacity(0.4);
+                row_begin.add_css_class("dragging");
+                let paintable = gtk::WidgetPaintable::new(Some(&row_begin));
+                source.set_icon(Some(&paintable), 14, 28);
+            });
+        }
+        {
+            let row_end = row.clone();
+            source.connect_drag_end(move |_, _drag, _delete_data| {
+                row_end.set_opacity(1.0);
+                row_end.remove_css_class("dragging");
+            });
+        }
+        {
+            let row_cancel = row.clone();
+            source.connect_drag_cancel(move |_, _drag, _reason| {
+                row_cancel.set_opacity(1.0);
+                row_cancel.remove_css_class("dragging");
+                false
+            });
+        }
+        handle.add_controller(source);
+
+        let info = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        info.set_hexpand(true);
+        info.set_valign(gtk::Align::Center);
+        let name = gtk::Label::new(Some(&dictionary.name));
+        name.add_css_class("kalam-settings-row-label");
+        name.set_halign(gtk::Align::Start);
+        name.set_xalign(0.0);
+        name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        info.append(&name);
+        let meta = gtk::Label::new(Some(&format!(
+            "{} entr{}",
+            dictionary.entry_count,
+            if dictionary.entry_count == 1 { "y" } else { "ies" }
+        )));
+        meta.add_css_class("kalam-ui-meta");
+        meta.set_halign(gtk::Align::Start);
+        meta.set_xalign(0.0);
+        info.append(&meta);
+        row.append(&info);
+
+        if index == 0 {
+            row.append(&settings_chip("Speaks first", true));
+        }
+
+        let remove = {
+            let sender = sender.clone();
+            let anchor = rows.clone();
+            let name = dictionary.name.clone();
+            let entry_count = dictionary.entry_count;
+            let id = dictionary.id;
+            ghost_button("Remove", move || {
+                let detail = if dict::is_bundled_dictionary(&name) {
+                    "Restore bundled packs can bring it back."
+                } else {
+                    "Kalam will not add it back unless it is imported again."
+                };
+                let message = format!(
+                    "{name} and its {entry_count} entr{} will be removed. {detail}",
+                    if entry_count == 1 { "y" } else { "ies" }
+                );
+                let sender = sender.clone();
+                let _ = confirmation_dialog(
+                    &anchor,
+                    &format!("Remove {name}?"),
+                    &message,
+                    "Cancel",
+                    "Remove dictionary",
+                    ConfirmationKind::Destructive,
+                    move || sender.input(SettingsMsg::DeleteDict(id)),
+                );
+            })
+        };
+        remove.set_valign(gtk::Align::Center);
+        if index == 0 {
+            click_button_for_screenshot(&remove, "remove-dictionary");
+        }
+        row.append(&remove);
+
+        let target = gtk::DropTarget::new(i64::static_type(), gtk::gdk::DragAction::MOVE);
+        {
+            let row_enter = row.clone();
+            target.connect_enter(move |_, _x, y| {
+                set_dictionary_drop_indicator(&row_enter, y);
+                gtk::gdk::DragAction::MOVE
+            });
+        }
+        {
+            let row_motion = row.clone();
+            target.connect_motion(move |_, _x, y| {
+                set_dictionary_drop_indicator(&row_motion, y);
+                gtk::gdk::DragAction::MOVE
+            });
+        }
+        {
+            let row_leave = row.clone();
+            target.connect_leave(move |_| {
+                clear_dictionary_drop_indicator(&row_leave);
+            });
+        }
+        {
+            let row_drop = row.clone();
+            let sender = sender.clone();
+            let order = order.clone();
+            target.connect_drop(move |_, value, _x, y| {
+                let after = y >= row_drop.height() as f64 / 2.0;
+                clear_dictionary_drop_indicator(&row_drop);
+                let Ok(source_id) = value.get::<i64>() else {
+                    return false;
+                };
+                let Some(source_index) = order.iter().position(|id| *id == source_id) else {
+                    return false;
+                };
+                let slot = if after { index + 1 } else { index };
+                let final_index = if slot > source_index {
+                    slot - 1
+                } else {
+                    slot
+                };
+                let delta = final_index as i64 - source_index as i64;
+                if delta != 0 {
+                    sender.input(SettingsMsg::MoveDict(source_id, delta));
+                }
+                true
+            });
+        }
+        row.add_controller(target);
+
+        // CI screenshot state: replay drag-begin's 40% source row and
+        // the following row's drop-before bar, the two halves of the
+        // drawn dragging state that synthetic headless input cannot
+        // deliver reliably.
+        if std::env::var("KALAM_DIALOG").as_deref() == Ok("dictionary-drag") {
+            if index == 0 {
+                row.set_opacity(0.4);
+                row.add_css_class("dragging");
+            } else if index == 1 {
+                row.add_css_class("drop-before");
+            }
+        }
+
+        rows.append(&row);
+    }
+
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    actions.set_margin_top(12);
+    let import = {
+        let sender = sender.clone();
+        primary_button("Import dictionary", move || sender.input(SettingsMsg::ImportDict))
+    };
+    actions.append(&import);
+    let rescan = {
+        let sender = sender.clone();
+        boxed_ghost_button("Rescan", move || sender.input(SettingsMsg::Refresh))
+    };
+    actions.append(&rescan);
+    host.append(&actions);
+}
+
+// ---------------------------------------------------------------------------
+// Metadata sources (decision 153).
+// ---------------------------------------------------------------------------
+
+fn set_google_chevron(button: &gtk::Button, expanded: bool) {
+    let icon = gtk::Image::from_icon_name(if expanded {
+        "pan-up-symbolic"
+    } else {
+        "pan-down-symbolic"
+    });
+    icon.set_pixel_size(16);
+    button.set_child(Some(&icon));
+    let label = if expanded {
+        "Hide Google Books settings"
+    } else {
+        "Show Google Books settings"
+    };
+    button.set_tooltip_text(Some(label));
+    button.update_property(&[gtk::accessible::Property::Label(label)]);
+}
+
+fn set_credential_chevron(button: &gtk::Button, source_label: &str, expanded: bool) {
+    let icon = gtk::Image::from_icon_name(if expanded {
+        "pan-up-symbolic"
+    } else {
+        "pan-down-symbolic"
+    });
+    icon.set_pixel_size(16);
+    button.set_child(Some(&icon));
+    let label = if expanded {
+        format!("Hide {source_label} settings")
+    } else {
+        format!("Show {source_label} settings")
+    };
+    button.set_tooltip_text(Some(&label));
+    button.update_property(&[gtk::accessible::Property::Label(label.as_str())]);
+}
+
+/// One credential-bearing source row: its switch, a “needed” chip while
+/// no credential is saved, and the expandable credential field. Saving
+/// follows the Google Books rule — on activate or focus-leave, never
+/// per keystroke — and clears the rejected state, because a newly
+/// typed credential has not been rejected yet.
+#[allow(clippy::too_many_arguments)]
+fn build_credential_source(
+    rows: &gtk::Box,
+    service: &LibraryService,
+    source: crate::metadata::SourceId,
+    enabled: bool,
+    credential_label: &'static str,
+    pref: &'static str,
+    rejected_pref: &'static str,
+    value: &str,
+    rejected: bool,
+    placeholder: &'static str,
+    rejected_text: &'static str,
+    needed_text: &'static str,
+) {
+    let source_label = source.label();
+    let expanded = Rc::new(Cell::new(enabled));
+    let revealer = gtk::Revealer::new();
+    revealer.set_transition_type(if crate::appearance::reduce_motion() {
+        gtk::RevealerTransitionType::Crossfade
+    } else {
+        gtk::RevealerTransitionType::SlideDown
+    });
+    revealer.set_transition_duration(180);
+    revealer.set_reveal_child(expanded.get());
+    let nested = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    nested.add_css_class("kalam-settings-nested-rows");
+    revealer.set_child(Some(&nested));
+
+    let row = pane_row(rows, source_label, None);
+    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    controls.set_valign(gtk::Align::Center);
+    let needed_chip = settings_chip(needed_text, false);
+    needed_chip.set_visible(value.trim().is_empty());
+    controls.append(&needed_chip);
+
+    let chevron = gtk::Button::new();
+    chevron.add_css_class("kalam-settings-chevron");
+    chevron.set_size_request(36, 36);
+    chevron.set_valign(gtk::Align::Center);
+    chevron.set_sensitive(enabled);
+    set_credential_chevron(&chevron, source_label, expanded.get());
+
+    let source_switch = row_switch(source_label, enabled, {
+        let service = service.clone();
+        let expanded_switch = expanded.clone();
+        let revealer_switch = revealer.clone();
+        let chevron_switch = chevron.clone();
+        move |on| {
+            crate::metadata::set_source_enabled(service.catalog(), source, on);
+            expanded_switch.set(on);
+            revealer_switch.set_reveal_child(on);
+            chevron_switch.set_sensitive(on);
+            set_credential_chevron(&chevron_switch, source_label, on);
+        }
+    });
+    controls.append(&source_switch);
+    controls.append(&chevron);
+    row.append(&controls);
+    rows.append(&revealer);
+
+    {
+        let expanded_chevron = expanded.clone();
+        let revealer_chevron = revealer.clone();
+        chevron.connect_clicked(move |button| {
+            let next = !expanded_chevron.get();
+            expanded_chevron.set(next);
+            revealer_chevron.set_reveal_child(next);
+            set_credential_chevron(button, source_label, next);
         });
     }
-    right.append(&clean);
-    setting_row(
-        &body,
-        "Original backups",
-        "Kept once per book when writeback is on. Deleting is permanent: you lose the ability to undo metadata written into those files.",
-        &right,
+
+    let credential_row = pane_row(&nested, credential_label, None);
+    credential_row.add_css_class("nested");
+    credential_row.set_margin_start(20);
+    let credential_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    credential_box.set_valign(gtk::Align::Center);
+    credential_box.set_size_request(280, -1);
+    let entry = gtk::Entry::new();
+    entry.add_css_class("kalam-settings-entry");
+    if rejected {
+        entry.add_css_class("rejected");
+    }
+    entry.set_placeholder_text(Some(placeholder));
+    entry.set_text(value);
+    entry.set_hexpand(true);
+    entry.update_property(&[gtk::accessible::Property::Label(format!(
+        "{source_label} {credential_label}"
+    )
+    .as_str())]);
+    credential_box.append(&entry);
+    let error = gtk::Label::new(Some(rejected_text));
+    error.add_css_class("kalam-settings-error-line");
+    error.set_halign(gtk::Align::Start);
+    error.set_xalign(0.0);
+    error.set_visible(rejected);
+    credential_box.append(&error);
+    credential_row.append(&credential_box);
+
+    let saved = Rc::new(RefCell::new(value.trim().to_string()));
+    let save = {
+        let service = service.clone();
+        let entry = entry.clone();
+        let saved = saved.clone();
+        let error = error.clone();
+        let needed_chip = needed_chip.clone();
+        Rc::new(move || {
+            let value = entry.text().trim().to_string();
+            if *saved.borrow() == value {
+                return;
+            }
+            service.catalog().set_pref(pref, &value);
+            service.catalog().set_pref(rejected_pref, "0");
+            needed_chip.set_visible(value.is_empty());
+            *saved.borrow_mut() = value;
+            entry.remove_css_class("rejected");
+            error.set_visible(false);
+        })
+    };
+    {
+        let save = save.clone();
+        entry.connect_activate(move |_| save());
+    }
+    let focus = gtk::EventControllerFocus::new();
+    {
+        let save = save.clone();
+        focus.connect_leave(move |_| save());
+    }
+    entry.add_controller(focus);
+}
+
+fn build_sources_pane(host: &gtk::Box, service: &LibraryService, snap: &SettingsSnapshot) {
+    use crate::metadata::{set_source_enabled, SourceId};
+
+    // The pane's callbacks outlive this builder, so they share one
+    // handle cloned out of the service here.
+    let catalog = service.catalog().clone();
+
+    let rows = pane_section(host, "Books");
+
+    let open_library = row_switch("Open Library", snap.source_open_library, {
+        let catalog = catalog.clone();
+        move |on| set_source_enabled(&catalog, SourceId::OpenLibrary, on)
+    });
+    pane_row_with(&rows, "Open Library", Some("No key needed"), &open_library);
+
+    let expanded = Rc::new(Cell::new(snap.source_google_books));
+    let revealer = gtk::Revealer::new();
+    revealer.set_transition_type(if crate::appearance::reduce_motion() {
+        gtk::RevealerTransitionType::Crossfade
+    } else {
+        gtk::RevealerTransitionType::SlideDown
+    });
+    revealer.set_transition_duration(180);
+    revealer.set_reveal_child(expanded.get());
+    let nested = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    nested.add_css_class("kalam-settings-nested-rows");
+    revealer.set_child(Some(&nested));
+
+    let google_row = pane_row(&rows, "Google Books", None);
+    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    controls.set_valign(gtk::Align::Center);
+
+    let chevron = gtk::Button::new();
+    chevron.add_css_class("kalam-settings-chevron");
+    chevron.set_size_request(36, 36);
+    chevron.set_valign(gtk::Align::Center);
+    chevron.set_sensitive(snap.source_google_books);
+    set_google_chevron(&chevron, expanded.get());
+
+    let google_switch = row_switch("Google Books", snap.source_google_books, {
+        let catalog = catalog.clone();
+        let expanded_switch = expanded.clone();
+        let revealer_switch = revealer.clone();
+        let chevron_switch = chevron.clone();
+        move |on| {
+            set_source_enabled(&catalog, SourceId::GoogleBooks, on);
+            expanded_switch.set(on);
+            revealer_switch.set_reveal_child(on);
+            chevron_switch.set_sensitive(on);
+            set_google_chevron(&chevron_switch, on);
+        }
+    });
+    controls.append(&google_switch);
+    controls.append(&chevron);
+    google_row.append(&controls);
+    rows.append(&revealer);
+
+    {
+        let expanded_chevron = expanded.clone();
+        let revealer_chevron = revealer.clone();
+        chevron.connect_clicked(move |button| {
+            let next = !expanded_chevron.get();
+            expanded_chevron.set(next);
+            revealer_chevron.set_reveal_child(next);
+            set_google_chevron(button, next);
+        });
+    }
+
+    // API key. Saving happens when the field is left, not on every
+    // keystroke: a partly typed key must never replace a working one.
+    let key_row = pane_row(&nested, "API key", None);
+    key_row.add_css_class("nested");
+    key_row.set_margin_start(20);
+    let key_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    key_box.set_valign(gtk::Align::Center);
+    key_box.set_size_request(280, -1);
+    let key_entry = gtk::Entry::new();
+    key_entry.add_css_class("kalam-settings-entry");
+    if snap.google_books_key_rejected {
+        key_entry.add_css_class("rejected");
+    }
+    key_entry.set_placeholder_text(Some("Optional API key"));
+    key_entry.set_text(&snap.google_books_key);
+    key_entry.set_hexpand(true);
+    key_entry.update_property(&[gtk::accessible::Property::Label("Google Books API key")]);
+    key_box.append(&key_entry);
+    let key_error = gtk::Label::new(Some("Google Books rejected this key."));
+    key_error.add_css_class("kalam-settings-error-line");
+    key_error.set_halign(gtk::Align::Start);
+    key_error.set_xalign(0.0);
+    key_error.set_visible(snap.google_books_key_rejected);
+    key_box.append(&key_error);
+    key_row.append(&key_box);
+
+    let saved_key = Rc::new(RefCell::new(snap.google_books_key.trim().to_string()));
+    let save_key = {
+        let catalog = catalog.clone();
+        let entry = key_entry.clone();
+        let saved = saved_key.clone();
+        let error = key_error.clone();
+        Rc::new(move || {
+            let value = entry.text().trim().to_string();
+            if *saved.borrow() == value {
+                return;
+            }
+            catalog.set_pref("meta.googlebooks.key", &value);
+            catalog.set_pref("meta.googlebooks.key_rejected", "0");
+            *saved.borrow_mut() = value;
+            entry.remove_css_class("rejected");
+            error.set_visible(false);
+        })
+    };
+    {
+        let save_key = save_key.clone();
+        key_entry.connect_activate(move |_| save_key());
+    }
+    let key_focus = gtk::EventControllerFocus::new();
+    {
+        let save_key = save_key.clone();
+        key_focus.connect_leave(move |_| save_key());
+    }
+    key_entry.add_controller(key_focus);
+
+    // Country code, saved the same way. An incomplete code is not a
+    // setting, so leaving the field with one restores the saved code.
+    let country_row = pane_row(&nested, "Country code", Some("Used to rank results"));
+    country_row.add_css_class("nested");
+    country_row.set_margin_start(20);
+    let initial_country = snap.google_books_country.trim().to_uppercase();
+    let country_entry = gtk::Entry::new();
+    country_entry.add_css_class("kalam-settings-entry");
+    country_entry.set_text(&initial_country);
+    country_entry.set_max_length(2);
+    country_entry.set_width_chars(2);
+    country_entry.set_size_request(76, -1);
+    country_entry.set_valign(gtk::Align::Center);
+    country_entry.update_property(&[gtk::accessible::Property::Label(
+        "Google Books country code",
+    )]);
+    country_row.append(&country_entry);
+
+    let saved_country = Rc::new(RefCell::new(initial_country));
+    let save_country = {
+        let catalog = catalog.clone();
+        let entry = country_entry.clone();
+        let saved = saved_country.clone();
+        Rc::new(move || {
+            let normalized: String = entry
+                .text()
+                .chars()
+                .filter(|c| c.is_ascii_alphabetic())
+                .flat_map(char::to_uppercase)
+                .take(2)
+                .collect();
+            if normalized.len() != 2 {
+                entry.set_text(&saved.borrow());
+                return;
+            }
+            if entry.text().as_str() != normalized {
+                entry.set_text(&normalized);
+            }
+            if *saved.borrow() == normalized {
+                return;
+            }
+            catalog.set_pref("meta.googlebooks.country", &normalized);
+            *saved.borrow_mut() = normalized;
+        })
+    };
+    {
+        let save_country = save_country.clone();
+        country_entry.connect_activate(move |_| save_country());
+    }
+    let country_focus = gtk::EventControllerFocus::new();
+    {
+        let save_country = save_country.clone();
+        country_focus.connect_leave(move |_| save_country());
+    }
+    country_entry.add_controller(country_focus);
+
+    let rows = pane_section(host, "Comics");
+    build_credential_source(
+        &rows,
+        service,
+        SourceId::MyAnimeList,
+        snap.source_myanimelist,
+        "Client ID",
+        "meta.myanimelist.client_id",
+        "meta.myanimelist.client_id_rejected",
+        &snap.myanimelist_client_id,
+        snap.myanimelist_client_id_rejected,
+        "MyAnimeList Client ID",
+        "MyAnimeList rejected this Client ID.",
+        "Client ID needed",
     );
+    build_credential_source(
+        &rows,
+        service,
+        SourceId::ComicVine,
+        snap.source_comic_vine,
+        "API key",
+        "meta.comicvine.key",
+        "meta.comicvine.key_rejected",
+        &snap.comic_vine_key,
+        snap.comic_vine_key_rejected,
+        "Comic Vine API key",
+        "Comic Vine rejected this API key.",
+        "API key needed",
+    );
+}
+
+/// The app's pill switch. `on_toggle` fires only for user changes: the
+/// initial state is set before the handler is attached.
+pub(crate) fn toggle_switch(initial: bool, on_toggle: impl Fn(bool) + 'static) -> gtk::Switch {
+    let sw = gtk::Switch::new();
+    sw.set_active(initial);
+    sw.set_valign(gtk::Align::Center);
+    sw.add_css_class("kalam-switch");
+    sw.connect_active_notify(move |sw| on_toggle(sw.is_active()));
+    sw
 }
 
 /// `2026-07-28`, for backup filenames.
@@ -2329,224 +3809,4 @@ fn today_stamp() -> String {
         .and_then(|d| d.format("%Y-%m-%d"))
         .map(|s| s.to_string())
         .unwrap_or_default()
-}
-
-/// Explains why a country code is needed at all.
-fn country_hint_label() -> gtk::Label {
-    let label = gtk::Label::new(Some(
-        "Two-letter code. Google only serves results for countries it has rights in.",
-    ));
-    label.add_css_class("kalam-muted");
-    label.set_wrap(true);
-    label.set_xalign(0.0);
-    label
-}
-
-/// One section card per metadata provider, each with a real switch and its
-/// own extra rows.
-fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>, snap: &SettingsSnapshot) {
-    use crate::metadata::{set_source_enabled, SourceId};
-
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-
-    let ol_body = section_card(
-        host,
-        "system-search-symbolic",
-        "Open Library",
-        Some("Internet Archive. No key needed. Strong on older and public-domain titles."),
-    );
-    {
-        let catalog = catalog.clone();
-        let sw = toggle_switch(snap.source_open_library, move |on| {
-            set_source_enabled(&catalog, SourceId::OpenLibrary, on);
-        });
-        setting_row(
-            &ol_body,
-            "Enable Open Library lookup",
-            "Adds a search panel inside the metadata editor.",
-            &sw,
-        );
-    }
-
-    let gb_body = section_card(
-        host,
-        "system-search-symbolic",
-        "Google Books",
-        Some(
-            "Broad coverage, good for recent and non-English books. Works without a key, but anonymous requests share a global quota and can be rate limited.",
-        ),
-    );
-    {
-        let catalog = catalog.clone();
-        let sw = toggle_switch(snap.source_google_books, move |on| {
-            set_source_enabled(&catalog, SourceId::GoogleBooks, on);
-        });
-        setting_row(
-            &gb_body,
-            "Enable Google Books lookup",
-            "Adds results from Google Books to the metadata editor.",
-            &sw,
-        );
-    }
-
-    // API key row.
-    {
-        let right = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        right.set_valign(gtk::Align::Center);
-        let entry = gtk::Entry::new();
-        entry.set_placeholder_text(Some("Optional API key — lifts the shared rate limit"));
-        entry.set_text(&snap.google_books_key);
-        entry.set_hexpand(true);
-        entry.add_css_class("kalam-setting-entry");
-        right.append(&entry);
-        let save = gtk::Button::with_label("Save key");
-        save.add_css_class("kalam-btn-outlined");
-        save.add_css_class("kalam-btn-sm");
-        {
-            let catalog = catalog.clone();
-            let entry = entry.clone();
-            save.connect_clicked(move |_| {
-                let key = entry.text().trim().to_string();
-                catalog.set_pref("meta.googlebooks.key", &key);
-                if key.is_empty() {
-                    crate::notify::info("Google Books key cleared", "Using the shared quota");
-                } else {
-                    crate::notify::success("Google Books key saved", "Your own quota is in use");
-                }
-            });
-        }
-        right.append(&save);
-        setting_row(
-            &gb_body,
-            "API key",
-            "Free from console.cloud.google.com — create a project, enable the Books API, then make an API key. No card required.",
-            &right,
-        );
-    }
-
-    // Country row.
-    {
-        let right = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        right.set_valign(gtk::Align::Center);
-        let country = gtk::Entry::new();
-        country.set_max_length(2);
-        country.set_width_chars(4);
-        country.set_placeholder_text(Some("IN"));
-        country.set_text(&snap.google_books_country);
-        country.add_css_class("kalam-setting-entry");
-        right.append(&country);
-        let save = gtk::Button::with_label("Save");
-        save.add_css_class("kalam-btn-outlined");
-        save.add_css_class("kalam-btn-sm");
-        {
-            let catalog = catalog.clone();
-            let country = country.clone();
-            save.connect_clicked(move |_| {
-                let code = country.text().trim().to_uppercase();
-                catalog.set_pref("meta.googlebooks.country", &code);
-                crate::notify::success("Country saved", &code);
-            });
-        }
-        right.append(&save);
-        let hint = country_hint_label();
-        right.append(&hint);
-        setting_row(
-            &gb_body,
-            "Country",
-            "Two-letter code. Google only serves results for countries it has rights in.",
-            &right,
-        );
-    }
-}
-
-/// Recent notifications, so a toast that faded can still be read.
-fn build_notifications(host: &gtk::Box, sender: &ComponentSender<SettingsPageModel>) {
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-    let body = section_card(
-        host,
-        "preferences-system-notifications-symbolic",
-        "Activity log",
-        Some("The last 25 events this session. Toasts fade; this keeps the record."),
-    );
-
-    let entries = crate::notify::history();
-    if entries.is_empty() {
-        let empty = gtk::Label::new(Some("Nothing yet this session."));
-        empty.add_css_class("kalam-muted");
-        empty.set_halign(gtk::Align::Start);
-        body.append(&empty);
-    } else {
-        for entry in entries.iter().take(25) {
-            let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-            row.add_css_class("kalam-setting-row");
-
-            let badge_class = match entry.kind {
-                crate::notify::Kind::Success => "kalam-chip-success",
-                crate::notify::Kind::Error => "kalam-chip-danger",
-                crate::notify::Kind::Info => "kalam-chip-info",
-                crate::notify::Kind::Progress => "kalam-chip-neutral",
-            };
-            row.append(&chip_label(entry.kind.label(), badge_class));
-
-            let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
-            text.set_hexpand(true);
-            let title = gtk::Label::new(Some(&entry.title));
-            title.add_css_class("kalam-setting-label");
-            title.set_halign(gtk::Align::Start);
-            title.set_xalign(0.0);
-            title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            text.append(&title);
-            if !entry.detail.trim().is_empty() {
-                let detail = gtk::Label::new(Some(entry.detail.trim()));
-                detail.add_css_class("kalam-setting-desc");
-                detail.set_halign(gtk::Align::Start);
-                detail.set_xalign(0.0);
-                detail.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                detail.set_tooltip_text(Some(&entry.detail));
-                text.append(&detail);
-            }
-            row.append(&text);
-
-            let at = gtk::Label::new(Some(&entry.at));
-            at.add_css_class("kalam-muted");
-            at.set_valign(gtk::Align::Center);
-            row.append(&at);
-
-            body.append(&row);
-        }
-    }
-
-    let footer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    footer.set_halign(gtk::Align::End);
-    footer.add_css_class("kalam-card-footer");
-    let clear = gtk::Button::with_label("Clear history");
-    clear.add_css_class("kalam-btn-ghost");
-    clear.add_css_class("kalam-btn-sm");
-    {
-        let s = sender.clone();
-        clear.connect_clicked(move |_| s.input(SettingsMsg::ClearNotifications));
-    }
-    footer.append(&clear);
-    body.append(&footer);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ayu_family_collects_both_variants() {
-        let ids: Vec<&str> = themes_for_family("ayu").into_iter().map(|t| t.id).collect();
-        assert_eq!(ids, vec!["ayumirage", "ayu-darker"]);
-    }
-
-    #[test]
-    fn selected_badge_marks_only_the_default_theme_as_default() {
-        assert_eq!(active_theme_badge(&crate::theme::DEFAULT), "default");
-        assert_eq!(active_theme_badge(&crate::theme::TOKYONIGHT), "current");
-    }
 }

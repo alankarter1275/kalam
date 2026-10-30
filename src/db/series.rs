@@ -1,15 +1,23 @@
-//! Series cache — remote series listings for the book page's series float.
+//! Series cache — remote series listings for the series page.
 //!
 //! A series spans books you may not own, and the local catalog can only know
 //! about the ones in the library. So the complete listing is fetched from
 //! Open Library once per series, cached here together with the downloaded
-//! covers, and only refreshed when the user asks (the ⟳ button in the float).
+//! covers, and only refreshed when the user asks (the series page's ⋯ menu).
 //!
 //! The cache key includes the first author because two series can share a
 //! name. The fetch itself is by series name only, so a key collision means a
 //! slightly redundant fetch at worst — never wrong data.
 
 use super::*;
+use crate::models::{
+    ComicCredit, COMIC_SERIES_FIELD_COVER, COMIC_SERIES_FIELD_CREDITS,
+    COMIC_SERIES_FIELD_DESCRIPTION, COMIC_SERIES_FIELD_END_DATE, COMIC_SERIES_FIELD_GENRES,
+    COMIC_SERIES_FIELD_KNOWN_CHAPTERS, COMIC_SERIES_FIELD_KNOWN_VOLUMES,
+    COMIC_SERIES_FIELD_MEDIA_TYPE, COMIC_SERIES_FIELD_ORIGINAL_TITLE,
+    COMIC_SERIES_FIELD_PUBLISHED, COMIC_SERIES_FIELD_PUBLISHER,
+    COMIC_SERIES_FIELD_SERIALIZATION, COMIC_SERIES_FIELD_STATUS, COMIC_SERIES_FIELD_TITLE,
+};
 
 /// One work in a cached series listing.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -41,6 +49,531 @@ pub struct SeriesCacheEntry {
 }
 
 type RawChapterRow = (i64, i64, i64, f32, Option<f32>, String, String);
+
+/// A complete hand edit of a comic series. `manual_fields` names the
+/// fields this edit changed compared to the stored series; those (and
+/// only those) join the series' protected set, unless
+/// `clear_manual_fields` asks for the protection to be dropped.
+#[derive(Debug, Clone, Default)]
+pub struct ComicSeriesEdit {
+    pub title: String,
+    pub original_title: String,
+    pub author: String,
+    pub credits: Vec<ComicCredit>,
+    pub description: String,
+    pub status: String,
+    pub publisher: String,
+    pub serialization: String,
+    pub published: String,
+    pub end_date: String,
+    pub media_type: String,
+    pub genres: Vec<String>,
+    pub known_volumes: Option<i64>,
+    pub known_chapters: Option<i64>,
+    pub remove_fetched_cover: bool,
+    pub clear_manual_fields: bool,
+    pub manual_fields: Vec<String>,
+}
+
+/// Fields a metadata source proposes for a comic series. Every field
+/// is optional: `None` means either “the source had nothing” or “the
+/// reader left this field unpicked in review”, and the stored value
+/// stands. Hand-edited fields are protected again inside the update,
+/// so a stale review can never overwrite a later edit.
+#[derive(Debug, Clone, Default)]
+pub struct ComicSeriesMetadataPatch {
+    pub title: Option<String>,
+    pub original_title: Option<String>,
+    pub credits: Option<Vec<ComicCredit>>,
+    pub description: Option<String>,
+    pub status: Option<String>,
+    pub publisher: Option<String>,
+    pub serialization: Option<String>,
+    pub published: Option<String>,
+    pub end_date: Option<String>,
+    pub media_type: Option<String>,
+    pub genres: Option<Vec<String>>,
+    pub known_volumes: Option<i64>,
+    pub known_chapters: Option<i64>,
+    /// Library-relative path of the already-written cover file.
+    pub cover_file: Option<String>,
+    pub source: String,
+    pub source_id: String,
+    pub source_url: String,
+    /// Field names proposed by the review. Present-but-empty values
+    /// still prove the source link; fields not named are untouched.
+    pub proposed_fields: Vec<String>,
+}
+
+/// What a series update actually changed, so dialogs can tell the
+/// reader the truth about hand-edited fields they could not touch.
+#[derive(Debug, Clone, Default)]
+pub struct ComicSeriesUpdateOutcome {
+    pub series_id: i64,
+    pub title: String,
+    pub applied_fields: Vec<String>,
+    pub protected_fields: Vec<String>,
+    /// Library-relative cover replaced by this update, if any. The
+    /// caller deletes the file after the transaction commits.
+    pub replaced_cover_file: Option<String>,
+}
+
+fn series_count(value: i64) -> Option<i64> {
+    (value > 0).then_some(value)
+}
+
+fn compact_series_text(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn normalise_series_description(value: &str) -> String {
+    value
+        .replace("\r\n", "\n")
+        .lines()
+        .map(str::trim)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+fn normalise_comic_credits(credits: &[ComicCredit]) -> Vec<ComicCredit> {
+    let mut out: Vec<ComicCredit> = Vec::new();
+    for credit in credits {
+        let name = compact_series_text(&credit.name);
+        if name.is_empty() {
+            continue;
+        }
+        let role = compact_series_text(&credit.role);
+        if out.iter().any(|existing| {
+            existing.name.eq_ignore_ascii_case(&name) && existing.role.eq_ignore_ascii_case(&role)
+        }) {
+            continue;
+        }
+        out.push(ComicCredit { role, name });
+        if out.len() >= 60 {
+            break;
+        }
+    }
+    out
+}
+
+fn comic_author_from_credits(credits: &[ComicCredit], fallback: &str) -> String {
+    let mut names: Vec<String> = Vec::new();
+    for credit in credits {
+        let name = compact_series_text(&credit.name);
+        if !name.is_empty() && !names.iter().any(|existing| existing.eq_ignore_ascii_case(&name)) {
+            names.push(name);
+        }
+    }
+    if names.is_empty() {
+        compact_series_text(fallback)
+    } else {
+        names.join(", ")
+    }
+}
+
+fn normalise_series_strings(values: &[String], limit: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for value in values {
+        let value = compact_series_text(value);
+        if value.is_empty() || out.iter().any(|existing| existing.eq_ignore_ascii_case(&value)) {
+            continue;
+        }
+        out.push(value);
+        if out.len() >= limit {
+            break;
+        }
+    }
+    out
+}
+
+fn valid_comic_series_fields(values: &[String]) -> Vec<String> {
+    const VALID: &[&str] = &[
+        COMIC_SERIES_FIELD_TITLE,
+        COMIC_SERIES_FIELD_ORIGINAL_TITLE,
+        COMIC_SERIES_FIELD_CREDITS,
+        COMIC_SERIES_FIELD_DESCRIPTION,
+        COMIC_SERIES_FIELD_STATUS,
+        COMIC_SERIES_FIELD_PUBLISHER,
+        COMIC_SERIES_FIELD_SERIALIZATION,
+        COMIC_SERIES_FIELD_PUBLISHED,
+        COMIC_SERIES_FIELD_END_DATE,
+        COMIC_SERIES_FIELD_MEDIA_TYPE,
+        COMIC_SERIES_FIELD_GENRES,
+        COMIC_SERIES_FIELD_KNOWN_VOLUMES,
+        COMIC_SERIES_FIELD_KNOWN_CHAPTERS,
+        COMIC_SERIES_FIELD_COVER,
+    ];
+    normalise_series_strings(values, VALID.len())
+        .into_iter()
+        .filter(|value| VALID.contains(&value.as_str()))
+        .collect()
+}
+
+fn json_string_vec(value: &str) -> Vec<String> {
+    serde_json::from_str(value).unwrap_or_default()
+}
+
+fn comic_credits_from_json(value: &str) -> Vec<ComicCredit> {
+    let credits: Vec<ComicCredit> = serde_json::from_str(value).unwrap_or_default();
+    normalise_comic_credits(&credits)
+}
+
+fn json_vec_string(values: &[String]) -> String {
+    serde_json::to_string(values).unwrap_or_else(|_| "[]".to_string())
+}
+
+fn comic_credits_json(values: &[ComicCredit]) -> String {
+    serde_json::to_string(values).unwrap_or_else(|_| "[]".to_string())
+}
+
+/// A cover path may only live inside the library; a stray absolute or
+/// parent-escaping value from a damaged database is ignored.
+pub(crate) fn resolve_comic_series_cover(value: Option<&str>) -> Option<PathBuf> {
+    let value = value?.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let relative = Path::new(value);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    let path = crate::paths::library_dir().join(relative);
+    path.is_file().then_some(path)
+}
+
+/// Map the shared comic-series SELECT shape used by get/list. The
+/// first fifteen columns are the pre-v22 shape; v22 fields follow.
+fn comic_series_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ComicSeries> {
+    let cover_uuid: Option<String> = r.get(6)?;
+    let cover_name: Option<String> = r.get(7)?;
+    let fallback_cover =
+        cover_uuid.and_then(|uuid| cover_name.map(|name| resolve_library_file(&uuid, &name)));
+    let cover_file: Option<String> = r.get(30)?;
+    let (cover_path, metadata_cover_path) = resolve_series_cover_pair(cover_file, fallback_cover);
+
+    Ok(ComicSeries {
+        id: r.get(0)?,
+        title: r.get(1)?,
+        sort_title: r.get(2)?,
+        author: r.get(3)?,
+        description: r.get(4)?,
+        cover_book_id: r.get(5)?,
+        cover_path,
+        metadata_cover_path,
+        status: r.get(8)?,
+        total_chapters: r.get::<_, i64>(9)? as usize,
+        completed_chapters: r.get::<_, i64>(10)? as usize,
+        unread_chapters: r.get::<_, i64>(11)? as usize,
+        created_at: r.get(12)?,
+        updated_at: r.get(13)?,
+        last_read_at: r.get(14)?,
+        original_title: r.get(15)?,
+        credits: comic_credits_from_json(&r.get::<_, String>(16)?),
+        publisher: r.get(17)?,
+        serialization: r.get(18)?,
+        published: r.get(19)?,
+        end_date: r.get(20)?,
+        media_type: r.get(21)?,
+        genres: normalise_series_strings(&json_string_vec(&r.get::<_, String>(22)?), 40),
+        known_volumes: series_count(r.get::<_, i64>(23)?),
+        known_chapters: series_count(r.get::<_, i64>(24)?),
+        metadata_source: r.get(25)?,
+        metadata_source_id: r.get(26)?,
+        metadata_source_url: r.get(27)?,
+        metadata_fetched_at: r.get(28)?,
+        manual_fields: valid_comic_series_fields(&json_string_vec(&r.get::<_, String>(29)?)),
+    })
+}
+
+fn resolve_series_cover_pair(
+    cover_file: Option<String>,
+    fallback: Option<PathBuf>,
+) -> (Option<PathBuf>, Option<PathBuf>) {
+    let metadata = resolve_comic_series_cover(cover_file.as_deref());
+    let effective = metadata.clone().or(fallback);
+    (effective, metadata)
+}
+
+/// The stored, editable half of a comic-series row. Update methods
+/// load this inside their transaction, change the copy, and write it
+/// back whole, which keeps hand-edit lock checks and the values they
+/// protect on the same snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StoredComicSeries {
+    title: String,
+    author: String,
+    description: String,
+    status: String,
+    original_title: String,
+    credits: Vec<ComicCredit>,
+    publisher: String,
+    serialization: String,
+    published: String,
+    end_date: String,
+    media_type: String,
+    genres: Vec<String>,
+    known_volumes: Option<i64>,
+    known_chapters: Option<i64>,
+    metadata_source: String,
+    metadata_source_id: String,
+    metadata_source_url: String,
+    metadata_fetched_at: String,
+    manual_fields: Vec<String>,
+    cover_file: Option<String>,
+}
+
+impl StoredComicSeries {
+    fn is_manual_field(&self, field: &str) -> bool {
+        self.manual_fields.iter().any(|locked| locked == field)
+    }
+}
+
+fn stored_comic_series(conn: &Connection, series_id: i64) -> Result<Option<StoredComicSeries>> {
+    conn.query_row(
+        "SELECT title, author, description, status, original_title,
+                credits_json, publisher, serialization, published, end_date,
+                media_type, genres_json, known_volumes, known_chapters,
+                metadata_source, metadata_source_id, metadata_source_url,
+                metadata_fetched_at, manual_fields_json, cover_file
+         FROM comic_series WHERE id = ?1",
+        params![series_id],
+        |r| {
+            Ok(StoredComicSeries {
+                title: r.get(0)?,
+                author: r.get(1)?,
+                description: r.get(2)?,
+                status: r.get(3)?,
+                original_title: r.get(4)?,
+                credits: comic_credits_from_json(&r.get::<_, String>(5)?),
+                publisher: r.get(6)?,
+                serialization: r.get(7)?,
+                published: r.get(8)?,
+                end_date: r.get(9)?,
+                media_type: r.get(10)?,
+                genres: normalise_series_strings(&json_string_vec(&r.get::<_, String>(11)?), 40),
+                known_volumes: series_count(r.get::<_, i64>(12)?),
+                known_chapters: series_count(r.get::<_, i64>(13)?),
+                metadata_source: r.get(14)?,
+                metadata_source_id: r.get(15)?,
+                metadata_source_url: r.get(16)?,
+                metadata_fetched_at: r.get(17)?,
+                manual_fields: valid_comic_series_fields(&json_string_vec(
+                    &r.get::<_, String>(18)?,
+                )),
+                cover_file: r.get(19)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(DbError::from)
+}
+
+fn write_stored_comic_series(
+    conn: &Connection,
+    series_id: i64,
+    stored: &StoredComicSeries,
+) -> Result<()> {
+    let changed = conn.execute(
+        "UPDATE comic_series SET
+            title = ?1, sort_title = ?2, author = ?3, description = ?4,
+            status = ?5, original_title = ?6, credits_json = ?7,
+            publisher = ?8, serialization = ?9, published = ?10,
+            end_date = ?11, media_type = ?12, genres_json = ?13,
+            known_volumes = ?14, known_chapters = ?15,
+            metadata_source = ?16, metadata_source_id = ?17,
+            metadata_source_url = ?18, metadata_fetched_at = ?19,
+            manual_fields_json = ?20, cover_file = ?21,
+            updated_at = datetime('now')
+         WHERE id = ?22",
+        params![
+            stored.title,
+            stored.title.to_lowercase(),
+            stored.author,
+            stored.description,
+            stored.status,
+            stored.original_title,
+            comic_credits_json(&stored.credits),
+            stored.publisher,
+            stored.serialization,
+            stored.published,
+            stored.end_date,
+            stored.media_type,
+            json_vec_string(&stored.genres),
+            stored.known_volumes.unwrap_or(0),
+            stored.known_chapters.unwrap_or(0),
+            stored.metadata_source,
+            stored.metadata_source_id,
+            stored.metadata_source_url,
+            stored.metadata_fetched_at,
+            json_vec_string(&stored.manual_fields),
+            stored.cover_file,
+            series_id,
+        ],
+    )?;
+    if changed == 0 {
+        return Err(DbError::ComicSeries(
+            "That series is no longer in your library.".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_comic_series_title_free(conn: &Connection, series_id: i64, title: &str) -> Result<()> {
+    let taken: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM comic_series
+             WHERE title = ?1 COLLATE NOCASE AND id != ?2 LIMIT 1",
+            params![title, series_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if taken.is_some() {
+        return Err(DbError::ComicSeries(format!(
+            "Another comic series is already called “{title}”."
+        )));
+    }
+    Ok(())
+}
+
+fn normalise_series_cover_file(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let path = Path::new(value);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    Some(value.to_string())
+}
+
+fn push_unique_field(fields: &mut Vec<String>, field: &str) {
+    if !fields.iter().any(|existing| existing == field) {
+        fields.push(field.to_string());
+    }
+}
+
+fn changed_comic_series_fields(
+    current: &StoredComicSeries,
+    next: &StoredComicSeries,
+) -> Vec<String> {
+    let mut changed = Vec::new();
+    if current.title != next.title {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_TITLE);
+    }
+    if current.original_title != next.original_title {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_ORIGINAL_TITLE);
+    }
+    if current.credits != next.credits || current.author != next.author {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_CREDITS);
+    }
+    if current.description != next.description {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_DESCRIPTION);
+    }
+    if current.status != next.status {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_STATUS);
+    }
+    if current.publisher != next.publisher {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_PUBLISHER);
+    }
+    if current.serialization != next.serialization {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_SERIALIZATION);
+    }
+    if current.published != next.published {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_PUBLISHED);
+    }
+    if current.end_date != next.end_date {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_END_DATE);
+    }
+    if current.media_type != next.media_type {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_MEDIA_TYPE);
+    }
+    if current.genres != next.genres {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_GENRES);
+    }
+    if current.known_volumes != next.known_volumes {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_KNOWN_VOLUMES);
+    }
+    if current.known_chapters != next.known_chapters {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_KNOWN_CHAPTERS);
+    }
+    if current.cover_file != next.cover_file {
+        push_unique_field(&mut changed, COMIC_SERIES_FIELD_COVER);
+    }
+    changed
+}
+
+/// Write a fetched cover beside the series' chapters. The caller owns
+/// deleting a cover this update later replaces; on update failure it
+/// owns deleting this orphan too.
+pub fn write_comic_series_cover(folder: &str, series_id: i64, bytes: &[u8]) -> Result<String> {
+    if bytes.is_empty() {
+        return Err(DbError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "The fetched cover was empty.",
+        )));
+    }
+    let folder = folder.trim();
+    let ext = if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        "png"
+    } else if bytes.starts_with(b"GIF8") {
+        "gif"
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        "webp"
+    } else {
+        "jpg"
+    };
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let relative = if folder.is_empty() {
+        format!("kalam-series-{series_id}-{stamp}-cover.{ext}")
+    } else {
+        format!("{folder}/.kalam/series-{series_id}-{stamp}-cover.{ext}")
+    };
+    let path = crate::paths::library_dir().join(&relative);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&path, bytes)?;
+    Ok(relative)
+}
+
+/// Delete a library-relative series cover. Missing files are already
+/// the desired end state; escaping paths are refused.
+pub fn remove_comic_series_cover(relative: &str) -> Result<()> {
+    let relative = relative.trim();
+    if relative.is_empty() {
+        return Ok(());
+    }
+    let path = Path::new(relative);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(DbError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "That cover path is outside the library.",
+        )));
+    }
+    match fs::remove_file(crate::paths::library_dir().join(path)) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
 
 /// Normalised key for a series: what the listing is *about*, not how one
 /// book's OPF spells it. A leading article is dropped from the series name
@@ -417,7 +950,23 @@ impl Catalog {
                 SUM(CASE WHEN b.progress = 0 THEN 1 ELSE 0 END) AS unread_chapters,
                 s.created_at,
                 s.updated_at,
-                s.last_read_at
+                s.last_read_at,
+                s.original_title,
+                s.credits_json,
+                s.publisher,
+                s.serialization,
+                s.published,
+                s.end_date,
+                s.media_type,
+                s.genres_json,
+                s.known_volumes,
+                s.known_chapters,
+                s.metadata_source,
+                s.metadata_source_id,
+                s.metadata_source_url,
+                s.metadata_fetched_at,
+                s.manual_fields_json,
+                s.cover_file
             FROM comic_series s
             LEFT JOIN books cover_book ON cover_book.id = s.cover_book_id
             LEFT JOIN comic_chapters c ON c.series_id = s.id
@@ -432,29 +981,7 @@ impl Catalog {
 
         let mut stmt = conn.prepare_cached(sql)?;
         let series = stmt
-            .query_row(params![series_id], |r| {
-                let cover_uuid: Option<String> = r.get(6)?;
-                let cover_name: Option<String> = r.get(7)?;
-                let cover_path =
-                    cover_uuid.and_then(|u| cover_name.map(|n| resolve_library_file(&u, &n)));
-
-                Ok(ComicSeries {
-                    id: r.get(0)?,
-                    title: r.get(1)?,
-                    sort_title: r.get(2)?,
-                    author: r.get(3)?,
-                    description: r.get(4)?,
-                    cover_book_id: r.get(5)?,
-                    cover_path,
-                    status: r.get(8)?,
-                    total_chapters: r.get::<_, i64>(9)? as usize,
-                    completed_chapters: r.get::<_, i64>(10)? as usize,
-                    unread_chapters: r.get::<_, i64>(11)? as usize,
-                    created_at: r.get(12)?,
-                    updated_at: r.get(13)?,
-                    last_read_at: r.get(14)?,
-                })
-            })
+            .query_row(params![series_id], comic_series_from_row)
             .optional()?;
 
         Ok(series)
@@ -475,6 +1002,360 @@ impl Catalog {
         } else {
             Ok(None)
         }
+    }
+
+    /// Save a complete hand edit of one comic series.
+    ///
+    /// Fields whose stored value actually changes join the protected
+    /// set (`manual_fields`), together with any fields the caller
+    /// explicitly names. `clear_manual_fields` first drops the old
+    /// protections; fields changed by this very save are still locks,
+    /// because they have just been edited by hand. A title change is
+    /// propagated to the chapter rows' `books.series`, leaving chapter
+    /// titles and covers exactly as they were.
+    pub fn update_comic_series_details(
+        &self,
+        series_id: i64,
+        edit: &ComicSeriesEdit,
+    ) -> Result<ComicSeriesUpdateOutcome> {
+        let title = compact_series_text(&edit.title);
+        if title.is_empty() {
+            return Err(DbError::ComicSeries(
+                "A series needs a title.".into(),
+            ));
+        }
+
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let Some(current) = stored_comic_series(&tx, series_id)? else {
+            return Err(DbError::ComicSeries(
+                "That series is no longer in your library.".into(),
+            ));
+        };
+        ensure_comic_series_title_free(&tx, series_id, &title)?;
+
+        let mut next = current.clone();
+        next.title = title;
+        next.original_title = compact_series_text(&edit.original_title);
+        next.credits = normalise_comic_credits(&edit.credits);
+        next.author = comic_author_from_credits(&next.credits, &edit.author);
+        if next.author.is_empty() {
+            next.author = "Unknown".to_string();
+        }
+        next.description = normalise_series_description(&edit.description);
+        next.status = compact_series_text(&edit.status);
+        next.publisher = compact_series_text(&edit.publisher);
+        next.serialization = compact_series_text(&edit.serialization);
+        next.published = compact_series_text(&edit.published);
+        next.end_date = compact_series_text(&edit.end_date);
+        next.media_type = compact_series_text(&edit.media_type);
+        next.genres = normalise_series_strings(&edit.genres, 40);
+        next.known_volumes = edit.known_volumes.filter(|value| *value > 0);
+        next.known_chapters = edit.known_chapters.filter(|value| *value > 0);
+        if edit.remove_fetched_cover {
+            next.cover_file = None;
+        }
+
+        let applied_fields = changed_comic_series_fields(&current, &next);
+        let mut locks = if edit.clear_manual_fields {
+            Vec::new()
+        } else {
+            current.manual_fields.clone()
+        };
+        for field in valid_comic_series_fields(&edit.manual_fields) {
+            push_unique_field(&mut locks, &field);
+        }
+        for field in &applied_fields {
+            push_unique_field(&mut locks, field);
+        }
+        next.manual_fields = locks;
+
+        let replaced_cover_file = if current.cover_file != next.cover_file {
+            current.cover_file.clone()
+        } else {
+            None
+        };
+        let outcome_title = next.title.clone();
+        let title_changed = current.title != next.title;
+
+        write_stored_comic_series(&tx, series_id, &next)?;
+        if title_changed {
+            tx.execute(
+                "UPDATE books SET series = ?1
+                 WHERE id IN (SELECT book_id FROM comic_chapters WHERE series_id = ?2)",
+                params![next.title, series_id],
+            )?;
+        }
+        tx.commit()?;
+        drop(conn);
+
+        Ok(ComicSeriesUpdateOutcome {
+            series_id,
+            title: outcome_title,
+            applied_fields,
+            protected_fields: Vec::new(),
+            replaced_cover_file,
+        })
+    }
+
+    /// Apply the reviewed fields of one metadata candidate to a series.
+    ///
+    /// Only fields named in `proposed_fields` are considered, only
+    /// non-empty values can replace stored ones, and the hand-edited
+    /// locks are read again inside this transaction — a review left
+    /// open across an Edit details save cannot overwrite that save.
+    /// The source link itself is updated even when every field was
+    /// already current or protected, so “this is that series” remains
+    /// something the reader can record on its own.
+    pub fn apply_comic_series_metadata(
+        &self,
+        series_id: i64,
+        patch: &ComicSeriesMetadataPatch,
+    ) -> Result<ComicSeriesUpdateOutcome> {
+        let source = compact_series_text(&patch.source);
+        if source.is_empty() {
+            return Err(DbError::ComicSeries(
+                "This result does not say which source it came from.".into(),
+            ));
+        }
+        let proposed = valid_comic_series_fields(&patch.proposed_fields);
+        let is_proposed =
+            |field: &str| proposed.iter().any(|candidate| candidate == field);
+
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let Some(current) = stored_comic_series(&tx, series_id)? else {
+            return Err(DbError::ComicSeries(
+                "That series is no longer in your library.".into(),
+            ));
+        };
+
+        let mut next = current.clone();
+        let mut applied_fields: Vec<String> = Vec::new();
+        let mut protected_fields: Vec<String> = Vec::new();
+        {
+            let mut apply_string = |field: &str,
+                                    raw: Option<&String>,
+                                    target: &mut String,
+                                    keep_lines: bool| {
+                if !is_proposed(field) {
+                    return;
+                }
+                let Some(raw) = raw else {
+                    return;
+                };
+                let value = if keep_lines {
+                    normalise_series_description(raw)
+                } else {
+                    compact_series_text(raw)
+                };
+                if value.is_empty() || value == *target {
+                    return;
+                }
+                if current.is_manual_field(field) {
+                    push_unique_field(&mut protected_fields, field);
+                    return;
+                }
+                *target = value;
+                push_unique_field(&mut applied_fields, field);
+            };
+
+            apply_string(
+                COMIC_SERIES_FIELD_TITLE,
+                patch.title.as_ref(),
+                &mut next.title,
+                false,
+            );
+            apply_string(
+                COMIC_SERIES_FIELD_ORIGINAL_TITLE,
+                patch.original_title.as_ref(),
+                &mut next.original_title,
+                false,
+            );
+            apply_string(
+                COMIC_SERIES_FIELD_DESCRIPTION,
+                patch.description.as_ref(),
+                &mut next.description,
+                true,
+            );
+            apply_string(
+                COMIC_SERIES_FIELD_STATUS,
+                patch.status.as_ref(),
+                &mut next.status,
+                false,
+            );
+            apply_string(
+                COMIC_SERIES_FIELD_PUBLISHER,
+                patch.publisher.as_ref(),
+                &mut next.publisher,
+                false,
+            );
+            apply_string(
+                COMIC_SERIES_FIELD_SERIALIZATION,
+                patch.serialization.as_ref(),
+                &mut next.serialization,
+                false,
+            );
+            apply_string(
+                COMIC_SERIES_FIELD_PUBLISHED,
+                patch.published.as_ref(),
+                &mut next.published,
+                false,
+            );
+            apply_string(
+                COMIC_SERIES_FIELD_END_DATE,
+                patch.end_date.as_ref(),
+                &mut next.end_date,
+                false,
+            );
+            apply_string(
+                COMIC_SERIES_FIELD_MEDIA_TYPE,
+                patch.media_type.as_ref(),
+                &mut next.media_type,
+                false,
+            );
+        }
+
+        if is_proposed(COMIC_SERIES_FIELD_CREDITS) {
+            if let Some(raw) = &patch.credits {
+                let credits = normalise_comic_credits(raw);
+                if !credits.is_empty() && credits != next.credits {
+                    if current.is_manual_field(COMIC_SERIES_FIELD_CREDITS) {
+                        push_unique_field(
+                            &mut protected_fields,
+                            COMIC_SERIES_FIELD_CREDITS,
+                        );
+                    } else {
+                        next.author =
+                            comic_author_from_credits(&credits, &next.author);
+                        next.credits = credits;
+                        push_unique_field(
+                            &mut applied_fields,
+                            COMIC_SERIES_FIELD_CREDITS,
+                        );
+                    }
+                }
+            }
+        }
+
+        if is_proposed(COMIC_SERIES_FIELD_GENRES) {
+            if let Some(raw) = &patch.genres {
+                let genres = normalise_series_strings(raw, 40);
+                if !genres.is_empty() && genres != next.genres {
+                    if current.is_manual_field(COMIC_SERIES_FIELD_GENRES) {
+                        push_unique_field(
+                            &mut protected_fields,
+                            COMIC_SERIES_FIELD_GENRES,
+                        );
+                    } else {
+                        next.genres = genres;
+                        push_unique_field(
+                            &mut applied_fields,
+                            COMIC_SERIES_FIELD_GENRES,
+                        );
+                    }
+                }
+            }
+        }
+
+        for (field, raw, target) in [
+            (
+                COMIC_SERIES_FIELD_KNOWN_VOLUMES,
+                patch.known_volumes,
+                &mut next.known_volumes,
+            ),
+            (
+                COMIC_SERIES_FIELD_KNOWN_CHAPTERS,
+                patch.known_chapters,
+                &mut next.known_chapters,
+            ),
+        ] {
+            if !is_proposed(field) {
+                continue;
+            }
+            let Some(value) = raw.filter(|value| *value > 0) else {
+                continue;
+            };
+            if *target == Some(value) {
+                continue;
+            }
+            if current.is_manual_field(field) {
+                push_unique_field(&mut protected_fields, field);
+            } else {
+                *target = Some(value);
+                push_unique_field(&mut applied_fields, field);
+            }
+        }
+
+        let mut replaced_cover_file = None;
+        if is_proposed(COMIC_SERIES_FIELD_COVER) {
+            if let Some(raw) = &patch.cover_file {
+                let Some(cover_file) = normalise_series_cover_file(raw) else {
+                    return Err(DbError::ComicSeries(
+                        "That cover path is outside the library.".into(),
+                    ));
+                };
+                if current.cover_file.as_deref() != Some(cover_file.as_str()) {
+                    if current.is_manual_field(COMIC_SERIES_FIELD_COVER) {
+                        push_unique_field(
+                            &mut protected_fields,
+                            COMIC_SERIES_FIELD_COVER,
+                        );
+                    } else {
+                        replaced_cover_file = current.cover_file.clone();
+                        next.cover_file = Some(cover_file);
+                        push_unique_field(
+                            &mut applied_fields,
+                            COMIC_SERIES_FIELD_COVER,
+                        );
+                    }
+                }
+            }
+        }
+
+        if next.title != current.title {
+            ensure_comic_series_title_free(&tx, series_id, &next.title)?;
+        }
+
+        // Record (or refresh) the source identity. A blank id/URL from
+        // the same source keeps the stored one; from a different
+        // source it clears, rather than pointing the new link at the
+        // old source's record.
+        let source_id = compact_series_text(&patch.source_id);
+        let source_url = compact_series_text(&patch.source_url);
+        if !source_id.is_empty() {
+            next.metadata_source_id = source_id;
+        } else if current.metadata_source != source {
+            next.metadata_source_id.clear();
+        }
+        if !source_url.is_empty() {
+            next.metadata_source_url = source_url;
+        } else if current.metadata_source != source {
+            next.metadata_source_url.clear();
+        }
+        next.metadata_source = source;
+        next.metadata_fetched_at = chrono_like_now();
+
+        let outcome_title = next.title.clone();
+        let title_changed = current.title != next.title;
+        write_stored_comic_series(&tx, series_id, &next)?;
+        if title_changed {
+            tx.execute(
+                "UPDATE books SET series = ?1
+                 WHERE id IN (SELECT book_id FROM comic_chapters WHERE series_id = ?2)",
+                params![next.title, series_id],
+            )?;
+        }
+        tx.commit()?;
+        drop(conn);
+
+        Ok(ComicSeriesUpdateOutcome {
+            series_id,
+            title: outcome_title,
+            applied_fields,
+            protected_fields,
+            replaced_cover_file,
+        })
     }
 
     /// List all comic series matching an optional search query, ordered by title.
@@ -500,7 +1381,23 @@ impl Catalog {
                 SUM(CASE WHEN b.progress = 0 THEN 1 ELSE 0 END) AS unread_chapters,
                 s.created_at,
                 s.updated_at,
-                s.last_read_at
+                s.last_read_at,
+                s.original_title,
+                s.credits_json,
+                s.publisher,
+                s.serialization,
+                s.published,
+                s.end_date,
+                s.media_type,
+                s.genres_json,
+                s.known_volumes,
+                s.known_chapters,
+                s.metadata_source,
+                s.metadata_source_id,
+                s.metadata_source_url,
+                s.metadata_fetched_at,
+                s.manual_fields_json,
+                s.cover_file
             FROM comic_series s
             LEFT JOIN books cover_book ON cover_book.id = s.cover_book_id
             LEFT JOIN comic_chapters c ON c.series_id = s.id
@@ -509,7 +1406,7 @@ impl Catalog {
                 SELECT MIN(sub_c.chapter_number) FROM comic_chapters sub_c WHERE sub_c.series_id = s.id
             )
             LEFT JOIN books first_b ON first_b.id = first_c.book_id
-            WHERE (?1 = 0 OR s.title LIKE ?2 OR s.author LIKE ?2)
+            WHERE (?1 = 0 OR s.original_title LIKE ?2 OR s.title LIKE ?2 OR s.author LIKE ?2)
             GROUP BY s.id
             ORDER BY s.sort_title COLLATE NOCASE ASC
         ";
@@ -517,29 +1414,7 @@ impl Catalog {
         let mut stmt = conn.prepare_cached(sql)?;
         let rows = stmt.query_map(
             params![if has_filter { 1 } else { 0 }, like_pattern],
-            |r| {
-                let cover_uuid: Option<String> = r.get(6)?;
-                let cover_name: Option<String> = r.get(7)?;
-                let cover_path =
-                    cover_uuid.and_then(|u| cover_name.map(|n| resolve_library_file(&u, &n)));
-
-                Ok(ComicSeries {
-                    id: r.get(0)?,
-                    title: r.get(1)?,
-                    sort_title: r.get(2)?,
-                    author: r.get(3)?,
-                    description: r.get(4)?,
-                    cover_book_id: r.get(5)?,
-                    cover_path,
-                    status: r.get(8)?,
-                    total_chapters: r.get::<_, i64>(9)? as usize,
-                    completed_chapters: r.get::<_, i64>(10)? as usize,
-                    unread_chapters: r.get::<_, i64>(11)? as usize,
-                    created_at: r.get(12)?,
-                    updated_at: r.get(13)?,
-                    last_read_at: r.get(14)?,
-                })
-            },
+            comic_series_from_row,
         )?;
 
         let mut list = Vec::new();
@@ -1587,5 +2462,190 @@ mod tests {
         let stmts = cat.count_queries(|| cat.comic_series_peers_by_ids(&empty).unwrap());
         assert_eq!(stmts, 0, "empty batch must not query");
         assert!(cat.comic_series_peers_by_ids(&empty).unwrap().is_empty());
+    }
+
+    fn edit_from_series(series: &ComicSeries) -> ComicSeriesEdit {
+        ComicSeriesEdit {
+            title: series.title.clone(),
+            original_title: series.original_title.clone(),
+            author: series.author.clone(),
+            credits: series.credits.clone(),
+            description: series.description.clone(),
+            status: series.status.clone(),
+            publisher: series.publisher.clone(),
+            serialization: series.serialization.clone(),
+            published: series.published.clone(),
+            end_date: series.end_date.clone(),
+            media_type: series.media_type.clone(),
+            genres: series.genres.clone(),
+            known_volumes: series.known_volumes,
+            known_chapters: series.known_chapters,
+            remove_fetched_cover: false,
+            clear_manual_fields: false,
+            manual_fields: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn comic_series_hand_edits_lock_fields_against_metadata() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let chapter = cat
+            .insert_book(
+                "meta-1",
+                "Old Title - Ch. 1",
+                "Imported Author",
+                Some("Old Title"),
+                "Imported description",
+                BookFormat::Cbz,
+                "old-title-01.cbz",
+                "h-meta-1",
+                None,
+                &[],
+            )
+            .unwrap();
+        let series_id = cat
+            .get_or_create_comic_series(
+                "Old Title",
+                Some("Imported Author"),
+                Some("Imported description"),
+            )
+            .unwrap();
+        cat.add_comic_chapter(series_id, chapter, 1.0, None, "Chapter 1")
+            .unwrap();
+        let _other_id = cat
+            .get_or_create_comic_series("Another Series", Some("Someone"), None)
+            .unwrap();
+
+        // A rename onto an existing series is rejected in words a
+        // dialog can show as-is.
+        let mut clash = edit_from_series(&cat.get_comic_series(series_id).unwrap().unwrap());
+        clash.title = "another series".into();
+        let err = cat
+            .update_comic_series_details(series_id, &clash)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("already called"), "{err}");
+
+        let edit = ComicSeriesEdit {
+            title: "Hand Title".into(),
+            original_title: "Original Hand Title".into(),
+            author: "Fallback".into(),
+            credits: vec![
+                ComicCredit {
+                    role: "Story".into(),
+                    name: "Ada Meridian".into(),
+                },
+                ComicCredit {
+                    role: "Art".into(),
+                    name: "Bea Meridian".into(),
+                },
+                ComicCredit {
+                    role: "story".into(),
+                    name: "ada meridian".into(),
+                },
+            ],
+            description: "A hand-written summary.".into(),
+            status: "Completed".into(),
+            publisher: String::new(),
+            serialization: String::new(),
+            published: "2020".into(),
+            end_date: "2024".into(),
+            media_type: "Manga".into(),
+            genres: vec!["Adventure".into(), "adventure".into(), "Drama".into()],
+            known_volumes: Some(12),
+            known_chapters: None,
+            remove_fetched_cover: false,
+            clear_manual_fields: false,
+            manual_fields: Vec::new(),
+        };
+        let outcome = cat
+            .update_comic_series_details(series_id, &edit)
+            .unwrap();
+        assert_eq!(outcome.title, "Hand Title");
+        assert!(outcome
+            .applied_fields
+            .iter()
+            .any(|field| field == COMIC_SERIES_FIELD_TITLE));
+
+        let series = cat.get_comic_series(series_id).unwrap().unwrap();
+        assert_eq!(series.author, "Ada Meridian, Bea Meridian");
+        assert_eq!(series.credits.len(), 2);
+        assert_eq!(series.genres, vec!["Adventure", "Drama"]);
+        for field in [
+            COMIC_SERIES_FIELD_TITLE,
+            COMIC_SERIES_FIELD_CREDITS,
+            COMIC_SERIES_FIELD_DESCRIPTION,
+            COMIC_SERIES_FIELD_GENRES,
+        ] {
+            assert!(series.is_manual_field(field), "missing lock {field}");
+        }
+        // The chapter follows the series title, but keeps its own title.
+        let chapters = cat.chapters_for_series(series_id).unwrap();
+        assert_eq!(chapters[0].book.series.as_deref(), Some("Hand Title"));
+        assert_eq!(chapters[0].book.title, "Old Title - Ch. 1");
+
+        // A provider patch may fill unlocked facts and record its
+        // identity, but locked title/description/genres stand.
+        let patch = ComicSeriesMetadataPatch {
+            title: Some("Provider Title".into()),
+            description: Some("Provider summary.".into()),
+            publisher: Some("Meridian Press".into()),
+            genres: Some(vec!["Romance".into()]),
+            known_chapters: Some(140),
+            cover_file: Some("Hand Title/.kalam/cover.jpg".into()),
+            source: "myanimelist".into(),
+            source_id: "123".into(),
+            source_url: "https://myanimelist.net/manga/123".into(),
+            proposed_fields: vec![
+                COMIC_SERIES_FIELD_TITLE.into(),
+                COMIC_SERIES_FIELD_DESCRIPTION.into(),
+                COMIC_SERIES_FIELD_PUBLISHER.into(),
+                COMIC_SERIES_FIELD_GENRES.into(),
+                COMIC_SERIES_FIELD_KNOWN_CHAPTERS.into(),
+                COMIC_SERIES_FIELD_COVER.into(),
+            ],
+            ..Default::default()
+        };
+        let outcome = cat.apply_comic_series_metadata(series_id, &patch).unwrap();
+        assert!(outcome
+            .protected_fields
+            .iter()
+            .any(|field| field == COMIC_SERIES_FIELD_TITLE));
+        assert!(outcome
+            .applied_fields
+            .iter()
+            .any(|field| field == COMIC_SERIES_FIELD_PUBLISHER));
+
+        let series = cat.get_comic_series(series_id).unwrap().unwrap();
+        assert_eq!(series.title, "Hand Title");
+        assert_eq!(series.description, "A hand-written summary.");
+        assert_eq!(series.genres, vec!["Adventure", "Drama"]);
+        assert_eq!(series.publisher, "Meridian Press");
+        assert_eq!(series.known_chapters, Some(140));
+        assert_eq!(series.metadata_source, "myanimelist");
+        assert_eq!(series.metadata_source_id, "123");
+        assert!(!series.metadata_fetched_at.is_empty());
+
+        // Removing the fetched cover reports the old relative path so
+        // the caller can delete the file after the commit.
+        let mut remove_cover = edit_from_series(&series);
+        remove_cover.remove_fetched_cover = true;
+        let outcome = cat
+            .update_comic_series_details(series_id, &remove_cover)
+            .unwrap();
+        assert_eq!(
+            outcome.replaced_cover_file.as_deref(),
+            Some("Hand Title/.kalam/cover.jpg")
+        );
+
+        // Clearing protections with no other change leaves no locks;
+        // the values themselves are untouched.
+        let series = cat.get_comic_series(series_id).unwrap().unwrap();
+        let mut clear = edit_from_series(&series);
+        clear.clear_manual_fields = true;
+        cat.update_comic_series_details(series_id, &clear).unwrap();
+        let series = cat.get_comic_series(series_id).unwrap().unwrap();
+        assert!(series.manual_fields.is_empty());
+        assert_eq!(series.title, "Hand Title");
     }
 }

@@ -18,9 +18,28 @@ set -uo pipefail
 
 OUT="${OUT:-ci-shots}"
 BOOKS="${BOOKS:-139}"
-# Generous: a cold binary on a shared runner is slow to first paint, and a
-# screenshot taken too early shows an empty window and looks exactly like a bug.
+# SETTLE is now a readiness *budget*, not a fixed sleep. The harness
+# waits for the app window and route line, gives the route a short
+# minimum dwell for asynchronous work to begin, and then looks for two
+# coarsely-identical frames. SETTLE (plus a small slack in the script)
+# remains the generous upper bound for a cold binary on a shared
+# runner: a screenshot taken too early shows an empty window and looks
+# exactly like a bug, so timing out still photographs the latest frame.
 SETTLE="${SETTLE:-25}"
+<<<<<<< Updated upstream
+MIN_SETTLE="${MIN_SETTLE:-}"
+STABLE_MAX_CHANGED_PCT="${STABLE_MAX_CHANGED_PCT:-0.5}"
+=======
+>>>>>>> Stashed changes
+# Headless output size. The default matches a laptop-ish window. A tall
+# route (the component gallery is ~3,000 px of stacked sections) can ask
+# for a taller output instead of synthetic scrolling, which headless sway
+# does not deliver reliably (see the TAP probe's status note below). The
+# shot then shows the whole page in one frame, at the cost of a window
+# shape no user has -- fine for an artboard, wrong for judging a real page,
+# so real routes keep the default.
+OUTPUT_W="${OUTPUT_W:-1600}"
+OUTPUT_H="${OUTPUT_H:-1000}"
 
 mkdir -p "$OUT"
 REPORT="$OUT/report.txt"
@@ -30,9 +49,25 @@ REPORT="$OUT/report.txt"
 say() { echo "$*" | tee -a "$REPORT"; }
 
 say "=== kalam screenshot run ==="
-say "books=$BOOKS out=$OUT settle=$SETTLE"
+say "books=$BOOKS out=$OUT settle=$SETTLE output=${OUTPUT_W}x${OUTPUT_H}"
 
 export XDG_DATA_HOME="${XDG_DATA_HOME:-/tmp/kalam-ci-data}"
+# Global prefs and the libraries registry live under XDG_CONFIG_HOME.
+# Give each screenshot invocation a fresh one under OUT, unconditionally:
+# the seeded catalog is rebuilt on every run, so sharing a real config
+# across runs lets one run's bundled-dictionary markers or library
+# registry silently change the next run's supposedly fresh library.
+# (An earlier "unless the caller set one" guard never fired in CI —
+# the runner image exports XDG_CONFIG_HOME=/home/runner/.config, which
+# the Data and export capture then photographed as the app-settings
+# path. Nothing in the workflow sets it deliberately.)
+case "$OUT" in
+  /*) export XDG_CONFIG_HOME="$OUT/config-home" ;;
+  *) export XDG_CONFIG_HOME="$PWD/$OUT/config-home" ;;
+esac
+rm -rf "$XDG_CONFIG_HOME"
+mkdir -p "$XDG_CONFIG_HOME"
+say "config home: $XDG_CONFIG_HOME"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/kalam-ci-run}"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
@@ -56,7 +91,74 @@ say "binary: $(ls -la "$BIN" | awk '{print $5" bytes"}')"
 
 say ""
 say "=== seeding $BOOKS books ==="
-if ! python3 docs/ci/seed-library.py --books "$BOOKS" 2>&1 | tee -a "$REPORT"; then
+# SERIES_FIXTURE adds the seeder's one coherent series (3 owned of a
+# cached 4) after the generic books, so `series-book-$((BOOKS+1))` opens
+# the series page's drawn reading state with no network fetch.
+SERIES_FIXTURE="${SERIES_FIXTURE:-}"
+SEED_ARGS=(--books "$BOOKS")
+if [ -n "$SERIES_FIXTURE" ]; then
+  SEED_ARGS+=(--series-fixture)
+fi
+# AUTHOR_FIXTURE adds the same author's two owned standalones, her
+# cached bibliography and three marks across her books, so
+# `author-book-$((BOOKS+1))` opens the author page with both groups,
+# highlights and facts populated — still no network fetch (the page
+# never fetches on open).
+AUTHOR_FIXTURE="${AUTHOR_FIXTURE:-}"
+if [ -n "$AUTHOR_FIXTURE" ]; then
+  SEED_ARGS+=(--author-fixture)
+fi
+# READER_FIXTURE plants the three-word dictionary (bank/river/shore) the
+# reader popover frames look up; the bundled packs install at startup
+# and land after the snapshot, so a capture cannot wait for them.
+READER_FIXTURE="${READER_FIXTURE:-}"
+if [ -n "$READER_FIXTURE" ]; then
+  SEED_ARGS+=(--reader-fixture)
+fi
+<<<<<<< Updated upstream
+# PDF_FIXTURE adds the seeder's real outlined PDF after the
+# generic books, so `pdf-read-$((BOOKS+1))` opens page 4 as a
+# bookmarked 4-5 spread — the PDF reader's drawn state.
+PDF_FIXTURE="${PDF_FIXTURE:-}"
+if [ -n "$PDF_FIXTURE" ]; then
+  SEED_ARGS+=(--pdf-fixture)
+fi
+# PDF_NOTES_EMPTY photographs Notes before anything has been kept:
+# the same fixture with no highlights, bookmarks or saved words.
+PDF_NOTES_EMPTY="${PDF_NOTES_EMPTY:-}"
+if [ -n "$PDF_NOTES_EMPTY" ]; then
+  SEED_ARGS+=(--pdf-notes-empty)
+fi
+# PDF_FIXTURE_STATE chooses the same book with an encrypted,
+# damaged or absent file, for the whole-book open-state frames.
+PDF_FIXTURE_STATE="${PDF_FIXTURE_STATE:-}"
+if [ -n "$PDF_FIXTURE_STATE" ]; then
+  SEED_ARGS+=(--pdf-fixture-state "$PDF_FIXTURE_STATE")
+fi
+# COMIC_FIXTURE adds the seeder's two-chapter CBZ series after the
+# generic books, so `comic-read-$((BOOKS+2))` opens chapter 2 at
+# page 4 with a bookmark on it — the comics reader's drawn state.
+COMIC_FIXTURE="${COMIC_FIXTURE:-}"
+if [ -n "$COMIC_FIXTURE" ]; then
+  SEED_ARGS+=(--comic-fixture)
+fi
+=======
+>>>>>>> Stashed changes
+# SETTINGS_FIXTURE gives the Settings panes the populated states a bare
+# library cannot show: known/missing libraries, shelves and a watch rule,
+# rejected Google Books key state, EPUB original backups, and the four
+# bundled dictionary packs as catalog rows. The empty-dicts variant
+# leaves that table empty instead; both suppress the startup install,
+# which finishes after the Settings snapshot is taken.
+SETTINGS_FIXTURE="${SETTINGS_FIXTURE:-}"
+SETTINGS_EMPTY_DICTS="${SETTINGS_EMPTY_DICTS:-}"
+if [ -n "$SETTINGS_FIXTURE" ]; then
+  SEED_ARGS+=(--settings-fixture)
+fi
+if [ -n "$SETTINGS_EMPTY_DICTS" ]; then
+  SEED_ARGS+=(--settings-empty-dicts)
+fi
+if ! python3 docs/ci/seed-library.py "${SEED_ARGS[@]}" 2>&1 | tee -a "$REPORT"; then
   say "FATAL: seeding failed"
   exit 0
 fi
@@ -75,10 +177,12 @@ cat > "$SWAY_CONF" <<'EOF'
 # -- which is exactly how the first two screenshot runs died. Kalam is a native
 # Wayland (GTK4) app and never needs X11, so there is nothing to lose here.
 xwayland disable
-output HEADLESS-1 resolution 1600x1000
 default_border none
 focus_follows_mouse no
 EOF
+# Appended, not interpolated: the block above is a quoted heredoc because it
+# contains backticks, so $OUTPUT_W would not expand inside it.
+echo "output HEADLESS-1 resolution ${OUTPUT_W}x${OUTPUT_H}" >> "$SWAY_CONF"
 
 say "sway binary: $(command -v sway || echo MISSING) $(sway --version 2>&1 | head -1)"
 
@@ -95,7 +199,7 @@ SWAY_PID=$!
 # exactly that: an empty sway.log (no errors at all) next to "sway never came
 # up", which is the signature of a running compositor we simply could not
 # talk to.
-for _ in $(seq 1 30); do
+for _ in $(seq 1 300); do
   if [ -z "${SWAYSOCK:-}" ]; then
     CANDIDATE="$(ls -t "$XDG_RUNTIME_DIR"/sway-ipc.*.sock 2>/dev/null | head -1)"
     [ -n "$CANDIDATE" ] && export SWAYSOCK="$CANDIDATE"
@@ -107,7 +211,7 @@ for _ in $(seq 1 30); do
   if ! kill -0 "$SWAY_PID" 2>/dev/null; then
     break
   fi
-  sleep 1
+  sleep 0.1
 done
 
 say "SWAYSOCK=${SWAYSOCK:-<none found>}"
@@ -177,6 +281,104 @@ sample_rss() {
   return 0
 }
 
+now_s() {
+  date +%s
+}
+
+app_window_seen() {
+  swaymsg -t get_tree 2>/dev/null | grep -q '"app_id"'
+}
+
+route_logged() { # route_logged <log> <route>
+  grep -q "KALAM_ROUTE=$2" "$1" 2>/dev/null
+}
+
+# Poll instead of assuming that a fixed number of seconds is either
+# necessary or sufficient. Success needs both halves of the evidence:
+# the app says it accepted the route, and the compositor has a real
+# toplevel for it. The caller still takes diagnostic screenshots on a
+# timeout; a blank or missing signal should be visible in the report,
+# not hidden by an early exit.
+wait_for_app_ready() { # wait_for_app_ready <pid> <log> <route> <timeout>
+  local pid="$1" log="$2" route="$3" timeout="$4"
+  local start elapsed
+  start="$(now_s)"
+  while :; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      return 1
+    fi
+    sample_rss
+    if route_logged "$log" "$route" && app_window_seen; then
+      return 0
+    fi
+    elapsed=$(( $(now_s) - start ))
+    [ "$elapsed" -ge "$timeout" ] && return 2
+    sleep 0.25
+  done
+}
+
+wait_until_elapsed() { # wait_until_elapsed <start-seconds> <minimum-seconds> <pid>
+  local start="$1" minimum="$2" pid="$3"
+  while [ $(( $(now_s) - start )) -lt "$minimum" ]; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      return 1
+    fi
+    sample_rss
+    sleep 0.25
+  done
+  return 0
+}
+
+frame_stable() { # frame_stable <a.png> <b.png>
+  if cmp -s "$1" "$2"; then
+    return 0
+  fi
+  python3 docs/ci/check-shot.py --compare "$1" "$2" \
+    "$STABLE_MAX_CHANGED_PCT" >/dev/null 2>&1
+}
+
+capture_candidate() { # capture_candidate <path>
+  grim "$1" 2>>"$OUT/grim.log"
+}
+
+# Starting from an already-photographed reference frame, poll once a
+# second until the next frame is coarsely the same picture or the
+# deadline arrives. The target always receives the latest candidate:
+# on a genuinely animated or unusually slow page, the newest frame is
+# still better evidence than refusing to publish one at all.
+wait_for_stable_frame() { # wait_for_stable_frame <pid> <reference> <target> <deadline>
+  local pid="$1" target="$3" deadline="$4"
+  local previous="$OUT/.stable-previous.png"
+  local candidate="$OUT/.stable-candidate.png"
+  if ! cp "$2" "$previous" 2>/dev/null; then
+    capture_candidate "$target" || true
+    return 1
+  fi
+
+  while [ "$(now_s)" -lt "$deadline" ]; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      cp "$previous" "$target" 2>/dev/null || true
+      return 1
+    fi
+    sample_rss
+    sleep 1
+    if ! capture_candidate "$candidate"; then
+      cp "$previous" "$target" 2>/dev/null || true
+      return 1
+    fi
+    if frame_stable "$previous" "$candidate"; then
+      cp "$candidate" "$target"
+      rm -f "$previous" "$candidate"
+      return 0
+    fi
+    mv "$candidate" "$previous"
+  done
+
+  cp "$previous" "$target" 2>/dev/null || true
+  rm -f "$previous" "$candidate"
+  return 2
+}
+
 say ""
 say "=== launching kalam ==="
 # Run it directly rather than via `swaymsg exec`, so we own the process and
@@ -189,6 +391,58 @@ say "=== launching kalam ==="
 # times and still reported success.
 ROUTE="${ROUTE:-all-books}"
 say "requested route: $ROUTE"
+# THEME names a palette/mode choice id for the app to apply for this run
+# only (KALAM_THEME, not persisted). The app prints the resolved id, and
+# that line lands in the report's app-stderr section -- a typo totalises
+# to the default theme, so the printed id, not this request, is the
+# evidence of which theme was photographed.
+THEME="${THEME:-}"
+say "requested theme: ${THEME:-<saved/default>}"
+<<<<<<< Updated upstream
+# DIALOG asks the loaded page to open one of its dialogs over itself
+# (KALAM_DIALOG values include book tags/annotations, author edit/merge,
+# and comic-series edit/find/find-review). No route reaches a dialog,
+# so without this the loop could photograph every page and still never
+# see the dialogs those pages own.
+=======
+# DIALOG asks the book page to open one of its dialogs over itself once
+# loaded (KALAM_DIALOG=tags|annotations). No route reaches a dialog, so
+# without this the loop could photograph every page and still never see
+# the two dialogs the book page owns.
+>>>>>>> Stashed changes
+DIALOG="${DIALOG:-}"
+say "requested dialog: ${DIALOG:-<none>}"
+# SERIES_VIEW asks the series page to open on its strip or list view
+# (KALAM_SERIES_VIEW) without writing the per-series pref, so both views
+# can be photographed against the same seeded library.
+SERIES_VIEW="${SERIES_VIEW:-}"
+say "requested series view: ${SERIES_VIEW:-<remembered>}"
+# SETTINGS_PANE preselects one of Settings' decision-144 panes. The route
+# alone always opens Appearance, so without this pass-through ten of the
+# eleven redesigned panes could never be photographed.
+SETTINGS_PANE="${SETTINGS_PANE:-}"
+say "requested settings pane: ${SETTINGS_PANE:-<default>}"
+# READER_ACTION asks the EPUB reader to stand its summoned chrome up at
+# open (KALAM_READER_ACTION=chrome): the redesigned page opens bare, so
+# a proof frame of the Back+Bubble unit would otherwise need a pointer.
+READER_ACTION="${READER_ACTION:-}"
+say "requested reader action: ${READER_ACTION:-<none>}"
+<<<<<<< Updated upstream
+# COMIC_ACTION is the same ask for the comics reader
+# (KALAM_COMIC_ACTION: chrome, chapters, pages, reading, presets,
+# image, shortcuts, jump, jump-range).
+COMIC_ACTION="${COMIC_ACTION:-}"
+say "requested comic action: ${COMIC_ACTION:-<none>}"
+# PDF_ACTION is the same ask for the PDF reader (KALAM_PDF_ACTION:
+# chrome, contents, contents-pinned, pages, notes, notes-words,
+# notes-bookmarks, notes-empty, search-results, reading, shortcuts,
+# jump, jump-range, drawing, drawing-selected, drawing-shape,
+# drawing-text, drawing-sticky).
+PDF_ACTION="${PDF_ACTION:-}"
+say "requested PDF action: ${PDF_ACTION:-<none>}"
+=======
+>>>>>>> Stashed changes
+say "settings fixture: ${SETTINGS_FIXTURE:-0} empty-dicts=${SETTINGS_EMPTY_DICTS:-0}"
 # WINDOWED controls the A0 step 6 windowed grid (build only the cards on
 # screen). It became the default on 2026-09-04, so the app flag is now the
 # negative one, KALAM_NO_WINDOWED_GRID.
@@ -215,19 +469,71 @@ else
   NO_WINDOWED=0
 fi
 say "windowed grid: $WINDOWED (KALAM_NO_WINDOWED_GRID=$NO_WINDOWED)"
-KALAM_ROUTE="$ROUTE" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
+<<<<<<< Updated upstream
+
+# Readers do real asynchronous work after their route has opened --
+# opening a book, decoding a comic page, rendering a PDF spread and
+# applying the screenshot action that proof frame exists to show. A
+# five-second floor lets that work get started before stability is
+# judged; ordinary pages and Settings need only enough time for their
+# staged dialog or pane action to land. Callers can override either
+# bound with MIN_SETTLE/SETTLE when a future route proves slower.
+if [ -z "$MIN_SETTLE" ]; then
+  case "$ROUTE" in
+    read-*|comic-read-*|pdf-read-*) MIN_SETTLE=5 ;;
+    components) MIN_SETTLE=3 ;;
+    *) MIN_SETTLE=2 ;;
+  esac
+  # Six EPUB proof states are deliberately scheduled by the app nine
+  # seconds after reader construction (the annotation tap follows
+  # another 1.2 seconds later), so frame stability before then only
+  # proves the bare page is stable. Give those actions time to exist.
+  case "$READER_ACTION" in
+    dict|dict-missing|search|search-missing|chip|annotation)
+      MIN_SETTLE=13
+      ;;
+  esac
+  # The selected-drawing popover is scheduled the same way and for
+  # the same reason, as are the Pages Edit proof states.
+  case "$PDF_ACTION" in
+    drawing-selected|drawing-text|drawing-sticky|pages-edit|pages-edit-drag|pages-edit-delete|pages-edit-unsaved)
+      MIN_SETTLE=13
+      ;;
+  esac
+  # The notification proof states seed their events through the live
+  # notifier at 0.9 seconds; the seeded error toast then lives for
+  # nine seconds. The frames are of the history panel and bell dot,
+  # not of that transient toast stack, so let it dismiss first.
+  case "$DIALOG" in
+    notifications|notifications-dot)
+      MIN_SETTLE=11
+      ;;
+  esac
+fi
+MAX_SETTLE=$((SETTLE + 10))
+if [ "$MAX_SETTLE" -lt $((MIN_SETTLE + 2)) ]; then
+  MAX_SETTLE=$((MIN_SETTLE + 2))
+fi
+say "readiness: min=${MIN_SETTLE}s max=${MAX_SETTLE}s stable_max_changed=${STABLE_MAX_CHANGED_PCT}%"
+
+APP_START="$(now_s)"
+KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_SETTINGS_PANE="$SETTINGS_PANE" KALAM_READER_ACTION="$READER_ACTION" KALAM_COMIC_ACTION="$COMIC_ACTION" KALAM_PDF_ACTION="$PDF_ACTION" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
+=======
+KALAM_ROUTE="$ROUTE" KALAM_THEME="$THEME" KALAM_DIALOG="$DIALOG" KALAM_SERIES_VIEW="$SERIES_VIEW" KALAM_SETTINGS_PANE="$SETTINGS_PANE" KALAM_READER_ACTION="$READER_ACTION" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
+>>>>>>> Stashed changes
 APP_PID=$!
 
-for _ in $(seq 1 "$SETTLE"); do
-  sample_rss
-  sleep 1
-done
-
-if ! kill -0 "$APP_PID" 2>/dev/null; then
+wait_for_app_ready "$APP_PID" "$OUT/kalam.log" "$ROUTE" "$SETTLE"
+READY_STATUS=$?
+if [ "$READY_STATUS" -eq 1 ] || ! kill -0 "$APP_PID" 2>/dev/null; then
   say "FATAL: kalam exited during startup. Its output:"
   sed 's/^/  /' "$OUT/kalam.log" | tail -40 | tee -a "$REPORT"
   swaymsg exit >/dev/null 2>&1 || true
   exit 0
+elif [ "$READY_STATUS" -eq 2 ]; then
+  say "readiness: route/window signal not seen within ${SETTLE}s; photographing anyway"
+else
+  say "readiness: route and window seen after $(( $(now_s) - APP_START ))s"
 fi
 
 WINDOWS="$(swaymsg -t get_tree | grep -c '"app_id"' || true)"
@@ -248,12 +554,21 @@ swaymsg '[app_id=".*"] focus' >/dev/null 2>&1 \
   || swaymsg focus >/dev/null 2>&1 || true
 say "focused: $(swaymsg -t get_tree | grep -c '"focused": true' || echo 0)"
 
-for _ in $(seq 1 6); do sample_rss; sleep 1; done
+# The old sequence then slept for another fixed 18 seconds, on the
+# theory that covers arrive in the background and anything still grey
+# after that is never coming. Frame stability expresses that theory
+# directly: photograph once the minimum dwell has elapsed, then keep
+# looking until the picture stops materially changing (or the budget
+# expires and the latest frame is used).
+wait_until_elapsed "$APP_START" "$MIN_SETTLE" "$APP_PID" || true
 shot "02-$ROUTE-settling"
-# Covers arrive in the background, so the interesting screenshot is the later
-# one: anything still grey here is a cover that is never coming.
-for _ in $(seq 1 12); do sample_rss; sleep 1; done
-shot "03-$ROUTE-settled"
+STABLE_DEADLINE=$((APP_START + MAX_SETTLE))
+if wait_for_stable_frame "$APP_PID" "$OUT/02-$ROUTE-settling.png" \
+    "$OUT/03-$ROUTE-settled.png" "$STABLE_DEADLINE"; then
+  say "  shot: 03-$ROUTE-settled (stable after $(( $(now_s) - APP_START ))s)"
+else
+  say "  shot: 03-$ROUTE-settled (latest frame; no stable pair within ${MAX_SETTLE}s)"
+fi
 
 # --- does a tap on the page turn it? (TAP=1) -------------------------------
 #
@@ -395,14 +710,34 @@ esac
 if [ "$ROUTE" != "home" ]; then
   kill "$APP_PID" 2>/dev/null || true
   wait "$APP_PID" 2>/dev/null || true
-  sleep 2
+  sleep 0.25
   # `sample_rss` uses `pgrep -n` (newest), so it follows this process too.
   # That keeps the peak-memory figure honest -- it is still the high-water
   # mark of a single kalam process, just possibly the second one.
-  KALAM_ROUTE=home KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam-home.log" 2>&1 &
+<<<<<<< Updated upstream
+  HOME_START="$(now_s)"
+=======
+>>>>>>> Stashed changes
+  KALAM_ROUTE=home KALAM_THEME="$THEME" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam-home.log" 2>&1 &
   HOME_PID=$!
-  for _ in $(seq 1 12); do sample_rss; sleep 1; done
+  wait_for_app_ready "$HOME_PID" "$OUT/kalam-home.log" home 10
+  HOME_READY_STATUS=$?
+  if [ "$HOME_READY_STATUS" -eq 2 ]; then
+    say "readiness: Home route/window signal not seen within 10s; photographing anyway"
+  elif [ "$HOME_READY_STATUS" -eq 0 ]; then
+    say "readiness: Home seen after $(( $(now_s) - HOME_START ))s"
+  fi
+  wait_until_elapsed "$HOME_START" 2 "$HOME_PID" || true
   shot "04-home-for-comparison"
+  # Home is only the comparison negative, but an early splash or a
+  # still-loading cover grid would make that comparison meaningless.
+  # Give it the same stable-frame treatment with a much smaller cap.
+  if wait_for_stable_frame "$HOME_PID" "$OUT/04-home-for-comparison.png" \
+      "$OUT/04-home-for-comparison.png" $((HOME_START + 10)); then
+    say "readiness: Home stable after $(( $(now_s) - HOME_START ))s"
+  else
+    say "readiness: Home latest frame used; no stable pair within 10s"
+  fi
   kill "$HOME_PID" 2>/dev/null || true
 
   ROUTE_SUM="$(md5sum "$OUT/03-$ROUTE-settled.png" 2>/dev/null | cut -d" " -f1)"
@@ -496,7 +831,10 @@ say "=== shutting down ==="
 kill "$APP_PID" 2>/dev/null || true
 kill "${HOME_PID:-}" 2>/dev/null || true
 swaymsg exit >/dev/null 2>&1 || true
-sleep 2
+for _ in $(seq 1 20); do
+  kill -0 "$SWAY_PID" 2>/dev/null || break
+  sleep 0.1
+done
 kill "$SWAY_PID" 2>/dev/null || true
 wait "$SWAY_PID" 2>/dev/null || true
 

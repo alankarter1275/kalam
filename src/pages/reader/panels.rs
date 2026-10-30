@@ -1,21 +1,56 @@
-//! Right sidebar panel builders for Highlights, Bookmarks, and Words.
+//! The left panel's Notes tab (decision 20): one list for the book's
+//! highlights, bookmarks and saved words behind four filter chips,
+//! with the standing filter's own controls underneath — the colour
+//! dots and quote filter for Highlights, the place button for
+//! Bookmarks, the lookup field and scope switch for Words
+//! (decision 22).
 
 use super::mod_model::ReaderModel;
 use super::types::*;
 use gtk::prelude::*;
 use relm4::prelude::*;
-use relm4::RelmWidgetExt;
 
-pub(crate) fn build_highlights_panel(
+pub(crate) struct NotesPanelControls {
+    pub(crate) root: gtk::Box,
+    pub(crate) filter_buttons: Vec<(NotesFilter, gtk::Button)>,
+    pub(crate) highlight_filter_buttons: Vec<(HighlightFilter, gtk::Button)>,
+    pub(crate) word_scope_buttons: Vec<(WordScope, gtk::Button)>,
+    pub(crate) highlights_controls: gtk::Box,
+    pub(crate) bookmarks_controls: gtk::Box,
+    pub(crate) words_controls: gtk::Box,
+}
+
+pub(crate) fn build_notes_panel(
     sender: &ComponentSender<ReaderModel>,
-    _active: HighlightFilter,
     list: &gtk::Box,
-) -> (gtk::Box, Vec<(HighlightFilter, gtk::Button)>) {
+) -> NotesPanelControls {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
-    let search_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    search_row.add_css_class("kalam-reader-search-row");
-    search_row.set_margin_all(12);
+    // The four chips.
+    let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    chips.add_css_class("kalam-reader-filter-row");
+    let mut filter_buttons = Vec::new();
+    for (label, filter) in [
+        ("All", NotesFilter::All),
+        ("Highlights", NotesFilter::Highlights),
+        ("Bookmarks", NotesFilter::Bookmarks),
+        ("Words", NotesFilter::Words),
+    ] {
+        let btn = gtk::Button::with_label(label);
+        btn.add_css_class("kalam-reader-filter-chip");
+        let s = sender.clone();
+        btn.connect_clicked(move |_| s.input(ReaderMsg::SetNotesFilter(filter)));
+        chips.append(&btn);
+        filter_buttons.push((filter, btn));
+    }
+    wrap.append(&chips);
+
+    // Highlights' own row: search the text, filter by colour and kind.
+    let highlights_controls = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let hl_search_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    hl_search_row.set_margin_start(12);
+    hl_search_row.set_margin_end(12);
+    hl_search_row.set_margin_bottom(10);
     let search = gtk::SearchEntry::new();
     search.set_placeholder_text(Some("Search highlights and notes…"));
     search.set_tooltip_text(Some("Search saved highlight text and notes"));
@@ -25,8 +60,7 @@ pub(crate) fn build_highlights_panel(
     search.connect_search_changed(move |entry| {
         s.input(ReaderMsg::AnnotationSearchChanged(entry.text().to_string()));
     });
-    search_row.append(&search);
-
+    hl_search_row.append(&search);
     let export = gtk::Button::new();
     export.set_child(Some(&crate::icons::labelled(
         "document-send-symbolic",
@@ -38,82 +72,61 @@ pub(crate) fn build_highlights_panel(
     export.set_tooltip_text(Some("Export highlights & notes to ~/Highlights.md"));
     let s = sender.clone();
     export.connect_clicked(move |_| s.input(ReaderMsg::ExportAnnotations));
-    search_row.append(&export);
+    hl_search_row.append(&export);
+    highlights_controls.append(&hl_search_row);
 
-    wrap.append(&search_row);
-
-    let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    chips.add_css_class("kalam-reader-filter-row");
-    chips.set_margin_top(10);
-    chips.set_margin_start(12);
-    chips.set_margin_end(12);
-    chips.set_margin_bottom(10);
-
-    let mut buttons = Vec::new();
-    for (label, filter, class_name) in [
-        ("All", HighlightFilter::All, None),
-        (
-            "Yellow",
-            HighlightFilter::Yellow,
-            Some("kalam-reader-filter-yellow"),
-        ),
-        (
-            "Green",
-            HighlightFilter::Green,
-            Some("kalam-reader-filter-green"),
-        ),
-        (
-            "Blue",
-            HighlightFilter::Blue,
-            Some("kalam-reader-filter-blue"),
-        ),
-        (
-            "Pink",
-            HighlightFilter::Pink,
-            Some("kalam-reader-filter-pink"),
-        ),
-        (
-            "Orange",
-            HighlightFilter::Orange,
-            Some("kalam-reader-filter-orange"),
-        ),
-        (
-            "Underline",
-            HighlightFilter::Underline,
-            Some("kalam-reader-filter-underline"),
-        ),
-        ("Quotes", HighlightFilter::Quotes, None),
+    let kind_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    kind_row.set_margin_start(12);
+    kind_row.set_margin_end(12);
+    kind_row.set_margin_bottom(10);
+    kind_row.set_valign(gtk::Align::Center);
+    let mut highlight_filter_buttons = Vec::new();
+    let all_btn = gtk::Button::with_label("All");
+    all_btn.add_css_class("kalam-reader-filter-chip");
+    let s = sender.clone();
+    all_btn.connect_clicked(move |_| s.input(ReaderMsg::SetHighlightFilter(HighlightFilter::All)));
+    kind_row.append(&all_btn);
+    highlight_filter_buttons.push((HighlightFilter::All, all_btn));
+    // Five colour dots; the ringed one is the standing filter.
+    for (filter, class_name, name) in [
+        (HighlightFilter::Yellow, "kalam-reader-dot-yellow", "Yellow"),
+        (HighlightFilter::Green, "kalam-reader-dot-green", "Green"),
+        (HighlightFilter::Blue, "kalam-reader-dot-blue", "Blue"),
+        (HighlightFilter::Pink, "kalam-reader-dot-pink", "Pink"),
+        (HighlightFilter::Orange, "kalam-reader-dot-orange", "Orange"),
+    ] {
+        let dot = gtk::Button::new();
+        dot.add_css_class("kalam-reader-color-dot");
+        dot.add_css_class(class_name);
+        dot.set_tooltip_text(Some(name));
+        dot.update_property(&[gtk::accessible::Property::Label(name)]);
+        dot.set_valign(gtk::Align::Center);
+        let s = sender.clone();
+        dot.connect_clicked(move |_| s.input(ReaderMsg::SetHighlightFilter(filter)));
+        kind_row.append(&dot);
+        highlight_filter_buttons.push((filter, dot));
+    }
+    for (label, filter) in [
+        ("Underline", HighlightFilter::Underline),
+        ("Quotes", HighlightFilter::Quotes),
     ] {
         let btn = gtk::Button::with_label(label);
         btn.add_css_class("kalam-reader-filter-chip");
-        if let Some(class_name) = class_name {
-            btn.add_css_class(class_name);
-        }
         let s = sender.clone();
         btn.connect_clicked(move |_| s.input(ReaderMsg::SetHighlightFilter(filter)));
-        chips.append(&btn);
-        buttons.push((filter, btn));
+        kind_row.append(&btn);
+        highlight_filter_buttons.push((filter, btn));
     }
-    wrap.append(&chips);
+    highlights_controls.append(&kind_row);
+    wrap.append(&highlights_controls);
 
-    let scroll = gtk::ScrolledWindow::builder()
-        .hscrollbar_policy(gtk::PolicyType::Never)
-        .vscrollbar_policy(gtk::PolicyType::Automatic)
-        .hexpand(true)
-        .vexpand(true)
-        .child(list)
-        .build();
-    scroll.add_css_class("kalam-reader-panel-scroll");
-    wrap.append(&scroll);
-
-    (wrap, buttons)
-}
-
-pub(crate) fn build_bookmarks_panel(sender: &ComponentSender<ReaderModel>, list: &gtk::Box) -> gtk::Box {
-    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
-
+    // Bookmarks' own row: mark the place you are standing on. The
+    // ribbon is the primary gesture now; this is its labelled twin.
+    let bookmarks_controls = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    actions.set_margin_all(12);
+    actions.set_margin_start(12);
+    actions.set_margin_end(12);
+    actions.set_margin_bottom(10);
     let add_btn = gtk::Button::new();
     add_btn.set_child(Some(&crate::icons::labelled(
         "bookmark-new-symbolic",
@@ -123,62 +136,48 @@ pub(crate) fn build_bookmarks_panel(sender: &ComponentSender<ReaderModel>, list:
     )));
     add_btn.add_css_class("kalam-btn-tonal");
     let s = sender.clone();
-    add_btn.connect_clicked(move |_| s.input(ReaderMsg::AddBookmark));
+    add_btn.connect_clicked(move |_| s.input(ReaderMsg::ToggleBookmark));
     actions.append(&add_btn);
-    wrap.append(&actions);
+    bookmarks_controls.append(&actions);
+    wrap.append(&bookmarks_controls);
 
-    let scroll = gtk::ScrolledWindow::builder()
-        .hscrollbar_policy(gtk::PolicyType::Never)
-        .vscrollbar_policy(gtk::PolicyType::Automatic)
-        .hexpand(true)
-        .vexpand(true)
-        .child(list)
-        .build();
-    scroll.add_css_class("kalam-reader-panel-scroll");
-    wrap.append(&scroll);
-    wrap
-}
-
-pub(crate) fn build_words_panel(
-    sender: &ComponentSender<ReaderModel>,
-    _scope: WordScope,
-    list: &gtk::Box,
-) -> (gtk::Box, Vec<(WordScope, gtk::Button)>, gtk::SearchEntry) {
-    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
-
-    let search_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    search_row.add_css_class("kalam-reader-search-row");
-    search_row.set_margin_all(12);
-    let search = gtk::SearchEntry::new();
-    search.set_placeholder_text(Some("Look up a word…"));
-    search.set_hexpand(true);
-    search.add_css_class("kalam-reader-search");
+    // Words' own rows (decision 22): look a word up, choose whose
+    // saved words are listed.
+    let words_controls = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let word_search_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    word_search_row.set_margin_start(12);
+    word_search_row.set_margin_end(12);
+    word_search_row.set_margin_bottom(10);
+    let word_search = gtk::SearchEntry::new();
+    word_search.set_placeholder_text(Some("Look up a word…"));
+    word_search.set_hexpand(true);
+    word_search.add_css_class("kalam-reader-search");
     let s = sender.clone();
-    search.connect_search_changed(move |entry| {
+    word_search.connect_search_changed(move |entry| {
         s.input(ReaderMsg::DictSearch(entry.text().to_string()));
     });
-    search_row.append(&search);
-    wrap.append(&search_row);
+    word_search_row.append(&word_search);
+    words_controls.append(&word_search_row);
 
-    let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    chips.add_css_class("kalam-reader-filter-row");
-    chips.set_margin_start(12);
-    chips.set_margin_end(12);
-    chips.set_margin_bottom(10);
-    let mut buttons = Vec::new();
+    let scope_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    scope_row.set_margin_start(12);
+    scope_row.set_margin_end(12);
+    scope_row.set_margin_bottom(10);
+    let mut word_scope_buttons = Vec::new();
     for (label, scope) in [
         ("Chapter", WordScope::Chapter),
         ("This book", WordScope::Book),
-        ("All", WordScope::All),
+        ("All books", WordScope::All),
     ] {
         let btn = gtk::Button::with_label(label);
         btn.add_css_class("kalam-reader-filter-chip");
         let s = sender.clone();
         btn.connect_clicked(move |_| s.input(ReaderMsg::SetWordScope(scope)));
-        chips.append(&btn);
-        buttons.push((scope, btn));
+        scope_row.append(&btn);
+        word_scope_buttons.push((scope, btn));
     }
-    wrap.append(&chips);
+    words_controls.append(&scope_row);
+    wrap.append(&words_controls);
 
     let scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
@@ -190,5 +189,13 @@ pub(crate) fn build_words_panel(
     scroll.add_css_class("kalam-reader-panel-scroll");
     wrap.append(&scroll);
 
-    (wrap, buttons, search)
+    NotesPanelControls {
+        root: wrap,
+        filter_buttons,
+        highlight_filter_buttons,
+        word_scope_buttons,
+        highlights_controls,
+        bookmarks_controls,
+        words_controls,
+    }
 }

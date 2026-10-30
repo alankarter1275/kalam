@@ -24,11 +24,10 @@
 use super::mod_model::ReaderModel;
 use super::types::*;
 use crate::db::{Annotation, AnnotationStyle, HighlightColor as DbColor};
-use crate::epub_book::ReadingTheme;
 use gtk::prelude::*;
 use kalam_reader::{
     HighlightColor, KalamPrefs, KalamTheme, LayeredLocator, NewHighlight, Quote, ReaderOptions,
-    ReaderView, ReadingMode, ReadingPosition, SelectedText, LOCATOR_VERSION,
+    ReaderPalette, ReaderView, ReadingMode, ReadingPosition, SelectedText, LOCATOR_VERSION,
 };
 use relm4::ComponentSender;
 use std::path::Path;
@@ -37,10 +36,23 @@ use std::path::Path;
 // Preferences: Kalam's stored values → the engine's
 // ---------------------------------------------------------------------
 
-/// Kalam's four reading theme names are the engine's four; the engine
-/// took its colours from `ReadingTheme::swatch()`, so they match.
-pub(crate) fn engine_theme(theme: ReadingTheme) -> KalamTheme {
-    KalamTheme::from_name(theme.as_str()).unwrap_or_default()
+/// The app's resolved theme as the engine's palette (decisions 19 and
+/// 145): the page is painted in the palette's own `bg`/`text`/`accent`,
+/// in whichever mode the app is in. Token values are `#rrggbb` literals
+/// from `theme.rs`; anything else (a token table edited into a shape
+/// this does not know) falls back per-channel rather than failing the
+/// open — a wrong colour is a bug, a refused book is a disaster.
+pub(crate) fn reader_palette(theme: &crate::theme::Theme) -> ReaderPalette {
+    ReaderPalette {
+        background: token_rgba(theme.bg, KalamTheme::Sepia.background()),
+        foreground: token_rgba(theme.text, KalamTheme::Sepia.foreground()),
+        accent: token_rgba(theme.accent, KalamTheme::Sepia.reader_palette().accent),
+        dark: theme.dark,
+    }
+}
+
+fn token_rgba(token: &str, fallback: kalam_reader::Rgba) -> kalam_reader::Rgba {
+    kalam_reader::Rgba::from_hex(token, 255).unwrap_or(fallback)
 }
 
 // Nine knobs, one purpose: the persisted reading preferences the engine
@@ -48,7 +60,7 @@ pub(crate) fn engine_theme(theme: ReadingTheme) -> KalamTheme {
 // call. Same allow as `settings_panel` and `db`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn engine_prefs(
-    theme: ReadingTheme,
+    palette: ReaderPalette,
     font_px: u32,
     line_height: f32,
     column_px: u32,
@@ -58,7 +70,7 @@ pub(crate) fn engine_prefs(
     publisher_styles: bool,
 ) -> KalamPrefs {
     KalamPrefs {
-        theme: engine_theme(theme),
+        palette,
         font_px: font_px as f32,
         line_height,
         column_px: column_px as f32,
@@ -179,6 +191,11 @@ pub(crate) fn wire(view: &ReaderView, sender: &ComponentSender<ReaderModel>) {
     view.connect_word_hover(move |word_opt: Option<&str>, x: f64, y: f64| {
         let _ = tx.send(ReaderMsg::WordMemoryHover(word_opt.map(str::to_string), x, y));
     });
+
+    let tx = sender.input_sender().clone();
+    view.connect_note_hover(move |id: Option<i64>, x: f64, y: f64| {
+        let _ = tx.send(ReaderMsg::NoteDotHover(id, x, y));
+    });
 }
 
 /// An engine rect (widget coordinates, f32) as the rectangle a
@@ -211,6 +228,7 @@ pub(crate) fn highlight_of(annotation: &Annotation) -> Option<NewHighlight> {
         text: annotation.text_excerpt.clone(),
         start,
         end,
+        has_note: !annotation.note.trim().is_empty(),
     })
 }
 
@@ -330,19 +348,6 @@ pub(crate) fn position_to_json(l: &LayeredLocator) -> String {
 ///
 /// Returns a popover already pointed at the selection; the caller keeps it
 /// in the model so `None` (selection cleared) can pop it down.
-fn action_button(icon_name: &str, tooltip: &str, accent: bool) -> gtk::Button {
-    let btn = gtk::Button::from_icon_name(icon_name);
-    btn.add_css_class("k-sel-action");
-    if accent {
-        btn.add_css_class("accent");
-    }
-    btn.set_tooltip_text(Some(tooltip));
-    btn.set_size_request(26, 26);
-    btn.set_valign(gtk::Align::Center);
-    btn.set_halign(gtk::Align::Center);
-    btn
-}
-
 pub(crate) fn build_calibre_drawer_box(
     initial_color: DbColor,
     initial_style: AnnotationStyle,
@@ -496,11 +501,10 @@ pub(crate) fn build_calibre_drawer_box(
 pub(crate) fn build_selection_chip(
     host: &gtk::Widget,
     rect: &gtk::gdk::Rectangle,
+    last_color: DbColor,
     sender: &ComponentSender<ReaderModel>,
 ) -> gtk::Popover {
     crate::icons::init();
-
-    let root_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
     let popover = gtk::Popover::new();
     popover.set_parent(host);
@@ -512,60 +516,61 @@ pub(crate) fn build_selection_chip(
     anchor.set_y(anchor.y() - HANDLE_HEADROOM);
     anchor.set_height(anchor.height() + HANDLE_HEADROOM);
     popover.set_pointing_to(Some(&anchor));
-    popover.add_css_class("k-sel-toolbar-popover");
+    popover.add_css_class("kalam-ui-selection-popover");
 
-    let pill = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-    pill.add_css_class("k-sel-toolbar");
-
-    // 1. Highlight button
-    let highlight_btn = action_button("kalam-highlight-symbolic", "Highlight", true);
-    let root_ref = root_box.clone();
-    let pill_ref = pill.clone();
-    let pop_ref = popover.clone();
-    let tx_save = sender.input_sender().clone();
-    highlight_btn.connect_clicked(move |_| {
-        pill_ref.set_visible(false);
-        let tx = tx_save.clone();
-        let drawer = build_calibre_drawer_box(
-            DbColor::Yellow,
-            AnnotationStyle::Solid,
-            "",
-            None,
-            move |color, style, note| {
-                let _ = tx.send(ReaderMsg::SaveAnnotationDetails {
-                    color: color.as_str().to_string(),
-                    style: style.as_str().to_string(),
-                    note,
-                });
-            },
-            None,
-        );
-        root_ref.append(&drawer);
-        pop_ref.present();
-    });
-    pill.append(&highlight_btn);
-
-    let sep = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    sep.add_css_class("k-sel-divider");
-    pill.append(&sep);
-
-    // 2. Define button
-    let define_btn = action_button("accessories-dictionary-symbolic", "Define", false);
-    let tx_def = sender.input_sender().clone();
-    define_btn.connect_clicked(move |_| {
-        let _ = tx_def.send(ReaderMsg::LookUpSelection);
-    });
-    pill.append(&define_btn);
-
-    root_box.append(&pill);
-    popover.set_child(Some(&root_box));
+    // The shared shell (decision 26): five one-tap colours, a divider,
+    // Note, Define. Fix typo is the deferred editor's (spec §6), and
+    // Copy stays Ctrl+C. The ring opens on the colour the last
+    // highlight took.
+    let tx = sender.input_sender().clone();
+    let chip = crate::widgets::selection_chip::selection_chip_with_colors(
+        DbColor::SOFT_FIVE,
+        last_color,
+        move |action| {
+            use crate::widgets::selection_chip::SelectionChipAction;
+            let _ = tx.send(match action {
+                SelectionChipAction::Highlight(color) => {
+                    ReaderMsg::HighlightSelection(color.as_str().to_string())
+                }
+                SelectionChipAction::Note => ReaderMsg::NoteSelection,
+                SelectionChipAction::Define => ReaderMsg::LookUpSelection,
+            });
+        },
+    );
+    popover.set_child(Some(&chip.widget()));
     popover
 }
 
+/// The "Aa" a style sample wears, in the standing colour (decision
+/// 29's four style samples): the solid band at its painted alpha, the
+/// line styles at full strength — the same split the page itself uses.
+fn style_sample_markup(style: AnnotationStyle, color: DbColor) -> String {
+    let band = HighlightColor::from_name(color.as_str())
+        .unwrap_or_default()
+        .css();
+    let line = &band[..band.len().min(7)];
+    match style {
+        AnnotationStyle::Solid => format!("<span background=\"{band}\">Aa</span>"),
+        AnnotationStyle::Underline => {
+            format!("<span underline=\"single\" underline_color=\"{line}\">Aa</span>")
+        }
+        AnnotationStyle::Squiggly => {
+            format!("<span underline=\"error\" underline_color=\"{line}\">Aa</span>")
+        }
+        AnnotationStyle::Strikeout => "<s>Aa</s>".to_string(),
+    }
+}
+
+/// One popover for one highlight (decision 29): colour dots, the four
+/// style samples, the note box and delete. Colour and style land the
+/// moment they are picked, so the page behind shows them; the note
+/// (and anything left) autosaves when the popover closes. There is
+/// no Save button to forget.
 pub(crate) fn build_annotation_edit_popover(
     host: &gtk::Widget,
     rect: &gtk::gdk::Rectangle,
     anno: &Annotation,
+    focus_note: bool,
     sender: &ComponentSender<ReaderModel>,
 ) -> gtk::Popover {
     crate::icons::init();
@@ -573,44 +578,205 @@ pub(crate) fn build_annotation_edit_popover(
     let popover = gtk::Popover::new();
     popover.set_parent(host);
     popover.set_autohide(true);
-    popover.set_has_arrow(true);
+    popover.set_has_arrow(false);
     popover.set_position(gtk::PositionType::Top);
 
     let mut anchor = *rect;
     anchor.set_y(anchor.y() - HANDLE_HEADROOM);
     anchor.set_height(anchor.height() + HANDLE_HEADROOM);
     popover.set_pointing_to(Some(&anchor));
-    popover.add_css_class("k-sel-toolbar-popover");
+    popover.add_css_class("kalam-reader-annotation-popover");
 
-    let tx_save = sender.input_sender().clone();
-    let tx_del = sender.input_sender().clone();
     let id = anno.id;
+    let cur_color = std::rc::Rc::new(std::cell::Cell::new(DbColor::from_str_lossy(&anno.color)));
+    let cur_style =
+        std::rc::Rc::new(std::cell::Cell::new(AnnotationStyle::from_str_lossy(&anno.style)));
+    let deleted = std::rc::Rc::new(std::cell::Cell::new(false));
 
-    let initial_color = DbColor::from_str_lossy(&anno.color);
-    let initial_style = AnnotationStyle::from_str_lossy(&anno.style);
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    card.add_css_class("kalam-reader-annotation-editor");
 
-    let drawer = build_calibre_drawer_box(
-        initial_color,
-        initial_style,
-        &anno.note,
-        Some(id),
-        move |color, style, note| {
-            let _ = tx_save.send(ReaderMsg::EditAnnotationDetails {
+    // The five colours.
+    let colors_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let mut dots: Vec<(DbColor, gtk::Button)> = Vec::new();
+    for color in DbColor::SOFT_FIVE {
+        let dot = gtk::Button::new();
+        dot.add_css_class("kalam-reader-color-dot");
+        dot.add_css_class(&format!("kalam-reader-dot-{}", color.as_str()));
+        if *color == cur_color.get() {
+            dot.add_css_class("active");
+        }
+        dot.set_tooltip_text(Some(&format!("Highlight {}", color.as_str())));
+        dot.set_valign(gtk::Align::Center);
+        colors_row.append(&dot);
+        dots.push((*color, dot));
+    }
+    card.append(&colors_row);
+    let dots = std::rc::Rc::new(dots);
+
+    // The four styles, as samples wearing the standing colour.
+    let styles_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    let mut samples: Vec<(AnnotationStyle, gtk::Button, gtk::Label)> = Vec::new();
+    for style in AnnotationStyle::ALL {
+        let label = gtk::Label::new(None);
+        label.set_markup(&style_sample_markup(*style, cur_color.get()));
+        label.add_css_class("kalam-reader-style-sample-text");
+        let btn = gtk::Button::new();
+        btn.add_css_class("kalam-reader-style-sample");
+        if *style == cur_style.get() {
+            btn.add_css_class("active");
+        }
+        btn.set_child(Some(&label));
+        btn.set_tooltip_text(Some(style.label()));
+        btn.set_hexpand(true);
+        styles_row.append(&btn);
+        samples.push((*style, btn, label));
+    }
+    card.append(&styles_row);
+    let samples = std::rc::Rc::new(samples);
+
+    // Picking a colour or a style restyles at once.
+    let restyle = {
+        let tx = sender.input_sender().clone();
+        let cur_color = cur_color.clone();
+        let cur_style = cur_style.clone();
+        std::rc::Rc::new(move || {
+            let _ = tx.send(ReaderMsg::RestyleAnnotation {
                 id,
-                color: color.as_str().to_string(),
-                style: style.as_str().to_string(),
+                color: cur_color.get().as_str().to_string(),
+                style: cur_style.get().as_str().to_string(),
+            });
+        })
+    };
+    for (color, dot) in dots.iter() {
+        let c = *color;
+        let cur_color = cur_color.clone();
+        let dots = dots.clone();
+        let samples = samples.clone();
+        let restyle = restyle.clone();
+        dot.connect_clicked(move |_| {
+            cur_color.set(c);
+            for (dot_c, btn) in dots.iter() {
+                if *dot_c == c {
+                    btn.add_css_class("active");
+                } else {
+                    btn.remove_css_class("active");
+                }
+            }
+            for (style, _, label) in samples.iter() {
+                label.set_markup(&style_sample_markup(*style, c));
+            }
+            restyle();
+        });
+    }
+    for (style, btn, _) in samples.iter() {
+        let st = *style;
+        let cur_style = cur_style.clone();
+        let samples = samples.clone();
+        let restyle = restyle.clone();
+        btn.connect_clicked(move |_| {
+            cur_style.set(st);
+            for (btn_s, b, _) in samples.iter() {
+                if *btn_s == st {
+                    b.add_css_class("active");
+                } else {
+                    b.remove_css_class("active");
+                }
+            }
+            restyle();
+        });
+    }
+
+    // The note box.
+    let note_view = gtk::TextView::new();
+    note_view.add_css_class("kalam-reader-note-view");
+    note_view.set_wrap_mode(gtk::WrapMode::WordChar);
+    note_view.set_hexpand(true);
+    let buffer = note_view.buffer();
+    if !anno.note.is_empty() {
+        buffer.set_text(&anno.note);
+    }
+    let note_scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .min_content_width(280)
+        .min_content_height(64)
+        .max_content_height(120)
+        .hexpand(true)
+        .child(&note_view)
+        .build();
+    note_scroll.add_css_class("kalam-reader-note-scroll");
+    card.append(&note_scroll);
+
+    // Delete, alone in the footer: everything else already saved.
+    let footer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let del_btn = gtk::Button::new();
+    del_btn.add_css_class("kalam-reader-annotation-delete");
+    del_btn.set_child(Some(&crate::icons::labelled(
+        "user-trash-symbolic",
+        14,
+        "Delete",
+        6,
+    )));
+    del_btn.set_tooltip_text(Some("Delete this highlight"));
+    {
+        let tx = sender.input_sender().clone();
+        let deleted = deleted.clone();
+        // Weakly: the button lives inside the popover, so a strong
+        // handle here would keep the whole tree alive for good.
+        let pop = popover.downgrade();
+        del_btn.connect_clicked(move |_| {
+            deleted.set(true);
+            let _ = tx.send(ReaderMsg::DeleteAnnotation(id));
+            if let Some(pop) = pop.upgrade() {
+                pop.popdown();
+            }
+        });
+    }
+    footer.append(&del_btn);
+    card.append(&footer);
+
+    popover.set_child(Some(&card));
+
+    // Autosave on close: whatever the popover holds when it goes away
+    // is the annotation, unless Delete already took it.
+    {
+        let tx = sender.input_sender().clone();
+        let cur_color = cur_color.clone();
+        let cur_style = cur_style.clone();
+        let buffer = buffer.clone();
+        popover.connect_closed(move |_| {
+            if deleted.get() {
+                return;
+            }
+            let note = buffer
+                .text(&buffer.start_iter(), &buffer.end_iter(), false)
+                .to_string();
+            let _ = tx.send(ReaderMsg::AnnotationEditClosed {
+                id,
+                color: cur_color.get().as_str().to_string(),
+                style: cur_style.get().as_str().to_string(),
                 note,
             });
-        },
-        Some(Box::new(move |del_id| {
-            let _ = tx_del.send(ReaderMsg::DeleteAnnotation(del_id));
-        })),
-    );
+        });
+    }
 
-    popover.set_child(Some(&drawer));
+    if focus_note {
+        let view = note_view.clone();
+        let buffer = buffer.clone();
+        gtk::glib::idle_add_local_once(move || {
+            buffer.place_cursor(&buffer.end_iter());
+            view.grab_focus();
+        });
+    }
+
     popover
 }
 
+/// The saved-word hover card (decision 33). Only words Kalam keeps are
+/// ever hovered, so the card says so — headword, the saved tick, and
+/// every meaning the entry has, not just the first. It is a reminder,
+/// not a lookup: no chips, no buttons; a tap opens the full card.
 pub(crate) fn build_word_preview_tooltip(
     host: &gtk::Widget,
     rect: &gtk::gdk::Rectangle,
@@ -622,48 +788,125 @@ pub(crate) fn build_word_preview_tooltip(
         return None;
     }
     let data = catalog.lookup_entry(&clean).ok()?;
-    let def = data.senses.first().map(|s| s.def.as_str())?;
+    if data.senses.is_empty() {
+        return None;
+    }
 
     let popover = gtk::Popover::new();
     popover.set_parent(host);
     popover.set_autohide(true);
-    popover.set_has_arrow(true);
+    popover.set_has_arrow(false);
     popover.set_position(gtk::PositionType::Top);
     popover.set_pointing_to(Some(rect));
     popover.add_css_class("k-word-preview-popover");
 
-    let card = gtk::Box::new(gtk::Orientation::Vertical, 3);
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
     card.add_css_class("k-word-preview-card");
+    card.set_size_request(300, -1);
 
-    let head = gtk::Label::new(Some(&clean));
+    let head_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let head = gtk::Label::new(Some(&data.word));
     head.add_css_class("k-word-preview-head");
     head.set_xalign(0.0);
-    card.append(&head);
+    head.set_hexpand(true);
+    head_row.append(&head);
+    let tick = gtk::Image::from_icon_name("object-select-symbolic");
+    tick.add_css_class("k-word-preview-tick");
+    tick.set_valign(gtk::Align::Center);
+    head_row.append(&tick);
+    let saved = gtk::Label::new(Some("Saved"));
+    saved.add_css_class("k-word-preview-saved");
+    saved.set_valign(gtk::Align::Center);
+    head_row.append(&saved);
+    card.append(&head_row);
 
-    let preview = if def.len() > 120 {
-        format!("{}…", &def[..118])
-    } else {
-        def.to_string()
-    };
-    let body = gtk::Label::new(Some(&preview));
-    body.add_css_class("k-word-preview-def");
-    body.set_wrap(true);
-    body.set_xalign(0.0);
-    card.append(&body);
+    let senses_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    for (i, sense) in data.senses.iter().enumerate() {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let num = gtk::Label::new(Some(&format!("{}.", i + 1)));
+        num.add_css_class("k-def-num");
+        num.set_valign(gtk::Align::Start);
+        row.append(&num);
+        let def = gtk::Label::new(Some(&sense.def));
+        def.add_css_class("k-word-preview-def");
+        def.set_wrap(true);
+        def.set_xalign(0.0);
+        def.set_halign(gtk::Align::Fill);
+        def.set_hexpand(true);
+        row.append(&def);
+        senses_box.append(&row);
+    }
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .propagate_natural_height(true)
+        .overlay_scrolling(true)
+        .max_content_height(220)
+        .build();
+    scroll.set_child(Some(&senses_box));
+    card.append(&scroll);
+
+    popover.set_child(Some(&card));
+    Some(popover)
+}
+
+/// The note itself, read where it hangs (decision 29): hovering a
+/// highlight's end dot shows what was written, nothing to edit and
+/// nothing to click. It borrows the saved-word preview's card, so
+/// the two hovers read as the same kind of glance.
+pub(crate) fn build_annotation_note_preview(
+    host: &gtk::Widget,
+    rect: &gtk::gdk::Rectangle,
+    note: &str,
+) -> Option<gtk::Popover> {
+    let note = note.trim();
+    if note.is_empty() {
+        return None;
+    }
+
+    let popover = gtk::Popover::new();
+    popover.set_parent(host);
+    popover.set_autohide(true);
+    popover.set_has_arrow(false);
+    popover.set_position(gtk::PositionType::Top);
+    popover.set_pointing_to(Some(rect));
+    popover.add_css_class("k-word-preview-popover");
+
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    card.add_css_class("k-word-preview-card");
+    let width = 300.min((host.width() - 32).max(240));
+    card.set_size_request(width, -1);
+
+    let text = gtk::Label::new(Some(note));
+    text.add_css_class("k-word-preview-def");
+    text.set_wrap(true);
+    text.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    text.set_xalign(0.0);
+    text.set_halign(gtk::Align::Fill);
+    text.set_hexpand(true);
+
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .propagate_natural_height(true)
+        .overlay_scrolling(true)
+        .max_content_height(220)
+        .build();
+    scroll.set_child(Some(&text));
+    card.append(&scroll);
 
     popover.set_child(Some(&card));
     Some(popover)
 }
 
 const HANDLE_HEADROOM: i32 = 8;
-/// One sense as the card draws it.
-///
-/// `hinted` is the Lesk "likely here" sense, which keeps its index into
-/// the *flat* sense list however the card then groups them.
+/// One sense as the card draws it. `pos` rides along so the card can
+/// group senses under part-of-speech dividers (decision 31) instead
+/// of numbering straight through the whole entry.
 pub(crate) struct DictSense {
+    pub(crate) pos: Option<String>,
     pub(crate) def: String,
     pub(crate) example: Option<String>,
-    pub(crate) hinted: bool,
 }
 
 /// What the dictionary card shows — the same fields the JS popup was fed,
@@ -672,48 +915,39 @@ pub(crate) struct DictSense {
 pub(crate) struct DictCard {
     pub(crate) word: String,
     pub(crate) pronunciation: Option<String>,
-    /// The word-level part-of-speech list, already joined with middots.
-    pub(crate) pos: Option<String>,
     pub(crate) senses: Vec<DictSense>,
     pub(crate) synonyms: Vec<String>,
     pub(crate) antonyms: Vec<String>,
     pub(crate) idioms: Vec<(String, String)>,
     pub(crate) suggestions: Vec<String>,
     pub(crate) saved: bool,
+    /// The reader wandered here through the card's own chips, so the
+    /// header grows a way back (decision 31).
+    pub(crate) can_go_back: bool,
 }
 
 impl DictCard {
     /// `Sense.example` is an `Option<String>` in this tree, so the empty
     /// filter applies to it directly; wrapping it in `Option::<String>::from`
     /// is a useless conversion, which `-D warnings` rejects.
-    /// `EntryData.pos` is a `Vec<String>`, joined with middots below.
     pub(crate) fn from_entry(
         data: &crate::db::EntryData,
         pronunciation: Option<String>,
         saved: bool,
-        hint: Option<usize>,
+        can_go_back: bool,
     ) -> DictCard {
         let senses: Vec<DictSense> = data
             .senses
             .iter()
-            .enumerate()
-            .map(|(i, s)| DictSense {
+            .map(|s| DictSense {
+                pos: s.pos.clone(),
                 def: s.def.clone(),
                 example: s.example.clone().filter(|e| !e.is_empty()),
-                hinted: hint == Some(i),
             })
             .collect();
         DictCard {
             word: data.word.clone(),
             pronunciation,
-            // Kalam's `EntryData.pos` is the word-level list (`Vec<String>`),
-            // not a lone `String`/`Option<String>`; the old WebKit popup
-            // showed it joined with a middot, so this does too.
-            pos: if data.pos.is_empty() {
-                None
-            } else {
-                Some(data.pos.join(" \u{00b7} "))
-            },
             senses,
             synonyms: data.synonyms.iter().map(|s| s.to_string()).collect(),
             antonyms: data.antonyms.iter().map(|s| s.to_string()).collect(),
@@ -724,6 +958,7 @@ impl DictCard {
                 .collect(),
             suggestions: data.suggestions.iter().map(|s| s.to_string()).collect(),
             saved,
+            can_go_back,
         }
     }
 }
@@ -754,25 +989,43 @@ fn speak_word(word: String) {
     });
 }
 
-/// The parts of speech the old popup listed first, in this order. Anything
-/// else keeps its first-seen order; senses with no part of speech land last
-/// and get no divider row at all.
+/// The card's head (decision 31): back arrow when the reader wandered
+/// here, Playfair headword with its IPA, the speaker, and the circular
+/// save toggle — ring and plus while unsaved, filled and ticked once
+/// the word is kept. Parts of speech no longer ride here; they divide
+/// the senses below.
 fn dict_header(
     _host: &gtk::Widget,
     card: &DictCard,
     sender: &ComponentSender<ReaderModel>,
 ) -> gtk::Box {
-    let header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     header.add_css_class("k-header");
 
-    let left = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    if card.can_go_back {
+        let back = gtk::Button::new();
+        back.add_css_class("k-back-btn");
+        back.set_child(Some(&gtk::Image::from_icon_name(
+            "go-previous-symbolic",
+        )));
+        back.set_valign(gtk::Align::Center);
+        back.set_tooltip_text(Some("Back to the word you came from"));
+        let tx = sender.input_sender().clone();
+        back.connect_clicked(move |_| {
+            let _ = tx.send(ReaderMsg::DictGoBack);
+        });
+        header.append(&back);
+    }
+
+    let left = gtk::Box::new(gtk::Orientation::Vertical, 2);
     left.add_css_class("k-header-left");
     left.set_hexpand(true);
+    left.set_valign(gtk::Align::Center);
 
     let word = gtk::Label::new(Some(&card.word));
     word.add_css_class("k-word");
     word.set_xalign(0.0);
-    word.set_halign(gtk::Align::Start);
+    word.set_halign(gtk::Align::Fill);
     word.set_wrap(true);
     left.append(&word);
 
@@ -783,13 +1036,6 @@ fn dict_header(
         pron.set_halign(gtk::Align::Start);
         left.append(&pron);
     }
-
-    if let Some(pos) = &card.pos {
-        let pill = gtk::Label::new(Some(pos));
-        pill.add_css_class("k-pos");
-        pill.set_halign(gtk::Align::Start);
-        left.append(&pill);
-    }
     header.append(&left);
 
     // Audio pronunciation — best-effort via a system speech engine.
@@ -798,6 +1044,7 @@ fn dict_header(
     audio.set_child(Some(&gtk::Image::from_icon_name(
         "audio-volume-high-symbolic",
     )));
+    audio.set_valign(gtk::Align::Center);
     audio.set_tooltip_text(Some("Hear it"));
     {
         let w = card.word.clone();
@@ -805,22 +1052,35 @@ fn dict_header(
     }
     header.append(&audio);
 
+    // The save toggle flips its own face on the tap and lets the model
+    // land the same answer in the store; the popover stays up.
     let save = gtk::Button::new();
     save.add_css_class("k-save-btn");
-    let icon = gtk::Image::from_icon_name("bookmark-new-symbolic");
+    let icon = gtk::Image::from_icon_name("list-add-symbolic");
     save.set_child(Some(&icon));
-    save.set_valign(gtk::Align::Start);
-    save.set_halign(gtk::Align::Center);
-    save.set_size_request(24, 24);
-    save.set_tooltip_text(Some(if card.saved { "Saved" } else { "Save word" }));
-    if card.saved {
-        save.add_css_class("saved");
-    }
-    save.set_sensitive(!card.saved && !card.senses.is_empty());
-    if !card.saved {
+    save.set_valign(gtk::Align::Center);
+    save.set_sensitive(!card.senses.is_empty());
+    let apply = |btn: &gtk::Button, icon: &gtk::Image, saved: bool| {
+        if saved {
+            icon.set_icon_name(Some("object-select-symbolic"));
+            btn.add_css_class("saved");
+            btn.set_tooltip_text(Some("Saved — tap to forget"));
+        } else {
+            icon.set_icon_name(Some("list-add-symbolic"));
+            btn.remove_css_class("saved");
+            btn.set_tooltip_text(Some("Save word"));
+        }
+    };
+    apply(&save, &icon, card.saved);
+    let is_saved = std::rc::Rc::new(std::cell::Cell::new(card.saved));
+    {
         let tx = sender.input_sender().clone();
-        save.connect_clicked(move |_| {
-            let _ = tx.send(ReaderMsg::SaveCurrentWord);
+        let icon = icon.clone();
+        save.connect_clicked(move |btn| {
+            let next = !is_saved.get();
+            is_saved.set(next);
+            apply(btn, &icon, next);
+            let _ = tx.send(ReaderMsg::ToggleSaveWord);
         });
     }
     header.append(&save);
@@ -848,19 +1108,11 @@ fn sense_row(sense: &DictSense, number: usize) -> gtk::Box {
     let text_box = gtk::Box::new(gtk::Orientation::Vertical, 3);
     text_box.set_hexpand(true);
 
-    if sense.hinted {
-        let badge = gtk::Label::new(Some("LIKELY HERE"));
-        badge.add_css_class("k-def-badge");
-        badge.set_valign(gtk::Align::Start);
-        badge.set_halign(gtk::Align::Start);
-        text_box.append(&badge);
-    }
-
     let def = gtk::Label::new(Some(&sense.def));
     def.add_css_class("k-def-text");
     def.set_wrap(true);
     def.set_xalign(0.0);
-    def.set_halign(gtk::Align::Start);
+    def.set_halign(gtk::Align::Fill);
     text_box.append(&def);
 
     if let Some(example) = &sense.example {
@@ -868,55 +1120,111 @@ fn sense_row(sense: &DictSense, number: usize) -> gtk::Box {
         ex.add_css_class("k-def-example");
         ex.set_wrap(true);
         ex.set_xalign(0.0);
-        ex.set_halign(gtk::Align::Start);
+        ex.set_halign(gtk::Align::Fill);
         text_box.append(&ex);
     }
     row.append(&text_box);
     row
 }
 
+/// Senses grouped by part of speech (decision 31): WordNet's four in
+/// their usual order, anything else first-seen, senses with no part of
+/// speech last — that group gets no divider row at all.
+fn pos_groups(senses: &[DictSense]) -> Vec<(Option<String>, Vec<&DictSense>)> {
+    const ORDER: [&str; 4] = ["noun", "adjective", "verb", "adverb"];
+    let mut names: Vec<Option<String>> = Vec::new();
+    for sense in senses {
+        if !names.contains(&sense.pos) {
+            names.push(sense.pos.clone());
+        }
+    }
+    names.sort_by_key(|name| match name {
+        Some(pos) => ORDER.iter().position(|o| o == pos).unwrap_or(ORDER.len()),
+        None => ORDER.len() + 1,
+    });
+    names
+        .into_iter()
+        .map(|name| {
+            let group = senses.iter().filter(|s| s.pos == name).collect();
+            (name, group)
+        })
+        .collect()
+}
+
+fn pos_divider(name: &str) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    row.add_css_class("k-pos-divider");
+    let label = gtk::Label::new(Some(&name.to_uppercase()));
+    label.add_css_class("k-pos-name");
+    label.set_valign(gtk::Align::Center);
+    row.append(&label);
+    let rule = gtk::Separator::new(gtk::Orientation::Horizontal);
+    rule.set_hexpand(true);
+    rule.set_valign(gtk::Align::Center);
+    row.append(&rule);
+    row
+}
+
 fn append_definitions(body: &gtk::Box, card: &DictCard) {
-    body.append(&section_label("Definitions"));
+    let groups = pos_groups(&card.senses);
+    // Senses that carry no part of speech at all keep the plain heading;
+    // once groups are named, the dividers speak for themselves.
+    if groups.iter().all(|(name, _)| name.is_none()) {
+        body.append(&section_label("Definitions"));
+    }
 
     let defs_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
     defs_box.add_css_class("k-defs");
 
-    let shown = card.senses.len().min(3);
-    for (i, sense) in card.senses.iter().take(shown).enumerate() {
-        defs_box.append(&sense_row(sense, i + 1));
-    }
-
-    let extra = &card.senses[shown..];
-    if !extra.is_empty() {
-        let hidden = gtk::Box::new(gtk::Orientation::Vertical, 10);
-        hidden.add_css_class("k-extra-defs");
-        for (offset, sense) in extra.iter().enumerate() {
-            hidden.append(&sense_row(sense, shown + offset + 1));
+    for (name, group) in &groups {
+        if let Some(name) = name {
+            defs_box.append(&pos_divider(name));
         }
+        // Three senses to a group, then the fold (decision 31);
+        // numbering restarts with each part of speech.
+        let shown = group.len().min(3);
+        for (i, sense) in group.iter().take(shown).enumerate() {
+            defs_box.append(&sense_row(sense, i + 1));
+        }
+        let extra = &group[shown..];
+        if !extra.is_empty() {
+            let hidden = gtk::Box::new(gtk::Orientation::Vertical, 10);
+            hidden.add_css_class("k-extra-defs");
+            for (offset, sense) in extra.iter().enumerate() {
+                hidden.append(&sense_row(sense, shown + offset + 1));
+            }
 
-        let revealer = gtk::Revealer::new();
-        revealer.set_transition_type(gtk::RevealerTransitionType::None);
-        revealer.set_reveal_child(false);
-        revealer.set_child(Some(&hidden));
-        defs_box.append(&revealer);
+            let revealer = gtk::Revealer::new();
+            // SlideDown, not None: GTK measures a None/Crossfade
+            // revealer at its child's full height even while hidden
+            // (`get_child_size_scale` returns 1.0 for those types),
+            // which left a blank gap above "Show N more". A vertical
+            // slide scales the measured height by the reveal
+            // position, so the folded senses take no room at all.
+            revealer.set_transition_type(gtk::RevealerTransitionType::SlideDown);
+            revealer.set_transition_duration(180);
+            revealer.set_reveal_child(false);
+            revealer.set_child(Some(&hidden));
+            defs_box.append(&revealer);
 
-        let more = gtk::Button::with_label(&format!("Show {} more", extra.len()));
-        more.add_css_class("k-show-more");
-        more.set_halign(gtk::Align::Start);
-        let count = extra.len();
-        let showing = std::rc::Rc::new(std::cell::Cell::new(false));
-        more.connect_clicked(move |btn| {
-            let next = !showing.get();
-            showing.set(next);
-            revealer.set_reveal_child(next);
-            let label = if next {
-                "Show less".to_string()
-            } else {
-                format!("Show {} more", count)
-            };
-            btn.set_label(&label);
-        });
-        defs_box.append(&more);
+            let more = gtk::Button::with_label(&format!("Show {} more", extra.len()));
+            more.add_css_class("k-show-more");
+            more.set_halign(gtk::Align::Start);
+            let count = extra.len();
+            let showing = std::rc::Rc::new(std::cell::Cell::new(false));
+            more.connect_clicked(move |btn| {
+                let next = !showing.get();
+                showing.set(next);
+                revealer.set_reveal_child(next);
+                let label = if next {
+                    "Show less".to_string()
+                } else {
+                    format!("Show {} more", count)
+                };
+                btn.set_label(&label);
+            });
+            defs_box.append(&more);
+        }
     }
 
     body.append(&defs_box);
@@ -968,13 +1276,13 @@ fn append_sections(body: &gtk::Box, card: &DictCard, sender: &ComponentSender<Re
             let phrase_label = gtk::Label::new(Some(phrase));
             phrase_label.add_css_class("k-idiom-phrase");
             phrase_label.set_xalign(0.0);
-            phrase_label.set_halign(gtk::Align::Start);
+            phrase_label.set_halign(gtk::Align::Fill);
             phrase_label.set_wrap(true);
             item.append(&phrase_label);
             let def_label = gtk::Label::new(Some(def));
             def_label.add_css_class("k-idiom-def");
             def_label.set_xalign(0.0);
-            def_label.set_halign(gtk::Align::Start);
+            def_label.set_halign(gtk::Align::Fill);
             def_label.set_wrap(true);
             item.append(&def_label);
             idioms_box.append(&item);
@@ -994,7 +1302,7 @@ fn append_sections(body: &gtk::Box, card: &DictCard, sender: &ComponentSender<Re
         let empty = gtk::Label::new(Some(&format!("No entry for \u{2018}{}\u{2019}.", card.word)));
         empty.add_css_class("k-section-label");
         empty.set_xalign(0.0);
-        empty.set_halign(gtk::Align::Start);
+        empty.set_halign(gtk::Align::Fill);
         body.append(&empty);
     }
 }
@@ -1188,7 +1496,6 @@ mod tests {
                     example: Some(String::new()),
                 },
             ],
-            pos: vec!["noun".into(), "adjective".into()],
             synonyms: vec!["sorrow".into()],
             antonyms: vec!["joy".into()],
             idioms: vec![("in a mood".into(), "sad".into())],
@@ -1197,34 +1504,42 @@ mod tests {
     }
 
     #[test]
-    fn card_joins_word_level_pos_with_middots() {
-        let card = DictCard::from_entry(&entry("melancholy"), Some("/m/".into()), false, None);
+    fn card_carries_word_pronunciation_and_the_way_back() {
+        let card = DictCard::from_entry(&entry("melancholy"), Some("/m/".into()), false, true);
         assert_eq!(card.word, "melancholy");
-        assert_eq!(card.pos.as_deref(), Some("noun \u{00b7} adjective"));
         assert_eq!(card.pronunciation.as_deref(), Some("/m/"));
+        assert!(card.can_go_back);
     }
 
     #[test]
-    fn card_pos_is_none_when_entry_has_no_pos() {
-        let mut data = entry("x");
-        data.pos.clear();
-        let card = DictCard::from_entry(&data, None, false, None);
-        assert!(card.pos.is_none());
-    }
-
-    #[test]
-    fn card_maps_senses_drops_empty_examples_and_marks_hint() {
-        let card = DictCard::from_entry(&entry("m"), None, false, Some(1));
+    fn card_maps_senses_with_pos_and_drops_empty_examples() {
+        let card = DictCard::from_entry(&entry("m"), None, false, false);
         assert_eq!(card.senses.len(), 2);
+        assert_eq!(card.senses[0].pos.as_deref(), Some("noun"));
         assert_eq!(card.senses[0].example.as_deref(), Some("an air of it"));
-        assert!(!card.senses[0].hinted);
+        assert_eq!(card.senses[1].pos, None);
         assert_eq!(card.senses[1].example, None, "empty example is dropped");
-        assert!(card.senses[1].hinted, "hint index lands on sense 1");
+    }
+
+    #[test]
+    fn pos_groups_orders_wordnets_four_and_lands_unnamed_last() {
+        let senses = vec![
+            DictSense { pos: Some("verb".into()), def: "v".into(), example: None },
+            DictSense { pos: None, def: "bare".into(), example: None },
+            DictSense { pos: Some("noun".into()), def: "n1".into(), example: None },
+            DictSense { pos: Some("noun".into()), def: "n2".into(), example: None },
+        ];
+        let groups = pos_groups(&senses);
+        let shape: Vec<(Option<&str>, usize)> = groups
+            .iter()
+            .map(|(name, group)| (name.as_deref(), group.len()))
+            .collect();
+        assert_eq!(shape, vec![(Some("noun"), 2), (Some("verb"), 1), (None, 1)]);
     }
 
     #[test]
     fn card_carries_synonyms_antonyms_idioms_and_saved() {
-        let card = DictCard::from_entry(&entry("m"), None, true, None);
+        let card = DictCard::from_entry(&entry("m"), None, true, false);
         assert_eq!(card.synonyms, vec!["sorrow".to_string()]);
         assert_eq!(card.antonyms, vec!["joy".to_string()]);
         assert_eq!(card.idioms, vec![("in a mood".into(), "sad".into())]);

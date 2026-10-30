@@ -105,11 +105,114 @@ fn install() {
             "kalam-pdf-even-spreads-symbolic.svg",
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="9" height="16" rx="1.5" /><rect x="13" y="4" width="9" height="16" rx="1.5" /><path d="M5 10a1.5 1.5 0 0 1 1.5-1.5h.5a1.5 1.5 0 0 1 1.5 1.5c0 1.5-3 2-3 3.5h3" /><path d="M16 9.5a1.5 1.5 0 0 1 2.5 1c0 1-1.5 1.5-1.5 1.5s1.5.5 1.5 1.5a1.5 1.5 0 0 1-2.5 1" /></svg>"#,
         ),
+        // The PDF panels' pin (decision 57): the board's upright
+        // outline thumbtack. It is one even-odd filled silhouette,
+        // not a pair of stroked paths: symbolic-icon recolouring is
+        // fill based, and the separate stroked stem vanished at
+        // panel-header size.
+        (
+            "kalam-pin-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M7.4 2.8h9.2l-1.4 5.4L19 11.4h-5.6v9.4h-2.8v-9.4H5l3.8-3.2zM9.4 4.8h5.2l-.7 3.1 1.2 1.7H8.9l1.2-1.7z" /></svg>"#,
+        ),
+        // The PDF Pages grid's density toggle (decision 59): the
+        // board's two and three upright page columns, kept as
+        // simple stroked rectangles so the count remains legible
+        // at the 18px panel-header size.
+        (
+            "kalam-columns-2-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="5" width="6" height="14" rx="1" /><rect x="14" y="5" width="6" height="14" rx="1" /></svg>"#,
+        ),
+        (
+            "kalam-columns-3-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="5" width="4" height="14" rx="1" /><rect x="10" y="5" width="4" height="14" rx="1" /><rect x="17" y="5" width="4" height="14" rx="1" /></svg>"#,
+        ),
+        // The PDF annotation toolbar (decision 66): cursor, pen and
+        // eraser as filled silhouettes, like the pin — symbolic
+        // recolouring is fill based, so each reads at toolbar size
+        // without stroked detail to lose.
+        (
+            "kalam-draw-select-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M5.2 2.8 19.4 12l-7.8 1.4 3 7-2.4 1-3-6.9-4.6 4.2z" /></svg>"#,
+        ),
+        (
+            "kalam-draw-pen-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M2.8 21.2 4 15.8 15.9 3.9a2.25 2.25 0 0 1 3.2 0l1.2 1.2a2.25 2.25 0 0 1 0 3.2L8.4 20.2zM6 17.1l9.2-9.2 1.1 1.1L7.1 18.2z" /></svg>"#,
+        ),
+        (
+            "kalam-draw-eraser-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M3.5 15.2 13.2 5.5a1.8 1.8 0 0 1 2.5 0l4 4a1.8 1.8 0 0 1 0 2.5l-6.2 6.3H7.4l-3.9-3.1zm6.2.8h3l5-5-2-2z" /></svg>"#,
+        ),
+        // Shape, text and sticky-note tools, plus the four shape
+        // outlines: the same filled/even-odd construction, so the
+        // square-and-circle pair and the note's plus survive
+        // symbolic recolouring at 18px.
+        (
+            "kalam-draw-shape-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M3 8h12v12H3zM5.2 10.2h7.6v7.6H5.2zM10 8.5a5.5 5.5 0 1 0 11 0 5.5 5.5 0 1 0-11 0zM12.2 8.5a3.3 3.3 0 1 0 6.6 0 3.3 3.3 0 1 0-6.6 0z" /></svg>"#,
+        ),
+        (
+            "kalam-draw-text-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v3.2h-6.4V20h-3.2V7.2H4z" /></svg>"#,
+        ),
+        (
+            "kalam-draw-sticky-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M5 3h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9l-4.4 4v-4H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM11 7v2H9v2h2v2h2v-2h2V9h-2V7z" /></svg>"#,
+        ),
+        (
+            "kalam-shape-rectangle-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M4 5h16v14H4zM6.2 7.2h11.6v9.6H6.2z" /></svg>"#,
+        ),
+        (
+            "kalam-shape-ellipse-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M4 12a8 8 0 1 0 16 0 8 8 0 1 0-16 0zM6.2 12a5.8 5.8 0 1 0 11.6 0 5.8 5.8 0 1 0-11.6 0z" /></svg>"#,
+        ),
+        (
+            "kalam-shape-line-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4.2 18.2 18.2 4.2l1.6 1.6-14 14z" /></svg>"#,
+        ),
+        (
+            "kalam-shape-arrow-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.2 3.8v6.5h-2.2V6.9L6 19l-1.9-1.9 12-12H12.7V2.9z" transform="translate(1.5 1.5) scale(.88)" /></svg>"#,
+        ),
+        // The reader's bookmark ribbon (decision 16): a V-notched strip
+        // hanging from the top edge. Idle is an outline in the border
+        // colour over the page; set is the same shape filled with the
+        // accent. Two icons, recoloured by CSS `color` like the rest.
+        (
+            "kalam-ribbon-outline-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 2.5h14V21l-7-4.6L5 21z" /></svg>"#,
+        ),
+        (
+            "kalam-ribbon-filled-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M5 2.5h14V21l-7-4.6L5 21z" /></svg>"#,
+        ),
+        // The PDF open states (decision 73): one quiet line glyph
+        // over each dashed card — the lock that asks, the damaged
+        // file that cannot be read, and the file Kalam cannot find.
+        // Like the pin above, each is an even-odd filled silhouette
+        // rather than stroked paths: symbolic recolouring fills the
+        // path geometry, so a stroked lock or file lands as a solid
+        // blob with its keyhole and marks filled in.
+        (
+            "kalam-lock-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M8 10.5V8a4 4 0 0 1 8 0v2.5h-1.6V8a2.4 2.4 0 0 0-4.8 0v2.5H8zM7 10.5h10a2 2 0 0 1 2 2v5.5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-5.5a2 2 0 0 1 2-2zM7.2 12.1h9.6a.6.6 0 0 1 .6.6v5.1a.6.6 0 0 1-.6.6H7.2a.6.6 0 0 1-.6-.6v-5.1a.6.6 0 0 1 .6-.6zM12 14.1a1.15 1.15 0 1 1 0 2.3 1.15 1.15 0 0 1 0-2.3z" /></svg>"#,
+        ),
+        (
+            "kalam-file-warning-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M7 3h7l4 4v14H7zM8.6 4.6h4.6l3.2 3.2v11.6H8.6zM11.2 9.5h1.6V14h-1.6zM12 16.05a.95.95 0 1 1 0 1.9.95.95 0 0 1 0-1.9z" /></svg>"#,
+        ),
+        (
+            "kalam-file-question-symbolic.svg",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M7 3h7l4 4v14H7zM8.6 4.6h4.6l3.2 3.2v11.6H8.6zM10.05 11.6c-.9-.35-1.45-1.15-1.45-2.1 0-1.75 1.5-3.2 3.4-3.2s3.4 1.35 3.4 3.05c0 1.2-.65 2.1-1.65 2.7-.75.45-1.05.8-1.05 1.55v.55h-1.6V13.3c0-1.2.6-2.05 1.55-2.6.6-.35.95-.75.95-1.4 0-.9-.75-1.6-1.65-1.6s-1.65.7-1.65 1.6c0 .45.2.85.55 1.1zM12 16.05a.95.95 0 1 1 0 1.9.95.95 0 0 1 0-1.9z" /></svg>"#,
+        ),
     ];
 
     for (name, content) in ICONS {
         let dest = actions_dir.join(name);
-        if !dest.exists() {
+        // Bundled glyphs are part of the app build. Refresh stale
+        // copies from earlier builds, or a corrected icon would stay
+        // shadowed by the obsolete file in the user's data directory.
+        if std::fs::read_to_string(&dest).ok().as_deref() != Some(*content) {
             let _ = std::fs::write(&dest, content);
         }
     }

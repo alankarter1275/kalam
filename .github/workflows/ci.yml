@@ -46,7 +46,7 @@ jobs:
             build-essential pkg-config \
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
-            libgraphene-1.0-dev \
+            libgraphene-1.0-dev libgtksourceview-5-dev \
             libclang-dev libfontconfig1-dev
 
       - name: Install Rust toolchain
@@ -133,7 +133,7 @@ jobs:
       - name: rustfmt (report only)
         id: fmt
         run: |
-          cargo fmt --all
+          cargo fmt --all 2>&1 | tee /tmp/fmt.txt; echo "fmt_exit=${PIPESTATUS[0]}" >> /tmp/fmt.txt
           mkdir -p ci-logs
           if git diff --quiet; then
             echo "rustfmt: clean"
@@ -145,13 +145,16 @@ jobs:
             mkdir -p ci-logs
             printf 'clean\n--- run %s ---\n' "$GITHUB_RUN_ID" \
               > ci-logs/rustfmt-latest.diff
-            echo "dirty=1" >> "$GITHUB_OUTPUT"
           else
             echo "rustfmt: the tree is not formatted; diff follows"
             git diff | tee ci-logs/rustfmt-latest.diff
             echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/rustfmt-latest.diff
             echo "dirty=1" >> "$GITHUB_OUTPUT"
           fi
+          # Publish captured rustfmt output for offline diagnosis (sandbox
+          # cannot read Actions logs).
+          cp /tmp/fmt.txt ci-logs/fmt-error.txt || true
+          echo "fmt_exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           # Restore, so clippy and the build see the committed source rather
           # than a locally reformatted copy.
           git checkout -- .
@@ -159,11 +162,11 @@ jobs:
       # Runs on clean runs too, so the published file always describes the
       # latest run rather than the last untidy one.
       - name: publish the rustfmt diff
-        if: steps.fmt.outputs.dirty == '1'
+        if: steps.fmt.outputs.dirty == '1' || steps.fmt.outputs.fmt_exit != '0'
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/rustfmt-latest.diff
+          git add -f ci-logs/rustfmt-latest.diff ci-logs/fmt-error.txt
           git commit -m "ci: publish rustfmt diff [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
@@ -345,8 +348,13 @@ jobs:
   # "it looks right". Read docs/ci/README-screenshots.md.
   # ---------------------------------------------------------------------------
   screenshots:
-    name: smoke test (headless sway)
+    name: smoke test (headless sway) — ${{ matrix.group }}
     needs: build
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        group: [epub, comics, pdf, pages, settings-a, settings-b]
     # 26.04, not -latest: kalam-reader asks gtk4 for the v4_16 feature, Cargo
     # unifies that with Kalam's v4_12, and the gdk4-sys build script then
     # demands system GTK >= 4.16 through pkg-config. 24.04 (still -latest)
@@ -355,10 +363,6 @@ jobs:
     # 26.04. The owner's machine is Arch, gtk4 4.20+.
     runs-on: ubuntu-26.04
     continue-on-error: true
-    # Needed by "publish the screenshot report" below, which commits the
-    # text summary back to the branch for the agent to read.
-    permissions:
-      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -371,7 +375,7 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
-            libgraphene-1.0-dev \
+            libgraphene-1.0-dev libgtksourceview-5-dev \
             sway grim wtype \
             xwayland \
             fonts-dejavu-core \
@@ -403,9 +407,536 @@ jobs:
       # revisits it; the tap behaviour itself is verified by hand on the
       # owner's machine.
       - name: open a book and report
+        if: matrix.group == 'epub'
         run: |
           chmod +x docs/ci/screenshot.sh docs/ci/check-shot.py
           BOOKS=139 OUT=ci-shots-reader SETTLE=25 ROUTE=read-1 \
+            docs/ci/screenshot.sh
+
+      # EPUB T2 (decisions 14-20, 145): the pure page with its summoned
+      # chrome stood up on request — Back+Bubble unit, bookmark ribbon,
+      # location percentage — in both modes. The page ground is the app
+      # palette's own bg now, so the two frames also prove the page
+      # follows the app theme rather than a reading theme.
+      - name: open a book with its chrome up (light) and report
+        if: matrix.group == 'epub'
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-chrome-light SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=chrome THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: open a book with its chrome up (dark) and report
+        if: matrix.group == 'epub'
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-chrome-dark SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=chrome THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      # EPUB T3 (decisions 20-24, 145, 147): the left panel as Contents
+      # + Notes and the right as Settings alone. The seeded book has
+      # nothing annotated, so the Notes frame proves the chips and the
+      # empty state rather than items; the Settings frame proves the
+      # This-book card, the preview and the inset sections.
+      - name: open the contents panel (dark) and report
+        if: matrix.group == 'epub'
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-contents SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=contents THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the notes panel (dark) and report
+        if: matrix.group == 'epub'
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-notes SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=notes THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the reader settings panel (dark) and report
+        if: matrix.group == 'epub'
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-settings SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=settings THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      # EPUB T4 (decisions 26, 29): the selection chip and the
+      # annotation popover. The chip frame raises the chip over a
+      # synthetic selection report; the annotation frame makes a real
+      # highlight on the opening chapter and taps it.
+      - name: raise the selection chip (dark) and report
+        if: matrix.group == 'epub'
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-chip SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=chip THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the annotation popover (dark) and report
+        if: matrix.group == 'epub'
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-annotation SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=annotation THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      # EPUB T4 (decision 31): the dictionary card. The seeder plants a
+      # three-word fixture (bank/river/shore) because the bundled packs
+      # install after the snapshot; the missing frame looks up "riv"
+      # so the did-you-mean chips do the talking.
+      - name: open the dictionary card (dark) and report
+        if: matrix.group == 'epub'
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-dict SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=dict READER_FIXTURE=1 THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the dictionary card missing (dark) and report
+        if: matrix.group == 'epub'
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-dict-missing SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=dict-missing READER_FIXTURE=1 THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      # EPUB search (decision 34): the floating pill over a query
+      # with chapter matches, and the accent no-match state.
+      - name: open reader search (dark) and report
+        if: matrix.group == 'epub'
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-search SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=search THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open reader search missing (dark) and report
+        if: matrix.group == 'epub'
+        run: |
+          BOOKS=139 OUT=ci-shots-reader-search-missing SETTLE=25 ROUTE=read-1 \
+            READER_ACTION=search-missing THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      # Comics reader (decisions 35-43, 50): the pure page with its
+      # summoned chrome in both modes, then each floating panel and
+      # the page-jump field's out-of-range state. The comic fixture's
+      # chapter 2 is id BOOKS+2 and stands at page 4 of 12 with a
+      # bookmark, so the frames also prove the filled ribbon and the
+      # series-wide location text (`16 / 24`).
+      - name: open a comic with its chrome up (light) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-chrome-light SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=chrome \
+            THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: open a comic with its chrome up (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-chrome-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=chrome \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic chapters panel (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-chapters-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=chapters \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic pages panel (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-pages-dark SETTLE=25 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=pages \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic reading panel (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-reading-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=reading \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic reading panel in long strip (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-reading-strip-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=reading-strip \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic image panel (light) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-image-light SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=image \
+            THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: open the comic image panel adjusted (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-image-adjusted-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=image-adjusted \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic shortcuts panel (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-shortcuts-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=shortcuts \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic page-jump out of range (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-jump-range-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=jump-range \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      # Saved whole-panel presets and comic-series metadata
+      # (decision 46): the preset section/form, the enriched series
+      # drawer, and its Edit details / Find metadata dialogs. The
+      # review capture is staged from a synthetic local candidate,
+      # so no provider request or credential is involved.
+      - name: open the comic saved-presets panel (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comics-presets-dark SETTLE=20 \
+            ROUTE=comic-read-22 COMIC_FIXTURE=1 COMIC_ACTION=presets \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic series drawer (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comic-series-dark SETTLE=20 \
+            ROUTE=comic-series-book-22 COMIC_FIXTURE=1 \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic series edit dialog (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comic-series-edit-dark SETTLE=20 \
+            ROUTE=comic-series-book-22 COMIC_FIXTURE=1 \
+            DIALOG=edit-comic-series THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic series find dialog (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comic-series-find-dark SETTLE=20 \
+            ROUTE=comic-series-book-22 COMIC_FIXTURE=1 \
+            DIALOG=find-comic-series THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the comic series metadata review (dark) and report
+        if: matrix.group == 'comics'
+        run: |
+          BOOKS=20 OUT=ci-shots-comic-series-find-review-dark SETTLE=20 \
+            ROUTE=comic-series-book-22 COMIC_FIXTURE=1 \
+            DIALOG=find-comic-series-review THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      # PDF reader (decisions 52-58): the pure page with its summoned
+      # Back+Bubble in both modes, then Contents floating and pinned,
+      # Shortcuts, and the page-jump field's out-of-range state. The
+      # PDF fixture is id BOOKS+1, bookmarked on page 4, and opens
+      # as the 4-5 spread — so the frames also prove the filled
+      # ribbon and the `4–5 / 12` location text.
+      - name: open a PDF with its chrome up (light) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-chrome-light SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=chrome \
+            THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: open a PDF with its chrome up (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-chrome-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=chrome \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF contents panel (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-contents-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=contents \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF contents panel pinned (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-contents-pinned-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=contents-pinned \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Pages panel (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-pages-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=pages \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Pages panel in two columns pinned (light) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-pages-pinned-light SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=pages-2 \
+            THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      # Pages Edit (decisions 68-71): the staged edit with its
+      # ticks and turned page, the same pages mid-drag, and the
+      # two questions editing can ask. Each action stages itself
+      # nine seconds after the document lands, inside SETTLE.
+      - name: open the PDF Pages edit mode (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-pages-edit-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=pages-edit \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: drag pages in PDF Pages edit mode (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-pages-edit-drag-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=pages-edit-drag \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Pages delete question (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-pages-edit-delete-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=pages-edit-delete \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Pages unsaved question (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-pages-edit-unsaved-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=pages-edit-unsaved \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF search results (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-search-results-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=search-results \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF search results (light) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-search-results-light SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=search-results \
+            THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: open PDF search with no matches (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-search-no-matches-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=search-no-matches \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Notes panel on Highlights (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-notes-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=notes \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Notes panel on Highlights (light) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-notes-light SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=notes \
+            THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Notes panel on Words (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-notes-words-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=notes-words \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Notes panel on Bookmarks (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-notes-bookmarks-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=notes-bookmarks \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Notes panel empty (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-notes-empty-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_NOTES_EMPTY=1 PDF_ACTION=notes-empty \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF shortcuts panel (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-shortcuts-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=shortcuts \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Reading panel (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-reading-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=reading \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open a rotated PDF spread (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-rotated-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=rotated \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF Image panel (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-image-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=image \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open an inverted PDF spread (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-image-invert-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=image-invert \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF page-jump out of range (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-jump-range-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=jump-range \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      # Drawing tools (decisions 66-67, 69, 72): the seeded pen and
+      # highlighter strokes on the opening spread, first with the
+      # highlighter's options up, then with the ink stroke selected.
+      - name: open the PDF drawing toolbar (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-drawing-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=drawing \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: select a PDF drawing (light) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-drawing-selected-light SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=drawing-selected \
+            THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: open the PDF shape tool (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-drawing-shape-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=drawing-shape \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: edit a PDF text box (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-drawing-text-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=drawing-text \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open a PDF sticky note (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-drawing-sticky-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_ACTION=drawing-sticky \
+            THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      # Whole-book open states (decision 73): the same fixture
+      # encrypted with the seeder's known password, damaged, or
+      # absent. The wrong and unlocked frames submit through the
+      # real password path, so the unlocked spread also proves
+      # the render workers received the session password.
+      - name: open a password-protected PDF (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-password-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_FIXTURE_STATE=password \
+            PDF_ACTION=password THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open a password-protected PDF (light) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-password-light SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_FIXTURE_STATE=password \
+            PDF_ACTION=password THEME=terracotta-light \
+            docs/ci/screenshot.sh
+
+      - name: submit a wrong PDF password (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-password-wrong-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_FIXTURE_STATE=password \
+            PDF_ACTION=password-wrong THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: unlock a password-protected PDF (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-password-unlocked-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_FIXTURE_STATE=password \
+            PDF_ACTION=password-unlock THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open a damaged PDF (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-corrupt-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_FIXTURE_STATE=corrupt \
+            PDF_ACTION=open-state THEME=terracotta-dark \
+            docs/ci/screenshot.sh
+
+      - name: open a missing PDF (dark) and report
+        if: matrix.group == 'pdf'
+        run: |
+          BOOKS=20 OUT=ci-shots-pdf-missing-dark SETTLE=20 \
+            ROUTE=pdf-read-21 PDF_FIXTURE=1 PDF_FIXTURE_STATE=missing \
+            PDF_ACTION=open-state THEME=terracotta-dark \
             docs/ci/screenshot.sh
 
       # The task manager's whole job is showing state that only exists while
@@ -414,9 +945,582 @@ jobs:
       # unit test can reach: the route resolves, the component builds, and the
       # two empty states render instead of panicking.
       - name: open the task manager and report
+        if: matrix.group == 'pages'
         run: |
           BOOKS=139 OUT=ci-shots-tasks SETTLE=20 ROUTE=tasks \
             docs/ci/screenshot.sh
+
+      # Redesign groundwork (audit §7.4): the hidden component gallery is
+      # the GTK equivalent of the designs' Components artboard. It needs no
+      # seeded library to speak of, so BOOKS stays small. The tall output
+      # is deliberate -- see OUTPUT_H in screenshot.sh -- and the two runs
+      # photograph the identical gallery under Terracotta Light and Dark,
+      # the "both modes" half of the artboard. Other palettes differ only
+      # in token values (owner ruling), which the theme tests already pin.
+      - name: open the component gallery (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-components-light SETTLE=20 ROUTE=components \
+            THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=3400 \
+            docs/ci/screenshot.sh
+
+      - name: open the component gallery (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-components-dark SETTLE=20 ROUTE=components \
+            THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=3400 \
+            docs/ci/screenshot.sh
+
+      # The redesigned book details page, photographed the same way: a
+      # real page at a plausible window size, both Terracotta modes.
+      # Book 1 is the first seeded EPUB (AUTOINCREMENT from 1).
+      - name: open the book page (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-book-light SETTLE=20 ROUTE=book-1 \
+            THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the book page (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-book-dark SETTLE=20 ROUTE=book-1 \
+            THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      # The book page's two dialogs, opened over the same page via
+      # KALAM_DIALOG (no route reaches a dialog). Book 4 is the first
+      # seeded book carrying three tags (the seeder assigns `i % 4`), so
+      # the Tag dialog photographs real chips and ticked rows; the
+      # Annotations dialog photographs its empty states, which are the
+      # states the seeder can honestly produce.
+      - name: open the tag dialog (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-book-tags-light SETTLE=20 ROUTE=book-4 \
+            DIALOG=tags THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the tag dialog (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-book-tags-dark SETTLE=20 ROUTE=book-4 \
+            DIALOG=tags THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the annotations dialog (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-book-annotations-light SETTLE=20 ROUTE=book-1 \
+            DIALOG=annotations THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the annotations dialog (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-book-annotations-dark SETTLE=20 ROUTE=book-1 \
+            DIALOG=annotations THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      # The series page (strip in both Terracotta modes, list in light)
+      # over the seeder's coherent 3-of-4 fixture. The route anchors on
+      # fixture Book 1 — id 21 after the 20 generic books — and the
+      # seeded listing cache keeps the page off the network.
+      - name: open the series page strip (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-series-light SETTLE=20 ROUTE=series-book-21 \
+            SERIES_FIXTURE=1 THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the series page strip (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-series-dark SETTLE=20 ROUTE=series-book-21 \
+            SERIES_FIXTURE=1 THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the series page list (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-series-list-light SETTLE=20 ROUTE=series-book-21 \
+            SERIES_FIXTURE=1 SERIES_VIEW=list THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      # The author page over the same author as the series fixture plus
+      # her cached bibliography and marks: both Terracotta modes, the
+      # open-series panel, Create shelf and the author-scope Annotations
+      # dialog. anchor book 21 is fixture Book 1, by Ada Meridian.
+      - name: open the author page (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-author-light SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the author page (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-author-dark SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      # Deep editor (E1): the picker and the workspace on a seeded book.
+      - name: open the editor picker (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-picker-light SETTLE=20 ROUTE=editor \
+            THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the editor picker (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-picker-dark SETTLE=20 ROUTE=editor \
+            THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the editor workspace (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-light SETTLE=20 ROUTE=edit-book-1 \
+            THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the editor workspace (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-dark SETTLE=20 ROUTE=edit-book-1 \
+            THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the editor Problems tab (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-problems-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-problems THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the editor Live CSS tab (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-livecss-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-livecss THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the editor Outline tab (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-outline-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-outline THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the editor Find panel (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-find-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-find THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the editor command palette (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-palette-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-palette THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Edit contents (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-contents-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-contents THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the Split dialog (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-split-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-split THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the Reorder dialog (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-reorder-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-reorder THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Spell check (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-spell-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-spell THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open History (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-history-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-history THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Compare (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-compare-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-compare THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Export for editing (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-editing-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-editing THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open an image tab (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-image-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-image THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open a font tab (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-font-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-font THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Replace cover (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-cover-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-cover THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Reports (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-reports-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-reports THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Tag mapper (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-tagmapper-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-tagmapper THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Filter style information (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-filterstyle-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-filterstyle THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Upgrade book internals (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-upgrade-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-upgrade THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Subset fonts (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-subset-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-subset THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Embed fonts (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-embed-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-embed THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Compress images (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-compress-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-compress THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Check external links (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-links-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-links THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open Insert character (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-char-dark SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-char THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the Personal dictionary (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-editor-dict-light SETTLE=20 ROUTE=edit-book-1 \
+            DIALOG=editor-dict THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the author open-series panel (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-author-panel-light SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=panel THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the author create-shelf dialog (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-author-shelf-light SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=shelf THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the author annotations dialog (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-author-annotations-dark SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=annotations THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the authors index (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-authors-light SETTLE=20 ROUTE=authors \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the authors index (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-authors-dark SETTLE=20 ROUTE=authors \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the edit-author dialog (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-author-edit-dark SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=edit-author THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the merge-author dialog (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-author-merge-dark SETTLE=20 ROUTE=author-book-21 \
+            SERIES_FIXTURE=1 AUTHOR_FIXTURE=1 DIALOG=merge-author THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      # Settings (decisions 144-158): every pane, plus the drawn states
+      # a route alone cannot reach -- open dropdowns, the three
+      # confirmations, populated/empty watch folders and dictionaries,
+      # dictionary dragging, shortcut recording refused by a conflict,
+      # and the rail bell's panel with and without history, closed
+      # with its unseen dot. Modes are
+      # alternated where the other mode is already photographed on the
+      # same pane or state; Appearance gets both because its custom
+      # palette cards are the point of the pane.
+      - name: open settings appearance (light) and report
+        if: matrix.group == 'settings-a'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-appearance-light SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=appearance THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings appearance (dark) and report
+        if: matrix.group == 'settings-a'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-appearance-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=appearance THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings reading (light) and report
+        if: matrix.group == 'settings-a'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-reading-light SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=reading THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings reading typeface dropdown (dark) and report
+        if: matrix.group == 'settings-a'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-reading-dropdown-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=reading DIALOG=typeface-dropdown THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings libraries (light) and report
+        if: matrix.group == 'settings-a'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-libraries-light SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=libraries THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings open-library dialog (dark) and report
+        if: matrix.group == 'settings-a'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-libraries-open-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=libraries DIALOG=open-library THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings data and export (dark) and report
+        if: matrix.group == 'settings-a'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-data-export-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=data-export THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings book files (light) and report
+        if: matrix.group == 'settings-a'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-book-files-light SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=book-files THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings delete-backups dialog (dark) and report
+        if: matrix.group == 'settings-a'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-book-files-delete-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=book-files DIALOG=delete-backups THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings watch folders (light) and report
+        if: matrix.group == 'settings-a'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-watch-light SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=watch-folders THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings watch shelf dropdown (dark) and report
+        if: matrix.group == 'settings-a'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-watch-dropdown-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=watch-folders DIALOG=watch-dropdown THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings watch folders empty (light) and report
+        if: matrix.group == 'settings-a'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-watch-empty-light SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=watch-folders THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings dictionaries dragging (light) and report
+        if: matrix.group == 'settings-b'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-dictionaries-drag-light SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=dictionaries DIALOG=dictionary-drag THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings remove-dictionary dialog (dark) and report
+        if: matrix.group == 'settings-b'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-dictionaries-remove-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=dictionaries DIALOG=remove-dictionary THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings dictionaries empty (light) and report
+        if: matrix.group == 'settings-b'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-dictionaries-empty-light SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_EMPTY_DICTS=1 SETTINGS_PANE=dictionaries THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings metadata rejected key (light) and report
+        if: matrix.group == 'settings-b'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-metadata-rejected-light SETTLE=10 ROUTE=settings \
+            SETTINGS_FIXTURE=1 SETTINGS_PANE=metadata THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings integrations (dark) and report
+        if: matrix.group == 'settings-b'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-integrations-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=integrations THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings shortcuts (light) and report
+        if: matrix.group == 'settings-b'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-shortcuts-light SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=shortcuts THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings shortcuts recording conflict (dark) and report
+        if: matrix.group == 'settings-b'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-shortcuts-recording-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=shortcuts DIALOG=shortcut-recording THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open settings about (light) and report
+        if: matrix.group == 'settings-b'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-about-light SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=about THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the notification panel with events (dark) and report
+        if: matrix.group == 'settings-b'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-notifications-events-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=appearance DIALOG=notifications THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: open the notification panel empty (light) and report
+        if: matrix.group == 'settings-b'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-notifications-empty-light SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=appearance DIALOG=notifications-empty THEME=terracotta-light OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: show the notification bell's unseen dot (dark) and report
+        if: matrix.group == 'settings-b'
+        run: |
+          BOOKS=20 OUT=ci-shots-settings-notifications-dot-dark SETTLE=10 ROUTE=settings \
+            SETTINGS_PANE=appearance DIALOG=notifications-dot THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=1200 \
+            docs/ci/screenshot.sh
+
+      - name: Upload screenshot outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ matrix.group }}
+          path: |
+            ci-shots-*/report.txt
+            ci-shots-*/03-*-settled.png
+          if-no-files-found: warn
+          retention-days: 1
+
+  publish-screenshots:
+    name: publish screenshot report
+    needs: screenshots
+    if: always() && needs.screenshots.result != 'cancelled'
+    runs-on: ubuntu-26.04
+    continue-on-error: true
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download screenshot outputs
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: screenshots-*
+          path: .
+          merge-multiple: true
 
       # The Arena sandbox cannot download Actions artifacts -- the blob host is
       # unreachable from it, exactly like the Actions log host (which is why
@@ -431,12 +1535,553 @@ jobs:
           cp ci-shots-reader/report.txt ci-logs/reader-latest.txt 2>/dev/null \
             || echo "(no reader report produced)" > ci-logs/reader-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-latest.txt
+          cp ci-shots-reader-chrome-light/report.txt ci-logs/reader-chrome-light-latest.txt 2>/dev/null \
+            || echo "(no reader-chrome-light report produced)" > ci-logs/reader-chrome-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-chrome-light-latest.txt
+          cp ci-shots-reader-chrome-dark/report.txt ci-logs/reader-chrome-dark-latest.txt 2>/dev/null \
+            || echo "(no reader-chrome-dark report produced)" > ci-logs/reader-chrome-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-chrome-dark-latest.txt
+          cp ci-shots-reader-contents/report.txt ci-logs/reader-contents-latest.txt 2>/dev/null \
+            || echo "(no reader-contents report produced)" > ci-logs/reader-contents-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-contents-latest.txt
+          cp ci-shots-reader-notes/report.txt ci-logs/reader-notes-latest.txt 2>/dev/null \
+            || echo "(no reader-notes report produced)" > ci-logs/reader-notes-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-notes-latest.txt
+          cp ci-shots-reader-settings/report.txt ci-logs/reader-settings-latest.txt 2>/dev/null \
+            || echo "(no reader-settings report produced)" > ci-logs/reader-settings-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-settings-latest.txt
+          cp ci-shots-reader-chip/report.txt ci-logs/reader-chip-latest.txt 2>/dev/null \
+            || echo "(no reader-chip report produced)" > ci-logs/reader-chip-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-chip-latest.txt
+          cp ci-shots-reader-annotation/report.txt ci-logs/reader-annotation-latest.txt 2>/dev/null \
+            || echo "(no reader-annotation report produced)" > ci-logs/reader-annotation-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-annotation-latest.txt
+          cp ci-shots-reader-dict/report.txt ci-logs/reader-dict-latest.txt 2>/dev/null \
+            || echo "(no reader-dict report produced)" > ci-logs/reader-dict-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-dict-latest.txt
+          cp ci-shots-reader-dict-missing/report.txt ci-logs/reader-dict-missing-latest.txt 2>/dev/null \
+            || echo "(no reader-dict-missing report produced)" > ci-logs/reader-dict-missing-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-dict-missing-latest.txt
+          cp ci-shots-reader-search/report.txt ci-logs/reader-search-latest.txt 2>/dev/null \
+            || echo "(no reader-search report produced)" > ci-logs/reader-search-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-search-latest.txt
+          cp ci-shots-reader-search-missing/report.txt ci-logs/reader-search-missing-latest.txt 2>/dev/null \
+            || echo "(no reader-search-missing report produced)" > ci-logs/reader-search-missing-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-search-missing-latest.txt
           cp ci-shots-tasks/report.txt ci-logs/tasks-latest.txt 2>/dev/null \
             || echo "(no tasks report produced)" > ci-logs/tasks-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/tasks-latest.txt
+          cp ci-shots-components-light/report.txt ci-logs/components-light-latest.txt 2>/dev/null \
+            || echo "(no components-light report produced)" > ci-logs/components-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/components-light-latest.txt
+          cp ci-shots-components-dark/report.txt ci-logs/components-dark-latest.txt 2>/dev/null \
+            || echo "(no components-dark report produced)" > ci-logs/components-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/components-dark-latest.txt
+          cp ci-shots-book-light/report.txt ci-logs/book-light-latest.txt 2>/dev/null \
+            || echo "(no book-light report produced)" > ci-logs/book-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-light-latest.txt
+          cp ci-shots-book-dark/report.txt ci-logs/book-dark-latest.txt 2>/dev/null \
+            || echo "(no book-dark report produced)" > ci-logs/book-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-dark-latest.txt
+          cp ci-shots-book-tags-light/report.txt ci-logs/book-tags-light-latest.txt 2>/dev/null \
+            || echo "(no book-tags-light report produced)" > ci-logs/book-tags-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-tags-light-latest.txt
+          cp ci-shots-book-tags-dark/report.txt ci-logs/book-tags-dark-latest.txt 2>/dev/null \
+            || echo "(no book-tags-dark report produced)" > ci-logs/book-tags-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-tags-dark-latest.txt
+          cp ci-shots-book-annotations-light/report.txt ci-logs/book-annotations-light-latest.txt 2>/dev/null \
+            || echo "(no book-annotations-light report produced)" > ci-logs/book-annotations-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-annotations-light-latest.txt
+          cp ci-shots-book-annotations-dark/report.txt ci-logs/book-annotations-dark-latest.txt 2>/dev/null \
+            || echo "(no book-annotations-dark report produced)" > ci-logs/book-annotations-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/book-annotations-dark-latest.txt
+          cp ci-shots-series-light/report.txt ci-logs/series-light-latest.txt 2>/dev/null \
+            || echo "(no series-light report produced)" > ci-logs/series-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/series-light-latest.txt
+          cp ci-shots-series-dark/report.txt ci-logs/series-dark-latest.txt 2>/dev/null \
+            || echo "(no series-dark report produced)" > ci-logs/series-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/series-dark-latest.txt
+          cp ci-shots-series-list-light/report.txt ci-logs/series-list-light-latest.txt 2>/dev/null \
+            || echo "(no series-list-light report produced)" > ci-logs/series-list-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/series-list-light-latest.txt
+          cp ci-shots-author-light/report.txt ci-logs/author-light-latest.txt 2>/dev/null \
+            || echo "(no author-light report produced)" > ci-logs/author-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-light-latest.txt
+          cp ci-shots-author-dark/report.txt ci-logs/author-dark-latest.txt 2>/dev/null \
+            || echo "(no author-dark report produced)" > ci-logs/author-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-dark-latest.txt
+          cp ci-shots-editor-picker-light/report.txt ci-logs/editor-picker-light-latest.txt 2>/dev/null \
+            || echo "(no editor-picker-light report produced)" > ci-logs/editor-picker-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-picker-light-latest.txt
+          cp ci-shots-editor-picker-dark/report.txt ci-logs/editor-picker-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-picker-dark report produced)" > ci-logs/editor-picker-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-picker-dark-latest.txt
+          cp ci-shots-editor-light/report.txt ci-logs/editor-light-latest.txt 2>/dev/null \
+            || echo "(no editor-light report produced)" > ci-logs/editor-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-light-latest.txt
+          cp ci-shots-editor-dark/report.txt ci-logs/editor-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-dark report produced)" > ci-logs/editor-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-dark-latest.txt
+          cp ci-shots-editor-problems-light/report.txt ci-logs/editor-problems-light-latest.txt 2>/dev/null \
+            || echo "(no editor-problems-light report produced)" > ci-logs/editor-problems-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-problems-light-latest.txt
+          cp ci-shots-editor-livecss-light/report.txt ci-logs/editor-livecss-light-latest.txt 2>/dev/null \
+            || echo "(no editor-livecss-light report produced)" > ci-logs/editor-livecss-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-livecss-light-latest.txt
+          cp ci-shots-editor-outline-dark/report.txt ci-logs/editor-outline-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-outline-dark report produced)" > ci-logs/editor-outline-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-outline-dark-latest.txt
+          cp ci-shots-editor-find-light/report.txt ci-logs/editor-find-light-latest.txt 2>/dev/null \
+            || echo "(no editor-find-light report produced)" > ci-logs/editor-find-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-find-light-latest.txt
+          cp ci-shots-editor-palette-dark/report.txt ci-logs/editor-palette-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-palette-dark report produced)" > ci-logs/editor-palette-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-palette-dark-latest.txt
+          cp ci-shots-editor-contents-light/report.txt ci-logs/editor-contents-light-latest.txt 2>/dev/null \
+            || echo "(no editor-contents-light report produced)" > ci-logs/editor-contents-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-contents-light-latest.txt
+          cp ci-shots-editor-split-dark/report.txt ci-logs/editor-split-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-split-dark report produced)" > ci-logs/editor-split-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-split-dark-latest.txt
+          cp ci-shots-editor-reorder-light/report.txt ci-logs/editor-reorder-light-latest.txt 2>/dev/null \
+            || echo "(no editor-reorder-light report produced)" > ci-logs/editor-reorder-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-reorder-light-latest.txt
+          cp ci-shots-editor-spell-light/report.txt ci-logs/editor-spell-light-latest.txt 2>/dev/null \
+            || echo "(no editor-spell-light report produced)" > ci-logs/editor-spell-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-spell-light-latest.txt
+          cp ci-shots-editor-history-light/report.txt ci-logs/editor-history-light-latest.txt 2>/dev/null \
+            || echo "(no editor-history-light report produced)" > ci-logs/editor-history-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-history-light-latest.txt
+          cp ci-shots-editor-compare-light/report.txt ci-logs/editor-compare-light-latest.txt 2>/dev/null \
+            || echo "(no editor-compare-light report produced)" > ci-logs/editor-compare-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-compare-light-latest.txt
+          cp ci-shots-editor-editing-dark/report.txt ci-logs/editor-editing-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-editing-dark report produced)" > ci-logs/editor-editing-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-editing-dark-latest.txt
+          cp ci-shots-editor-image-light/report.txt ci-logs/editor-image-light-latest.txt 2>/dev/null \
+            || echo "(no editor-image-light report produced)" > ci-logs/editor-image-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-image-light-latest.txt
+          cp ci-shots-editor-font-dark/report.txt ci-logs/editor-font-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-font-dark report produced)" > ci-logs/editor-font-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-font-dark-latest.txt
+          cp ci-shots-editor-cover-dark/report.txt ci-logs/editor-cover-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-cover-dark report produced)" > ci-logs/editor-cover-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-cover-dark-latest.txt
+          cp ci-shots-editor-reports-light/report.txt ci-logs/editor-reports-light-latest.txt 2>/dev/null \
+            || echo "(no editor-reports-light report produced)" > ci-logs/editor-reports-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-reports-light-latest.txt
+          cp ci-shots-editor-tagmapper-light/report.txt ci-logs/editor-tagmapper-light-latest.txt 2>/dev/null \
+            || echo "(no editor-tagmapper-light report produced)" > ci-logs/editor-tagmapper-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-tagmapper-light-latest.txt
+          cp ci-shots-editor-filterstyle-dark/report.txt ci-logs/editor-filterstyle-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-filterstyle-dark report produced)" > ci-logs/editor-filterstyle-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-filterstyle-dark-latest.txt
+          cp ci-shots-editor-upgrade-dark/report.txt ci-logs/editor-upgrade-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-upgrade-dark report produced)" > ci-logs/editor-upgrade-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-upgrade-dark-latest.txt
+          cp ci-shots-editor-subset-light/report.txt ci-logs/editor-subset-light-latest.txt 2>/dev/null \
+            || echo "(no editor-subset-light report produced)" > ci-logs/editor-subset-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-subset-light-latest.txt
+          cp ci-shots-editor-embed-dark/report.txt ci-logs/editor-embed-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-embed-dark report produced)" > ci-logs/editor-embed-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-embed-dark-latest.txt
+          cp ci-shots-editor-compress-light/report.txt ci-logs/editor-compress-light-latest.txt 2>/dev/null \
+            || echo "(no editor-compress-light report produced)" > ci-logs/editor-compress-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-compress-light-latest.txt
+          cp ci-shots-editor-links-dark/report.txt ci-logs/editor-links-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-links-dark report produced)" > ci-logs/editor-links-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-links-dark-latest.txt
+          cp ci-shots-editor-char-dark/report.txt ci-logs/editor-char-dark-latest.txt 2>/dev/null \
+            || echo "(no editor-char-dark report produced)" > ci-logs/editor-char-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-char-dark-latest.txt
+          cp ci-shots-editor-dict-light/report.txt ci-logs/editor-dict-light-latest.txt 2>/dev/null \
+            || echo "(no editor-dict-light report produced)" > ci-logs/editor-dict-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/editor-dict-light-latest.txt
+          cp ci-shots-author-panel-light/report.txt ci-logs/author-panel-light-latest.txt 2>/dev/null \
+            || echo "(no author-panel-light report produced)" > ci-logs/author-panel-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-panel-light-latest.txt
+          cp ci-shots-author-shelf-light/report.txt ci-logs/author-shelf-light-latest.txt 2>/dev/null \
+            || echo "(no author-shelf-light report produced)" > ci-logs/author-shelf-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-shelf-light-latest.txt
+          cp ci-shots-author-annotations-dark/report.txt ci-logs/author-annotations-dark-latest.txt 2>/dev/null \
+            || echo "(no author-annotations-dark report produced)" > ci-logs/author-annotations-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-annotations-dark-latest.txt
+          cp ci-shots-authors-light/report.txt ci-logs/authors-light-latest.txt 2>/dev/null \
+            || echo "(no authors-light report produced)" > ci-logs/authors-light-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/authors-light-latest.txt
+          cp ci-shots-authors-dark/report.txt ci-logs/authors-dark-latest.txt 2>/dev/null \
+            || echo "(no authors-dark report produced)" > ci-logs/authors-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/authors-dark-latest.txt
+          cp ci-shots-author-edit-dark/report.txt ci-logs/author-edit-dark-latest.txt 2>/dev/null \
+            || echo "(no author-edit-dark report produced)" > ci-logs/author-edit-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-edit-dark-latest.txt
+          cp ci-shots-author-merge-dark/report.txt ci-logs/author-merge-dark-latest.txt 2>/dev/null \
+            || echo "(no author-merge-dark report produced)" > ci-logs/author-merge-dark-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/author-merge-dark-latest.txt
+          # Settings has enough panes and states that spelling out 23
+          # report/PNG pairs would bury the publish step. The slug is
+          # the OUT suffix and the published PNG name, so this loop is
+          # the whole mapping.
+          for shot in settings-appearance-light settings-appearance-dark \
+                      settings-reading-light settings-reading-dropdown-dark \
+                      settings-libraries-light settings-libraries-open-dark \
+                      settings-data-export-dark settings-book-files-light \
+                      settings-book-files-delete-dark settings-watch-light \
+                      settings-watch-dropdown-dark settings-watch-empty-light \
+                      settings-dictionaries-drag-light \
+                      settings-dictionaries-remove-dark \
+                      settings-dictionaries-empty-light \
+                      settings-metadata-rejected-light \
+                      settings-integrations-dark settings-shortcuts-light \
+                      settings-shortcuts-recording-dark settings-about-light \
+                      settings-notifications-events-dark \
+                      settings-notifications-empty-light \
+                      settings-notifications-dot-dark; do
+            cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
+              || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
+            echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
+            cp "ci-shots-$shot/03-settings-settled.png" \
+              "ci-logs/$shot.png" 2>/dev/null || true
+          done
+          # The comics reader frames, by the same slug rule: the OUT
+          # suffix is the published basename, and every frame settled
+          # on the comic route.
+          for shot in comics-chrome-light comics-chrome-dark \
+                      comics-chapters-dark comics-pages-dark \
+                      comics-reading-dark comics-reading-strip-dark \
+                      comics-image-light comics-image-adjusted-dark \
+                      comics-shortcuts-dark comics-jump-range-dark \
+                      comics-presets-dark; do
+            cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
+              || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
+            echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
+            cp "ci-shots-$shot/03-comic-read-22-settled.png" \
+              "ci-logs/$shot.png" 2>/dev/null || true
+          done
+          # The comic-series drawer/dialog frames settle on the
+          # chapter-anchored series route rather than the reader.
+          for shot in comic-series-dark comic-series-edit-dark \
+                      comic-series-find-dark \
+                      comic-series-find-review-dark; do
+            cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
+              || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
+            echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
+            cp "ci-shots-$shot/03-comic-series-book-22-settled.png" \
+              "ci-logs/$shot.png" 2>/dev/null || true
+          done
+          # The PDF reader frames, by the same slug rule: the OUT
+          # suffix is the published basename, and every frame settled
+          # on the PDF route.
+          for shot in pdf-chrome-light pdf-chrome-dark \
+                      pdf-contents-dark pdf-contents-pinned-dark \
+                      pdf-pages-dark pdf-pages-pinned-light \
+                      pdf-pages-edit-dark pdf-pages-edit-drag-dark \
+                      pdf-pages-edit-delete-dark pdf-pages-edit-unsaved-dark \
+                      pdf-search-results-dark pdf-search-results-light \
+                      pdf-search-no-matches-dark \
+                      pdf-notes-dark pdf-notes-light \
+                      pdf-notes-words-dark pdf-notes-bookmarks-dark \
+                      pdf-notes-empty-dark \
+                      pdf-reading-dark pdf-rotated-dark \
+                      pdf-image-dark pdf-image-invert-dark \
+                      pdf-shortcuts-dark pdf-jump-range-dark \
+                      pdf-drawing-dark pdf-drawing-selected-light \
+                      pdf-drawing-shape-dark pdf-drawing-text-dark \
+                      pdf-drawing-sticky-dark \
+                      pdf-password-dark pdf-password-light \
+                      pdf-password-wrong-dark pdf-password-unlocked-dark \
+                      pdf-corrupt-dark pdf-missing-dark; do
+            cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt" 2>/dev/null \
+              || echo "(no $shot report produced)" > "ci-logs/$shot-latest.txt"
+            echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
+            cp "ci-shots-$shot/03-pdf-read-21-settled.png" \
+              "ci-logs/$shot.png" 2>/dev/null || true
+          done
+          # The settled gallery/book/dialog frames are the one deliberate
+          # exception to "PNGs stay in the job workspace": an artboard
+          # nobody can see is not an artboard, and the agent cannot
+          # download artifacts (see above). Only the settled frame of each
+          # mode is committed, under a stable name, to bound the history
+          # churn; every other route's PNGs still stay uncommitted.
+          cp ci-shots-reader-chrome-light/03-read-1-settled.png \
+            ci-logs/reader-chrome-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-reader-chrome-dark/03-read-1-settled.png \
+            ci-logs/reader-chrome-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-contents/03-read-1-settled.png \
+            ci-logs/reader-contents-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-notes/03-read-1-settled.png \
+            ci-logs/reader-notes-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-settings/03-read-1-settled.png \
+            ci-logs/reader-settings-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-chip/03-read-1-settled.png \
+            ci-logs/reader-chip-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-annotation/03-read-1-settled.png \
+            ci-logs/reader-annotation-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-dict/03-read-1-settled.png \
+            ci-logs/reader-dict-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-dict-missing/03-read-1-settled.png \
+            ci-logs/reader-dict-missing-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-search/03-read-1-settled.png \
+            ci-logs/reader-search-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-reader-search-missing/03-read-1-settled.png \
+            ci-logs/reader-search-missing-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-components-light/03-components-settled.png \
+            ci-logs/components-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-components-dark/03-components-settled.png \
+            ci-logs/components-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-book-light/03-book-1-settled.png \
+            ci-logs/book-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-book-dark/03-book-1-settled.png \
+            ci-logs/book-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-book-tags-light/03-book-4-settled.png \
+            ci-logs/book-tags-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-book-tags-dark/03-book-4-settled.png \
+            ci-logs/book-tags-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-book-annotations-light/03-book-1-settled.png \
+            ci-logs/book-annotations-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-book-annotations-dark/03-book-1-settled.png \
+            ci-logs/book-annotations-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-series-light/03-series-book-21-settled.png \
+            ci-logs/series-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-series-dark/03-series-book-21-settled.png \
+            ci-logs/series-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-series-list-light/03-series-book-21-settled.png \
+            ci-logs/series-list-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-author-light/03-author-book-21-settled.png \
+            ci-logs/author-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-author-dark/03-author-book-21-settled.png \
+            ci-logs/author-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-picker-light/03-editor-settled.png \
+            ci-logs/editor-picker-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-picker-dark/03-editor-settled.png \
+            ci-logs/editor-picker-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-light/03-edit-book-1-settled.png \
+            ci-logs/editor-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-problems-light/03-edit-book-1-settled.png \
+            ci-logs/editor-problems-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-livecss-light/03-edit-book-1-settled.png \
+            ci-logs/editor-livecss-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-outline-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-outline-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-find-light/03-edit-book-1-settled.png \
+            ci-logs/editor-find-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-palette-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-palette-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-contents-light/03-edit-book-1-settled.png \
+            ci-logs/editor-contents-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-split-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-split-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-reorder-light/03-edit-book-1-settled.png \
+            ci-logs/editor-reorder-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-spell-light/03-edit-book-1-settled.png \
+            ci-logs/editor-spell-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-history-light/03-edit-book-1-settled.png \
+            ci-logs/editor-history-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-compare-light/03-edit-book-1-settled.png \
+            ci-logs/editor-compare-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-editing-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-editing-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-image-light/03-edit-book-1-settled.png \
+            ci-logs/editor-image-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-font-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-font-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-cover-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-cover-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-reports-light/03-edit-book-1-settled.png \
+            ci-logs/editor-reports-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-tagmapper-light/03-edit-book-1-settled.png \
+            ci-logs/editor-tagmapper-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-filterstyle-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-filterstyle-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-upgrade-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-upgrade-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-subset-light/03-edit-book-1-settled.png \
+            ci-logs/editor-subset-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-embed-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-embed-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-compress-light/03-edit-book-1-settled.png \
+            ci-logs/editor-compress-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-editor-links-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-links-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-char-dark/03-edit-book-1-settled.png \
+            ci-logs/editor-char-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-editor-dict-light/03-edit-book-1-settled.png \
+            ci-logs/editor-dict-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-author-panel-light/03-author-book-21-settled.png \
+            ci-logs/author-panel-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-author-shelf-light/03-author-book-21-settled.png \
+            ci-logs/author-shelf-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-author-annotations-dark/03-author-book-21-settled.png \
+            ci-logs/author-annotations-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-authors-light/03-authors-settled.png \
+            ci-logs/authors-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-authors-dark/03-authors-settled.png \
+            ci-logs/authors-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-author-edit-dark/03-author-book-21-settled.png \
+            ci-logs/author-edit-terracotta-dark.png 2>/dev/null || true
+          cp ci-shots-author-merge-dark/03-author-book-21-settled.png \
+            ci-logs/author-merge-terracotta-dark.png 2>/dev/null || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/reader-latest.txt ci-logs/tasks-latest.txt
+          git add -f ci-logs/reader-latest.txt \
+            ci-logs/reader-chrome-light-latest.txt \
+            ci-logs/reader-chrome-dark-latest.txt \
+            ci-logs/reader-contents-latest.txt \
+            ci-logs/reader-notes-latest.txt \
+            ci-logs/reader-settings-latest.txt \
+            ci-logs/reader-chip-latest.txt \
+            ci-logs/reader-annotation-latest.txt \
+            ci-logs/reader-dict-latest.txt \
+            ci-logs/reader-dict-missing-latest.txt \
+            ci-logs/reader-search-latest.txt \
+            ci-logs/reader-search-missing-latest.txt \
+            ci-logs/tasks-latest.txt \
+            ci-logs/components-light-latest.txt ci-logs/components-dark-latest.txt \
+            ci-logs/book-light-latest.txt ci-logs/book-dark-latest.txt \
+            ci-logs/book-tags-light-latest.txt ci-logs/book-tags-dark-latest.txt \
+            ci-logs/book-annotations-light-latest.txt ci-logs/book-annotations-dark-latest.txt \
+            ci-logs/series-light-latest.txt ci-logs/series-dark-latest.txt \
+            ci-logs/series-list-light-latest.txt \
+            ci-logs/author-light-latest.txt ci-logs/author-dark-latest.txt \
+            ci-logs/author-panel-light-latest.txt ci-logs/author-shelf-light-latest.txt \
+            ci-logs/author-annotations-dark-latest.txt \
+            ci-logs/authors-light-latest.txt ci-logs/authors-dark-latest.txt \
+            ci-logs/author-edit-dark-latest.txt ci-logs/author-merge-dark-latest.txt \
+            ci-logs/editor-picker-light-latest.txt ci-logs/editor-picker-dark-latest.txt \
+            ci-logs/editor-light-latest.txt ci-logs/editor-dark-latest.txt \
+            ci-logs/editor-problems-light-latest.txt ci-logs/editor-livecss-light-latest.txt \
+            ci-logs/editor-outline-dark-latest.txt \
+            ci-logs/editor-find-light-latest.txt ci-logs/editor-palette-dark-latest.txt \
+            ci-logs/editor-contents-light-latest.txt ci-logs/editor-split-dark-latest.txt \
+            ci-logs/editor-reorder-light-latest.txt ci-logs/editor-spell-light-latest.txt \
+            ci-logs/editor-history-light-latest.txt ci-logs/editor-compare-light-latest.txt \
+            ci-logs/editor-editing-dark-latest.txt \
+            ci-logs/editor-image-light-latest.txt ci-logs/editor-font-dark-latest.txt \
+            ci-logs/editor-cover-dark-latest.txt ci-logs/editor-reports-light-latest.txt \
+            ci-logs/editor-tagmapper-light-latest.txt ci-logs/editor-filterstyle-dark-latest.txt \
+            ci-logs/editor-upgrade-dark-latest.txt \
+            ci-logs/editor-subset-light-latest.txt ci-logs/editor-embed-dark-latest.txt \
+            ci-logs/editor-compress-light-latest.txt ci-logs/editor-links-dark-latest.txt \
+            ci-logs/editor-char-dark-latest.txt ci-logs/editor-dict-light-latest.txt
+          for shot in settings-appearance-light settings-appearance-dark \
+                      settings-reading-light settings-reading-dropdown-dark \
+                      settings-libraries-light settings-libraries-open-dark \
+                      settings-data-export-dark settings-book-files-light \
+                      settings-book-files-delete-dark settings-watch-light \
+                      settings-watch-dropdown-dark settings-watch-empty-light \
+                      settings-dictionaries-drag-light \
+                      settings-dictionaries-remove-dark \
+                      settings-dictionaries-empty-light \
+                      settings-metadata-rejected-light \
+                      settings-integrations-dark settings-shortcuts-light \
+                      settings-shortcuts-recording-dark settings-about-light \
+                      settings-notifications-events-dark \
+                      settings-notifications-empty-light \
+                      settings-notifications-dot-dark; do
+            git add -f "ci-logs/$shot-latest.txt"
+            if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
+          done
+          for shot in comics-chrome-light comics-chrome-dark \
+                      comics-chapters-dark comics-pages-dark \
+                      comics-reading-dark comics-reading-strip-dark \
+                      comics-image-light comics-image-adjusted-dark \
+                      comics-shortcuts-dark comics-jump-range-dark \
+                      comics-presets-dark; do
+            git add -f "ci-logs/$shot-latest.txt"
+            if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
+          done
+          for shot in comic-series-dark comic-series-edit-dark \
+                      comic-series-find-dark \
+                      comic-series-find-review-dark; do
+            git add -f "ci-logs/$shot-latest.txt"
+            if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
+          done
+          for shot in pdf-chrome-light pdf-chrome-dark \
+                      pdf-contents-dark pdf-contents-pinned-dark \
+                      pdf-pages-dark pdf-pages-pinned-light \
+                      pdf-pages-edit-dark pdf-pages-edit-drag-dark \
+                      pdf-pages-edit-delete-dark pdf-pages-edit-unsaved-dark \
+                      pdf-search-results-dark pdf-search-results-light \
+                      pdf-search-no-matches-dark \
+                      pdf-notes-dark pdf-notes-light \
+                      pdf-notes-words-dark pdf-notes-bookmarks-dark \
+                      pdf-notes-empty-dark \
+                      pdf-reading-dark pdf-rotated-dark \
+                      pdf-image-dark pdf-image-invert-dark \
+                      pdf-shortcuts-dark pdf-jump-range-dark \
+                      pdf-drawing-dark pdf-drawing-selected-light \
+                      pdf-drawing-shape-dark pdf-drawing-text-dark \
+                      pdf-drawing-sticky-dark \
+                      pdf-password-dark pdf-password-light \
+                      pdf-password-wrong-dark pdf-password-unlocked-dark \
+                      pdf-corrupt-dark pdf-missing-dark; do
+            git add -f "ci-logs/$shot-latest.txt"
+            if [ -f "ci-logs/$shot.png" ]; then git add -f "ci-logs/$shot.png"; fi
+          done
+          for shot in ci-logs/reader-chrome-terracotta-light.png \
+                      ci-logs/reader-chrome-terracotta-dark.png \
+                      ci-logs/reader-contents-terracotta-dark.png \
+                      ci-logs/reader-notes-terracotta-dark.png \
+                      ci-logs/reader-settings-terracotta-dark.png \
+                      ci-logs/reader-chip-terracotta-dark.png \
+                      ci-logs/reader-annotation-terracotta-dark.png \
+                      ci-logs/reader-dict-terracotta-dark.png \
+                      ci-logs/reader-dict-missing-terracotta-dark.png \
+                      ci-logs/reader-search-terracotta-dark.png \
+                      ci-logs/reader-search-missing-terracotta-dark.png \
+                      ci-logs/components-terracotta-light.png \
+                      ci-logs/components-terracotta-dark.png \
+                      ci-logs/book-terracotta-light.png \
+                      ci-logs/book-terracotta-dark.png \
+                      ci-logs/book-tags-terracotta-light.png \
+                      ci-logs/book-tags-terracotta-dark.png \
+                      ci-logs/book-annotations-terracotta-light.png \
+                      ci-logs/book-annotations-terracotta-dark.png \
+                      ci-logs/series-terracotta-light.png \
+                      ci-logs/series-terracotta-dark.png \
+                      ci-logs/series-list-terracotta-light.png \
+                      ci-logs/author-terracotta-light.png \
+                      ci-logs/author-terracotta-dark.png \
+                      ci-logs/author-panel-terracotta-light.png \
+                      ci-logs/author-shelf-terracotta-light.png \
+                      ci-logs/author-annotations-terracotta-dark.png \
+                      ci-logs/authors-terracotta-light.png \
+                      ci-logs/authors-terracotta-dark.png \
+                      ci-logs/author-edit-terracotta-dark.png \
+                      ci-logs/author-merge-terracotta-dark.png \
+                      ci-logs/editor-picker-terracotta-light.png \
+                      ci-logs/editor-picker-terracotta-dark.png \
+                      ci-logs/editor-terracotta-light.png \
+                      ci-logs/editor-terracotta-dark.png \
+                      ci-logs/editor-problems-terracotta-light.png \
+                      ci-logs/editor-livecss-terracotta-light.png \
+                      ci-logs/editor-outline-terracotta-dark.png \
+                      ci-logs/editor-find-terracotta-light.png \
+                      ci-logs/editor-palette-terracotta-dark.png \
+                      ci-logs/editor-contents-terracotta-light.png \
+                      ci-logs/editor-split-terracotta-dark.png \
+                      ci-logs/editor-reorder-terracotta-light.png \
+                      ci-logs/editor-spell-terracotta-light.png \
+                      ci-logs/editor-history-terracotta-light.png \
+                      ci-logs/editor-compare-terracotta-light.png \
+                      ci-logs/editor-editing-terracotta-dark.png \
+                      ci-logs/editor-image-terracotta-light.png \
+                      ci-logs/editor-font-terracotta-dark.png \
+                      ci-logs/editor-cover-terracotta-dark.png \
+                      ci-logs/editor-reports-terracotta-light.png \
+                      ci-logs/editor-tagmapper-terracotta-light.png \
+                      ci-logs/editor-filterstyle-terracotta-dark.png \
+                      ci-logs/editor-upgrade-terracotta-dark.png \
+                      ci-logs/editor-subset-terracotta-light.png \
+                      ci-logs/editor-embed-terracotta-dark.png \
+                      ci-logs/editor-compress-terracotta-light.png \
+                      ci-logs/editor-links-terracotta-dark.png \
+                      ci-logs/editor-char-terracotta-dark.png \
+                      ci-logs/editor-dict-terracotta-light.png; do
+            if [ -f "$shot" ]; then git add -f "$shot"; fi
+          done
           git commit -m "ci: publish smoke-test report [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true

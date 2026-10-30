@@ -110,6 +110,34 @@ pub fn install_bundled_dictionaries(catalog: &Catalog) -> Result<()> {
     Ok(())
 }
 
+/// Bring back every bundled pack the user removed — the Settings way back
+/// (decision 152). Clearing the first-run markers makes the normal install
+/// run again: packs still present only have their bundled priority
+/// reapplied, packs actually deleted are imported from the binary again.
+pub fn restore_bundled_dictionaries(catalog: &Catalog) -> Result<()> {
+    for pref in [
+        BUNDLED_WORDNET_PREF,
+        BUNDLED_IDIOMS_PREF,
+        BUNDLED_SYNONYMS_PREF,
+        BUNDLED_ANTONYMS_PREF,
+    ] {
+        catalog.set_pref(pref, "");
+    }
+    install_bundled_dictionaries(catalog)
+}
+
+/// True for the four packs shipped in the binary. Removing one has a way
+/// back (Restore bundled packs), which the remove confirmation can say.
+pub fn is_bundled_dictionary(name: &str) -> bool {
+    [
+        BUNDLED_WORDNET_NAME,
+        BUNDLED_IDIOMS_NAME,
+        BUNDLED_SYNONYMS_NAME,
+        BUNDLED_ANTONYMS_NAME,
+    ]
+    .contains(&name)
+}
+
 /// Install one bundled pack. Returns true when the pack was installed (or
 /// its priority refreshed) in this run.
 fn install_bundled_tsv(

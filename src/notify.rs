@@ -24,6 +24,8 @@
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 /// How long a toast stays on screen before fading, by severity.
@@ -71,15 +73,6 @@ impl Kind {
             _ => DISMISS_MS_INFO,
         }
     }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Kind::Success => "Success",
-            Kind::Error => "Error",
-            Kind::Info => "Info",
-            Kind::Progress => "Activity",
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -89,23 +82,50 @@ pub struct Entry {
     pub detail: String,
     /// Wall-clock `HH:MM` for the history list.
     pub at: String,
+    /// Local calendar day, `YYYY-MM-DD`, for the bell panel's
+    /// Today/Earlier grouping (decision 148).
+    pub day: String,
     /// Slimmer card, shorter life. For things that recur mid-read and would
     /// otherwise nag.
     pub compact: bool,
+    /// Whether this toast carries a "View" link that opens the notification
+    /// panel (decision 184).
+    pub view_link: bool,
 }
+
+/// A callback run on the main thread whenever the history or its
+/// unseen count changes; see [`on_history_changed`].
+pub type HistoryListener = Rc<dyn Fn()>;
+
+/// A callback run when a toast's "View" link is clicked — opens the
+/// notification panel from app shell.
+pub type ViewAction = Rc<dyn Fn()>;
 
 thread_local! {
     /// The stack toasts are appended to, once the main window exists.
     static HOST: RefCell<Option<gtk::Box>> = const { RefCell::new(None) };
     /// Messages raised before the overlay was mounted.
     static PENDING: RefCell<Vec<Entry>> = const { RefCell::new(Vec::new()) };
+    /// Main-thread listeners for history changes (the rail bell).
+    /// Thread-local like the toast host: the callbacks touch GTK
+    /// widgets, so they may only ever run where they were registered.
+    static HISTORY_LISTENERS: RefCell<Vec<HistoryListener>> =
+        const { RefCell::new(Vec::new()) };
+    /// The action to run when a toast's "View" link is clicked — opens the
+    /// notification panel. Registered by the app shell at attach time.
+    static VIEW_ACTION: RefCell<Option<ViewAction>> = const { RefCell::new(None) };
 }
+
+/// Entries raised since the bell panel was last opened. Process-wide
+/// for the same reason the history is: a worker's failure is exactly
+/// what the dot exists to announce.
+static UNSEEN: AtomicUsize = AtomicUsize::new(0);
 
 /// Everything raised this session, newest first.
 ///
 /// Process-wide, **not** `thread_local!`. It used to be thread-local, which
 /// meant a message raised on a worker thread was filed in that thread's own
-/// copy: Settings → Notifications reads this from the main thread, so those
+/// copy: the bell panel reads this from the main thread, so those
 /// entries were invisible there and vanished when the worker exited. Since
 /// workers are exactly where unattended failures happen — a failed import, a
 /// bad dictionary pack — that was the wrong half of the app to lose.
@@ -132,29 +152,39 @@ pub fn attach(host: gtk::Box) {
     for entry in queued {
         present(&entry);
     }
+    // Anything queued before the shell existed may predate the bell's
+    // listener registration order in `init`; announce once more so the
+    // dot and list agree with the history they were flushed from.
+    notify_history_changed();
+}
+
+/// Register the action to run when a toast's "View" link is clicked —
+/// opens the notification panel from the app shell (decision 184).
+pub fn set_view_action(action: ViewAction) {
+    VIEW_ACTION.with(|v| *v.borrow_mut() = Some(action));
 }
 
 pub fn success(title: &str, detail: &str) {
-    push(Kind::Success, title, detail, false);
+    push(Kind::Success, title, detail, false, false);
 }
 
 pub fn error(title: &str, detail: &str) {
-    push(Kind::Error, title, detail, false);
+    push(Kind::Error, title, detail, false, true);
 }
 
 pub fn info(title: &str, detail: &str) {
-    push(Kind::Info, title, detail, false);
+    push(Kind::Info, title, detail, false, false);
 }
 
 pub fn activity(title: &str, detail: &str) {
-    push(Kind::Progress, title, detail, false);
+    push(Kind::Progress, title, detail, false, false);
 }
 
 /// A small, brief confirmation. Highlighting and saving quotes happen many
 /// times in a sitting, so those get a slim card that clears itself quickly
 /// rather than a full-sized toast parked over the page.
 pub fn compact(title: &str, detail: &str) {
-    push(Kind::Success, title, detail, true);
+    push(Kind::Success, title, detail, true, false);
 }
 
 /// Report a `Result`'s error, if it has one. Returns whether it was Ok, so
@@ -226,13 +256,33 @@ pub fn outcome_info<T, E: std::fmt::Display>(
     }
 }
 
-fn push(kind: Kind, title: &str, detail: &str, compact: bool) {
+fn push(kind: Kind, title: &str, detail: &str, compact: bool, view_link: bool) {
+    push_at(kind, title, detail, compact, view_link, clock_now(), day_now(), true);
+}
+
+/// Record an entry with an explicit clock/day, optionally without
+/// presenting its toast. `push` is the live path; the parameters exist
+/// so the screenshot seeder below can file a backdated entry into the
+/// panel's Earlier group without flashing a toast for it now.
+#[allow(clippy::too_many_arguments)]
+fn push_at(
+    kind: Kind,
+    title: &str,
+    detail: &str,
+    compact: bool,
+    view_link: bool,
+    at: String,
+    day: String,
+    present: bool,
+) {
     let entry = Entry {
         kind,
         title: title.to_string(),
         detail: detail.to_string(),
-        at: clock_now(),
+        at,
+        day,
         compact,
+        view_link,
     };
 
     with_history(|h| {
@@ -241,6 +291,11 @@ fn push(kind: Kind, title: &str, detail: &str, compact: bool) {
             h.pop_back();
         }
     });
+    // The dot counts from the same moment the entry becomes readable,
+    // not from when its toast happens to paint.
+    if UNSEEN.load(Ordering::SeqCst) < MAX_HISTORY {
+        UNSEEN.fetch_add(1, Ordering::SeqCst);
+    }
 
     // Showing the toast means building GTK widgets, and `HOST`/`PENDING` are
     // `thread_local!`, so this half is main-thread-only. Worker threads *do*
@@ -257,12 +312,15 @@ fn push(kind: Kind, title: &str, detail: &str, compact: bool) {
     // The history write above is deliberately *not* bounced: it is plain data,
     // callers (and tests) expect it to be readable the moment `push` returns,
     // and deferring it would make `notify::history()` racy.
-    let context = gtk::glib::MainContext::default();
-    if context.is_owner() {
-        deliver(entry);
-    } else {
-        context.invoke(move || deliver(entry));
+    if present {
+        let context = gtk::glib::MainContext::default();
+        if context.is_owner() {
+            deliver(entry);
+        } else {
+            context.invoke(move || deliver(entry));
+        }
     }
+    notify_history_changed();
 }
 
 /// Put an entry on screen, or queue it until the overlay is mounted.
@@ -284,6 +342,90 @@ pub fn history() -> Vec<Entry> {
 
 pub fn clear_history() {
     with_history(|h| h.clear());
+    UNSEEN.store(0, Ordering::SeqCst);
+    notify_history_changed();
+}
+
+/// Seed the history the Settings screenshot states photograph
+/// (`KALAM_DIALOG=notifications*` in `app.rs`): three of today's events
+/// through the real `notify::*` path, over one backdated entry so the
+/// bell panel shows its Earlier group too — a session-only history can
+/// otherwise only reach Earlier by running across midnight, which no
+/// screenshot settle can wait for. The backdated entry is filed
+/// without a toast, and its fixed day only has to not be today.
+pub fn seed_screenshot_history() {
+    clear_history();
+    push_at(
+        Kind::Info,
+        "Cleaned up reader cache",
+        "Freed 18 MB",
+        false,
+        false,
+        "09:12".to_string(),
+        "2000-01-01".to_string(),
+        false,
+    );
+    success("Imported 3 books", "Added to New arrivals.");
+    info("Library backed up", "kalam-backup.db");
+    error(
+        "Could not import one file",
+        "broken.epub is not a readable EPUB.",
+    );
+}
+
+/// How many entries arrived since the bell panel was last opened.
+pub fn unseen_count() -> usize {
+    UNSEEN.load(Ordering::SeqCst)
+}
+
+/// Whether the rail bell should carry its new-event dot.
+pub fn has_unseen() -> bool {
+    unseen_count() > 0
+}
+
+/// Opening the bell panel clears the dot (decision 148).
+pub fn mark_all_seen() {
+    if UNSEEN.swap(0, Ordering::SeqCst) > 0 {
+        notify_history_changed();
+    }
+}
+
+/// Today's local `YYYY-MM-DD`, the stamp [`Entry::day`] is compared
+/// against for the panel's Today group.
+pub fn today_stamp() -> String {
+    day_now()
+}
+
+/// Register `listener` to run on the main thread after every history
+/// or unseen-count change — a push from any thread, Clear history,
+/// or the panel opening. The current state is *not* replayed; read
+/// [`history`] / [`unseen_count`] first, then register for changes
+/// (the same contract as `theme::on_theme_applied`).
+pub fn on_history_changed(listener: HistoryListener) {
+    HISTORY_LISTENERS.with(|listeners| listeners.borrow_mut().push(listener));
+}
+
+fn emit_history_changed() {
+    // Clone the handles out first: a listener may itself raise a
+    // notification (or register another listener), and holding the
+    // borrow across the calls would panic.
+    let listeners: Vec<HistoryListener> =
+        HISTORY_LISTENERS.with(|listeners| listeners.borrow().clone());
+    for listener in listeners {
+        listener();
+    }
+}
+
+/// Announce a history change to the (main-thread) listeners, bouncing
+/// to the main context when called from a worker — the same bounce
+/// the toast display makes, for the same reason.
+fn notify_history_changed() {
+    let context = gtk::glib::MainContext::default();
+    if context.is_owner() {
+        emit_history_changed();
+    } else {
+        context.invoke(emit_history_changed);
+    }
 }
 
 fn present(entry: &Entry) {
@@ -419,6 +561,25 @@ fn build_card(entry: &Entry) -> gtk::Box {
     body.append(&text);
     card.append(&body);
 
+    // §66 Toast "View" link (decision 184): error toasts can carry a View
+    // link that opens the notification panel.
+    if entry.view_link {
+        let view_btn = gtk::Button::builder()
+            .label("View")
+            .halign(gtk::Align::End)
+            .valign(gtk::Align::Center)
+            .margin_end(8)
+            .build();
+        view_btn.add_css_class("kalam-toast-view");
+        let view_action = VIEW_ACTION.with(|v| v.borrow().clone());
+        view_btn.connect_clicked(move |_| {
+            if let Some(action) = &view_action {
+                action();
+            }
+        });
+        card.append(&view_btn);
+    }
+
     // Click to dismiss early.
     let click = gtk::GestureClick::new();
     click.set_button(1);
@@ -440,12 +601,21 @@ fn build_card(entry: &Entry) -> gtk::Box {
     card
 }
 
+fn stamp_now(format: &str) -> String {
+    gtk::glib::DateTime::now_local()
+        .and_then(|d| d.format(format))
+        .map(|s| s.to_string())
+        .unwrap_or_default()
+}
+
 /// Local `HH:MM`, without pulling in a date library.
 fn clock_now() -> String {
-    let now = gtk::glib::DateTime::now_local()
-        .and_then(|d| d.format("%H:%M"))
-        .map(|s| s.to_string());
-    now.unwrap_or_default()
+    stamp_now("%H:%M")
+}
+
+/// Local `YYYY-MM-DD`, the bell panel's day boundary.
+fn day_now() -> String {
+    stamp_now("%Y-%m-%d")
 }
 
 #[cfg(test)]
@@ -480,8 +650,8 @@ mod tests {
     fn history_keeps_newest_first() {
         let _guard = history_guard();
         clear_history();
-        push(Kind::Info, "first", "", false);
-        push(Kind::Info, "second", "", false);
+        push(Kind::Info, "first", "", false, false);
+        push(Kind::Info, "second", "", false, false);
         let h = history();
         assert_eq!(h[0].title, "second");
         assert_eq!(h[1].title, "first");
@@ -493,7 +663,7 @@ mod tests {
         let _guard = history_guard();
         clear_history();
         for i in 0..(MAX_HISTORY + 25) {
-            push(Kind::Info, &format!("n{i}"), "", false);
+            push(Kind::Info, &format!("n{i}"), "", false, false);
         }
         assert_eq!(history().len(), MAX_HISTORY);
         clear_history();
@@ -521,13 +691,13 @@ mod tests {
         let _guard = history_guard();
         // The real bug this guards. Background work is exactly where
         // unattended failures happen -- a failed import, a bad dictionary
-        // pack -- and Settings reads `history()` on the main thread. While
+        // pack -- and the bell panel reads `history()` on the main thread. While
         // HISTORY was `thread_local!` those entries went into the worker's own
         // copy: invisible in the notification list, gone when the thread
         // ended. Raise from a worker, read from here.
         clear_history();
         std::thread::spawn(|| {
-            push(Kind::Error, "from a worker", "disk full", false);
+            push(Kind::Error, "from a worker", "disk full", false, false);
         })
         .join()
         .expect("worker thread finished");
@@ -542,5 +712,35 @@ mod tests {
     #[test]
     fn errors_linger_longer_than_chatter() {
         assert!(Kind::Error.dismiss_ms() > Kind::Info.dismiss_ms());
+    }
+
+    #[test]
+    fn unseen_counts_new_entries_until_the_panel_opens() {
+        let _guard = history_guard();
+        clear_history();
+        assert_eq!(unseen_count(), 0);
+        assert!(!has_unseen());
+
+        push(Kind::Info, "one", "", false, false);
+        push(Kind::Error, "two", "", false, false);
+        assert_eq!(unseen_count(), 2);
+        assert!(has_unseen());
+
+        // Entries carry the local day for the Today/Earlier split.
+        let h = history();
+        assert_eq!(h[0].day.len(), 10, "day stamp is YYYY-MM-DD");
+        assert_eq!(h[0].day.matches('-').count(), 2);
+
+        // Opening the panel clears the dot but not the history.
+        mark_all_seen();
+        assert_eq!(unseen_count(), 0);
+        assert_eq!(history().len(), 2);
+
+        // Clear history empties both.
+        push(Kind::Info, "three", "", false, false);
+        assert_eq!(unseen_count(), 1);
+        clear_history();
+        assert_eq!(unseen_count(), 0);
+        assert!(history().is_empty());
     }
 }

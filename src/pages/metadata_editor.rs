@@ -15,6 +15,8 @@
 
 use crate::db::Catalog;
 use crate::metadata::{self, Candidate, CoverRef};
+use crate::models::BookFormat;
+use crate::service::LibraryService;
 use crate::widgets::book_row::cover_widget;
 use crate::widgets::charts::star_picker;
 use crate::widgets::in_app_dialog;
@@ -86,6 +88,22 @@ fn open_editor_inner(
         }
     };
 
+    // Comics search their own sources (decision 153). The editor still
+    // edits one chapter-sized book row, so a series candidate's title
+    // is staged into Series unless that field is empty — never over a
+    // chapter title the reader is keeping.
+    let target_is_comic = matches!(book.format, BookFormat::Cbz | BookFormat::Cbr);
+    let search_tooltip = if target_is_comic {
+        "Search comic sources"
+    } else {
+        "Search book sources"
+    };
+    let cover_search_tooltip = if target_is_comic {
+        "Search comic sources for a cover"
+    } else {
+        "Search book sources for a cover"
+    };
+
     // The app window: needed to measure the display, and later as the parent
     // for the cover file chooser, which is a real portal dialog.
     let app_window: Option<gtk::Window> =
@@ -123,7 +141,7 @@ fn open_editor_inner(
         &fields,
         "TITLE",
         &book.title,
-        "Search Open Library by title",
+        search_tooltip,
     );
     // No search icon here: it sent exactly the same title+author query as the
     // title icon, so it was a second button for one action.
@@ -209,7 +227,7 @@ fn open_editor_inner(
     let cover_label = section_label("COVER");
     cover_label.set_hexpand(true);
     cover_head.append(&cover_label);
-    let cover_search = icon_button("system-search-symbolic", "Search Open Library for a cover");
+    let cover_search = icon_button("system-search-symbolic", cover_search_tooltip);
     cover_head.append(&cover_search);
     cover_block.append(&cover_head);
 
@@ -240,9 +258,25 @@ fn open_editor_inner(
     // Built here but revealed only on demand, so the form stays uncluttered.
     let search_entry = gtk::Entry::new();
     search_entry.set_hexpand(true);
-    search_entry.set_placeholder_text(Some("Title and author…"));
-    // Seed with what we already know so one click usually suffices.
-    search_entry.set_text(format!("{} {}", book.title, book.authors).trim());
+    search_entry.set_placeholder_text(Some(if target_is_comic {
+        "Series title…"
+    } else {
+        "Title and author…"
+    }));
+    // Seed with what we already know so one click usually suffices. A
+    // comic chapter's own title names the chapter, so the series is
+    // the searchable thing whenever the book knows it.
+    let initial_query = if target_is_comic {
+        book.series
+            .as_deref()
+            .map(str::trim)
+            .filter(|series| !series.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{} {}", book.title, book.authors).trim().to_string())
+    } else {
+        format!("{} {}", book.title, book.authors).trim().to_string()
+    };
+    search_entry.set_text(&initial_query);
 
     let search_btn = gtk::Button::with_label("Search");
     search_btn.add_css_class("kalam-primary-btn");
@@ -477,6 +511,7 @@ fn open_editor_inner(
         let cover_host = cover_host.clone();
         let pending_cover = pending_cover.clone();
         let tx_inner = tx.clone();
+        let service_for_results = LibraryService::new(catalog.clone());
 
         gtk::glib::spawn_future_local(async move {
             while let Ok(msg) = rx.recv().await {
@@ -494,6 +529,8 @@ fn open_editor_inner(
                             &published_entry,
                             &desc_view,
                             &tx_inner,
+                            &service_for_results,
+                            target_is_comic,
                         );
                         // Partial failures are worth naming: results that look
                         // thin may just be one provider being unavailable.
@@ -624,8 +661,12 @@ fn open_editor_inner(
                 return;
             }
             // Rebuilt per search so toggling a source in Settings takes effect
-            // immediately.
-            let sources = metadata::enabled_sources(&catalog);
+            // immediately. Books and comics keep separate source lists.
+            let sources = if target_is_comic {
+                metadata::enabled_comic_sources(&catalog)
+            } else {
+                metadata::enabled_book_sources(&catalog)
+            };
             if sources.is_empty() {
                 search_status.set_label("No metadata sources are enabled — see Settings.");
                 return;
@@ -667,19 +708,23 @@ fn open_editor_inner(
     {
         let title_entry_c = title_entry.clone();
         let authors_entry_c = authors_entry.clone();
+        let series_entry_c = series_entry.clone();
         let search_status = search_status.clone();
         let search_entry_c = search_entry.clone();
         let set_panel = set_panel.clone();
         let tx = tx.clone();
         let catalog_c = catalog.clone();
         cover_search.connect_clicked(move |_| {
-            let query = format!(
-                "{} {}",
-                title_entry_c.text().trim(),
-                authors_entry_c.text().trim()
-            )
-            .trim()
-            .to_string();
+            // A comic cover belongs to its series-level record, while
+            // the title field may only name this chapter.
+            let primary = if target_is_comic && !series_entry_c.text().trim().is_empty() {
+                series_entry_c.text().trim().to_string()
+            } else {
+                title_entry_c.text().trim().to_string()
+            };
+            let query = format!("{} {}", primary, authors_entry_c.text().trim())
+                .trim()
+                .to_string();
             if query.is_empty() {
                 return;
             }
@@ -688,7 +733,11 @@ fn open_editor_inner(
             search_status.set_label("Looking for covers…");
 
             let tx = tx.clone();
-            let sources = metadata::enabled_sources(&catalog_c);
+            let sources = if target_is_comic {
+                metadata::enabled_comic_sources(&catalog_c)
+            } else {
+                metadata::enabled_book_sources(&catalog_c)
+            };
             crate::tasks::spawn(
                 "Searching metadata",
                 move |reporter| {
@@ -957,6 +1006,33 @@ fn open_editor_inner(
     // Esc is handled by the dialog helper, for every in-app dialog alike.
 }
 
+fn candidate_author_line(candidate: &Candidate) -> String {
+    let names = candidate.credit_names();
+    if names.is_empty() {
+        candidate.authors.clone()
+    } else {
+        names.join(", ")
+    }
+}
+
+fn candidate_published_line(candidate: &Candidate) -> String {
+    if !candidate.published.trim().is_empty() {
+        candidate.published.clone()
+    } else {
+        candidate
+            .first_year
+            .map(|year| year.to_string())
+            .unwrap_or_default()
+    }
+}
+
+fn is_comic_candidate(candidate: &Candidate, target_is_comic: bool) -> bool {
+    target_is_comic
+        || candidate
+            .source
+            .is_some_and(|source| source.kind() == metadata::SourceKind::Comic)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn rebuild_results(
     host: &gtk::Box,
@@ -970,6 +1046,8 @@ fn rebuild_results(
     published_entry: &gtk::Entry,
     desc_view: &gtk::TextView,
     tx: &async_channel::Sender<FetchMsg>,
+    service: &LibraryService,
+    target_is_comic: bool,
 ) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
@@ -1021,66 +1099,111 @@ fn rebuild_results(
             let desc_view = desc_view.clone();
             let status = status.clone();
             let tx = tx.clone();
+            let service = service.clone();
             use_btn.connect_clicked(move |_| {
                 // Only overwrite fields the result actually has, so a sparse
-                // match cannot blank out good local data.
+                // match cannot blank out good local data. A comic result
+                // names a series, not this chapter: when Series already
+                // has a value it receives the result's title and the
+                // chapter title is left alone.
+                let comic_candidate = is_comic_candidate(&c, target_is_comic);
                 if !c.title.is_empty() {
-                    title_entry.set_text(&c.title);
+                    if comic_candidate && !series_entry.text().trim().is_empty() {
+                        series_entry.set_text(&c.title);
+                    } else {
+                        title_entry.set_text(&c.title);
+                    }
                 }
-                if !c.authors.is_empty() {
-                    authors_entry.set_text(&c.authors);
+                let author_line = candidate_author_line(&c);
+                if !author_line.is_empty() {
+                    authors_entry.set_text(&author_line);
                 }
-                if let Some(series) = &c.series {
-                    series_entry.set_text(series);
+                if !comic_candidate {
+                    if let Some(series) = &c.series {
+                        series_entry.set_text(series);
+                    }
                 }
                 if !c.tags.is_empty() {
                     tags_entry.set_text(&c.tags.join(", "));
                 }
+                // Publisher only: a manga's serialization magazine is a
+                // series fact of a different kind, not a publisher.
                 if !c.publisher.is_empty() {
                     publisher_entry.set_text(&c.publisher);
                 }
-                if !c.published.is_empty() {
-                    published_entry.set_text(&c.published);
+                let published = candidate_published_line(&c);
+                if !published.is_empty() {
+                    published_entry.set_text(&published);
                 }
                 let origin = c.source.map(|s| s.label()).unwrap_or("the source");
                 status.set_label(&format!("Filled from {origin} — review, then Save."));
 
-                // Google Books returns descriptions inline; Open Library needs
-                // a second request keyed by the work id.
+                // Some providers return descriptions inline; others
+                // need a second request. Rebuild that one source from
+                // the catalog so its Settings switch and credential
+                // come with it, whichever of the four it is.
                 if !c.description.trim().is_empty() {
                     desc_view.buffer().set_text(&c.description);
-                } else if let (Some(key), Some(id)) = (c.detail_key.clone(), c.source) {
-                    let desc_view = desc_view.clone();
-                    let status2 = status.clone();
-                    // Was a worker + its own channel + a local future, three
-                    // pieces to say "fetch this and set a label". One call now.
-                    crate::tasks::spawn(
-                        "Fetching description",
-                        move |_reporter| {
-                            let source: Box<dyn metadata::MetadataSource> = match id {
-                                metadata::SourceId::OpenLibrary => {
-                                    Box::new(metadata::openlibrary::OpenLibrary)
+                } else if let Some(id) = c.source {
+                    let needs_detail = c.detail_key.is_some()
+                        || c.external_id.is_some()
+                        || comic_candidate;
+                    if needs_detail {
+                        let desc_view = desc_view.clone();
+                        let status2 = status.clone();
+                        let service = service.clone();
+                        let candidate_for_detail = c.clone();
+                        crate::tasks::spawn(
+                            "Fetching description",
+                            move |_reporter| {
+                                let Some(source) =
+                                    metadata::source_by_id(service.catalog(), id)
+                                else {
+                                    return String::new();
+                                };
+                                if comic_candidate {
+                                    if let Ok(detailed) =
+                                        source.fetch_candidate_details(&candidate_for_detail)
+                                    {
+                                        if !detailed.description.trim().is_empty() {
+                                            return detailed.description;
+                                        }
+                                    }
+                                    if let Some(external_id) =
+                                        candidate_for_detail.external_id.as_deref()
+                                    {
+                                        if let Ok(Some(detailed)) =
+                                            source.fetch_by_external_id(external_id)
+                                        {
+                                            if !detailed.description.trim().is_empty() {
+                                                return detailed.description;
+                                            }
+                                        }
+                                    }
                                 }
-                                metadata::SourceId::GoogleBooks => {
-                                    Box::new(metadata::google_books::GoogleBooks {
-                                        api_key: String::new(),
-                                        country: metadata::google_books::detect_country(),
-                                    })
+                                candidate_for_detail
+                                    .detail_key
+                                    .as_deref()
+                                    .and_then(|key| source.fetch_description(key).ok())
+                                    .unwrap_or_default()
+                            },
+                            |_update| {},
+                            move |text| {
+                                if !text.trim().is_empty() {
+                                    desc_view.buffer().set_text(&text);
+                                    status2
+                                        .set_label("Description filled — review, then Save.");
                                 }
-                            };
-                            source.fetch_description(&key).unwrap_or_default()
-                        },
-                        |_update| {},
-                        move |text| {
-                            if !text.trim().is_empty() {
-                                desc_view.buffer().set_text(&text);
-                                status2.set_label("Description filled — review, then Save.");
-                            }
-                        },
-                    );
+                            },
+                        );
+                    }
                 }
 
-                if let Some(cover_ref) = c.cover.clone() {
+                // A comic candidate's cover is the series cover. “Use
+                // this” must not quietly turn it into this chapter's
+                // cover; the dedicated cover search and From file…
+                // remain the explicit ways to change that.
+                if let Some(cover_ref) = c.cover.clone().filter(|_| !comic_candidate) {
                     let tx = tx.clone();
                     crate::tasks::spawn(
                         "Fetching cover",
@@ -1153,4 +1276,51 @@ fn labelled_entry(parent: &gtk::Box, label: &str, value: &str) -> gtk::Entry {
 fn texture_from_bytes(bytes: &[u8]) -> Option<gtk::gdk::Texture> {
     let glib_bytes = gtk::glib::Bytes::from(bytes);
     gtk::gdk::Texture::from_bytes(&glib_bytes).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn comic_candidate_lines_use_credits_and_year_fallback() {
+        let candidate = Candidate {
+            title: "The Paper Meridian".into(),
+            authors: "Flat Fallback".into(),
+            first_year: Some(2021),
+            credits: vec![
+                metadata::CandidateCredit {
+                    role: "Story".into(),
+                    name: "Ada Meridian".into(),
+                },
+                metadata::CandidateCredit {
+                    role: "Art".into(),
+                    name: "Bea Meridian".into(),
+                },
+            ],
+            source: Some(metadata::SourceId::MyAnimeList),
+            ..Default::default()
+        };
+        assert_eq!(
+            candidate_author_line(&candidate),
+            "Ada Meridian, Bea Meridian"
+        );
+        assert_eq!(candidate_published_line(&candidate), "2021");
+        assert!(is_comic_candidate(&candidate, false));
+    }
+
+    #[test]
+    fn book_candidate_lines_keep_flat_author_and_full_date() {
+        let candidate = Candidate {
+            authors: "Frank Herbert".into(),
+            published: "1965-08-01".into(),
+            first_year: Some(1965),
+            source: Some(metadata::SourceId::OpenLibrary),
+            ..Default::default()
+        };
+        assert_eq!(candidate_author_line(&candidate), "Frank Herbert");
+        assert_eq!(candidate_published_line(&candidate), "1965-08-01");
+        assert!(!is_comic_candidate(&candidate, false));
+        assert!(is_comic_candidate(&candidate, true));
+    }
 }

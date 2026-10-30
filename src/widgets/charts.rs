@@ -161,35 +161,6 @@ pub fn line_chart(series: &[i64], labels: &[String]) -> gtk::Box {
     wrap
 }
 
-/// Read-only star display, e.g. `★★★½☆` plus the numeric value.
-pub fn stars_label(half_stars: u8) -> gtk::Box {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-
-    let full = half_stars / 2;
-    let half = half_stars % 2;
-    let mut glyphs = String::new();
-    for i in 0..5u8 {
-        if i < full {
-            glyphs.push('★');
-        } else if i == full && half == 1 {
-            glyphs.push('⯨');
-        } else {
-            glyphs.push('☆');
-        }
-    }
-
-    let stars = gtk::Label::new(Some(&glyphs));
-    stars.add_css_class("kalam-stars");
-    row.append(&stars);
-
-    if half_stars > 0 {
-        let value = gtk::Label::new(Some(&format!("{:.1}/5", half_stars as f32 / 2.0)));
-        value.add_css_class("kalam-stars-value");
-        row.append(&value);
-    }
-    row
-}
-
 /// Interactive 0–5 star picker in half-star steps. `on_pick` receives
 /// half-stars (0..=10); clicking the current value again clears the rating.
 pub fn star_picker(current: u8, on_pick: impl Fn(u8) + 'static) -> gtk::Box {

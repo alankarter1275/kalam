@@ -1440,6 +1440,8 @@ fn selection_paints_under_text_in_display_list() {
             // `::default()` so the test says what it means, and so a change
             // to the default cannot silently change what is being checked.
             style: chapbook_paint::SelectionStyle::Band,
+            outline: None,
+            note_dot: false,
         }],
         &chapbook_paint::ImageStore::default(),
     );
@@ -1527,6 +1529,7 @@ fn selection_band_is_the_glyph_box_plus_padding_not_the_line_box() {
     // And the painter fills exactly that rect, rounded, with the blend
     // it was asked for.
     let color = chapbook_core::Rgba::new(80, 120, 200, 120);
+    let outline = chapbook_core::Rgba::new(212, 85, 42, 255);
     let dl = chapbook_paint::build_display_list(
         page,
         chapbook_core::Rgba::WHITE,
@@ -1539,6 +1542,10 @@ fn selection_band_is_the_glyph_box_plus_padding_not_the_line_box() {
             // is the Band arm. Underline would paint a rule instead and the
             // assertions below would fail for an unrelated reason.
             style: chapbook_paint::SelectionStyle::Band,
+            // The current search match's ring rides the same op.
+            outline: Some(outline),
+            // And a note dot (decision 29) tops the span's end.
+            note_dot: true,
         }],
         &chapbook_paint::ImageStore::default(),
     );
@@ -1551,13 +1558,35 @@ fn selection_band_is_the_glyph_box_plus_padding_not_the_line_box() {
                 color: c,
                 radius,
                 blend,
-            } if *c == color => Some((*rect, *radius, *blend)),
+                outline: o,
+            } if *c == color => Some((*rect, *radius, *blend, *o)),
             _ => None,
         })
         .expect("a band op");
     assert_eq!(painted.0, band);
     assert_eq!(painted.1, chapbook_paint::BAND_RADIUS);
     assert_eq!(painted.2, chapbook_paint::Blend::Screen);
+    assert_eq!(painted.3, Some(outline));
+
+    // The note dot: the same hue at full strength, 6px across, just
+    // past the band's right edge.
+    let dot = dl
+        .ops
+        .iter()
+        .find_map(|op| match op {
+            chapbook_paint::DisplayOp::Band { rect, color: c, .. }
+                if *c == chapbook_core::Rgba::new(80, 120, 200, 255) =>
+            {
+                Some(*rect)
+            }
+            _ => None,
+        })
+        .expect("a note dot op");
+    assert_eq!((dot.size.w, dot.size.h), (6.0, 6.0));
+    assert!(
+        dot.origin.x > band.max_x(),
+        "the dot sits past the span's end: {dot:?} after {band:?}"
+    );
 }
 
 // ---- kalam: the strip view's numbers (gaps, used_height) ----

@@ -1,26 +1,36 @@
 //! Reader component messages, payload types, preference structures, and sidebar enums.
 
-use crate::db::HighlightColor;
-use crate::epub_book::ReadingTheme;
+use crate::db::{Annotation, HighlightColor, ReadingBookmark, SavedWord};
 use relm4::prelude::*;
-use std::cell::RefCell;
-use std::rc::Rc;
+
+/// Move the book-theme dropdown to a theme id without firing it
+/// (`None` = follow the app theme) — the silent setter the model's
+/// control sync drives (decision 145).
+pub(crate) type BookThemeSetter = std::rc::Rc<dyn Fn(Option<&str>)>;
 
 #[derive(Debug)]
 pub enum ReaderOut {
     Close,
     MinimizeToBubble { book_id: i64 },
     OpenAuthor { name: String },
+    /// The book head's edit pencil (decision 20): the book's own page,
+    /// pushed over the reader so Back returns to the page.
+    OpenBook { book_id: i64 },
 }
 
+/// The left panel's two tabs (decision 20). Settings lives alone in
+/// the right panel now (decision 23), so there is no right tab enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LeftSidebarTab {
-    Toc,
-    Settings,
+    Contents,
+    Notes,
 }
 
+/// The Notes tab's filter chips (decision 20): one list holding the
+/// book's highlights, bookmarks and saved words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RightSidebarTab {
+pub enum NotesFilter {
+    All,
     Highlights,
     Bookmarks,
     Words,
@@ -48,47 +58,7 @@ pub enum WordScope {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReaderSettingsPane {
     Reading,
-    Ui,
     Shortcuts,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReaderUiSetting {
-    SidebarGap,
-    LeftSidebarWidth,
-    RightSidebarWidth,
-    SidebarRadius,
-    SidebarPadding,
-    SidebarShadow,
-    BottomPillSize,
-    BottomPillGap,
-    BackChipSize,
-    BackTopGap,
-    BackSideGap,
-    DimStrength,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ReaderUiPrefs {
-    pub(crate) sidebar_gap: i32,
-    pub(crate) left_sidebar_width: i32,
-    pub(crate) right_sidebar_width: i32,
-    pub(crate) sidebar_radius: i32,
-    pub(crate) sidebar_padding: i32,
-    pub(crate) sidebar_shadow: i32,
-    pub(crate) bottom_pill_size: i32,
-    pub(crate) bottom_pill_gap: i32,
-    pub(crate) back_chip_size: i32,
-    pub(crate) back_top_gap: i32,
-    pub(crate) back_side_gap: i32,
-    pub(crate) dim_strength: i32,
-}
-
-pub(crate) struct ReaderUiSettingControls {
-    pub(crate) value_entry: gtk::Entry,
-    pub(crate) last_value: Rc<RefCell<i32>>,
-    pub(crate) preset_buttons: Vec<(i32, gtk::Button)>,
-    pub(crate) custom_button: gtk::Button,
 }
 
 pub(crate) struct ReaderSettingsControls {
@@ -103,22 +73,75 @@ pub(crate) struct ReaderSettingsControls {
     pub(crate) arrow_step_row: gtk::Box,
     pub(crate) keybind_buttons: Vec<(super::keybinds::ReaderAction, gtk::Button)>,
     pub(crate) dual_page_switch: gtk::Switch,
-    pub(crate) theme_dots: Vec<(ReadingTheme, gtk::Button)>,
-    pub(crate) ui_controls: Vec<(ReaderUiSetting, ReaderUiSettingControls)>,
+    /// The Reading preview's page text and its column, repainted by
+    /// `chrome::sync_reader_controls` as the choices move.
+    pub(crate) preview_body: gtk::Label,
+    pub(crate) preview_column: gtk::Box,
+    /// Set the "Settings for this book" switch without re-firing it:
+    /// editing a value turns the override on from *inside* the model
+    /// (decision 147), so the switch must be settable from sync.
+    pub(crate) set_book_override_switch: std::rc::Rc<dyn Fn(bool)>,
+    /// Same for the book-theme dropdown's standing choice.
+    pub(crate) set_book_theme_choice: BookThemeSetter,
+    /// "Use these settings as my defaults" / "Matches your defaults".
+    pub(crate) use_defaults_btn: gtk::Button,
+    /// The Shortcuts pane's hint line: where a refused key names its
+    /// owner (decision 24).
+    pub(crate) keybind_hint: gtk::Label,
 }
 
-pub(crate) const UI_PRESETS_SIDEBAR_GAP: [(&str, i32); 3] = [("Tight", 8), ("Normal", 14), ("Airy", 20)];
-pub(crate) const UI_PRESETS_LEFT_WIDTH: [(&str, i32); 3] = [("Narrow", 220), ("Normal", 248), ("Wide", 280)];
-pub(crate) const UI_PRESETS_RIGHT_WIDTH: [(&str, i32); 3] = [("Narrow", 180), ("Normal", 212), ("Wide", 252)];
-pub(crate) const UI_PRESETS_RADIUS: [(&str, i32); 3] = [("Soft", 14), ("Round", 20), ("Full", 26)];
-pub(crate) const UI_PRESETS_PADDING: [(&str, i32); 3] = [("Tight", 0), ("Normal", 4), ("Airy", 8)];
-pub(crate) const UI_PRESETS_SHADOW: [(&str, i32); 3] = [("Low", 18), ("Normal", 22), ("Deep", 28)];
-pub(crate) const UI_PRESETS_PILL_SIZE: [(&str, i32); 3] = [("Compact", 30), ("Normal", 34), ("Large", 40)];
-pub(crate) const UI_PRESETS_PILL_GAP: [(&str, i32); 3] = [("Tight", 12), ("Normal", 18), ("Airy", 26)];
-pub(crate) const UI_PRESETS_BACK_SIZE: [(&str, i32); 3] = [("Compact", 28), ("Normal", 32), ("Large", 38)];
-pub(crate) const UI_PRESETS_BACK_TOP: [(&str, i32); 3] = [("Tight", 10), ("Normal", 14), ("Airy", 20)];
-pub(crate) const UI_PRESETS_BACK_SIDE: [(&str, i32); 3] = [("Tight", 12), ("Normal", 16), ("Airy", 22)];
-pub(crate) const UI_PRESETS_DIM: [(&str, i32); 3] = [("Light", 12), ("Medium", 22), ("Strong", 32)];
+/// The search bar's Chapter / Book switch (decision 34): Chapter is
+/// the standing choice every time the bar opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchScope {
+    Chapter,
+    Book,
+}
+
+/// One deletion the reader can take back (decision 30): the row as
+/// it stood, kept for the session. Words travel as a set because
+/// the dictionary toggle forgets every row this book holds for a
+/// word in one stroke.
+#[derive(Debug, Clone)]
+pub(crate) enum DeletedMark {
+    Annotation(Box<Annotation>),
+    Bookmark(Box<ReadingBookmark>),
+    SavedWords(Vec<SavedWord>),
+}
+
+/// Indices into the whole-book result list that the standing scope
+/// can see: every result for Book, only the current chapter's for
+/// Chapter. The engine only ever searches the whole book, so the
+/// scope is a view over its results, not a second search.
+pub(crate) fn scoped_search_indices(
+    chapters: impl Iterator<Item = usize>,
+    scope: SearchScope,
+    current_chapter: usize,
+) -> Vec<usize> {
+    chapters
+        .enumerate()
+        .filter(|(_, chapter)| scope == SearchScope::Book || *chapter == current_chapter)
+        .map(|(index, _)| index)
+        .collect()
+}
+
+/// A typed query the scope cannot satisfy (decision 34): the bar
+/// answers in the accent and the arrows go away.
+pub(crate) fn search_has_no_matches(query: &str, scoped_len: usize) -> bool {
+    !query.trim().is_empty() && scoped_len == 0
+}
+
+/// The bar's count text: blank before anything is typed, the
+/// decision-34 "No matches" for an empty scope, `n of N` otherwise.
+pub(crate) fn search_count_text(query: &str, scoped_len: usize, search_index: usize) -> String {
+    if query.trim().is_empty() {
+        String::new()
+    } else if scoped_len == 0 {
+        "No matches".to_string()
+    } else {
+        format!("{} of {}", search_index.min(scoped_len - 1) + 1, scoped_len)
+    }
+}
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // reader->app messages; some variants are not yet emitted
@@ -128,7 +151,6 @@ pub enum ReaderMsg {
     TocSelect(usize),
     PrevChapter,
     NextChapter,
-    Theme(ReadingTheme),
     FontDelta(i32),
     LineHeightDelta(i32),
     ColumnWidthDelta(i32),
@@ -165,9 +187,6 @@ pub enum ReaderMsg {
     /// The note card closed on its own.
     ClearNote,
     SwitchSettingsPane(ReaderSettingsPane),
-    SetUiSetting(ReaderUiSetting, i32),
-    AdjustUiSetting(ReaderUiSetting, i32),
-    SetDictSenseHint(bool),
     /// Phase 10: `dict_history_enabled` — records every dictionary lookup.
     SetDictHistory(bool),
     /// Single-tap word lookup setting preference.
@@ -178,14 +197,22 @@ pub enum ReaderMsg {
     EngineSelection(Option<(String, gtk::gdk::Rectangle)>),
     /// From the engine, after layout moved the selected text's visible rect.
     EngineSelectionMoved(Option<gtk::gdk::Rectangle>),
-    /// From the selection chip.
+    /// From the selection chip: one tap on a colour dot highlights
+    /// with the last-used style (decision 26).
     HighlightSelection(String),
-    SaveAnnotationDetails {
+    /// The chip's Note: highlight in the last-used colour and style,
+    /// then open the annotation popover on its note box (decision 26).
+    NoteSelection,
+    /// A colour dot or style sample in the standing annotation
+    /// popover: restyle at once, the page behind shows it (29).
+    RestyleAnnotation {
+        id: i64,
         color: String,
         style: String,
-        note: String,
     },
-    EditAnnotationDetails {
+    /// The annotation popover went away: its final colour, style and
+    /// note land together (autosave on close, decision 29).
+    AnnotationEditClosed {
         id: i64,
         color: String,
         style: String,
@@ -194,6 +221,9 @@ pub enum ReaderMsg {
     HighlightTapped(i64, f64, f64),
     WordMemoryTapped(String, f64, f64),
     WordMemoryHover(Option<String>, f64, f64),
+    /// Hover over a noted highlight's end dot (decision 29), or away
+    /// from it (`None`).
+    NoteDotHover(Option<i64>, f64, f64),
     SetWordMemoryScope(String),
     QuoteSelection,
     LookUpSelection,
@@ -215,32 +245,72 @@ pub enum ReaderMsg {
     JumpToLocation(usize, f64),
     DictSearch(String),
     DictSearchSelect(String),
-    SaveCurrentWord,
+    /// In-popup navigation (decision 31): back to the word the reader
+    /// came from. The stack resets on every fresh lookup.
+    DictGoBack,
+    /// The header's circular toggle (decision 31): save the standing
+    /// word, or forget it. The popover stays up either way.
+    ToggleSaveWord,
+    /// A saved word's delete in the Notes list (decision 22).
+    DeleteSavedWord(i64),
+    /// Ctrl+Z (decision 30): bring back the last deleted highlight,
+    /// bookmark or saved word.
+    UndoDelete,
     ClearDict,
-    AddBookmark,
+    /// The ribbon and the B key: set the mark here, or take it away
+    /// (decision 16). Quiet either way — the ribbon is the feedback.
+    ToggleBookmark,
     OpenAuthor(String),
+    /// The book head's edit pencil: out to the shell as
+    /// `ReaderOut::OpenBook`.
+    OpenBookDetails,
     OpenLeftSidebar,
     OpenRightSidebar,
+    ToggleRightSidebar,
+    /// The right panel holds Settings only (decision 23). Summoning
+    /// it while it stands puts it away again.
+    OpenSettingsPanel,
+    /// The Contents summon key: a toggle, where `SwitchLeftTab`
+    /// (the tab buttons) only ever switches.
+    OpenContents,
     SwitchLeftTab(LeftSidebarTab),
-    SwitchRightTab(RightSidebarTab),
+    /// Open Notes on one of its filters (the H and W keys); asking
+    /// for the view already standing closes the panel.
+    OpenNotes(NotesFilter),
+    SetNotesFilter(NotesFilter),
     SetHighlightFilter(HighlightFilter),
+    /// "Settings for this book" (decision 147): on snapshots the
+    /// standing choices as the book's own; off returns to the
+    /// defaults (Reset to my defaults is the same gesture).
+    SetBookOverride(bool),
+    /// Copy the standing choices over the global `reader.*` defaults.
+    UseSettingsAsDefaults,
+    /// The book's own theme, or `None` to follow the app (145).
+    SetBookTheme(Option<String>),
+    /// The shell's configurable Close-panel key, when it is not
+    /// Escape: Escape's layering minus leaving the book.
+    ClosePanelKey,
     /// Write the book's highlights/quotes/notes to ~/Highlights.md.
     ExportAnnotations,
     SetWordScope(WordScope),
-    ScheduleCloseLeft,
-    ScheduleCloseRight,
-    ForceCloseLeft(u64),
-    ForceCloseRight(u64),
     CloseSidebars,
-    HideChrome,
+    /// One Escape, layered (decisions 14, 20, 31): the frontmost open
+    /// thing closes; only a bare page exits the book.
+    Escape,
     ShowBackChrome,
-    ShowBottomChrome,
-    ShowAllChrome,
+    /// The pointer entered or left the top-left rest zone (decision 15).
+    BackZoneHover(bool),
+    /// The 250 ms rest elapsed; reveal if the generation still stands.
+    BackRevealDue(u64),
+    /// The 300 ms grace elapsed; hide if the generation still stands.
+    BackHideDue(u64),
+    /// Hover over the location text: it names the chapter (decision 17).
+    LocationHover(bool),
     ToggleSearch,
     UpdateSearchQuery(String),
     NextSearchResult,
     PrevSearchResult,
-    JumpToSearchResult(usize),
+    SetSearchScope(SearchScope),
     CloseSearch,
     OpenImageLightbox(u32, u32, Vec<u8>),
     CloseImageLightbox,
@@ -249,9 +319,37 @@ pub enum ReaderMsg {
     LightboxReset,
     LightboxRotateLeft,
     LightboxRotateRight,
-    BackChromeTimerTick,
-    BottomChromeTimerTick,
     UserScrolled,
-    TopEdgeHover(bool),
-    BottomEdgeHover(bool),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chapter_scope_sees_only_the_current_chapter() {
+        let chapters = [0usize, 1, 1, 2, 1];
+        assert_eq!(
+            scoped_search_indices(chapters.into_iter(), SearchScope::Chapter, 1),
+            vec![1, 2, 4]
+        );
+        assert_eq!(
+            scoped_search_indices(chapters.into_iter(), SearchScope::Book, 1),
+            vec![0, 1, 2, 3, 4]
+        );
+    }
+
+    #[test]
+    fn count_text_names_the_no_match_state() {
+        assert_eq!(search_count_text("", 0, 0), "");
+        assert_eq!(search_count_text("   ", 3, 0), "");
+        assert_eq!(search_count_text("river", 0, 0), "No matches");
+        assert_eq!(search_count_text("river", 5, 1), "2 of 5");
+        // A standing index past the end (the chapter changed under
+        // the bar) still reads as a position inside the scope.
+        assert_eq!(search_count_text("river", 5, 9), "5 of 5");
+        assert!(search_has_no_matches("river", 0));
+        assert!(!search_has_no_matches("", 0));
+        assert!(!search_has_no_matches("river", 2));
+    }
 }

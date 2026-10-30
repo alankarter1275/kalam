@@ -37,12 +37,20 @@ These govern how the design set is to be read by any builder:
    designed and will be scheduled later. Their presence in a spec is **not** a
    commitment to build them with the redesign, and the redesign must not silently
    drop them from the designs.
-5. **The deep editor is design-only for now.** `editor-spec.md` and decisions
-   118–143 are stored as design. The EPUB editor feature remains removed
-   (`ARCH.md`, `plan.md`): no editor route, no picker, no in-reader editing
-   (including the selection chip's "Fix typo", decision 26/118), and no new
-   GtkSourceView dependency until the owner explicitly reopens the feature.
-   The editor rail entry (decision 102) is therefore also deferred.
+5. **The deep editor was reopened by the owner and is built.** This ruling
+   originally held the editor as design-only: `editor-spec.md` and decisions
+   118–143 stored as design, no route, no picker, no GtkSourceView dependency,
+   and the rail entry (decision 102) deferred. The owner then explicitly
+   reopened the feature and directed implementation to start, so the ruling no
+   longer describes the product. The editor is live: `sourceview5` is a
+   dependency, `Route::EditorWorkspace` exists, `src/pages/epub_editor.rs`,
+   `editor_picker.rs`, `epub_structure.rs`, `epub_tools.rs`, `text_diff.rs`,
+   `font_subset.rs` and `db/editor.rs` are all present, and `NavItem::Editor`
+   is in the rail — which is what decision 102 always specified. These
+   documents were never updated at the time, which is why they contradicted the
+   code. **Further editor work is deferred:** the redesign finishes first, then
+   the editor's known issues are addressed. `ARCH.md`, `plan.md` and
+   `ROADMAP.md` carried the same stale claim and are corrected with this one.
 
 ## 2. Classification legend
 
@@ -485,15 +493,22 @@ Entry points to rewire when it lands: book page series link (decision 81),
 author page "Open series ›" (decision 108), and every current
 `OpenSeriesFloat` caller in `app.rs`.
 
-### 5.7 Deep editor — design-only
+### 5.7 Deep editor — built, further work deferred
 
-Per ruling 5: nothing in `editor-spec.md` is in build scope. For the record,
-the audit confirms the starting point if it is ever reopened: no editor code,
-route or GtkSourceView dependency exists; `epub_writer.rs` and
-`epub_sanitizer.rs` cover import-time rewriting only; legacy `patches` storage
-is inert. Editor-only design tokens (`diff-add`, flat tabs §33, DM Mono) are
-not adopted by other screens unless a designed screen references them.
-`Proofread` (decision 129) has no entry point anywhere until then.
+Ruling 5 originally recorded this as design-only. The owner reopened the
+feature and it was implemented, so the audit's starting-point snapshot below is
+historical rather than current.
+
+What the audit verified at the time: no editor code, route or GtkSourceView
+dependency existed; `epub_writer.rs` and `epub_sanitizer.rs` covered
+import-time rewriting only; legacy `patches` storage was inert. All of that has
+since changed except the last. Editor-only design tokens (`diff-add`, flat tabs
+§33, DM Mono) are still not adopted by other screens unless a designed screen
+references them.
+
+**Further work is deferred** until the UI redesign is complete; the editor's
+known issues are then picked up as their own pass. Redesign work must not
+remove or stub the editor out.
 
 ### 5.8 Settings — `settings-spec.md`, decisions 144–158 (added 2026-10-23, design chat 8)
 
@@ -791,8 +806,8 @@ listed so nobody blocks on them or invents them silently:
 - Reader body line-height default, 1.75 vs 1.8 (open in the design set).
 - Icon set: symbolic-theme mapping proposed in §4.3.
 - Narrow-window behavior for book/author/series pages and dual-panel readers.
-- Final rail composition (which entries, given Shelves/Comics exist and the
-  Editor entry is deferred).
+- Final rail composition (which entries, given Shelves/Comics exist; the
+  Editor entry is live per decision 102 and ruling 5 as corrected).
 - Book float redesign; Bubbles design pass; EPUB continuous-scroll, spread and
   light-panel boards (structure follows tokens meanwhile).
 
@@ -828,7 +843,7 @@ listed so nobody blocks on them or invents them silently:
 
 No application code was modified by this audit. Repository changes on this
 branch so far are documentation only: `docs/design/` archived verbatim
-(`6d780a6`), the `pdf-reader-spec.md` reference fix (§10/owner item (a),
-`HANDOFF.md` checker now passes with zero errors), and this file. The next
+(`6d780a6`), the `pdf-reader-spec.md` reference fix (§10/owner item (a)), and
+this file. The next
 step requiring a decision is starting §7 phase 1 (tokens) — no page code
 should be touched before that compiles.

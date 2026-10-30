@@ -22,21 +22,20 @@ impl NavItem {
     ///
     /// Deliberately missing, and not an oversight:
     ///
-    /// * `Authors` — dropped from the rail by decision 179; the authors
-    ///   index and author pages still exist, they just have no rail entry.
     /// * `Downloads` — the queue page works, but nothing ever registers a
     ///   `Source`, so it can only ever read "0 downloads tracked". Online
     ///   sources are a future track in `ROADMAP.md`; until one exists the
     ///   button advertises a feature the app cannot perform.
     /// * `RemoteBrowse` and `Fanfiction` — same reason, removed earlier.
     ///
-    /// These stay in the enum, in `label`/`icon`, in `placeholder_copy`
-    /// and in the `KALAM_ROUTE` map, so the underlying routes and pages
-    /// keep working even though the rail does not show them.
+    /// All three stay in the enum, in `label`/`icon`, in `placeholder_copy`
+    /// and in the `KALAM_ROUTE` map, so putting one back is a one-line change
+    /// here and nothing else.
     ///
     pub const ALL: &'static [NavItem] = &[
         NavItem::Home,
         NavItem::Library,
+        NavItem::Authors,
         NavItem::Shelves,
         NavItem::Comics,
         NavItem::Editor,
@@ -46,7 +45,7 @@ impl NavItem {
     pub fn label(self) -> &'static str {
         match self {
             NavItem::Home => "Home",
-            NavItem::Library => "My Library",
+            NavItem::Library => "Library",
             NavItem::Authors => "Authors",
             NavItem::Shelves => "Shelves",
             NavItem::Downloads => "Downloads",
@@ -150,8 +149,6 @@ impl Route {
             Route::ComponentPreview => NavItem::Settings,
             Route::ComicSeries { .. } => NavItem::Comics,
             Route::LibrarySection(_) => NavItem::Library,
-            // Shelves now has its own rail entry (§56), so its routes
-            // light up the Shelves item rather than Library.
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
             Route::TagBooks { .. } => NavItem::Library,
             Route::AuthorsIndex | Route::AuthorPage { .. } => NavItem::Authors,

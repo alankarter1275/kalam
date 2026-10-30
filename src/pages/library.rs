@@ -6,12 +6,6 @@ use crate::pages::history::pretty_day;
 use crate::service::{DashboardFeedRow, DashboardSnapshot, LibraryService, NowReading};
 use crate::widgets::book_row::cover_widget_deferred;
 use crate::widgets::charts::{monthly_series, sparkline};
-use crate::widgets::reading_timeline::{
-    ReadingTimelineModel, ReadingTimelineOut,
-};
-use crate::widgets::saved_words_sphere::{
-    SavedWordsSphereModel, SavedWordsSphereOut, setup_draw as setup_sphere_draw,
-};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -21,9 +15,6 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub enum LibraryOut {
     Section(LibrarySection),
-    /// Shelves are reached from My Library rather than the rail; the
-    /// shelves grid keeps its own route, so it is not a LibrarySection.
-    Shelves,
     Book {
         book_id: i64,
     },
@@ -49,16 +40,10 @@ pub enum LibraryOut {
 #[derive(Debug)]
 pub enum LibraryMsg {
     Loaded(Box<DashboardSnapshot>),
-    /// A session on the reading timeline was clicked — open that book.
-    TimelineOpenBook { book_id: i64 },
-    /// A saved word on the sphere was clicked — open its detail page.
-    OpenSavedWord { word: String },
 }
 
 pub struct LibraryPageModel {
     service: LibraryService,
-    timeline_ctrl: Option<relm4::Controller<ReadingTimelineModel>>,
-    sphere_ctrl: Option<relm4::Controller<SavedWordsSphereModel>>,
 }
 
 #[relm4::component(pub)]
@@ -90,9 +75,7 @@ impl Component for LibraryPageModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = LibraryPageModel {
-            service: LibraryService::new(catalog.clone()),
-            timeline_ctrl: None,
-            sphere_ctrl: None,
+            service: LibraryService::new(catalog),
         };
         let widgets = view_output!();
 
@@ -103,39 +86,6 @@ impl Component for LibraryPageModel {
         loading.add_css_class("kalam-muted");
         loading.set_halign(gtk::Align::Start);
         widgets.body.append(&loading);
-
-        // Saved-words sphere (§52): Cairo/Pango widget on a 520×480 stage.
-        // Launched before the timeline so `catalog` can be cloned first.
-        let sphere_ctrl = SavedWordsSphereModel::builder()
-            .launch(catalog.clone())
-            .forward(sender.input_sender(), |msg| {
-                match msg {
-                    SavedWordsSphereOut::OpenSavedWord { word } => {
-                        LibraryMsg::OpenSavedWord { word }
-                    }
-                    SavedWordsSphereOut::OpenAllWords => {
-                        LibraryMsg::OpenSavedWord { word: String::new() }
-                    }
-                }
-            });
-
-        // Reading timeline (§51): Cairo-drawn widget with its own catalog
-        // read on the UI thread (synchronous, like the history page's first
-        // read). Forward clicks to open the book.
-        let timeline_ctrl = ReadingTimelineModel::builder()
-            .launch(catalog)
-            .forward(sender.input_sender(), |msg| {
-                match msg {
-                    ReadingTimelineOut::OpenBook { book_id } => {
-                        LibraryMsg::TimelineOpenBook { book_id }
-                    }
-                }
-            });
-        // The timeline widget is added to the body once the snapshot loads.
-
-        let mut model = model;
-        model.timeline_ctrl = Some(timeline_ctrl);
-        model.sphere_ctrl = Some(sphere_ctrl);
 
         request_snapshot(&model.service, &sender);
 
@@ -152,32 +102,6 @@ impl Component for LibraryPageModel {
         match message {
             LibraryMsg::Loaded(snap) => {
                 apply_snapshot(&widgets.body, snap, &sender);
-                // Insert the reading timeline section (§51) as the first
-                // child of the body, right after the header that
-                // apply_snapshot just built.
-                if let Some(ctrl) = &self.timeline_ctrl {
-                    let widget: gtk::Widget = ctrl.widget().clone().upcast();
-                    widgets.body.insert_child_after(&widget, None as Option<&gtk::Widget>);
-                }
-                // Insert the saved-words sphere (§52) below the timeline.
-                if let Some(ctrl) = &self.sphere_ctrl {
-                    let widget: gtk::Widget = ctrl.widget().clone().upcast();
-                    widgets.body.append(&widget);
-                    // Attach the Cairo draw function once the widget is realised.
-                    let model = ctrl.model();
-                    if let Ok(drawing) = widget.downcast::<gtk::DrawingArea>() {
-                        setup_sphere_draw(&drawing, &model);
-                    }
-                }
-            }
-            LibraryMsg::TimelineOpenBook { book_id } => {
-                sender.output(LibraryOut::Book { book_id }).ok();
-            }
-            LibraryMsg::OpenSavedWord { word } => {
-                // Open the saved-words list page; the word is highlighted
-                // there by the route listener (chat 13 owns the detail view).
-                let _ = word;
-                sender.output(LibraryOut::Section(LibrarySection::SavedWords)).ok();
             }
         }
         self.update_view(widgets, sender);
@@ -1036,20 +960,6 @@ fn quick_links(sender: &ComponentSender<LibraryPageModel>) -> gtk::Box {
             s.output(LibraryOut::Section(target)).ok();
         });
         row.append(&btn);
-
-        // Shelves used to be a rail entry; they live here in My Library
-        // now. The shelves grid has its own route rather than a
-        // LibrarySection, so it gets its own button beside All books.
-        if target == LibrarySection::AllBooks {
-            let shelves_btn = gtk::Button::with_label("Shelves");
-            shelves_btn.add_css_class("kalam-secondary-btn");
-            shelves_btn.set_tooltip_text(Some("Your shelves and the books on them"));
-            let s = sender.clone();
-            shelves_btn.connect_clicked(move |_| {
-                s.output(LibraryOut::Shelves).ok();
-            });
-            row.append(&shelves_btn);
-        }
     }
 
     row

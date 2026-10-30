@@ -2,7 +2,6 @@
 
 use crate::db::Catalog;
 use crate::models::{LibrarySection, NavItem, Route};
-use crate::shortcuts::ShortcutAction;
 use crate::pages::{downloads::DownloadsModel, 
     all_books::{AllBooksModel, AllBooksMsg, AllBooksOut},
     analytics::AnalyticsModel,
@@ -37,8 +36,14 @@ use crate::pages::{downloads::DownloadsModel,
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
 use std::sync::Arc;
+
+/// How often the sidebar badge re-reads the task registry.
+///
+/// Half a second: quick enough that starting an import changes the badge
+/// before you look away, cheap enough to leave running forever. It reads a
+/// `Mutex<Vec<..>>` of single-digit length and nothing else.
+const TASK_TICK: std::time::Duration = std::time::Duration::from_millis(500);
 
 #[derive(Debug)]
 pub enum AppMsg {
@@ -65,6 +70,11 @@ pub enum AppMsg {
         book_id: i64,
     },
     CloseBookDialog,
+    /// Toggle the `w` task dialog.
+    ToggleTasksFloat,
+    /// Re-read the task registry: refreshes the sidebar badge and, when the
+    /// `w` dialog is open, its rows. One tick drives both.
+    TasksTick,
     /// Open the shelves checklist panel (in-app float).
     OpenShelvesFloat {
         book_id: i64,
@@ -194,6 +204,9 @@ enum Floating {
     Shelves {
         return_to: Option<i64>,
     },
+    /// The `w` task dialog. Holds the box its rows are drawn into so the
+    /// app-wide tick can repaint it.
+    Tasks,
 }
 
 pub struct AppModel {
@@ -212,6 +225,20 @@ pub struct AppModel {
     /// the UI lag: revisiting Home or Library reconstructed dozens of widgets
     /// and re-ran their queries. Cached pages are unparented rather than
     /// destroyed, so returning to one costs nothing.
+    /// The sidebar's task button. Its face is the badge: a tick when idle, a
+    /// count when busy, a warning when something recent failed.
+    tasks_btn: gtk::Button,
+    /// Last badge painted, so an unchanged state does not rebuild the child
+    /// widget twice a second.
+    tasks_badge: crate::pages::task_manager::Badge,
+    /// The `w` dialog's row host and its cancel callback, while it is open.
+    tasks_dialog: Option<(gtk::Box, crate::pages::task_manager::CancelFn)>,
+    /// Held, not used — hence the underscore, which is what exempts a field
+    /// from the dead-code lint that `-D warnings` turns into a build failure.
+    /// Dropping a `SourceId` is not documented to detach its source and this
+    /// codebase has never settled the question, so the one timer the badge
+    /// depends on keeps its handle.
+    _tasks_tick: gtk::glib::SourceId,
     cache: Vec<(String, PageSlot)>,
     /// Catalog write counter at the time each cached page was built — the
     /// *page-cache* token, which ignores reading activity (see
@@ -283,6 +310,40 @@ impl AppModel {
         self.float_host.set_visible(false);
         self.float_scrim.set_visible(false);
         self.floating = None;
+        // Stop repainting rows into a box that is no longer on screen.
+        self.tasks_dialog = None;
+    }
+
+    /// Open the `w` task dialog: what is running right now, with progress and
+    /// a cancel button each. Deliberately narrower than the full page — no
+    /// "recently finished" list, no status line. It answers "what is happening
+    /// and can I stop it", and the sidebar button is how you get to the rest.
+    fn open_tasks_floating(&mut self, sender: &ComponentSender<Self>) {
+        let _span = crate::timing::measure("dialog_open:tasks_float");
+        let _activity = crate::timing::activity("dialog_open:tasks_float");
+        self.close_floating();
+
+        let s = sender.input_sender().clone();
+        let on_cancel: crate::pages::task_manager::CancelFn = std::rc::Rc::new(move |id| {
+            crate::tasks::cancel(id);
+            // Repaint now rather than waiting for the next tick, so the row
+            // responds to the click instead of half a second later.
+            s.send(AppMsg::TasksTick).ok();
+        });
+
+        let (panel, list) = crate::pages::task_manager::build_tasks_dialog(on_cancel.clone());
+        panel.set_size_request(400, 320);
+        panel.set_hexpand(false);
+        panel.set_vexpand(false);
+        panel.set_halign(gtk::Align::Center);
+        panel.set_valign(gtk::Align::Center);
+        self.float_host.append(&panel);
+        self.float_scrim.set_visible(true);
+        self.float_host.set_visible(true);
+        panel.grab_focus();
+
+        self.tasks_dialog = Some((list, on_cancel));
+        self.floating = Some(Floating::Tasks);
     }
 
     fn open_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
@@ -389,12 +450,6 @@ impl AppModel {
                         HomeOut::ComicSeries { series_name } => {
                             AppMsg::Push(Route::ComicSeries { series_name })
                         }
-                        HomeOut::Search { .. } => {
-                            // Open the full search page (All Books) with the query.
-                            // Query wiring to All Books search is deferred to the
-                            // search page implementation (chat 10).
-                            AppMsg::Push(Route::LibrarySection(LibrarySection::AllBooks))
-                        }
                     },
                 );
                 PageSlot::Home(ctrl)
@@ -404,7 +459,6 @@ impl AppModel {
                     sender.input_sender(),
                     |out| match out {
                         LibraryOut::Section(sec) => AppMsg::Push(Route::LibrarySection(sec)),
-                        LibraryOut::Shelves => AppMsg::Push(Route::ShelvesGrid),
                         LibraryOut::Book { book_id } => AppMsg::Push(Route::BookPage { book_id }),
                         LibraryOut::BookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
                         LibraryOut::Read { book_id } => AppMsg::OpenReader { book_id },
@@ -431,7 +485,6 @@ impl AppModel {
                         AllBooksOut::ComicSeries { series_name } => {
                             AppMsg::Push(Route::ComicSeries { series_name })
                         }
-                        AllBooksOut::OpenShelves => AppMsg::Push(Route::ShelvesGrid),
                     },
                 );
                 PageSlot::AllBooks(ctrl)
@@ -1313,7 +1366,25 @@ impl Component for AppModel {
         float_host.set_visible(false);
 
         let cache_token = catalog.page_cache_token();
+        // Built before the model because the model owns both. Appended to the
+        // rail further down, once `widgets` exists.
+        let tasks_btn = gtk::Button::new();
+        tasks_btn.add_css_class("kalam-nav-btn");
+        tasks_btn.set_halign(gtk::Align::Center);
+        tasks_btn.set_hexpand(false);
+        tasks_btn.set_focus_on_click(false);
+        tasks_btn.set_widget_name("nav-Tasks");
+        let badge0 = crate::pages::task_manager::badge();
+        crate::pages::task_manager::apply_badge(&tasks_btn, badge0);
+
+        let tick_sender = sender.input_sender().clone();
         let watch_sender = sender.input_sender().clone();
+        let tasks_tick = gtk::glib::timeout_add_local(TASK_TICK, move || {
+            match tick_sender.send(AppMsg::TasksTick) {
+                Ok(()) => gtk::glib::ControlFlow::Continue,
+                Err(_) => gtk::glib::ControlFlow::Break,
+            }
+        });
 
         let bubbles = crate::bubbles::BubbleManager::new(catalog.clone(), sender.clone());
         let watch_folder = Some(crate::watch_folder::WatchFolderService::new(
@@ -1330,6 +1401,10 @@ impl Component for AppModel {
             floating: None,
             float_scrim: float_scrim.clone(),
             float_host: float_host.clone(),
+            tasks_btn,
+            tasks_badge: badge0,
+            tasks_dialog: None,
+            _tasks_tick: tasks_tick,
             cache: Vec::new(),
             cache_token,
             force_rebuild_next: false,
@@ -1405,78 +1480,36 @@ impl Component for AppModel {
         });
         root.add_controller(close_float_key);
 
-        // The rebindable app shortcuts (decision 155). This remains a
-        // bubble-phase handler on the window: page and reader handlers
-        // get first claim on the keys they own (notably Ctrl+F inside a
-        // book), and only an unclaimed press reaches the shell table.
-        // The table is the same shared copy Settings edits, so a
-        // successful recording changes this handler's next keypress.
-        let app_shortcut_key = gtk::EventControllerKey::new();
-        let shortcut_bindings = crate::shortcuts::shared(&model.catalog);
-        let s_shortcuts = sender.clone();
-        let key_root_shortcuts = root.clone();
-        let notifications_shortcuts = notifications.clone();
-        let float_host_shortcuts = model.float_host.clone();
-        app_shortcut_key.connect_key_pressed(move |_, keyval, _, state| {
-            use crate::shortcuts::ShortcutAction;
-
-            let (action, binding) = {
-                let table = shortcut_bindings.borrow();
-                let Some(action) = table.action_for(keyval, state) else {
-                    return gtk::glib::Propagation::Proceed;
-                };
-                (action, table.binding(action))
-            };
-
-            // There is no app-wide undo stack yet. Leaving the press
-            // unclaimed also preserves the local Ctrl+Z undo that does
-            // exist (for example, the Tag dialog's own history).
-            if action == ShortcutAction::UndoDelete {
+        // `w` toggles the task dialog, matching yazi.
+        //
+        // Scoped away from the reader by doing nothing special: the reader
+        // binds `w` to its Words tab on its own widget, its controller runs
+        // first because key events travel up from the focused widget, and it
+        // returns `Stop`. So this never sees the keypress while reading --
+        // which is the owner's choice, recorded in roadmap 1.14 along with the
+        // consequence that the sidebar is hidden there too.
+        let tasks_key = gtk::EventControllerKey::new();
+        let s_tasks = sender.clone();
+        let key_root_tasks = root.clone();
+        tasks_key.connect_key_pressed(move |_, keyval, _, _| {
+            use gtk::gdk::Key;
+            if keyval != Key::w && keyval != Key::W {
                 return gtk::glib::Propagation::Proceed;
             }
-
-            let focused = gtk::prelude::GtkWindowExt::focus(&key_root_shortcuts);
+            // Never swallow a letter someone is typing into a search box.
+            let focused = gtk::prelude::GtkWindowExt::focus(&key_root_tasks);
             let typing = focused
                 .map(|w| {
-                    w.is::<gtk::Editable>()
-                        || w.is::<gtk::Text>()
-                        || w.is::<gtk::TextView>()
+                    w.is::<gtk::Text>() || w.is::<gtk::Entry>() || w.is::<gtk::SearchEntry>()
                 })
                 .unwrap_or(false);
-            if typing && !binding.fires_while_typing() {
+            if typing {
                 return gtk::glib::Propagation::Proceed;
             }
-
-            match action {
-                ShortcutAction::Notifications => {
-                    notifications_shortcuts.toggle();
-                    return gtk::glib::Propagation::Stop;
-                }
-                ShortcutAction::ClosePanel => {
-                    if notifications_shortcuts.is_open() {
-                        notifications_shortcuts.close();
-                        return gtk::glib::Propagation::Stop;
-                    }
-                    if float_host_shortcuts.is_visible() {
-                        s_shortcuts.input(AppMsg::CloseBookDialog);
-                        return gtk::glib::Propagation::Stop;
-                    }
-                    // Reader and page panels own their close keys for
-                    // now; do not swallow a press the shell cannot use.
-                    return gtk::glib::Propagation::Proceed;
-                }
-                _ => {}
-            }
-
-            // A shell action replaces the bell panel rather than
-            // navigating underneath its outside-click catcher.
-            if notifications_shortcuts.is_open() {
-                notifications_shortcuts.close();
-            }
-            s_shortcuts.input(AppMsg::Shortcut(action));
+            s_tasks.input(AppMsg::ToggleTasksFloat);
             gtk::glib::Propagation::Stop
         });
-        root.add_controller(app_shortcut_key);
+        root.add_controller(tasks_key);
 
         // The rebindable app shortcuts (decision 155). This remains a
         // bubble-phase handler on the window: page and reader handlers
@@ -1553,13 +1586,6 @@ impl Component for AppModel {
 
         // From here on, any notify::* call lands on screen.
         crate::notify::attach(widgets.toast_host.clone());
-
-        // §66 Toast "View" link (decision 184): error toasts can carry a View
-        // link that opens the notification panel.
-        let notifications_for_view = notifications.clone();
-        crate::notify::set_view_action(Rc::new(move || {
-            notifications_for_view.toggle();
-        }));
 
         // CI screenshot states for the rail bell: no route reaches the
         // floating panel, and a fresh seeded launch has no history to
@@ -1663,6 +1689,17 @@ impl Component for AppModel {
             }
         });
 
+        // Above Settings, on the same end of the rail. Prepended rather than
+        // appended so the order is Tasks, then the bell, then Settings;
+        // `bottom_nav` holds nothing else since Downloads was hidden.
+        {
+            let btn = model.tasks_btn.clone();
+            let s = sender.clone();
+            btn.connect_clicked(move |_| s.input(AppMsg::Push(Route::LibrarySection(
+                LibrarySection::TaskManager,
+            ))));
+            widgets.bottom_nav.prepend(&btn);
+        }
         widgets.bottom_nav.append(&notifications.button());
 
         for item in NavItem::ALL {
@@ -1977,6 +2014,23 @@ impl Component for AppModel {
                     &sender,
                 );
             }
+            AppMsg::ToggleTasksFloat => {
+                if matches!(self.floating, Some(Floating::Tasks)) {
+                    self.close_floating();
+                } else {
+                    self.open_tasks_floating(&sender);
+                }
+            }
+            AppMsg::TasksTick => {
+                let state = crate::pages::task_manager::badge();
+                if state != self.tasks_badge {
+                    crate::pages::task_manager::apply_badge(&self.tasks_btn, state);
+                    self.tasks_badge = state;
+                }
+                if let Some((list, on_cancel)) = &self.tasks_dialog {
+                    crate::pages::task_manager::fill_tasks_dialog(list, on_cancel);
+                }
+            }
             AppMsg::CloseBookDialog => {
                 // A shelves panel opened from the book float hands control
                 // back to that float — not straight down to the page.
@@ -2237,9 +2291,9 @@ fn collect_shortcut_import_files(root: std::path::PathBuf) -> Vec<std::path::Pat
 /// for free, but `icons::init` is deferred to idle for its theme-rescan
 /// cost, and the rail is on screen before that runs.)
 fn brand_logo(accent: &str) -> gtk::Image {
-    // design-system §5: the loop is a hairline, so check it at 38px. The
+    // design-system §5: the loop is a hairline, so check it at 32px. The
     // 68px rail is drawn around this size.
-    const LOGO_PX: i32 = 38;
+    const LOGO_PX: i32 = 32;
 
     let image = gtk::Image::new();
     if let Some(texture) = brand_texture(accent) {
@@ -2267,21 +2321,10 @@ pub(crate) fn brand_texture(accent: &str) -> Option<gtk::gdk::Texture> {
     gtk::gdk::Texture::from_bytes(&bytes).ok()
 }
 
-/// Map a rail entry to its global shortcut action, if any.
-fn nav_shortcut(item: NavItem) -> Option<ShortcutAction> {
-    match item {
-        NavItem::Home => Some(ShortcutAction::GoHome),
-        NavItem::Library => Some(ShortcutAction::GoLibrary),
-        NavItem::Editor => Some(ShortcutAction::GoEditor),
-        NavItem::Settings => Some(ShortcutAction::OpenSettings),
-        _ => None,
-    }
-}
-
 fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     // Icon only. The rail is too narrow for a readable caption, and the
     // tooltip already carries the page name.
-    let icon = crate::icons::symbolic_with_classes(item.icon(), 22, &["kalam-nav-icon"]);
+    let icon = crate::icons::symbolic_with_classes(item.icon(), 20, &["kalam-nav-icon"]);
     icon.set_halign(gtk::Align::Center);
     icon.set_valign(gtk::Align::Center);
 
@@ -2293,13 +2336,7 @@ fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     if active {
         btn.add_css_class("active");
     }
-    let mut tip = item.label().to_string();
-    if let Some(action) = nav_shortcut(item) {
-        if let Some(label) = action.shortcut_label() {
-            tip.push_str(&format!(" ({label})"));
-        }
-    }
-    btn.set_tooltip_text(Some(&tip));
+    btn.set_tooltip_text(Some(item.label()));
     btn.set_focus_on_click(false);
     btn
 }
@@ -2744,19 +2781,6 @@ mod tests {
             route_by_name("analytics"),
             Some(Route::LibrarySection(LibrarySection::Analytics))
         );
-    }
-
-    #[test]
-    fn shelves_live_on_the_rail() {
-        // Per §56, Shelves is a rail entry alongside Home/Library/Comics/Editor;
-        // My Library remains the entry point for shelf detail pages.
-        assert!(NavItem::ALL.contains(&NavItem::Shelves));
-        assert_eq!(Route::ShelvesGrid.sidebar_item(), NavItem::Shelves);
-        assert_eq!(
-            Route::ShelfDetail { shelf_id: 1 }.sidebar_item(),
-            NavItem::Shelves
-        );
-        assert_eq!(route_by_name("shelves"), Some(Route::ShelvesGrid));
     }
 
     #[test]

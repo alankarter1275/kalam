@@ -96,12 +96,6 @@ impl ShortcutAction {
         }
     }
 
-    /// The default key spelling for tooltips (e.g. "Alt+1", "Ctrl+,"),
-    /// or `None` when the action has no default binding.
-    pub fn shortcut_label(self) -> Option<String> {
-        Some(self.default_binding().display_label())
-    }
-
     fn default_binding(self) -> ShortcutBinding {
         match self {
             Self::GoHome => ShortcutBinding::alt(gdk::Key::_1),

@@ -1,8 +1,0 @@
-error: expected item after doc comment
-    --> /home/runner/work/kalam/kalam/src/pages/home.rs:1388:1
-     |
-1388 | /// Ask the worker for a fresh snapshot.
-     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this doc comment doesn't document anything
-
-Error writing files: failed to resolve mod `home`: cannot parse /home/runner/work/kalam/kalam/src/pages/home.rs
-fmt_exit=1

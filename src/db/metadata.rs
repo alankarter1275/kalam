@@ -190,10 +190,10 @@ impl Catalog {
         let conn = self.conn();
         conn.execute(
             "INSERT INTO metadata_overrides
-                (file_hash, title, authors, series, series_index, publisher,
+                (book_id, title, authors, series, series_index, publisher,
                  published, description, tags, rating, cover_name, updated_at)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
-             ON CONFLICT(file_hash) DO UPDATE SET
+             ON CONFLICT(book_id) DO UPDATE SET
                 title = excluded.title,
                 authors = excluded.authors,
                 series = excluded.series,
@@ -206,7 +206,7 @@ impl Catalog {
                 cover_name = excluded.cover_name,
                 updated_at = excluded.updated_at",
             params![
-                book.file_hash,
+                book_id,
                 book.title,
                 book.authors,
                 book.series,
@@ -225,7 +225,7 @@ impl Catalog {
 
     /// Re-apply remembered edits to a freshly imported book. Returns true when
     /// something was restored.
-    pub fn restore_overrides(&self, book_id: i64, file_hash: &str) -> Result<bool> {
+    pub fn restore_overrides(&self, book_id: i64) -> Result<bool> {
         // A named struct rather than a ten-element tuple: the tuple needed a
         // type annotation that tripped clippy::type_complexity, and this is
         // easier to read besides.
@@ -249,8 +249,8 @@ impl Catalog {
                         IFNULL(series_index,0), IFNULL(publisher,''),
                         IFNULL(published,''), IFNULL(description,''),
                         IFNULL(tags,''), IFNULL(rating,0), cover_name
-                 FROM metadata_overrides WHERE file_hash = ?1",
-                params![file_hash],
+                 FROM metadata_overrides WHERE book_id = ?1",
+                params![book_id],
                 |r| {
                     Ok(Saved {
                         title: r.get(0)?,
@@ -344,14 +344,14 @@ impl Catalog {
 
     /// Forget remembered edits for a file — used by "import fresh".
     #[cfg(test)]
-    pub fn forget_overrides(&self, file_hash: &str) -> Result<()> {
+    pub fn forget_overrides(&self, book_id: i64) -> Result<()> {
         // Drop the stashed cover too, otherwise the covers directory grows
         // forever with images nothing references.
         let stashed: Option<String> = {
             let conn = self.conn();
             conn.query_row(
-                "SELECT IFNULL(cover_name, '') FROM metadata_overrides WHERE file_hash = ?1",
-                params![file_hash],
+                "SELECT IFNULL(cover_name, '') FROM metadata_overrides WHERE book_id = ?1",
+                params![book_id],
                 |r| r.get::<_, String>(0),
             )
             .optional()?
@@ -364,8 +364,8 @@ impl Catalog {
 
         let conn = self.conn();
         conn.execute(
-            "DELETE FROM metadata_overrides WHERE file_hash = ?1",
-            params![file_hash],
+            "DELETE FROM metadata_overrides WHERE book_id = ?1",
+            params![book_id],
         )?;
         Ok(())
     }
@@ -384,15 +384,9 @@ impl Catalog {
             "UPDATE books SET file_hash = ?2 WHERE id = ?1",
             params![book_id, new_hash],
         )?;
-        // Drop any override already filed under the new hash, then move ours.
-        conn.execute(
-            "DELETE FROM metadata_overrides WHERE file_hash = ?1",
-            params![new_hash],
-        )?;
-        conn.execute(
-            "UPDATE metadata_overrides SET file_hash = ?2 WHERE file_hash = ?1",
-            params![old_hash, new_hash],
-        )?;
+        // The remembered edits need no re-pointing: they are keyed on the book
+        // id, the one thing that did not change. That detachment was the whole
+        // reason for the 2026-10-31 re-key.
         Ok(())
     }
 
@@ -415,14 +409,7 @@ impl Catalog {
             "UPDATE books SET file_hash = ?2 WHERE id = ?1",
             params![book_id, new_hash],
         )?;
-        conn.execute(
-            "DELETE FROM metadata_overrides WHERE file_hash = ?1",
-            params![new_hash],
-        )?;
-        conn.execute(
-            "UPDATE metadata_overrides SET file_hash = ?2 WHERE file_hash = ?1",
-            params![current_hash, new_hash],
-        )?;
+        // As in rehash_book: overrides are keyed on the book id and stay put.
         Ok(())
     }
 

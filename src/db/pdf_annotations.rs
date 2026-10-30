@@ -669,15 +669,8 @@ impl Catalog {
                     "UPDATE books SET file_hash = ?1 WHERE id = ?2",
                     params![new_hash, book_id],
                 )?;
-                tx.execute(
-                    "DELETE FROM metadata_overrides WHERE file_hash = ?1",
-                    params![new_hash],
-                )?;
-                tx.execute(
-                    "UPDATE metadata_overrides SET file_hash = ?1
-                     WHERE file_hash = ?2",
-                    params![new_hash, old_hash],
-                )?;
+                // Remembered edits are keyed on the book id; a moved hash needs no
+                  // re-pointing.
             }
 
             // The swap itself, inside the transaction: from here a

@@ -921,6 +921,49 @@ impl Catalog {
     #[cfg(test)]
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
+        // 2026-10-31: metadata_overrides used to be keyed on the file hash, so any
+        // edit that changed a file's bytes silently detached the owner's edits
+        // from the book they belonged to. Re-key to the book id, re-attaching
+        // existing rows by joining on the hash each book currently holds. A row
+        // whose hash matches no book is dropped: an override for a file that is
+        // gone has nothing left to override. Detection is by column name, so
+        // this runs once per database and does nothing on a fresh one.
+        let keyed_by_hash = {
+            let mut cols = conn.prepare("PRAGMA table_info(metadata_overrides)")?;
+            let names: Vec<String> = cols
+                .query_map([], |r| r.get::<_, String>(1))?
+                .collect::<Result<Vec<_>, _>>()?;
+            names.iter().any(|n| n == "file_hash")
+        };
+        if keyed_by_hash {
+            conn.execute_batch(
+                "CREATE TABLE metadata_overrides_new (
+                    book_id      INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+                    title        TEXT,
+                    authors      TEXT,
+                    series       TEXT,
+                    series_index REAL,
+                    publisher    TEXT,
+                    published    TEXT,
+                    description  TEXT,
+                    tags         TEXT,
+                    rating       INTEGER,
+                    cover_name   TEXT,
+                    updated_at   TEXT NOT NULL
+                );
+                INSERT INTO metadata_overrides_new
+                    (book_id, title, authors, series, series_index, publisher,
+                     published, description, tags, rating, cover_name, updated_at)
+                SELECT books.id, o.title, o.authors, o.series, o.series_index,
+                       o.publisher, o.published, o.description, o.tags,
+                       o.rating, o.cover_name, o.updated_at
+                  FROM metadata_overrides o
+                  JOIN books ON books.file_hash = o.file_hash;
+                DROP TABLE metadata_overrides;
+                ALTER TABLE metadata_overrides_new RENAME TO metadata_overrides;",
+            )?;
+        }
+
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let cat = Self {
             conn: Mutex::new(conn),
@@ -1180,7 +1223,7 @@ impl Catalog {
             -- Deliberately NOT cascaded from books: the whole point is that it
             -- outlives the catalog row.
             CREATE TABLE IF NOT EXISTS metadata_overrides (
-                file_hash    TEXT PRIMARY KEY,
+                book_id      INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
                 title        TEXT,
                 authors      TEXT,
                 series       TEXT,
@@ -3388,7 +3431,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap());
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         assert_eq!(restored.title, "Nyxia Uprising");
@@ -3433,7 +3476,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap());
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         assert!(restored.cover_name.is_some(), "cover was not restored");
@@ -3444,7 +3487,7 @@ mod tests {
 
         // Tidy up so the test does not leave files in the real data dir.
         let _ = std::fs::remove_dir_all(crate::paths::book_dir(&restored.uuid));
-        let _ = cat.forget_overrides(&hash);
+        let _ = cat.forget_overrides(id);
     }
 
     #[test]
@@ -3483,7 +3526,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap());
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         let bytes = std::fs::read(restored.cover_path.as_ref().unwrap()).unwrap();
@@ -3491,7 +3534,7 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(crate::paths::book_dir(&restored.uuid));
         let _ = std::fs::remove_dir_all(dir);
-        let _ = cat.forget_overrides(&hash);
+        let _ = cat.forget_overrides(id);
     }
 
     #[test]
@@ -3534,7 +3577,7 @@ mod tests {
         std::fs::create_dir_all(&fresh_dir).unwrap();
         std::fs::write(fresh_dir.join("epub-default.png"), vec![b'E'; 800]).unwrap();
 
-        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap());
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         let bytes = std::fs::read(restored.cover_path.as_ref().unwrap()).unwrap();
@@ -3545,7 +3588,7 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&fresh_dir);
         let _ = std::fs::remove_dir_all(&dir);
-        let _ = cat.forget_overrides(&hash);
+        let _ = cat.forget_overrides(id);
     }
 
     #[test]
@@ -3558,7 +3601,7 @@ mod tests {
         // A book whose bytes differ has a different hash and must be untouched.
         let other = seed(&cat, "B", "y", &[]);
         let other_hash = cat.get_book(other).unwrap().unwrap().file_hash;
-        assert!(!cat.restore_overrides(other, &other_hash).unwrap());
+        assert!(!cat.restore_overrides(other).unwrap());
         assert_eq!(cat.get_book(other).unwrap().unwrap().title, "B");
     }
 
@@ -3570,8 +3613,8 @@ mod tests {
         cat.update_book_metadata(id, "Edited", "x", None, 0.0, "", "", "", &[])
             .unwrap();
 
-        cat.forget_overrides(&hash).unwrap();
-        assert!(!cat.restore_overrides(id, &hash).unwrap());
+        cat.forget_overrides(id).unwrap();
+        assert!(!cat.restore_overrides(id).unwrap());
     }
 
     #[test]

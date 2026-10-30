@@ -88,18 +88,11 @@ pub struct Entry {
     /// Slimmer card, shorter life. For things that recur mid-read and would
     /// otherwise nag.
     pub compact: bool,
-    /// Whether this toast carries a "View" link that opens the notification
-    /// panel (decision 184).
-    pub view_link: bool,
 }
 
 /// A callback run on the main thread whenever the history or its
 /// unseen count changes; see [`on_history_changed`].
 pub type HistoryListener = Rc<dyn Fn()>;
-
-/// A callback run when a toast's "View" link is clicked — opens the
-/// notification panel from app shell.
-pub type ViewAction = Rc<dyn Fn()>;
 
 thread_local! {
     /// The stack toasts are appended to, once the main window exists.
@@ -111,9 +104,6 @@ thread_local! {
     /// widgets, so they may only ever run where they were registered.
     static HISTORY_LISTENERS: RefCell<Vec<HistoryListener>> =
         const { RefCell::new(Vec::new()) };
-    /// The action to run when a toast's "View" link is clicked — opens the
-    /// notification panel. Registered by the app shell at attach time.
-    static VIEW_ACTION: RefCell<Option<ViewAction>> = const { RefCell::new(None) };
 }
 
 /// Entries raised since the bell panel was last opened. Process-wide
@@ -158,33 +148,27 @@ pub fn attach(host: gtk::Box) {
     notify_history_changed();
 }
 
-/// Register the action to run when a toast's "View" link is clicked —
-/// opens the notification panel from the app shell (decision 184).
-pub fn set_view_action(action: ViewAction) {
-    VIEW_ACTION.with(|v| *v.borrow_mut() = Some(action));
-}
-
 pub fn success(title: &str, detail: &str) {
-    push(Kind::Success, title, detail, false, false);
+    push(Kind::Success, title, detail, false);
 }
 
 pub fn error(title: &str, detail: &str) {
-    push(Kind::Error, title, detail, false, true);
+    push(Kind::Error, title, detail, false);
 }
 
 pub fn info(title: &str, detail: &str) {
-    push(Kind::Info, title, detail, false, false);
+    push(Kind::Info, title, detail, false);
 }
 
 pub fn activity(title: &str, detail: &str) {
-    push(Kind::Progress, title, detail, false, false);
+    push(Kind::Progress, title, detail, false);
 }
 
 /// A small, brief confirmation. Highlighting and saving quotes happen many
 /// times in a sitting, so those get a slim card that clears itself quickly
 /// rather than a full-sized toast parked over the page.
 pub fn compact(title: &str, detail: &str) {
-    push(Kind::Success, title, detail, true, false);
+    push(Kind::Success, title, detail, true);
 }
 
 /// Report a `Result`'s error, if it has one. Returns whether it was Ok, so
@@ -256,21 +240,19 @@ pub fn outcome_info<T, E: std::fmt::Display>(
     }
 }
 
-fn push(kind: Kind, title: &str, detail: &str, compact: bool, view_link: bool) {
-    push_at(kind, title, detail, compact, view_link, clock_now(), day_now(), true);
+fn push(kind: Kind, title: &str, detail: &str, compact: bool) {
+    push_at(kind, title, detail, compact, clock_now(), day_now(), true);
 }
 
 /// Record an entry with an explicit clock/day, optionally without
 /// presenting its toast. `push` is the live path; the parameters exist
 /// so the screenshot seeder below can file a backdated entry into the
 /// panel's Earlier group without flashing a toast for it now.
-#[allow(clippy::too_many_arguments)]
 fn push_at(
     kind: Kind,
     title: &str,
     detail: &str,
     compact: bool,
-    view_link: bool,
     at: String,
     day: String,
     present: bool,
@@ -282,7 +264,6 @@ fn push_at(
         at,
         day,
         compact,
-        view_link,
     };
 
     with_history(|h| {
@@ -359,7 +340,6 @@ pub fn seed_screenshot_history() {
         Kind::Info,
         "Cleaned up reader cache",
         "Freed 18 MB",
-        false,
         false,
         "09:12".to_string(),
         "2000-01-01".to_string(),
@@ -561,25 +541,6 @@ fn build_card(entry: &Entry) -> gtk::Box {
     body.append(&text);
     card.append(&body);
 
-    // §66 Toast "View" link (decision 184): error toasts can carry a View
-    // link that opens the notification panel.
-    if entry.view_link {
-        let view_btn = gtk::Button::builder()
-            .label("View")
-            .halign(gtk::Align::End)
-            .valign(gtk::Align::Center)
-            .margin_end(8)
-            .build();
-        view_btn.add_css_class("kalam-toast-view");
-        let view_action = VIEW_ACTION.with(|v| v.borrow().clone());
-        view_btn.connect_clicked(move |_| {
-            if let Some(action) = &view_action {
-                action();
-            }
-        });
-        card.append(&view_btn);
-    }
-
     // Click to dismiss early.
     let click = gtk::GestureClick::new();
     click.set_button(1);
@@ -650,8 +611,8 @@ mod tests {
     fn history_keeps_newest_first() {
         let _guard = history_guard();
         clear_history();
-        push(Kind::Info, "first", "", false, false);
-        push(Kind::Info, "second", "", false, false);
+        push(Kind::Info, "first", "", false);
+        push(Kind::Info, "second", "", false);
         let h = history();
         assert_eq!(h[0].title, "second");
         assert_eq!(h[1].title, "first");
@@ -663,7 +624,7 @@ mod tests {
         let _guard = history_guard();
         clear_history();
         for i in 0..(MAX_HISTORY + 25) {
-            push(Kind::Info, &format!("n{i}"), "", false, false);
+            push(Kind::Info, &format!("n{i}"), "", false);
         }
         assert_eq!(history().len(), MAX_HISTORY);
         clear_history();
@@ -697,7 +658,7 @@ mod tests {
         // ended. Raise from a worker, read from here.
         clear_history();
         std::thread::spawn(|| {
-            push(Kind::Error, "from a worker", "disk full", false, false);
+            push(Kind::Error, "from a worker", "disk full", false);
         })
         .join()
         .expect("worker thread finished");
@@ -721,8 +682,8 @@ mod tests {
         assert_eq!(unseen_count(), 0);
         assert!(!has_unseen());
 
-        push(Kind::Info, "one", "", false, false);
-        push(Kind::Error, "two", "", false, false);
+        push(Kind::Info, "one", "", false);
+        push(Kind::Error, "two", "", false);
         assert_eq!(unseen_count(), 2);
         assert!(has_unseen());
 
@@ -737,7 +698,7 @@ mod tests {
         assert_eq!(history().len(), 2);
 
         // Clear history empties both.
-        push(Kind::Info, "three", "", false, false);
+        push(Kind::Info, "three", "", false);
         assert_eq!(unseen_count(), 1);
         clear_history();
         assert_eq!(unseen_count(), 0);

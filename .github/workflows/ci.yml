@@ -133,7 +133,7 @@ jobs:
       - name: rustfmt (report only)
         id: fmt
         run: |
-          cargo fmt --all 2>&1 | tee /tmp/fmt.txt; echo "fmt_exit=${PIPESTATUS[0]}" >> /tmp/fmt.txt
+          cargo fmt --all
           mkdir -p ci-logs
           if git diff --quiet; then
             echo "rustfmt: clean"
@@ -145,16 +145,13 @@ jobs:
             mkdir -p ci-logs
             printf 'clean\n--- run %s ---\n' "$GITHUB_RUN_ID" \
               > ci-logs/rustfmt-latest.diff
+            echo "dirty=1" >> "$GITHUB_OUTPUT"
           else
             echo "rustfmt: the tree is not formatted; diff follows"
             git diff | tee ci-logs/rustfmt-latest.diff
             echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/rustfmt-latest.diff
             echo "dirty=1" >> "$GITHUB_OUTPUT"
           fi
-          # Publish captured rustfmt output for offline diagnosis (sandbox
-          # cannot read Actions logs).
-          cp /tmp/fmt.txt ci-logs/fmt-error.txt || true
-          echo "fmt_exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           # Restore, so clippy and the build see the committed source rather
           # than a locally reformatted copy.
           git checkout -- .
@@ -162,11 +159,11 @@ jobs:
       # Runs on clean runs too, so the published file always describes the
       # latest run rather than the last untidy one.
       - name: publish the rustfmt diff
-        if: steps.fmt.outputs.dirty == '1' || steps.fmt.outputs.fmt_exit != '0'
+        if: steps.fmt.outputs.dirty == '1'
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/rustfmt-latest.diff ci-logs/fmt-error.txt
+          git add -f ci-logs/rustfmt-latest.diff
           git commit -m "ci: publish rustfmt diff [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true

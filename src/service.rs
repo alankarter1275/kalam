@@ -92,7 +92,6 @@ pub struct ComicSeriesMetadataApplyOutcome {
 /// Everything the Home page draws, fetched together.
 #[derive(Debug, Default)]
 pub struct HomeSnapshot {
-    #[allow(dead_code)]
     pub stats: LibraryStats,
     /// Recently added — bounded; Home shows a dozen covers, not the library.
     pub recent: Vec<Book>,

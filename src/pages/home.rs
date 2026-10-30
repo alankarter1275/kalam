@@ -1,18 +1,18 @@
-use crate::db::{Annotation, Catalog, SortKey};
-use crate::models::Book;
+use crate::db::Catalog;
 use crate::service::HomeSnapshot;
-use crate::pages::all_books::{import_summary, ImportTally};
+use crate::models::BookFormat;
+use crate::pages::all_books::{import_summary, spawn_import, ImportTally};
 use crate::service::LibraryService;
+use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W, COVER_H, COVER_W};
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::cell::RefCell;
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::Arc;
 
-/// Navigation requests from Home.
+/// Navigation requests from Home. Variants are named for their destination
+/// rather than sharing an `Open` prefix (clippy::enum_variant_names) -- the
+/// same convention `LibraryOut` uses.
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum HomeOut {
     Book {
         book_id: i64,
@@ -26,80 +26,31 @@ pub enum HomeOut {
     ComicSeries {
         series_name: String,
     },
-    /// Open the full search page (chat 10) with the current query.
-    Search {
-        query: String,
-        inside_books: bool,
-    },
 }
 
-/// Grouped search results shown in the search box while typing.
-#[derive(Debug, Clone, Default)]
-pub struct SearchResults {
-    pub books: Vec<Book>,
-    pub authors: Vec<String>,
-    pub series: Vec<String>,
-    pub quotes: Vec<(Annotation, Option<Book>)>,
-}
-
-#[allow(dead_code)]
 #[derive(Debug)]
 pub enum HomeMsg {
     AddBooks,
     AllBooks,
     FilesChosen(Vec<PathBuf>),
+    /// One file finished importing: 1-based index, total, and its title.
     ImportStep {
         done: usize,
         total: usize,
         title: String,
     },
+    /// The whole import finished.
     ImportFinished(ImportTally),
+    /// The home snapshot finished on its worker (7.1 step 2b) — the
+    /// page painted its skeleton in `init` and fills every section from
+    /// this. No library read happens on the UI thread.
     Loaded(Box<HomeSnapshot>),
-    /// Search bar gained focus: show the search box under the bar.
-    SearchFocused,
-    /// Search bar lost focus: hide the search box after a short delay.
-    SearchBlurred,
-    /// User typed in the search bar.
-    SearchChanged(String),
-    /// User pressed Enter in the bar: open the full search page.
-    SearchActivate,
-    /// Recent search item chosen: run that search.
-    SearchHistoryItem { query: String },
-    /// Recent search item deleted from history.
-    SearchHistoryDelete { query: String },
-    /// Clear all recent searches.
-    SearchClear,
-    /// Search inside books switch toggled.
-    SearchInsideBooksToggled(bool),
-    /// Search results for the current query, grouped by type.
-    SearchResults(SearchResults),
 }
 
-#[allow(dead_code)]
 pub struct HomePageModel {
     service: LibraryService,
-    #[allow(dead_code)]
     importing: bool,
     status: String,
-    search_query: String,
-    #[allow(dead_code)]
-    search_focused: bool,
-    search_inside_books: bool,
-    search_history: Rc<RefCell<Vec<String>>>,
-    search_results: SearchResults,
-    search_count_lbl: gtk::Label,
-    search_entry: gtk::Entry,
-    search_picker_btn: gtk::MenuButton,
-    search_box_host: gtk::Box,
-    search_scroll_content: gtk::Box,
-    search_scroll: gtk::ScrolledWindow,
-    search_fade: gtk::Box,
-    home_greeting: gtk::Label,
-    home_quote: gtk::Label,
-    home_quote_source: gtk::Label,
-    home_book_host: gtk::Box,
-    home_updates_host: gtk::Box,
-    home_shelf_host: gtk::Box,
 }
 
 #[relm4::component(pub)]
@@ -118,221 +69,53 @@ impl Component for HomePageModel {
             set_vexpand: false,
             set_margin_all: 0,
 
-            // ── Search bar (§57): top left of the main area, 28 from top ──
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
-                set_hexpand: false,
-                set_halign: gtk::Align::Start,
-                set_margin_top: 28,
+                set_spacing: 12,
 
-                gtk::Box {
-                    add_css_class: "kalam-home-search-bar",
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_hexpand: false,
-                    set_width_request: 520,
-                    set_height_request: 40,
-
-                    gtk::Image {
-                        add_css_class: "kalam-home-search-magnifier",
-                        set_icon_name: Some("edit-find-symbolic"),
-                        set_pixel_size: 18,
-                    },
-
-                    #[name = "search_entry"]
-                    gtk::Entry {
-                        set_placeholder_text: Some("Search your library"),
-                        set_hexpand: true,
-                        set_activates_default: true,
-                    },
-
-                    #[name = "search_count_lbl"]
-                    gtk::Label {
-                        add_css_class: "kalam-home-search-count",
-                        set_visible: false,
-                        set_halign: gtk::Align::End,
-                        set_hexpand: false,
-                        set_label: "0 results",
-                    },
-
-                    #[name = "search_picker_btn"]
-                    gtk::MenuButton {
-                        add_css_class: "kalam-home-search-picker-btn",
-                        set_always_show_arrow: false,
-                        #[wrap(Some)]
-                        set_child = &gtk::Image {
-                            add_css_class: "kalam-home-search-picker-icon",
-                            set_icon_name: Some("emblem-system-symbolic"),
-                            set_pixel_size: 20,
-                        },
-                        set_tooltip_text: Some("Search options"),
-                    },
-                },
-            },
-
-            // ── Search box dropped under the bar (§197) ──
-            #[name = "search_box_host"]
-            gtk::Box {
-                add_css_class: "kalam-home-search-box",
-                set_orientation: gtk::Orientation::Vertical,
-                set_hexpand: false,
-                set_width_request: 520,
-                set_valign: gtk::Align::Start,
-                set_visible: false,
-                set_margin_top: -1,
-
-                // Scrollable content with bottom fade.
-                gtk::Overlay {
+                gtk::Label {
+                    set_label: "Home",
+                    add_css_class: "kalam-page-title",
+                    set_halign: gtk::Align::Start,
                     set_hexpand: true,
-                    set_vexpand: false,
+                },
 
-                    #[name = "search_scroll"]
-                    gtk::ScrolledWindow {
-                        set_policy: (gtk::PolicyType::Never, gtk::PolicyType::External),
-                        set_hexpand: true,
-                        set_vexpand: false,
-                        set_overlay_scrolling: true,
+                // Sits left of "+ Add books": browsing the whole library is
+                // the more common intent, importing the rarer one, but the
+                // primary-styled button stays the import action.
+                #[name = "all_books_btn"]
+                gtk::Button {
+                    set_label: "All books",
+                    add_css_class: "kalam-secondary-btn",
+                    set_tooltip_text: Some("Browse, search and sort every book in your library"),
+                    connect_clicked => HomeMsg::AllBooks,
+                },
 
-                        #[name = "search_scroll_content"]
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 0,
-
-                            #[name = "search_history_heading"]
-                            gtk::Label {
-                                add_css_class: "kalam-home-search-heading",
-                                set_label: "Recent searches",
-                                set_halign: gtk::Align::Start,
-                                set_hexpand: false,
-                                set_margin_start: 12,
-                                set_margin_top: 8,
-                            },
-
-                            #[name = "search_history_host"]
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Vertical,
-                                set_spacing: 0,
-                            },
-
-                            #[name = "search_clear_btn"]
-                            gtk::Button {
-                                add_css_class: "kalam-home-search-clear",
-                                set_label: "Clear",
-                                set_halign: gtk::Align::Start,
-                                set_margin_start: 12,
-                                set_margin_top: 8,
-                                set_margin_bottom: 8,
-                                set_visible: false,
-                            },
-                        },
-                    },
-
-                    // Bottom fade gradient — indicates scrollable content.
-                    #[name = "search_fade"]
-                    gtk::Box {
-                        add_css_class: "k-fade-bottom",
-                        set_valign: gtk::Align::End,
-                        set_hexpand: true,
-                        set_size_request: (-1, 16),
-                        set_visible: false,
-                    },
+                #[name = "add_btn"]
+                gtk::Button {
+                    #[watch]
+                    set_label: if model.importing { "Importing…" } else { "+ Add books" },
+                    add_css_class: "kalam-primary-btn",
+                    #[watch]
+                    set_sensitive: !model.importing,
+                    connect_clicked => HomeMsg::AddBooks,
                 },
             },
 
-            // ── Two columns: left (greeting, quote, shelf) | right (home book, updates) ──
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_hexpand: true,
-                set_vexpand: false,
-
-                // Left column: 470 wide, 56 from the rail (§1)
-                #[name = "left_column"]
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_hexpand: false,
-                    set_width_request: 470,
-                    set_margin_start: 56,
-
-                    // Greeting (two lines, Display)
-                    #[name = "home_greeting"]
-                    gtk::Label {
-                        add_css_class: "kalam-home-greeting",
-                        set_halign: gtk::Align::Start,
-                        set_hexpand: false,
-                        set_label: "Hello, Harvey",
-                    },
-
-                    // ── Home quote (§63, decision 187) ──
-                    #[name = "home_quote"]
-                    gtk::Label {
-                        add_css_class: "kalam-home-quote",
-                        set_label: "“There is no friend as loyal as a book.”",
-                        set_halign: gtk::Align::Start,
-                        set_hexpand: false,
-                        set_wrap: true,
-                        set_max_width_chars: 70,
-                        set_margin_top: 28,
-                    },
-
-                    #[name = "home_quote_source"]
-                    gtk::Label {
-                        add_css_class: "kalam-home-quote-source",
-                        set_label: "— Ernest Hemingway",
-                        set_halign: gtk::Align::Start,
-                        set_hexpand: false,
-                    },
-
-                    // ── Home shelf (§61, decisions 190-193) ──
-                    #[name = "home_shelf_host"]
-                    gtk::Box {
-                        add_css_class: "kalam-home-shelf",
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 0,
-                        set_halign: gtk::Align::Start,
-                        set_hexpand: false,
-                        set_margin_top: 24,
-                        set_margin_bottom: 16,
-                    },
-                },
-
-                // Right column: 600 wide, 52 below search row, nudged 24 past right margin (§1)
-                #[name = "right_column"]
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_hexpand: false,
-                    set_width_request: 600,
-                    set_margin_top: 52,
-                    set_margin_start: 24,
-
-                    // ── Home book (§60, decision 188) ──
-                    #[name = "home_book_host"]
-                    gtk::Box {
-                        add_css_class: "kalam-home-book",
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 0,
-                        set_halign: gtk::Align::Start,
-                        set_hexpand: false,
-                    },
-
-                    // ── Home updates (§62, decision 189) ──
-                    #[name = "home_updates_host"]
-                    gtk::Box {
-                        add_css_class: "kalam-home-updates",
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 0,
-                        set_halign: gtk::Align::Start,
-                        set_hexpand: false,
-                        set_margin_top: 36,
-                        set_margin_bottom: 16,
-                    },
-                },
+            gtk::Label {
+                set_label: "Continue reading and recently added · click = float · Ctrl+click = full page",
+                add_css_class: "kalam-page-sub",
+                set_halign: gtk::Align::Start,
             },
 
             #[name = "status_label"]
             gtk::Label {
-                set_label: "",
+                #[watch]
+                set_label: &model.status,
+                #[watch]
+                set_visible: !model.status.is_empty(),
                 add_css_class: "kalam-muted",
                 set_halign: gtk::Align::Start,
-                set_visible: false,
             },
 
             #[name = "counts_host"]
@@ -342,6 +125,62 @@ impl Component for HomePageModel {
                 set_homogeneous: true,
                 set_margin_bottom: 4,
             },
+
+            gtk::Label {
+                set_label: "CONTINUE",
+                add_css_class: "kalam-section-label",
+                set_halign: gtk::Align::Start,
+            },
+
+            #[name = "continue_host"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 16,
+                set_halign: gtk::Align::Start,
+                set_valign: gtk::Align::Start,
+                set_hexpand: true,
+                set_vexpand: false,
+                set_margin_bottom: 8,
+
+                // The skeleton's only moving part: cleared by the first
+                // `Loaded` apply along with the rest of the host. Without
+                // it, the empty sections paint as if the library were
+                // empty (2b; the book page learned this first).
+                gtk::Label {
+                    set_label: "Loading your library…",
+                    add_css_class: "kalam-muted",
+                    set_halign: gtk::Align::Start,
+                },
+            },
+
+            #[name = "tbr_label"]
+            gtk::Label {
+                set_label: "UP NEXT",
+                add_css_class: "kalam-section-label",
+                set_halign: gtk::Align::Start,
+            },
+
+            #[name = "tbr_host"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 6,
+                set_margin_bottom: 8,
+            },
+
+            gtk::Label {
+                set_label: "RECENTLY ADDED",
+                add_css_class: "kalam-section-label",
+                set_halign: gtk::Align::Start,
+            },
+
+            #[name = "recent_host"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_halign: gtk::Align::Fill,
+                set_hexpand: true,
+                set_vexpand: false,
+                set_spacing: 0,
+            },
         }
     }
 
@@ -350,201 +189,15 @@ impl Component for HomePageModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let widgets = view_output!();
-
-        let search_entry = widgets.search_entry.clone();
-        let s = sender.clone();
-        search_entry.connect_changed(move |entry| {
-            let query = entry.text().to_string();
-            if !query.is_empty() {
-                s.input(HomeMsg::SearchChanged(query));
-            }
-        });
-        let s2 = sender.clone();
-        search_entry.connect_activate(move |_| {
-            s2.input(HomeMsg::SearchActivate);
-        });
-
-        // Focus tracking on the entry: show/hide the search box.
-        let s4 = sender.clone();
-        widgets.search_entry.connect_has_focus_notify(move |entry| {
-            if entry.is_focus() {
-                s4.input(HomeMsg::SearchFocused);
-            } else {
-                s4.input(HomeMsg::SearchBlurred);
-            }
-        });
-
-        // Clear button.
-        let s_clear = sender.clone();
-        widgets.search_clear_btn.connect_clicked(move |_| {
-            s_clear.input(HomeMsg::SearchClear);
-        });
-
-        // "N results" count label: clicking opens the full search page.
-        let count = widgets.search_count_lbl.clone();
-        let s_count = sender.clone();
-        let click = gtk::GestureClick::new();
-        let count_for_click = count.clone();
-        click.connect_released(move |_, _, _, _| {
-            if !count_for_click.text().is_empty() && count_for_click.text() != "0 results" {
-                let _ = s_count.output(HomeOut::Search {
-                    query: String::new(),
-                    inside_books: false,
-                });
-            }
-        });
-        count.add_controller(click);
-
         let model = HomePageModel {
             service: LibraryService::new(catalog),
             importing: false,
             status: String::new(),
-            search_query: String::new(),
-            search_focused: false,
-            search_inside_books: false,
-    search_history: Rc::new(RefCell::new(Vec::new())),
-    search_results: SearchResults::default(),
-    search_count_lbl: widgets.search_count_lbl.clone(),
-            search_entry,
-            search_picker_btn: widgets.search_picker_btn.clone(),
-            search_box_host: widgets.search_box_host.clone(),
-            search_scroll_content: widgets.search_scroll_content.clone(),
-            search_scroll: widgets.search_scroll.clone(),
-            search_fade: widgets.search_fade.clone(),
-            home_greeting: widgets.home_greeting.clone(),
-            home_quote: widgets.home_quote.clone(),
-            home_quote_source: widgets.home_quote_source.clone(),
-            home_book_host: widgets.home_book_host.clone(),
-            home_updates_host: widgets.home_updates_host.clone(),
-            home_shelf_host: widgets.home_shelf_host.clone(),
         };
+        let widgets = view_output!();
 
-        // ── Option picker popover (§57, decision 200) ──
-        let picker_popover = gtk::Popover::new();
-        picker_popover.add_css_class("kalam-home-search-picker");
-        picker_popover.set_has_arrow(false);
-        picker_popover.set_position(gtk::PositionType::Bottom);
-        picker_popover.set_autohide(true);
-
-        let picker_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        picker_list.set_hexpand(true);
-
-        // "Search in" heading.
-        let search_in_heading = gtk::Label::new(Some("Search in"));
-        search_in_heading.add_css_class("kalam-home-search-picker-heading");
-        search_in_heading.set_halign(gtk::Align::Start);
-        search_in_heading.set_margin_start(12);
-        search_in_heading.set_margin_top(8);
-        search_in_heading.set_margin_bottom(4);
-        picker_list.append(&search_in_heading);
-
-        // Library row (ticked — always the active choice; online sites are
-        // disabled until Part 2, decision 8).
-        let library_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        library_row.set_hexpand(true);
-        library_row.set_valign(gtk::Align::Center);
-        library_row.set_margin_start(12);
-        library_row.set_margin_end(12);
-        library_row.set_margin_top(6);
-        library_row.set_margin_bottom(6);
-
-        let library_lbl = gtk::Label::new(Some("Library"));
-        library_lbl.set_halign(gtk::Align::Start);
-        library_lbl.set_hexpand(true);
-        library_row.append(&library_lbl);
-
-        let library_tick = gtk::Label::new(Some("✓"));
-        library_tick.add_css_class("kalam-ui-menu-check");
-        library_tick.add_css_class("checked");
-        library_tick.set_size_request(22, 22);
-        library_tick.set_halign(gtk::Align::Center);
-        library_row.append(&library_tick);
-
-        let library_btn = gtk::Button::new();
-        library_btn.add_css_class("kalam-ui-menu-item");
-        library_btn.set_hexpand(true);
-        library_btn.set_can_focus(true);
-        library_btn.set_child(Some(&library_row));
-        picker_list.append(&library_btn);
-
-        // "Online · not available yet" sub-heading (dimmed).
-        let online_heading = gtk::Label::new(Some("Online · not available yet"));
-        online_heading.add_css_class("kalam-home-search-picker-dim");
-        online_heading.set_halign(gtk::Align::Start);
-        online_heading.set_margin_start(12);
-        online_heading.set_margin_top(8);
-        online_heading.set_margin_bottom(4);
-        picker_list.append(&online_heading);
-
-        // Four online sites, dimmed and disabled (Part 2).
-        for site in ["AO3", "Fanfiction.net", "Royal Road", "MangaDex"] {
-            let site_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            site_row.set_hexpand(true);
-            site_row.set_valign(gtk::Align::Center);
-            site_row.set_margin_start(12);
-            site_row.set_margin_end(12);
-            site_row.set_margin_top(4);
-            site_row.set_margin_bottom(4);
-
-            let site_lbl = gtk::Label::new(Some(site));
-            site_lbl.add_css_class("kalam-home-search-picker-dim");
-            site_lbl.set_halign(gtk::Align::Start);
-            site_lbl.set_hexpand(true);
-            site_row.append(&site_lbl);
-
-            let site_btn = gtk::Button::new();
-            site_btn.add_css_class("kalam-ui-menu-item");
-            site_btn.set_sensitive(false);
-            site_btn.set_hexpand(true);
-            site_btn.set_can_focus(false);
-            site_btn.set_child(Some(&site_row));
-            picker_list.append(&site_btn);
-        }
-
-        // Divider.
-        let divider = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        divider.add_css_class("kalam-home-search-picker-divider");
-        divider.set_size_request(-1, 1);
-        picker_list.append(&divider);
-
-        // "Search inside books" switch row (off by default, decision 199).
-        let switch_row = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        switch_row.add_css_class("kalam-home-search-switch-row");
-        switch_row.set_hexpand(true);
-        switch_row.set_margin_start(12);
-        switch_row.set_margin_end(12);
-        switch_row.set_margin_top(8);
-        switch_row.set_margin_bottom(8);
-
-        let switch_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        let switch_lbl = gtk::Label::new(Some("Search inside books"));
-        switch_lbl.set_hexpand(true);
-        switch_lbl.set_halign(gtk::Align::Start);
-        let switch_widget = gtk::Switch::new();
-        switch_widget.set_active(model.search_inside_books);
-        switch_box.append(&switch_lbl);
-        switch_box.append(&switch_widget);
-        switch_row.append(&switch_box);
-
-        let switch_caption =
-            gtk::Label::new(Some("Looks through the full text. Slower."));
-        switch_caption.add_css_class("kalam-home-search-switch-caption");
-        switch_caption.set_halign(gtk::Align::Start);
-        switch_caption.set_margin_top(2);
-        switch_row.append(&switch_caption);
-
-        picker_list.append(&switch_row);
-
-        picker_popover.set_child(Some(&picker_list));
-        widgets.search_picker_btn.set_popover(Some(&picker_popover));
-
-        // Switch toggle → SearchInsideBooksToggled.
-        let s_switch = sender.clone();
-        switch_widget.connect_active_notify(move |sw| {
-            s_switch.input(HomeMsg::SearchInsideBooksToggled(sw.is_active()));
-        });
-
+        // Skeleton only (7.1 step 2b): the sections paint empty with a
+        // loading row, and every read runs on the worker below.
         request_snapshot(&model.service, &sender);
 
         ComponentParts { model, widgets }
@@ -555,7 +208,7 @@ impl Component for HomePageModel {
         widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
-        _root: &Self::Root,
+        root: &Self::Root,
     ) {
         match msg {
             HomeMsg::ImportStep { done, total, title } => {
@@ -580,6 +233,10 @@ impl Component for HomePageModel {
                 }
 
                 self.status = import_summary(&tally);
+
+                // New books are in the catalog now; refresh this page so the
+                // counts / continue / recently-added cards reflect them.
+                // Same road as init: the worker reads, the apply builds.
                 request_snapshot(&self.service, &sender);
             }
             HomeMsg::Loaded(snap) => {
@@ -589,438 +246,90 @@ impl Component for HomePageModel {
                 sender.output(HomeOut::AllBooks).ok();
             }
             HomeMsg::AddBooks => {
-                // Handled by the import dialog; kept for match completeness.
-            }
-            HomeMsg::FilesChosen(_) => {
-                // Handled by the import worker; kept for match completeness.
-            }
-            HomeMsg::SearchFocused => {
-                self.search_focused = true;
-                widgets.search_box_host.set_visible(true);
-            }
-            HomeMsg::SearchBlurred => {
-                self.search_focused = false;
-                widgets.search_box_host.set_visible(false);
-            }
-            HomeMsg::SearchChanged(query) => {
-                self.search_query = query.clone();
-                if query.is_empty() {
-                    widgets.search_count_lbl.set_visible(false);
-                    widgets.search_count_lbl.set_label("0 results");
-                    self.search_results = SearchResults::default();
-                } else {
-                    widgets.search_count_lbl.set_visible(true);
-                    widgets.search_count_lbl.set_label(&format!("{query} results"));
-                    self.search_results = SearchResults::default();
-                    search_library(
-                        self.service.clone(),
-                        query.clone(),
-                        self.search_inside_books,
-                        &sender,
-                    );
-                }
-            }
-            HomeMsg::SearchActivate => {
-                if self.search_query.is_empty() {
-                    return;
-                }
-                // Enter opens the first result if any, otherwise the full
-                // search page. "First result" = first book in the Books
-                // group, else first author, else first series, else first
-                // saved quote.
-                if let Some(book) = self.search_results.books.first() {
-                    sender.output(HomeOut::Book { book_id: book.id }).ok();
-                } else if let Some(author) = self.search_results.authors.first() {
-                    sender.output(HomeOut::Search {
-                        query: author.clone(),
-                        inside_books: false,
-                    }).ok();
-                } else if let Some(series) = self.search_results.series.first() {
-                    sender.output(HomeOut::Search {
-                        query: series.clone(),
-                        inside_books: false,
-                    }).ok();
-                } else if let Some((anno, _)) = self.search_results.quotes.first() {
-                    sender.output(HomeOut::BookDialog {
-                        book_id: anno.book_id,
-                    }).ok();
-                } else {
-                    sender.output(HomeOut::Search {
-                        query: self.search_query.clone(),
-                        inside_books: self.search_inside_books,
-                    }).ok();
-                }
-            }
-            HomeMsg::SearchHistoryItem { query } => {
-                let mut hist = self.search_history.borrow_mut();
-                if let Some(pos) = hist.iter().position(|q| q == &query) {
-                    hist.remove(pos);
-                }
-                hist.insert(0, query.clone());
-                if hist.len() > 20 {
-                    hist.truncate(20);
-                }
-                drop(hist);
-                self.search_query = query.clone();
-                widgets.search_entry.set_text(&query);
-                sender.output(HomeOut::Search {
-                    query,
-                    inside_books: self.search_inside_books,
-                }).ok();
-            }
-            HomeMsg::SearchHistoryDelete { query } => {
-                self.search_history.borrow_mut().retain(|q| q != &query);
-            }
-            HomeMsg::SearchClear => {
-                self.search_history.borrow_mut().clear();
-                widgets.search_clear_btn.set_visible(false);
-                clear_box(&widgets.search_history_host);
-            }
-            HomeMsg::SearchInsideBooksToggled(enabled) => {
-                self.search_inside_books = enabled;
-            }
-            HomeMsg::SearchResults(results) => {
-                self.search_results = results;
-            }
-        }
-
-        widgets.status_label.set_label(&self.status);
-        widgets.status_label.set_visible(!self.status.is_empty());
-
-        // When there's a query, show result groups instead of recent searches.
-        let has_query = !self.search_query.is_empty();
-        widgets.search_history_heading.set_visible(!has_query);
-        if has_query {
-            widgets.search_clear_btn.set_visible(false);
-            render_search_results(
-                widgets,
-                &sender,
-                &self.search_results,
-                &self.search_query,
-                self.search_inside_books,
-            );
-        } else {
-            // Update history rows.
-            let has_history = !self.search_history.borrow().is_empty();
-            widgets.search_clear_btn.set_visible(has_history);
-            clear_box(&widgets.search_history_host);
-            let hist = self.search_history.borrow();
-            for query in hist.iter() {
-                let q = query.clone();
-                let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                row.set_margin_start(12);
-                row.set_margin_end(12);
-                row.set_margin_top(6);
-                row.set_margin_bottom(6);
-                row.set_valign(gtk::Align::Center);
-                row.set_hexpand(true);
-                row.add_css_class("kalam-home-search-history-row");
-
-                let lbl = gtk::Label::builder()
-                    .label(&q)
-                    .halign(gtk::Align::Start)
-                    .hexpand(true)
+                let dialog = gtk::FileDialog::builder()
+                    .title("Import EPUB books")
+                    .modal(true)
                     .build();
-                row.append(&lbl);
 
-                let cross = gtk::Button::builder()
-                    .child(&gtk::Image::builder()
-                        .icon_name("edit-delete-symbolic")
-                        .pixel_size(14)
-                        .build())
-                    .css_classes(["kalam-home-search-history-cross"])
-                    .halign(gtk::Align::End)
-                    .build();
-                let s_hist = sender.clone();
-                cross.connect_clicked(move |_| {
-                    s_hist.input(HomeMsg::SearchHistoryDelete { query: q.clone() });
+                let filter = gtk::FileFilter::new();
+                filter.set_name(Some("Books, Comics, & PDFs (*.epub, *.cbz, *.cbr, *.pdf)"));
+                filter.add_suffix("epub");
+                filter.add_suffix("cbz");
+                filter.add_suffix("cbr");
+                filter.add_suffix("pdf");
+                filter.add_suffix("pdf");
+                filter.add_mime_type("application/epub+zip");
+                filter.add_mime_type("application/x-cbz");
+                filter.add_mime_type("application/x-cbr");
+                filter.add_mime_type("application/pdf");
+                let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+                filters.append(&filter);
+                dialog.set_filters(Some(&filters));
+
+                let window = root.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+                let window = window.or_else(|| {
+                    relm4::main_application()
+                        .active_window()
+                        .and_then(|w| w.downcast::<gtk::Window>().ok())
                 });
-                row.append(&cross);
 
-                widgets.search_history_host.append(&row);
+                let s = sender.clone();
+                dialog.open_multiple(
+                    window.as_ref(),
+                    gtk::gio::Cancellable::NONE,
+                    move |result| {
+                        let mut paths = Vec::new();
+                        if let Ok(files) = result {
+                            let n = files.n_items();
+                            for i in 0..n {
+                                if let Some(obj) = files.item(i) {
+                                    if let Ok(file) = obj.downcast::<gtk::gio::File>() {
+                                        if let Some(p) = file.path() {
+                                            paths.push(p);
+                                        }
+                                    }
+                                }
+                            }
+                            if !paths.is_empty() {
+                                s.input(HomeMsg::FilesChosen(paths));
+                            }
+                        }
+                    },
+                );
+            }
+            HomeMsg::FilesChosen(paths) => {
+                // Importing parses, hashes and copies each file. Doing that
+                // inline froze the window, so it runs on a worker thread and
+                // reports back per file (the All Books page does the same).
+                let total = paths.len();
+                self.importing = true;
+                self.status = format!("Importing 1 of {total}…");
+
+                // Imports still go straight to the catalog: writes are not
+                // part of the read-snapshot seam (they belong to the task
+                // manager, A0 step 4).
+                let catalog = self.service.catalog().clone();
+                let step_tx = sender.input_sender().clone();
+                let done_tx = sender.input_sender().clone();
+                spawn_import(
+                    catalog,
+                    paths,
+                    move |done, total, title| {
+                        let _ = step_tx.send(HomeMsg::ImportStep { done, total, title });
+                    },
+                    move |tally| {
+                        let _ = done_tx.send(HomeMsg::ImportFinished(tally));
+                    },
+                );
             }
         }
+
+        // Overriding `update_with_view` replaces relm4's default
+        // `update` + `update_view` pair, so nothing refreshes the `#[watch]`
+        // bindings unless we say so. Missing this left the status line and the
+        // "Importing…" button state frozen at their initial values.
+        self.update_view(widgets, sender);
     }
-}
-
-/// Render grouped search results in the search box history host.
-/// Render grouped search results in the search box history host.
-/// Shows top 3 of each group with a "See all N" row.
-fn render_search_results(
-    widgets: &mut HomePageModelWidgets,
-    sender: &ComponentSender<HomePageModel>,
-    results: &SearchResults,
-    query: &str,
-    inside_books: bool,
-) {
-    clear_box(&widgets.search_history_host);
-
-    if results.books.is_empty()
-        && results.authors.is_empty()
-        && results.series.is_empty()
-        && results.quotes.is_empty()
-    {
-        // No results — show a quiet notice.
-        let notice = gtk::Label::new(Some("No results"));
-        notice.add_css_class("kalam-home-search-no-results");
-        notice.set_halign(gtk::Align::Start);
-        notice.set_margin_start(12);
-        notice.set_margin_top(6);
-        widgets.search_history_host.append(&notice);
-        return;
-    }
-
-    // Books group.
-    if !results.books.is_empty() {
-        render_book_group(widgets, sender, &results.books, query, inside_books);
-    }
-
-    // Authors group.
-    if !results.authors.is_empty() {
-        render_string_group(
-            widgets,
-            sender,
-            "Authors",
-            &results.authors,
-            query,
-            inside_books,
-        );
-    }
-
-    // Series group.
-    if !results.series.is_empty() {
-        render_string_group(
-            widgets,
-            sender,
-            "Series",
-            &results.series,
-            query,
-            inside_books,
-        );
-    }
-
-    // Saved quotes group.
-    if !results.quotes.is_empty() {
-        render_quote_group(widgets, sender, &results.quotes, query, inside_books);
-    }
-}
-
-/// Render the books group: heading, up to 3 rows, "See all N" if more.
-fn render_book_group(
-    widgets: &mut HomePageModelWidgets,
-    sender: &ComponentSender<HomePageModel>,
-    books: &[Book],
-    query: &str,
-    inside_books: bool,
-) {
-    let total = books.len();
-    let show_all = total <= 3;
-    let display: &[Book] = if show_all { books } else { &books[..3] };
-
-    let h = gtk::Label::new(Some(&format!("Books · {total}")));
-    h.add_css_class("kalam-home-search-heading");
-    h.set_halign(gtk::Align::Start);
-    h.set_margin_start(12);
-    h.set_margin_top(6);
-    h.set_margin_bottom(2);
-    widgets.search_history_host.append(&h);
-
-    for book in display {
-        let row = result_row(
-            &book.title,
-            if book.authors.is_empty() { None } else { Some(&book.authors) },
-        );
-        widgets.search_history_host.append(&row);
-    }
-
-    if !show_all {
-        let see_all = see_all_button(sender, &format!("See all {total}"), query, inside_books);
-        widgets.search_history_host.append(&see_all);
-    }
-}
-
-/// Render a group of plain strings (authors, series): heading, up to 3 rows,
-/// "See all N" if more.
-fn render_string_group<T: ToString>(
-    widgets: &mut HomePageModelWidgets,
-    sender: &ComponentSender<HomePageModel>,
-    label: &str,
-    items: &[T],
-    query: &str,
-    inside_books: bool,
-) {
-    let total = items.len();
-    let show_all = total <= 3;
-    let display: &[T] = if show_all { items } else { &items[..3] };
-
-    let h = gtk::Label::new(Some(&format!("{label} · {total}")));
-    h.add_css_class("kalam-home-search-heading");
-    h.set_halign(gtk::Align::Start);
-    h.set_margin_start(12);
-    h.set_margin_top(6);
-    h.set_margin_bottom(2);
-    widgets.search_history_host.append(&h);
-
-    for item in display {
-        let row = result_row(item.to_string().as_str(), None);
-        widgets.search_history_host.append(&row);
-    }
-
-    if !show_all {
-        let see_all = see_all_button(sender, &format!("See all {total}"), query, inside_books);
-        widgets.search_history_host.append(&see_all);
-    }
-}
-
-/// Render the saved quotes group.
-fn render_quote_group(
-    widgets: &mut HomePageModelWidgets,
-    sender: &ComponentSender<HomePageModel>,
-    quotes: &[(Annotation, Option<Book>)],
-    query: &str,
-    inside_books: bool,
-) {
-    let total = quotes.len();
-    let show_all = total <= 3;
-    let display: &[(Annotation, Option<Book>)] = if show_all { quotes } else { &quotes[..3] };
-
-    let h = gtk::Label::new(Some(&format!("Saved quotes · {total}")));
-    h.add_css_class("kalam-home-search-heading");
-    h.set_halign(gtk::Align::Start);
-    h.set_margin_start(12);
-    h.set_margin_top(6);
-    h.set_margin_bottom(2);
-    widgets.search_history_host.append(&h);
-
-    for (anno, book) in display {
-        let subtitle = book.as_ref().map(|b| b.title.as_str());
-        let row = result_row(anno.text_excerpt.as_str(), subtitle);
-        widgets.search_history_host.append(&row);
-    }
-
-    if !show_all {
-        let see_all = see_all_button(sender, &format!("See all {total}"), query, inside_books);
-        widgets.search_history_host.append(&see_all);
-    }
-}
-
-/// Build a single result row: title at the left, optional subtitle at the right.
-fn result_row(title: &str, subtitle: Option<&str>) -> gtk::Box {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    row.set_margin_start(12);
-    row.set_margin_end(12);
-    row.set_margin_top(2);
-    row.set_margin_bottom(2);
-    row.set_valign(gtk::Align::Center);
-    row.set_hexpand(true);
-    row.add_css_class("kalam-home-search-result-row");
-
-    let title_lbl = gtk::Label::builder()
-        .label(title)
-        .halign(gtk::Align::Start)
-        .hexpand(true)
-        .build();
-    row.append(&title_lbl);
-
-    if let Some(sub) = subtitle {
-        let sub_lbl = gtk::Label::builder()
-            .label(sub)
-            .halign(gtk::Align::Start)
-            .hexpand(false)
-            .build();
-        sub_lbl.add_css_class("kalam-home-search-result-sub");
-        row.append(&sub_lbl);
-    }
-
-    row
-}
-
-/// "See all N" button for a result group. Clicking opens the full search page
-/// with the current query.
-fn see_all_button(
-    sender: &ComponentSender<HomePageModel>,
-    label: &str,
-    query: &str,
-    inside_books: bool,
-) -> gtk::Button {
-    let btn = gtk::Button::builder()
-        .label(label)
-        .halign(gtk::Align::Start)
-        .hexpand(false)
-        .margin_start(12)
-        .margin_top(6)
-        .margin_bottom(8)
-        .build();
-    btn.add_css_class("kalam-home-search-see-all");
-    let s = sender.clone();
-    let q = query.to_string();
-    btn.connect_clicked(move |_| {
-        let _ = s.output(HomeOut::Search {
-            query: q.clone(),
-            inside_books,
-        });
-    });
-    btn
-}
-
-/// Search the library for the given query, grouped by type.
-fn search_library(
-    service: LibraryService,
-    query: String,
-    inside_books: bool,
-    sender: &ComponentSender<HomePageModel>,
-) {
-    let s = sender.input_sender().clone();
-    crate::tasks::spawn_internal(
-        "Home search",
-        move |_reporter| {
-            let mut results = SearchResults::default();
-
-            if inside_books {
-                let snap = service.search_content(&query);
-                results.books = snap
-                    .results
-                    .into_iter()
-                    .map(|r| r.book)
-                    .collect();
-            } else {
-                let snap = service.all_books(SortKey::Title, &query);
-                results.books = snap.books;
-            }
-
-            // Extract distinct authors from books.
-            let mut authors: Vec<String> = results
-                .books
-                .iter()
-                .flat_map(|b| b.authors.split(','))
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-            authors.sort();
-            authors.dedup();
-
-            // Extract distinct series from books.
-            let mut series: Vec<String> = results
-                .books
-                .iter()
-                .filter_map(|b| b.series.as_deref())
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
-                .collect();
-            series.sort();
-            series.dedup();
-
-            // Search saved quotes.
-            let quote_snap = service.quotes(&query);
-            results.quotes = quote_snap.quotes;
-
-            results
-        },
-        |_| {},
-        move |results| {
-            let _ = s.send(HomeMsg::SearchResults(results));
-        },
-    );
 }
 
 fn clear_box(host: &gtk::Box) {
@@ -1029,38 +338,8 @@ fn clear_box(host: &gtk::Box) {
     }
 }
 
-/// Build a state card (§64, decision 194): dashed border, title, message.
-fn state_card(title: &str, message: &str) -> gtk::Box {
-    let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    card.set_halign(gtk::Align::Center);
-    card.set_hexpand(false);
-    card.set_vexpand(false);
-    card.set_margin_top(24);
-    card.set_margin_bottom(24);
-    card.add_css_class("kalam-home-state-card");
-
-    let title_lbl = gtk::Label::builder()
-        .label(title)
-        .halign(gtk::Align::Center)
-        .hexpand(false)
-        .build();
-    title_lbl.add_css_class("kalam-home-state-title");
-    card.append(&title_lbl);
-
-    let msg_lbl = gtk::Label::builder()
-        .label(message)
-        .halign(gtk::Align::Center)
-        .hexpand(false)
-        .wrap(true)
-        .max_width_chars(40)
-        .build();
-    msg_lbl.add_css_class("kalam-home-state-message");
-    card.append(&msg_lbl);
-
-    card
-}
-
-/// Ask the worker for a fresh snapshot.
+/// Ask the worker for a fresh snapshot. Called at init, after an import,
+/// and nowhere else — the UI thread never reads the library (7.1 step 2b).
 fn request_snapshot(service: &LibraryService, sender: &ComponentSender<HomePageModel>) {
     let service = LibraryService::new(service.catalog().clone());
     let s = sender.input_sender().clone();
@@ -1075,12 +354,19 @@ fn request_snapshot(service: &LibraryService, sender: &ComponentSender<HomePageM
 }
 
 /// (Re)populate Home from an owned snapshot the worker already read.
+///
+/// A0 step 2 made this pure widget building against one snapshot; 2b moved
+/// the read itself to the worker, so this is now the apply half of the
+/// skeleton/worker/apply recipe — the same shape as the book page.
 fn apply_snapshot(
     widgets: &HomePageModelWidgets,
     snap: Box<HomeSnapshot>,
-    _sender: &ComponentSender<HomePageModel>,
+    sender: &ComponentSender<HomePageModel>,
 ) {
     let snap = *snap;
+    // The same attribution pair the book page uses (2a.1): a timing
+    // span for KALAM_TIMING=1 and an activity label so a stall during
+    // this build says "while home_fill" instead of naming nothing.
     let _t = crate::timing::measure("home_fill");
     let _a = crate::timing::activity("home_fill");
     for err in &snap.errors {
@@ -1088,248 +374,200 @@ fn apply_snapshot(
     }
 
     clear_box(&widgets.counts_host);
-    clear_box(&widgets.home_book_host);
-    clear_box(&widgets.home_updates_host);
-    clear_box(&widgets.home_shelf_host);
+    clear_box(&widgets.continue_host);
+    clear_box(&widgets.tbr_host);
+    clear_box(&widgets.recent_host);
 
-    // ── State cards (§64, decision 194) ──
-    // Shown instead of normal content when the library is in a special state.
-    if !snap.errors.is_empty() {
-        let card = state_card(
-            "Error loading library",
-            "Could not read some or all of your library. Try again or check your files.",
-        );
-        widgets.counts_host.append(&card);
-    } else if snap.continue_reading.is_empty() && snap.recent.is_empty() {
-        let card = state_card(
-            "Your library is empty",
-            "Add books to get started. Use \"+ Add books\" to import your first EPUB.",
-        );
-        widgets.counts_host.append(&card);
+    // Home builds its cards by hand rather than through `build_book_grid`, so
+    // it has to warm its own covers -- the cards defer their decode and would
+    // otherwise sit on placeholders for ever. Every strip is warmed together
+    // below, once the snapshot is in hand.
+    let mut on_screen: Vec<crate::models::Book> = Vec::new();
+
+    // ── counts strip ────────────────────────────────────────────────
+    let stats = &snap.stats;
+    for (label, value) in [
+        ("Books", stats.total_books.to_string()),
+        ("Reading", stats.reading.to_string()),
+        ("Finished", stats.finished.to_string()),
+        ("Up next", stats.reading_list.to_string()),
+    ] {
+        let tile = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        tile.add_css_class("kalam-stat-tile");
+        let v = gtk::Label::new(Some(&value));
+        v.add_css_class("kalam-stat-value");
+        v.set_halign(gtk::Align::Start);
+        tile.append(&v);
+        let l = gtk::Label::new(Some(label));
+        l.add_css_class("kalam-stat-label");
+        l.set_halign(gtk::Align::Start);
+        tile.append(&l);
+        widgets.counts_host.append(&tile);
+    }
+
+    // ── continue: most recently opened, newest first ────────────────
+    // The fallback chain (opened -> in progress -> newest) now lives in the
+    // service, where it is unit-tested.
+    let cont = &snap.continue_reading;
+
+    if cont.is_empty() {
+        let empty = gtk::Label::new(Some(
+            "Nothing to continue — import a book and it will show up here.",
+        ));
+        empty.add_css_class("kalam-placeholder");
+        empty.set_wrap(true);
+        empty.set_halign(gtk::Align::Start);
+        widgets.continue_host.append(&empty);
     } else {
-        // Greeting (§1): two lines, Display font.
-        widgets.home_greeting.set_label("Hello, Harvey\nWhat would you like to read today?");
-
-        // Home book from continue_reading (§60, decision 188).
-        if let Some(book) = snap.continue_reading.first() {
-            let book_widget = build_home_book(book);
-            widgets.home_book_host.append(&book_widget);
+        for book in cont {
+            let id = book.id;
+            let s_series = book.series.clone();
+            let is_comic = matches!(book.format, BookFormat::Cbz | BookFormat::Cbr);
+            let s1 = sender.clone();
+            let s2 = sender.clone();
+            let card = build_book_card(
+                book,
+                crate::widgets::book_row::CLICK_HINT_LIBRARY,
+                {
+                    let s = s1.clone();
+                    let sname = s_series.clone();
+                    move || {
+                        if is_comic {
+                            if let Some(ref sname) = sname {
+                                s.output(HomeOut::ComicSeries { series_name: sname.clone() }).ok();
+                                return;
+                            }
+                        }
+                        s.output(HomeOut::Book { book_id: id }).ok();
+                    }
+                },
+                move || {
+                    s2.output(HomeOut::BookDialog { book_id: id }).ok();
+                },
+            );
+            card.add_css_class("kalam-home-continue");
+            widgets.continue_host.append(&card);
+            on_screen.push(book.clone());
         }
+    }
 
-        // Home updates (§62, decision 189): thin vertical timeline, four rows
-        // visible, scrolls. Shown only when there is a saved source.
-        if !snap.reading_list.is_empty() {
-        let heading = gtk::Label::builder()
-            .label("Updates")
+    // ── reading list peek ───────────────────────────────────────────
+    let tbr = &snap.reading_list;
+    if tbr.is_empty() {
+        widgets.tbr_label.set_visible(false);
+        widgets.tbr_host.set_visible(false);
+    } else {
+        widgets.tbr_label.set_visible(true);
+        widgets.tbr_host.set_visible(true);
+        for (i, entry) in tbr.iter().take(3).enumerate() {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            row.add_css_class("kalam-list-row");
+
+            let ordinal = gtk::Label::new(Some(&format!("{}", i + 1)));
+            ordinal.add_css_class("kalam-list-ordinal");
+            ordinal.set_width_chars(2);
+            row.append(&ordinal);
+
+            let title = gtk::Label::new(Some(&entry.book.title));
+            title.add_css_class("kalam-card-title");
+            title.set_halign(gtk::Align::Start);
+            title.set_hexpand(true);
+            title.set_xalign(0.0);
+            title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            row.append(&title);
+
+            let author = gtk::Label::new(Some(entry.book.authors_display()));
+            author.add_css_class("kalam-card-meta");
+            row.append(&author);
+
+            let id = entry.book.id;
+            let s = sender.clone();
+            let click = gtk::GestureClick::new();
+            click.set_button(1);
+            click.connect_released(move |_, _, _, _| {
+                s.output(HomeOut::Book { book_id: id }).ok();
+            });
+            row.add_controller(click);
+            row.set_cursor_from_name(Some("pointer"));
+
+            widgets.tbr_host.append(&row);
+        }
+    }
+
+    // ── recently added ──────────────────────────────────────────────
+    // Already bounded to 12 by the service, so no second `take` here.
+    let recent = &snap.recent;
+    if recent.is_empty() {
+        let empty = gtk::Label::new(Some("Your library is empty — add a book above."));
+        empty.add_css_class("kalam-muted");
+        empty.set_halign(gtk::Align::Start);
+        widgets.recent_host.append(&empty);
+    } else {
+        // FlowBox left-aligned to avoid centered covers
+        let flow = gtk::FlowBox::builder()
+            .max_children_per_line(6)
+            .min_children_per_line(2)
+            .selection_mode(gtk::SelectionMode::None)
+            .column_spacing(16)
+            .row_spacing(20)
             .halign(gtk::Align::Start)
-            .hexpand(false)
+            .valign(gtk::Align::Start)
+            .hexpand(true)
+            .vexpand(false)
             .build();
-        heading.add_css_class("kalam-home-updates-heading");
-        widgets.home_updates_host.append(&heading);
+        flow.add_css_class("kalam-book-grid");
+        flow.add_css_class("kalam-home-flow");
 
-        let limit = snap.reading_list.len().min(4);
-        for entry in snap.reading_list.iter().take(limit) {
-            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            row.set_halign(gtk::Align::Start);
-            row.set_hexpand(false);
-            row.set_margin_top(4);
-            row.set_margin_bottom(4);
-            row.add_css_class("kalam-home-update-row");
-
-            let dot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-            dot.set_size_request(6, 6);
-            dot.add_css_class("kalam-home-update-dot");
-            row.append(&dot);
-
-            let lbl = gtk::Label::builder()
-                .label(&entry.book.title)
-                .halign(gtk::Align::Start)
-                .hexpand(false)
-                .build();
-            lbl.add_css_class("kalam-home-update-label");
-            row.append(&lbl);
-
-            widgets.home_updates_host.append(&row);
+        for book in recent {
+            let id = book.id;
+            let s_series = book.series.clone();
+            let is_comic = matches!(book.format, BookFormat::Cbz | BookFormat::Cbr);
+            let s1 = sender.clone();
+            let s2 = sender.clone();
+            let card = build_book_card(
+                book,
+                crate::widgets::book_row::CLICK_HINT_LIBRARY,
+                {
+                    let s = s1.clone();
+                    let sname = s_series.clone();
+                    move || {
+                        if is_comic {
+                            if let Some(ref sname) = sname {
+                                s.output(HomeOut::ComicSeries { series_name: sname.clone() }).ok();
+                                return;
+                            }
+                        }
+                        s.output(HomeOut::Book { book_id: id }).ok();
+                    }
+                },
+                {
+                    let s = s2.clone();
+                    let sname = s_series.clone();
+                    move || {
+                        if is_comic {
+                            if let Some(ref sname) = sname {
+                                s.output(HomeOut::ComicSeries { series_name: sname.clone() }).ok();
+                                return;
+                            }
+                        }
+                        s.output(HomeOut::BookDialog { book_id: id }).ok();
+                    }
+                },
+            );
+            // Wrap card in fixed cell to keep uniform size in FlowBox
+            let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            cell.set_size_request(CARD_W, CARD_H);
+            cell.set_halign(gtk::Align::Start);
+            cell.set_valign(gtk::Align::Start);
+            cell.append(&card);
+            flow.insert(&cell, -1);
+            on_screen.push(book.clone());
         }
-        }
-
-    // Home shelf (§61, decisions 190-193): base line, bars, Today ring.
-    let shelf_books: Vec<&Book> = snap
-        .continue_reading
-        .iter()
-        .chain(snap.recent.iter())
-        .take(12)
-        .collect();
-    if !shelf_books.is_empty() {
-        let shelf_widget = build_home_shelf(&shelf_books);
-        widgets.home_shelf_host.append(&shelf_widget);
+        widgets.recent_host.append(&flow);
     }
-    }
-}
 
-/// Build the Home book widget (§60, decision 188): cover page, reading page
-/// with ribbon, play button, pager of 5 dots.
-fn build_home_book(book: &Book) -> gtk::Box {
-    let host = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    host.add_css_class("kalam-home-book");
-
-    let heading = gtk::Label::builder()
-        .label("Continue reading")
-        .halign(gtk::Align::Start)
-        .hexpand(false)
-        .build();
-    heading.add_css_class("kalam-home-book-heading");
-    host.append(&heading);
-
-    // Book spread: cover + reading page.
-    let spread = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    spread.add_css_class("kalam-home-book-spread");
-
-    // Cover page.
-    let cover = gtk::Picture::builder()
-        .halign(gtk::Align::Start)
-        .valign(gtk::Align::Start)
-        .build();
-    cover.add_css_class("kalam-home-book-cover");
-    cover.set_size_request(200, 300);
-    if let Some(cover_path) = &book.cover_path {
-        cover.set_filename(Some(cover_path));
-    }
-    spread.append(&cover);
-
-    // Reading page.
-    let page = gtk::Picture::builder()
-        .halign(gtk::Align::Start)
-        .valign(gtk::Align::Start)
-        .build();
-    page.add_css_class("kalam-home-book-page");
-    page.set_size_request(200, 300);
-    if let Some(cover_path) = &book.cover_path {
-        page.set_filename(Some(cover_path));
-    }
-    spread.append(&page);
-
-    host.append(&spread);
-
-    // Ribbon + play button + pager.
-    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-    controls.set_halign(gtk::Align::Center);
-    controls.set_margin_top(8);
-    controls.set_margin_bottom(8);
-    controls.add_css_class("kalam-home-book-controls");
-
-    // Ribbon indicator.
-    let ribbon = gtk::Image::builder()
-        .icon_name("emblem-bookmarks-symbolic")
-        .pixel_size(16)
-        .build();
-    ribbon.add_css_class("kalam-home-book-ribbon");
-    controls.append(&ribbon);
-
-    // Play button.
-    let play = gtk::Button::builder()
-        .label("Play")
-        .build();
-    play.add_css_class("kalam-home-book-play");
-    controls.append(&play);
-
-    // Pager dots (5 dots, first two active).
-    let pager = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    pager.add_css_class("kalam-home-book-pager");
-    for i in 0..5 {
-        let dot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        dot.set_size_request(8, 8);
-        dot.add_css_class("kalam-home-book-pager-dot");
-        if i < 2 {
-            dot.add_css_class("active");
-        }
-        pager.append(&dot);
-    }
-    controls.append(&pager);
-
-    host.append(&controls);
-
-    host
-}
-
-/// Build the Home shelf widget (§61, decisions 190-193): base line, horizontal
-/// bars per book, elastic date ruler, Today ring. Drawn with Cairo/Pango in a
-/// Gtk.DrawingArea.
-fn build_home_shelf(books: &[&Book]) -> gtk::Box {
-    let host = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    host.set_halign(gtk::Align::Start);
-    host.set_hexpand(false);
-    host.add_css_class("kalam-home-shelf");
-
-    let heading = gtk::Label::builder()
-        .label("Your shelf")
-        .halign(gtk::Align::Start)
-        .hexpand(false)
-        .build();
-    heading.add_css_class("kalam-home-shelf-heading");
-    host.append(&heading);
-
-    let chip = gtk::Label::builder()
-        .label("Arrange by: Months")
-        .halign(gtk::Align::Start)
-        .hexpand(false)
-        .build();
-    chip.add_css_class("kalam-home-shelf-chip");
-    host.append(&chip);
-
-    // DrawingArea for the custom shelf rendering.
-    let area = gtk::DrawingArea::new();
-    area.set_size_request(340, 340);
-    area.set_hexpand(false);
-    area.set_vexpand(false);
-
-    let books_for_draw: Vec<Book> = books.iter().map(|b| (*b).clone()).collect();
-    area.set_draw_func(move |_area, cr, width, height| {
-        let (w, h) = (width as f64, height as f64);
-        if w < 2.0 || h < 2.0 {
-            return;
-        }
-
-        // Base line: vertical line down the centre.
-        let base_x = w / 2.0;
-        cr.set_source_rgba(0.5, 0.5, 0.5, 0.3);
-        cr.set_line_width(1.0);
-        cr.move_to(base_x, 20.0);
-        cr.line_to(base_x, h - 20.0);
-        let _ = cr.stroke();
-
-        // Today ring: circle at the top centre.
-        let today_radius = 8.0;
-        cr.set_source_rgba(1.0, 0.5, 0.0, 0.9);
-        cr.set_line_width(2.0);
-        cr.arc(base_x, 20.0, today_radius, 0.0, 2.0 * std::f64::consts::PI);
-        let _ = cr.stroke();
-
-        // Horizontal bars for books, alternating left/right of base line.
-        let bar_count = books_for_draw.len().min(6);
-        let bar_height = 6.0;
-        let bar_gap = 16.0;
-        let start_y = 50.0;
-
-        for (i, _) in books_for_draw.iter().enumerate().take(bar_count) {
-            let y = start_y + i as f64 * bar_gap;
-            let bar_w = 60.0 + (i as f64 * 10.0).min(40.0);
-            let extend_left = i % 2 == 0;
-
-            cr.set_source_rgba(0.2, 0.6, 1.0, 0.8);
-            cr.set_line_width(bar_height);
-
-            if extend_left {
-                cr.move_to(base_x, y);
-                cr.line_to(base_x - bar_w, y);
-            } else {
-                cr.move_to(base_x, y);
-                cr.line_to(base_x + bar_w, y);
-            }
-            let _ = cr.stroke();
-        }
-    });
-
-    host.append(&area);
-    host
+    // Both strips are showing placeholders until this runs. The size must be
+    // exactly what `build_book_card` asked for -- the cache is keyed on it, so
+    // a mismatch decodes into an entry nothing ever reads.
+    crate::preload::warm_books(&on_screen, 0, COVER_W, COVER_H);
 }

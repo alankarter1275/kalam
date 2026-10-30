@@ -8,13 +8,12 @@ A checklist of everything that needs designing, from full pages down to right-cl
 - **(R)** = confirmed in the repo README. **(?)** = my inference; please confirm or strike.
 - Sources: the README's feature list and `pages/` listing, plus your four mockups. I couldn't open `src/` or `docs/offline-roadmap.md`, so this was not checked against the code. Run `ls src/pages src/widgets` and diff it against this list.
 - Part 2 (online sources, downloads, plugins) is listed last and is not built yet.
-- Process and file rules: `HANDOFF.md`.
 
 ---
 
 ## Work plan (design chats 9 to 19)
 
-Chats 1 to 8 are done. The remaining work is grouped as below. Each chat makes its screen group as one canvas in light and dark, with empty, loading and error states and control states, and ends with the handoff of `HANDOFF.md` section 3. **Status** is updated at each handoff: `todo`, `active`, `done`. Chat numbers match the design chat numbering used in `decisions.md` headings. The grouping is the user's ruling; the "Also added" and "Open questions inherited" columns are my additions (*Proposed*).
+Chats 1 to 8 are done. The remaining work is grouped as below. Each chat makes its screen group as one canvas in light and dark, with empty, loading and error states and control states, and ends by handing back full replacement files. **Status** is updated at each handoff: `todo`, `active`, `done`. Chat numbers match the design chat numbering used in `decisions.md` headings. The grouping is the user's ruling; the "Also added" and "Open questions inherited" columns are my additions (*Proposed*).
 
 | Chat | Group | Covers (checklist sections) | Also added (*Proposed*) | Open questions inherited | Status |
 |---|---|---|---|---|---|
@@ -34,7 +33,7 @@ Chats 1 to 8 are done. The remaining work is grouped as below. Each chat makes i
 **Notes on the plan**
 - **Chat count:** the plan lists ten design chats (9 to 18) plus the palette pass (19).
 - **File and folder choosers (chat 17):** I agree they should be the native chooser and not drawn. GTK 4.10 deprecated `Gtk.FileChooserNative` in favour of `Gtk.FileDialog`, which also uses the system portal. The spec should name `Gtk.FileDialog` for new code and keep `Gtk.FileChooserNative` as the fallback if the project targets an older GTK. Kalam only specifies the title, the filters (EPUB, PDF, CBZ and so on; StarDict, SQLite and TSV for dictionaries) and the folder-only mode.
-- **Chats 11 and 12** could be one chat; they are split for the 16-file canvas limit (`HANDOFF.md` section 6).
+- **Chats 11 and 12** could be one chat; they are split for the 16-file canvas limit.
 - **Dependencies:** chat 9 defines the global empty, loading and error patterns and the rail; chats 10 to 18 reuse them rather than redraw them. Chat 15 depends on decisions 145 and 147. Chat 19 runs last because it needs every other screen.
 - **Nothing is ticked below by this plan.** Items are ticked only when the user approves them in their chat.
 

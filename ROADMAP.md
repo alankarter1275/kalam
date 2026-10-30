@@ -76,13 +76,13 @@ must not be required for the offline library or readers to work.
 
 ### EPUB editing
 
-The EPUB content editor has been removed and deferred on 2026-10-21. Reader
-inline editing, the reader's Deep Editor/source entry point, the standalone
-editor, its picker/navigation route and the pending-edit review UI are not
-available through the reader, library or another app route. Do not continue
-editor implementation or mockups unless the owner explicitly reopens the work.
-If reopened, the content scope is HTML/XHTML and CSS edited directly, with no
-Markdown support or conversion. Book metadata editing and annotations remain.
+The EPUB content editor was removed and deferred on 2026-10-21. The owner later
+explicitly reopened the feature and directed implementation, and it is now built
+and reachable through the navigation rail (decision 102) and
+`Route::EditorWorkspace`. The content scope is HTML/XHTML and CSS edited
+directly, with no Markdown support or conversion. Book metadata editing and
+annotations are separate and remain. **Further editor work is deferred** until
+the UI redesign is complete.
 Legacy patch rows and sidecar fields are preserved only for compatibility;
 the current app does not create, render, apply or review them.
 
@@ -93,10 +93,11 @@ the current app does not create, render, apply or review them.
   Existing UI or queue scaffolding does not provide working online sources.
 - The Lua plugin substrate is selected, but neither the plugin runtime nor a
   source implementation is registered.
-- The EPUB content editor (KAL-5) was removed and deferred on 2026-10-21.
-  Its prior designs and CI results are historical, not authorization for new
-  implementation. If the owner reopens it, use HTML/XHTML and CSS directly,
-  with no Markdown support or conversion; see `plan.md`.
+- The EPUB content editor (KAL-5) is built and reachable, but **further work on
+  it is deferred** until the UI redesign is complete. It was removed on
+  2026-10-21 and reopened by the owner afterwards. Content scope is HTML/XHTML
+  and CSS edited directly, with no Markdown support or conversion; see
+  `plan.md`.
 
 ## Crosswalk from earlier phase names to current status
 
@@ -120,12 +121,12 @@ that a feature shipped or remains in the app.
 | **P8 — Local comics** | Shipped: local CBZ/CBR import and the comics reader remain. A later comic-OCR experiment was removed on 2026-09-29. |
 | **P9 — Manga sources** | MangaDex and scraper adapters briefly existed, then were removed in the 2026-09-08 offline pivot. No manga source implementation is registered now. |
 | **P10 — PDF** | PDF reading shipped and was rebuilt on MuPDF. Text selection can save annotation records, but EPUB-style persistent page-positioned marks are only partial. |
-| **P11 — Tools** | Partial: bulk tags/metadata editing shipped. External conversion, generic EPUB polish, batch cover refresh, and Calibre `metadata.db` import did not. The later EPUB content editor was removed and deferred on 2026-10-21. |
+| **P11 — Tools** | Partial: bulk tags/metadata editing shipped. External conversion, generic EPUB polish, batch cover refresh, and Calibre `metadata.db` import did not. The later EPUB content editor was removed on 2026-10-21, then reopened by the owner and built; further work is deferred. |
 | **P12 — Plugins** | No app-integrated plugin runtime or online source is registered. The Wasm host scaffold was archived; the final design decision is Lua (`mlua`, Lua 5.4), not yet implemented. |
 | **A0 — Architecture and performance** | Steps 1–7 shipped: measurement, `LibraryService`, thumbnails, tasks, preloaders, windowed grid, and query-count CI budgets. Step 8 has `Source`/empty-manager scaffolding and design notes, but no plugin host or registered source. |
 | **A1 — In-app dialogs** | Shipped: in-app dialogs use the overlay helper and focus handling; portal-backed file pickers remain native. |
 | **Dictionary overhaul, steps 1–10** | Most data, lookup, vocabulary, pronunciation, priority, and history work remains. The old Phase 6 tap-to-look-up interaction was later removed, so the old “all steps complete” label is not a current feature checklist. |
-| **Later offline roadmap, phases 1–6** | Shipped work is reflected in the current app status above. The initial EPUB editor shipped and was removed/deferred on 2026-10-21; KAL-5 is not active implementation work. |
+| **Later offline roadmap, phases 1–6** | Shipped work is reflected in the current app status above. The initial EPUB editor shipped, was removed on 2026-10-21, and was then reopened by the owner and rebuilt; KAL-5 is built, with further work deferred. |
 | **Later offline roadmap, phases 7–8** | Query-count performance checks exist. Further optimization is last; the separate Material 3 redesign remains planned. |
 
 ## Current decisions and boundaries
@@ -134,11 +135,14 @@ that a feature shipped or remains in the app.
   track.
 - Lua (`mlua`, Lua 5.4) is the selected future plugin substrate. No plugin
   runtime or source implementation is in the app.
-- **KAL-5 is deferred.** The EPUB content editor and its current routes/UI have
-  been removed. Do not implement or mock up a replacement unless the owner
-  explicitly reopens the work. Future scope, if reopened: HTML/XHTML and CSS
-  edited directly, with no Markdown support or conversion. Preserve unrelated
-  book metadata editing and annotations; see [`plan.md`](plan.md).
+- **KAL-5 is built; further work is deferred.** The EPUB content editor was
+  removed on 2026-10-21, then explicitly reopened by the owner, who directed
+  implementation. It is live in the navigation rail (decision 102) and at
+  `Route::EditorWorkspace`. Scope: HTML/XHTML and CSS edited directly, with no
+  Markdown support or conversion. The UI redesign completes before further
+  editor work, and redesign changes must not remove or stub the editor out.
+  Preserve unrelated book metadata editing and annotations; see
+  [`plan.md`](plan.md).
 - Performance optimization is scheduled after the heavy feature work and the
   Material 3 redesign. Measure before choosing optimizations.
 - The earlier roadmap listed unauthorized shadow-library support, a Calibre

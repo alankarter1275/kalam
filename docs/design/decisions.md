@@ -1,6 +1,6 @@
 # Kalam design decisions
 
-Newest at the bottom. Add to this file at the end of every design chat. Rules: `HANDOFF.md`.
+Newest at the bottom. Add to this file at the end of every design chat.
 
 1. **Theme scope:** light and dark, with 4 palettes. Terracotta and Forest are kept; Ink and Amber are dropped; Plum and Teal are added (Proposed, not yet confirmed; see 21).
 2. **Splash screen is final.** It is approved as is (`splash.html`).
@@ -230,7 +230,7 @@ Status: **approved by the user at the end of design chat 5** (book details page 
 102. **The Editor is a top-level rail entry and is also reachable from a book** (Book ⋯ → Edit book…). This closes the open question from design chat 1.
 
 ## Process
-103. **Handoff system.** The rules for files, numbering, chat start and end, and the check script live in `HANDOFF.md`. Every chat ends by handing back full replacement files built from the project copies (never partial snippets, never update files), after the check script reports no errors. This replaces the workflow in decision 10.
+103. **Handoff system.** The rules for files, numbering, chat start and end, and the check script live in `HANDOFF.md`. Every chat ends by handing back full replacement files built from the project copies (never partial snippets, never update files), after the check script reports no errors. This replaces the workflow in decision 10. *Retired: the design phase this governed is complete, and `HANDOFF.md` has been removed as design-agent scaffolding that no longer describes how the project works. Kept here as history.*
 
 ## Open questions (added)
 - **EPUB reader boards are not changed.** Things that now differ from them: the Notes panel's chips versus the Annotations dialog's tabs (decision 92); the Contents panel versus the timeline (decision 89); the impression dialog over the real last page (decision 91); the new Reading setting (decision 91); no visible scrollbars (decision 90). Decide whether to bring the reader in line.

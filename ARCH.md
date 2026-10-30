@@ -49,11 +49,16 @@ local workspace members; see the root `Cargo.toml` for the current member list.
 
 ## EPUB content editing
 
-The EPUB content editor has been removed and deferred. There are no reader
-inline-edit controls, Deep Editor/source entry point, standalone editor,
-picker/navigation route or pending-edit review UI. Do not resume implementation
-or mockups unless the owner explicitly reopens the work. If reopened, edit
-HTML/XHTML and CSS directly; Markdown support and conversion are out of scope.
+The EPUB content editor was removed and deferred on 2026-10-21. The owner later
+explicitly reopened the feature and directed implementation, so it is built and
+reachable: `NavItem::Editor` in the navigation rail (decision 102),
+`Route::EditorWorkspace`, `src/pages/epub_editor.rs`, `editor_picker.rs`,
+`epub_structure.rs`, `epub_tools.rs`, `text_diff.rs`, `font_subset.rs`,
+`db/editor.rs`, and a `sourceview5` dependency. Content scope is HTML/XHTML and
+CSS edited directly; Markdown support and conversion remain out of scope.
+**Further editor work is deferred** until the UI redesign is complete; redesign
+work must not remove or stub the editor out. This section was not updated when
+the feature was reopened, which is why it contradicted the shipped code.
 Book metadata editing and annotations are unrelated and remain available.
 Legacy patch data is retained only for compatibility with older databases and
 sidecars; the app does not create, apply, render or review it.

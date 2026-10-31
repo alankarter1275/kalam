@@ -173,23 +173,26 @@ impl Catalog {
     /// library instead of only future edits. It is done lazily, on first use, so
     /// opening the catalog does not read every book back off disk.
     pub(super) fn origin_hash(&self, book_id: i64) -> Result<Option<String>> {
-        let row: Option<(Option<String>, String, String)> = {
+        let row: Option<(Option<String>, String, String, String)> = {
             let conn = self.conn();
             conn.query_row(
-                "SELECT import_hash, file_hash, file_path FROM books WHERE id = ?1",
+                "SELECT import_hash, file_hash, uuid, file_name FROM books WHERE id = ?1",
                 params![book_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .optional()?
         };
-        let Some((frozen, current, path)) = row else {
+        let Some((frozen, current, uuid, file_name)) = row else {
             return Ok(None);
         };
         if let Some(h) = frozen.filter(|h| !h.trim().is_empty()) {
             return Ok(Some(h));
         }
 
-        let backup = crate::epub_metadata::backup_path(Path::new(&path));
+        // There is no path column: books store uuid + file_name and every reader
+        // resolves the location itself, so the backup is found the same way.
+        let path = resolve_library_file(&uuid, &file_name);
+        let backup = crate::epub_metadata::backup_path(&path);
         if backup.is_file() {
             if let Ok(recovered) = crate::db::hash_file(&backup) {
                 let conn = self.conn();

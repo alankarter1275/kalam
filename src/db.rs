@@ -926,7 +926,7 @@ impl Catalog {
         // this one never moves. Remembered edits are filed under it, which is what
         // keeps them reachable from the file the owner still has on disk after the
         // library's own copy has been edited or deleted.
-        Self::add_column_if_missing(&conn, "books", "import_hash", "TEXT")?;
+        add_column_if_missing(&conn, "books", "import_hash", "TEXT")?;
 
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let cat = Self {

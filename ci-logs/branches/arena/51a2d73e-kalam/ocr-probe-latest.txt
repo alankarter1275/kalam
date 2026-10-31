@@ -1,6 +1,6 @@
 [1m[92m   Compiling[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `release` profile [optimized] target(s) in 1m 01s
-[1m[92m     Running[0m unittests src/main.rs (target/release/deps/kalam-c678f9d2ca959c9a)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 1m 33s
+[1m[92m     Running[0m unittests src/main.rs (target/release/deps/kalam-714057c7a29621bc)
 
 running 1 test
 === page 1: 125 word boxes, 15 line groups, 15 recognition results
@@ -255,6 +255,6 @@ page 5: all expected snippets present in OCR output
 === end page 5 ===
 test ocr::tests::ocr_scan_probe_fixture_pages ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 722 filtered out; finished in 6.30s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 722 filtered out; finished in 9.33s
 
---- run 41218932532 ---
+--- run 41230154725 ---

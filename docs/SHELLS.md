@@ -4,6 +4,15 @@
 > do not match the current workspace. Check the `chapbook-reader` source and
 > [`kalam-reader` API guide](../crates/kalam-reader/README.md) before using an
 > example.
+>
+> **Which of the examples below are missing:** of the five shells in the table,
+> four are not in this repository. `chapbook-viewer` and `chapbook-viewer-win32`
+> were never vendored; `chapbook-viewer-gtk` was deleted on 2026-10-30 once
+> nothing depended on it; `tools/chapbook-cli/examples/show.rs` does remain,
+> that crate having been kept for its golden and snapshot tests. The shell to
+> read instead is `crates/kalam-reader` with its integration in
+> `src/pages/reader/engine.rs`. The contract described here is still the
+> contract — most of the examples illustrating it now live elsewhere.
 
 Chapbook is an engine, not an app. A **shell** is the part you write: it
 owns a window or a panel, it owns input, and it owns the process. Between
@@ -20,11 +29,15 @@ There are five shells in the workspace to read alongside it:
 
 | | crate | what it shows |
 |---|---|---|
-| smallest | `chapbook-viewer/examples/minimal.rs` | the whole contract, nothing else |
-| desktop | `chapbook-viewer` | selection, links, clipboard, touch, GPU |
-| toolkit | `chapbook-viewer-gtk` (Linux only) | the same session under someone else's main loop |
-| platform | `chapbook-viewer-win32` (Windows only) | the same session under a main loop the shell pumps itself |
+| smallest | `chapbook-viewer/examples/minimal.rs` *(absent)* | the whole contract, nothing else |
+| desktop | `chapbook-viewer` *(absent)* | selection, links, clipboard, touch, GPU |
+| toolkit | `chapbook-viewer-gtk` *(deleted 2026-10-30)* | the same session under someone else's main loop |
+| platform | `chapbook-viewer-win32` *(absent)* | the same session under a main loop the shell pumps itself |
 | device | `tools/chapbook-cli/examples/show.rs` | rasterizing yourself, panel policy, damage |
+
+The only shell in this repository is `crates/kalam-reader`, integrated at
+`src/pages/reader/engine.rs`. Read that for a working example; read the rows
+above for the range of shapes the contract has to survive.
 
 Start from `minimal.rs`. It exists to be copied.
 
@@ -197,9 +210,11 @@ means `MotionEvent.x / density`; forward the raw value and every tap
 lands in the last band on a 3x screen, silently, because a tap that
 always means "next page" is not an error anything can report.
 
-`chapbook-viewer-gtk` runs 1 and 3 and skips 2 — it has a key for adding
-a highlight and no gesture for touching one — so treat the ordering above
-as the contract rather than as a transcription of that file.
+`chapbook-viewer-gtk` ran 1 and 3 and skipped 2 — it had a key for adding
+a highlight and no gesture for touching one — which is exactly why the
+ordering above is stated as the contract rather than as a transcription of
+any one file. That crate was deleted on 2026-10-30, and `crates/kalam-reader`
+inherits the question.
 `chapbook-viewer-win32` runs all three, which is what the ordering was
 written for: a press inside a highlight in the outer third of the page
 reports the highlight there and does not turn.
@@ -215,7 +230,7 @@ dictionary tap out of the same table.
 
 Two shells wrap them, and reading both is worthwhile because the two
 platforms ask opposite questions of the same data.
-`chapbook-viewer-gtk`'s `PageArea` implements GTK's `AccessibleText`,
+`chapbook-viewer-gtk`'s `PageArea` implemented GTK's `AccessibleText`,
 where the client asks for *text at a granularity around an offset*.
 `chapbook-viewer-win32`'s `uia` module implements `ITextProvider`, where
 the client is handed a *range object that moves its own endpoints by
@@ -266,9 +281,11 @@ velocity, edge slop, the long-press timeout someone set in accessibility
 settings — are what your app is judged on. Recognize the gesture natively,
 then say what it meant.
 
-`chapbook-viewer-gtk` is the worked example. Its `engine_key` is the whole
-of its keyboard translation, it unbinds `m` because it has no menu to
-toggle, and it gives `TapZones` an inert middle band for the same reason.
+`chapbook-viewer-gtk` was the worked example, until it was deleted on
+2026-10-30. Its `engine_key` was the whole of its keyboard translation, it
+unbound `m` because it had no menu to toggle, and it gave `TapZones` an inert
+middle band for the same reason. Kalam's counterparts are `src/shortcuts.rs`
+and the reader's own key handling.
 
 Navigation, in rough order of how often a shell wires it up:
 

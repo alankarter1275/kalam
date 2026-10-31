@@ -5,8 +5,9 @@
 //! converts the pixels to cairo's byte order and paints them at 1/scale,
 //! so GTK's logical coordinates and the engine's CSS px agree. That
 //! ten-line blit, the press/drag/tap handling and the background-load
-//! wakeup are lifted from `chapbook-viewer-gtk/src/linux.rs`, the
-//! reference shell; what is Kalam's is everything around them — the
+//! wakeup were lifted from the reference GTK shell that used to live at
+//! `crates/chapbook-viewer-gtk/src/linux.rs`, deleted on 2026-10-30 once
+//! nothing depended on it; what is Kalam's is everything around them — the
 //! preference plumbing, the callbacks, the column width.
 //!
 //! Two ways of reading, one widget. **Paged** is the engine's own loop:

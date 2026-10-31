@@ -3321,7 +3321,9 @@ mod tests {
         assert_eq!(snap.theme_id, crate::theme::DEFAULT.id);
         assert!(snap.source_open_library);
         assert!(snap.source_google_books);
-        assert!(snap.clean_on_import);
+        // Opt-in, not opt-out: importing must not rewrite a book unless the
+        // user asked for it. See `epub_sanitizer::clean_on_import_enabled`.
+        assert!(!snap.clean_on_import);
         assert!(snap.writeback_enabled);
         assert_eq!(snap.google_books_key, "");
         assert!(snap.watch_rules.is_empty());

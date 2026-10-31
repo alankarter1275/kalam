@@ -330,9 +330,9 @@ pub fn build_book_card(
 /// the right length, scrollbar steady — so it is now the default and
 /// `KALAM_NO_WINDOWED_GRID=1` is the way back to building every card.
 ///
-/// Same opt-*out* shape as `KALAM_NO_PRELOAD` and `KALAM_NO_WEBVIEW_POOL`,
-/// deliberately: an escape hatch is only useful if it works the way the other
-/// escape hatches in this codebase already work.
+/// Same opt-*out* shape as `KALAM_NO_PRELOAD` (and the since-removed
+/// `KALAM_NO_WEBVIEW_POOL`), deliberately: an escape hatch is only useful if
+/// it works the way the other escape hatches in this codebase already work.
 pub fn windowed_grid_enabled() -> bool {
     windowed_grid_enabled_for(std::env::var_os("KALAM_NO_WINDOWED_GRID").as_deref())
 }

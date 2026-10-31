@@ -5,6 +5,13 @@
 > workspace. Check the root `Cargo.toml` and crate source before treating a
 > capability as shipped. Kalam's app architecture is in [`ARCH.md`](../ARCH.md);
 > the current reader integration is in [`docs/kalam/INTEGRATION.md`](kalam/INTEGRATION.md).
+>
+> **Specifically absent from this workspace:** the `chapbook-viewer`,
+> `chapbook-viewer-win32` and `chapbook-render-vello` crates; the `ios/` and
+> `android/` surfaces and the C header; and the `cbz`, `pdf`, `opds` and `ureq`
+> cargo features. `chapbook-viewer-gtk` was vendored as a reference shell until
+> 2026-10-30 and is now deleted. What is actually here is the `members` array
+> of the root `Cargo.toml` — nine crates as of that date.
 
 Core principle: **no webview, no full HTML5 browser.** Chapbook implements the
 EPUB 3 standards — XHTML content documents and the EPUB 3 CSS profile (CSS 2.1
@@ -242,13 +249,20 @@ stays that way.
   persistence. Comics persist page-unit progression. Output is a `Frame`
   (`Session::frame`) plus the fonts and images its ops resolve against
   (`paint_resources`); `Session::render` is the bundled CPU rasterizer over
-  that, not a separate path. The formats beyond EPUB are separately
+  that, not a separate path. Upstream makes the formats beyond EPUB separately
   compilable — `cbz`, `pdf` and `opds` features, all on by default — so a
-  device build drops the ones its hardware will never open; the public API
-  is the same in every configuration, and an excluded format fails with
-  `ChapbookError::FormatNotBuilt` rather than being mistaken for something
-  else.
+  device build drops the ones its hardware will never open, and an excluded
+  format fails with `ChapbookError::FormatNotBuilt` rather than being mistaken
+  for something else. **In this workspace those features are gone**, along with
+  `ureq`; the comment at the top of `crates/chapbook-reader/Cargo.toml` records
+  why. Their `#[cfg(feature = …)]` sites are deliberately left in the source
+  rather than cut out, so an unknown feature is simply never enabled and that
+  code does not compile. Kalam handles CBZ and PDF itself, outside the engine.
 - **chapbook-viewer** / **chapbook-viewer-gtk** / **chapbook-viewer-win32**
+  *(none present here: the first and third were never vendored, and
+  `chapbook-viewer-gtk` was deleted on 2026-10-30 once nothing depended on it.
+  Kalam's shell is `crates/kalam-reader`, which copied that crate's blit and
+  input handling rather than depending on it)*
   — winit+softbuffer, GTK4 and Win32 shells over
   `chapbook-reader::Session`; each translates input events and blits the
   session's rasterized page, nothing more. `chapbook-viewer --gpu` is the

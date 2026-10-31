@@ -39,7 +39,8 @@ use std::path::{Path, PathBuf};
 /// `KALAM_NO_PRELOAD=1` turns the cover preloader off: cards decode
 /// synchronously as they did before A0 step 5.
 ///
-/// Same spirit as `KALAM_NO_WEBVIEW_POOL=1` — a one-variable way to A/B the
+/// Same spirit as the since-removed `KALAM_NO_WEBVIEW_POOL=1` — a one-variable
+/// way to A/B the
 /// change against `KALAM_TIMING=1` in a single session, and an escape hatch if
 /// deferred covers ever misbehave on a real machine.
 pub fn preload_enabled() -> bool {

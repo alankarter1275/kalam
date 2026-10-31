@@ -11,9 +11,10 @@
 //! `GtkDropDown`, whose list rows cannot carry per-row fonts or a
 //! footer action.
 //!
-//! First called by the Settings page, which lands in the next tranche
-//! of this phase; the allow below comes off with it.
-#![allow(dead_code)]
+//! Called by the Settings page and by the reader's own settings panel; both
+//! landed long ago. The blanket `#![allow(dead_code)]` that waited for them
+//! came off on 2026-10-31. It had been hiding exactly one thing, which now
+//! carries its own narrow allow and its own explanation: [`Dropdown::selected`].
 
 use gtk::prelude::*;
 use std::cell::Cell;
@@ -60,6 +61,19 @@ impl Dropdown {
         self.button.clone()
     }
 
+    /// The index currently chosen.
+    ///
+    /// Nothing calls this today: hosts re-sync *into* the dropdown through
+    /// [`Dropdown::set_selected`] and read their own state rather than asking
+    /// the widget. It stays because the handle's documented contract is silent
+    /// selection access in both directions, and a getter/setter pair with the
+    /// getter missing invites a host to cache the index itself and drift from
+    /// the widget. `cargo clippy -p kalam --all-targets` on 2026-10-31, run with
+    /// the file's blanket allow removed, named this method as the only unused
+    /// item in either file — so the allow is here, on the one method, instead
+    /// of across everything above it. Delete the method if the reader redesign
+    /// lands and still wants nothing from it.
+    #[allow(dead_code)]
     pub fn selected(&self) -> usize {
         self.selected.get()
     }

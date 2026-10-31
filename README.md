@@ -127,8 +127,7 @@ crates/chapbook-layout/       EPUB layout and pagination
 crates/chapbook-core/         shared reading types and locators
 crates/chapbook-paint/        display lists and image store
 crates/chapbook-render-tinyskia/ CPU renderer
-crates/chapbook-viewer-gtk/   reference GTK viewer
- tools/                       Chapbook CLI and reader demo
+ tools/                       Chapbook CLI — the engine's golden and snapshot tests
 ```
 
 The app depends on local workspace crates. The root package repository is

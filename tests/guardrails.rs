@@ -63,7 +63,48 @@ const MAX_ARC_CATALOG_IN_PAGES: usize = 44;
 /// deleted the theme-dot rules, landing at 121. The remaining literals
 /// live on pages the redesign has not rebuilt yet and leave with them,
 /// page by page.
-const MAX_HEX_IN_CSS: usize = 121;
+///
+/// Lowered 121 -> 100 on 2026-10-30. The real count had already fallen below
+/// the constant and nobody had ratcheted it down, which is the one failure
+/// mode this file's header warns about: slack above the real number means the
+/// ratchet quietly permits that many new literals before it says anything.
+const MAX_HEX_IN_CSS: usize = 100;
+
+/// CSS properties GTK's parser does not have — each one backed by a warning
+/// somebody actually saw, not by web-CSS memory.
+///
+/// `docs/pitfalls.md` §58 records the owner's field log of 2026-10-04:
+///
+/// ```text
+/// Gtk-WARNING **: Theme parser error: <data>:725:5-14: No property named "max-width"
+/// ```
+///
+/// GTK CSS has `min-width` and `min-height` but no `max-width` and no
+/// `max-height`, in any GTK 4 release up to the one CI runs against. The cap
+/// that used them was a silent no-op for as long as it shipped.
+///
+/// Add a name here only with that kind of evidence attached. The two dialects
+/// share a syntax and only part of a vocabulary, and guessing which half is the
+/// mistake §58 exists to record.
+const GTK_REJECTED_CSS_PROPERTIES: &[&str] = &["max-width", "max-height"];
+
+/// The dimmest a *settled* screenshot may be and still count as drawn.
+///
+/// Measured, not invented, which is what `docs/ci/check-shot.py` asked for
+/// before it would enforce anything: across the 552 frames committed before the
+/// Actions incident of 30 October, every settled frame was at least 64.8% lit.
+/// Settled frames only: all 26 black frames in that set are first frames,
+/// captured before the window drew, and checking those would fail every run.
+///
+/// 20% sits well below the observed floor and well above the 0.0% a window that
+/// never drew produces.
+const MIN_SETTLED_LIT_PCT: f64 = 20.0;
+
+/// How many settled frames the reports must hold for the check to mean
+/// anything. There are 138 today. The floor is lower so the capture list can be
+/// trimmed without a fight, but not so low that an empty or clobbered
+/// `ci-logs/` passes silently — that is the failure mode that matters.
+const MIN_SETTLED_FRAMES: usize = 100;
 
 // ---------------------------------------------------------------------------
 // The checks
@@ -172,6 +213,110 @@ fn stylesheet_does_not_gain_hex_colours() {
          \n\
          Lower MAX_HEX_IN_CSS when you move one.\n\
          "
+    );
+}
+
+#[test]
+fn stylesheet_declares_no_property_gtk_rejects() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/style.css");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("could not read {}: {e}", path.display()));
+    let hits = find_css_declarations(&text, GTK_REJECTED_CSS_PROPERTIES);
+
+    assert!(
+        hits.is_empty(),
+        "\n\
+         resources/style.css declares a property GTK's CSS parser does not have.\n\
+         \n\
+         {}\
+         \n\
+         A rejected declaration fails nothing, and that is the whole problem:\n\
+         the parser drops the one property, keeps the rest of the rule, prints\n\
+         a single warning at startup, and the app runs fine. Compilation, the\n\
+         tests and the smoke test all stay green while the rule silently does\n\
+         nothing. docs/pitfalls.md §58 is the record of a width cap that was a\n\
+         no-op for as long as it shipped.\n\
+         \n\
+         Put the constraint where it can be measured instead. `min-width` and\n\
+         `min-height` do exist, and a widget's own size request — a label's\n\
+         width in characters, a row's natural width — is the reliable lever.\n\
+         \n\
+         Then grep CI's smoke logs for `Theme parser error`. The evidence is\n\
+         already collected; the failure mode is not looking at it.\n\
+         ",
+        hits.iter()
+            .map(|(prop, line)| format!("    line {line:>5}: {prop}\n"))
+            .collect::<String>()
+    );
+}
+
+#[test]
+fn settled_screenshots_are_not_black() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("ci-logs");
+    let mut frames: Vec<(String, f64, String)> = Vec::new();
+
+    let opened = std::fs::read_dir(&dir);
+    let entries = match opened {
+        Ok(entries) => entries,
+        Err(e) => panic!("could not read {}: {e}", dir.display()),
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let ext = path.extension();
+        let ext = match ext {
+            Some(x) => x.to_string_lossy().into_owned(),
+            None => String::new(),
+        };
+        if ext != "txt" {
+            continue;
+        }
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(_) => continue,
+        };
+        let fname = path.file_name();
+        let fname = match fname {
+            Some(n) => n.to_string_lossy().into_owned(),
+            None => String::new(),
+        };
+        for pair in settled_frame_lit(&text) {
+            frames.push((pair.0, pair.1, fname.clone()));
+        }
+    }
+
+    assert!(
+        frames.len() >= MIN_SETTLED_FRAMES,
+        "only {} settled screenshot frames under ci-logs/, below the floor of \
+         {MIN_SETTLED_FRAMES}; either the capture list shrank, lower the floor \
+         deliberately, or the reports stopped being published, which is what \
+         the floor exists to catch",
+        frames.len()
+    );
+
+    let mut black: Vec<&(String, f64, String)> = Vec::new();
+    for frame in frames.iter() {
+        if frame.1 < MIN_SETTLED_LIT_PCT {
+            black.push(frame);
+        }
+    }
+    black.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut list = String::new();
+    for (name, lit, file) in black.iter() {
+        list.push_str(&format!("    {lit:>5.1}%  {name}  ({file})\n"));
+    }
+
+    assert!(
+        black.is_empty(),
+        "{} settled screenshot frames are essentially black, under \
+         {MIN_SETTLED_LIT_PCT}% lit against a floor observed at 64.8% across \
+         138 good runs; a settled frame that never lit up means the window did \
+         not draw. check-shot.py has always said so in its output but was \
+         written to report numbers rather than fail. Note the lag: build runs \
+         before publish-screenshots commits, so this reads the previous run's \
+         reports. Offending frames:\n{list}",
+        black.len()
     );
 }
 
@@ -341,6 +486,68 @@ fn count_hex_literals(text: &str) -> usize {
     n
 }
 
+/// Remove `/* … */` comments, keeping every newline so line numbers in the
+/// result still mean what they meant in the input.
+///
+/// Needed because `resources/style.css` documents the GTK property gap in a
+/// comment that names the properties. That comment is the reason the rule
+/// exists, not a violation of it.
+fn strip_css_comments(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_comment = false;
+    let mut chars = text.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if in_comment {
+            if c == '*' && chars.peek() == Some(&'/') {
+                chars.next();
+                in_comment = false;
+            } else if c == '\n' {
+                out.push('\n');
+            }
+        } else if c == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            in_comment = true;
+        } else {
+            out.push(c);
+        }
+    }
+
+    out
+}
+
+/// Find declarations of any property in `props`, as `(property, 1-based line)`.
+///
+/// Splitting on `;`, `{` and `}` puts every declaration at the start of a
+/// fragment, and that is what separates a declaration from a selector that
+/// happens to contain the same word. (Written as a char array rather than a
+/// closure predicate: clippy's `manual_pattern_char_comparison` rejects the
+/// long form, and CI runs clippy with `-D warnings`.) The stylesheet uses all three shapes this
+/// has to survive: one indented declaration per line, a compact
+/// `.a:hover { prop: value; }` on a single line, and a value that runs over
+/// several lines. In each, the property name lands at a fragment start.
+fn find_css_declarations(text: &str, props: &[&str]) -> Vec<(String, usize)> {
+    let stripped = strip_css_comments(text);
+    let mut hits = Vec::new();
+
+    for (index, line) in stripped.lines().enumerate() {
+        for fragment in line.split([';', '{', '}']) {
+            let fragment = fragment.trim();
+            for prop in props {
+                let after = match fragment.strip_prefix(prop) {
+                    Some(after) => after,
+                    None => continue,
+                };
+                if after.trim_start().starts_with(':') {
+                    hits.push(((*prop).to_string(), index + 1));
+                }
+            }
+        }
+    }
+
+    hits
+}
+
 // ---------------------------------------------------------------------------
 // The scanners are fiddly enough to be worth testing in their own right: a
 // ratchet that counts wrong is worse than no ratchet, because it looks like
@@ -396,6 +603,95 @@ fn hex_scanner_counts_colours_and_ignores_longer_runs() {
     assert_eq!(count_hex_literals("#ab"), 0, "two digits is not a colour");
     assert_eq!(count_hex_literals("#0123456789"), 0, "ten digits is not a colour");
     assert_eq!(count_hex_literals("#01234567"), 1, "eight is the longest colour");
+}
+
+/// Pull `(frame name, lit percentage)` out of a screenshot report, looking only
+/// at settled frames. Hand-parsed for the same reason as `count_hex_literals`:
+/// `regex` is not a dependency and adding one to read a fixed format is a poor
+/// trade. Written as plain statements with no method chains, so the formatter
+/// has nothing to rearrange.
+fn settled_frame_lit(text: &str) -> Vec<(String, f64)> {
+    const MARKER: &str = "-settled.png:";
+    let mut out: Vec<(String, f64)> = Vec::new();
+
+    for line in text.lines() {
+        let found = line.find(MARKER);
+        let at = match found {
+            Some(at) => at,
+            None => continue,
+        };
+        let tail = &line[at + MARKER.len()..];
+        let lit_found = tail.find("lit=");
+        let lit_at = match lit_found {
+            Some(p) => p,
+            None => continue,
+        };
+        let digits = &tail[lit_at + 4..];
+        let mut end = digits.len();
+        for (i, c) in digits.char_indices() {
+            if !c.is_ascii_digit() && c != '.' {
+                end = i;
+                break;
+            }
+        }
+        let parsed = digits[..end].parse::<f64>();
+        if let Ok(value) = parsed {
+            let head = line[..at].trim();
+            let name = format!("{}-settled.png", head);
+            out.push((name, value));
+        }
+    }
+
+    out
+}
+
+#[test]
+fn settled_frame_parser_reads_the_report_format() {
+    let report = "  some preamble\n";
+    let report = format!("{report}  01-home.png: 1600x1200  coloured=19.4%  lit=0.0%\n");
+    let report = format!("{report}  02-home-settling.png: 1600x1200  lit=41.2%\n");
+    let report = format!("{report}  03-home-settled.png: 1600x1200  lit=100.0%\n");
+    let report = format!("{report}  04-book-1-settled.png: 1600x1200  lit=64.8%\n");
+
+    let got = settled_frame_lit(&report);
+    assert_eq!(got.len(), 2, "settled frames only");
+    assert_eq!(got[0].0, "03-home-settled.png");
+    assert_eq!(got[0].1, 100.0);
+    assert_eq!(got[1].0, "04-book-1-settled.png");
+    assert_eq!(got[1].1, 64.8);
+
+    assert_eq!(settled_frame_lit("no captures here\n").len(), 0);
+    // A settled line missing its lit= is skipped, not read as zero: a truncated
+    // report must not fail a build.
+    let truncated = "03-x-settled.png: 1600x1200 coloured=1%\n";
+    assert_eq!(settled_frame_lit(truncated).len(), 0);
+}
+
+#[test]
+fn css_declaration_scanner_sees_declarations_not_comments_or_selectors() {
+    let props = &["max-width"];
+    let n = |css: &str| find_css_declarations(css, props).len();
+
+    // The stylesheet's ordinary shape: one indented declaration per line.
+    assert_eq!(n(".a {\n  max-width: 100px;\n}\n"), 1);
+    // The compact shape the file also uses.
+    assert_eq!(n(".a:hover { max-width: 1px; color: red; }\n"), 1);
+    // No space before the colon still counts.
+    assert_eq!(n(".a {\n  max-width:1px;\n}\n"), 1);
+    // A value running over several lines is caught where the name is.
+    assert_eq!(n(".a {\n  max-width: calc(100px\n      + 2px);\n}\n"), 1);
+
+    // A comment naming the property is documentation, not a declaration.
+    assert_eq!(n("/* GTK CSS has no max-width property */\n.a { color: red; }\n"), 0);
+    // A selector containing the word is not a declaration.
+    assert_eq!(n(".max-width-panel { color: red; }\n"), 0);
+    assert_eq!(n("entry.kalam-max-width-filter:focus { color: red; }\n"), 0);
+    // min-width is a real GTK property and must not be swept up.
+    assert_eq!(n(".a {\n  min-width: 700px;\n}\n"), 0);
+
+    // Line numbers survive comment stripping, so a hit points somewhere real.
+    let hits = find_css_declarations("/* one\n   two */\n.a {\n  max-width: 1px;\n}\n", props);
+    assert_eq!(hits, vec![("max-width".to_string(), 4)]);
 }
 
 // ---------------------------------------------------------------------------

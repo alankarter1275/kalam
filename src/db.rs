@@ -900,6 +900,11 @@ impl Catalog {
             PRAGMA cache_size = -64000;
             PRAGMA temp_store = MEMORY;
             PRAGMA mmap_size = 268435456;
+            -- Wait out a write lock instead of failing on it. Without this
+            -- the timeout is zero, so a second Kalam instance, or a background
+            -- task overlapping a save, surfaces as SQLITE_BUSY rather than
+            -- waiting the few milliseconds the lock is held.
+            PRAGMA busy_timeout = 5000;
             ",
         )?;
         let cat = Self {
@@ -956,6 +961,7 @@ impl Catalog {
                 format        TEXT    NOT NULL,
                 file_name     TEXT    NOT NULL,
                 file_hash     TEXT    NOT NULL,
+                import_hash   TEXT,
                 cover_name    TEXT,
                 added_at      TEXT    NOT NULL,
                 progress      INTEGER NOT NULL DEFAULT 0
@@ -1392,6 +1398,12 @@ impl Catalog {
         add_column_if_missing(&conn, "books", "publisher", "TEXT NOT NULL DEFAULT ''")?;
         add_column_if_missing(&conn, "books", "published", "TEXT NOT NULL DEFAULT ''")?;
         add_column_if_missing(&conn, "books", "series_index", "REAL NOT NULL DEFAULT 0")?;
+        // The fingerprint a book arrived with, frozen. `file_hash` follows the
+        // bytes, so cleaning a book or writing metadata into it moves that value;
+        // this one never moves. Remembered edits are filed under it, which is what
+        // keeps them reachable from the file the owner still has on disk after the
+        // library's own copy has been edited or deleted.
+        add_column_if_missing(&conn, "books", "import_hash", "TEXT")?;
 
         // Indexed *after* the ALTERs above, since these columns do not exist in
         // the CREATE TABLE that older databases were built from.
@@ -2303,12 +2315,40 @@ impl Catalog {
     }
 
     /// Save position and update the books.progress percent (0–100).
+    ///
+    /// For readers whose saved positions start at zero, which is most of them:
+    /// EPUB chapters and comic pages. PDF numbers its pages from 1 and calls
+    /// [`Catalog::set_reading_progress_from`] with that base instead.
     pub fn set_reading_progress(
         &self,
         book_id: i64,
         chapter_index: usize,
         fraction: f64,
         chapter_count: usize,
+    ) -> Result<()> {
+        self.set_reading_progress_from(book_id, chapter_index, fraction, chapter_count, 0)
+    }
+
+    /// As [`set_reading_progress`], for a reader whose saved position starts at
+    /// `first_index` rather than zero.
+    ///
+    /// PDF numbers pages from 1; comics and EPUB from 0. The percentage has to
+    /// subtract the base, because the same column holds both kinds and the
+    /// formula cannot tell them apart. Without the subtraction every PDF book
+    /// reads one page ahead of where it actually is: never 0% on the first
+    /// page, and 100% a page before the end.
+    ///
+    /// The stored `chapter_index` deliberately keeps whatever base the reader
+    /// restores from. This fixes the displayed percentage without moving
+    /// anyone's saved position, so nothing migrates, no bookmark shifts, and a
+    /// book opened tomorrow lands on the same page it left today.
+    pub fn set_reading_progress_from(
+        &self,
+        book_id: i64,
+        chapter_index: usize,
+        fraction: f64,
+        chapter_count: usize,
+        first_index: usize,
     ) -> Result<()> {
         let conn = self.conn();
         let frac = fraction.clamp(0.0, 1.0);
@@ -2322,11 +2362,13 @@ impl Catalog {
                updated_at = excluded.updated_at",
             params![book_id, chapter_index as i64, frac, now],
         )?;
-        // Overall percent across chapters.
+        // Overall percent across chapters, in the reader's own base: how many
+        // whole units past the first one, plus the fraction of the current one.
+        let reached = chapter_index.saturating_sub(first_index) as f64 + frac;
         let overall = if chapter_count == 0 {
             0.0
         } else {
-            ((chapter_index as f64) + frac) / (chapter_count as f64) * 100.0
+            reached / (chapter_count as f64) * 100.0
         };
         let pct = overall.round().clamp(0.0, 100.0) as i64;
         let saved = saved
@@ -3353,7 +3395,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap());
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         assert_eq!(restored.title, "Nyxia Uprising");
@@ -3398,7 +3440,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap());
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         assert!(restored.cover_name.is_some(), "cover was not restored");
@@ -3409,7 +3451,7 @@ mod tests {
 
         // Tidy up so the test does not leave files in the real data dir.
         let _ = std::fs::remove_dir_all(crate::paths::book_dir(&restored.uuid));
-        let _ = cat.forget_overrides(&hash);
+        let _ = cat.forget_overrides(id);
     }
 
     #[test]
@@ -3448,7 +3490,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap());
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         let bytes = std::fs::read(restored.cover_path.as_ref().unwrap()).unwrap();
@@ -3456,7 +3498,7 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(crate::paths::book_dir(&restored.uuid));
         let _ = std::fs::remove_dir_all(dir);
-        let _ = cat.forget_overrides(&hash);
+        let _ = cat.forget_overrides(id);
     }
 
     #[test]
@@ -3499,7 +3541,7 @@ mod tests {
         std::fs::create_dir_all(&fresh_dir).unwrap();
         std::fs::write(fresh_dir.join("epub-default.png"), vec![b'E'; 800]).unwrap();
 
-        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap());
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         let bytes = std::fs::read(restored.cover_path.as_ref().unwrap()).unwrap();
@@ -3510,7 +3552,7 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&fresh_dir);
         let _ = std::fs::remove_dir_all(&dir);
-        let _ = cat.forget_overrides(&hash);
+        let _ = cat.forget_overrides(id);
     }
 
     #[test]
@@ -3522,8 +3564,7 @@ mod tests {
 
         // A book whose bytes differ has a different hash and must be untouched.
         let other = seed(&cat, "B", "y", &[]);
-        let other_hash = cat.get_book(other).unwrap().unwrap().file_hash;
-        assert!(!cat.restore_overrides(other, &other_hash).unwrap());
+        assert!(!cat.restore_overrides(other).unwrap());
         assert_eq!(cat.get_book(other).unwrap().unwrap().title, "B");
     }
 
@@ -3531,12 +3572,11 @@ mod tests {
     fn forgetting_overrides_gives_a_clean_import() {
         let cat = Catalog::open_in_memory().unwrap();
         let id = seed(&cat, "A", "x", &[]);
-        let hash = cat.get_book(id).unwrap().unwrap().file_hash;
         cat.update_book_metadata(id, "Edited", "x", None, 0.0, "", "", "", &[])
             .unwrap();
 
-        cat.forget_overrides(&hash).unwrap();
-        assert!(!cat.restore_overrides(id, &hash).unwrap());
+        cat.forget_overrides(id).unwrap();
+        assert!(!cat.restore_overrides(id).unwrap());
     }
 
     #[test]

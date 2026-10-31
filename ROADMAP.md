@@ -517,9 +517,9 @@ Wasm host scaffold, WIT contract, and a separate AO3 guest workspace. The
 host was explicitly unused, and the AO3 guest is only a stub (empty search;
 details/chapters return “not implemented”). The Rust source adapters were
 removed at the same time. The host module was later moved out of `src/` into
-`docs/archive/plugins-mod.rs`; the `plugins/` and `wit/` files are historical
-experiments, not sources registered by the app. The plugin system was set
-aside for Part 2 on 2026-09-18.
+`docs/archive/plugins-mod.rs`; the `plugins/` and `wit/` files were historical
+experiments, not sources registered by the app, and were deleted on
+2026-10-30. The plugin system was set aside for Part 2 on 2026-09-18.
 
 On 2026-10-10 the user chose one Lua system (`mlua`, Lua 5.4), superseding the
 September Wasm decision. The final design is “Lua points, Rust carries” and

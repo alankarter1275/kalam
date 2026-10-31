@@ -18,7 +18,7 @@ where breakage is *treated as a cost*, and where it is not.
 | **Producer** | `chapbook-epub` | The EPUB implementation of `Publication`. Kalam also depends on it directly for EPUB-specific operations, so its callers are updated with changes. |
 | **Backend** | `chapbook-render-tinyskia` | Turns a `DisplayList` into pixels. The *trait* is stable; the crate implementing it is free to change. |
 | **Internal** | `chapbook-layout` | No stability of any kind. Its DOM binding and cascade driver follow stylo's shape, and a stylo upgrade rewrites them. |
-| **Not a library** | `kalam`, `chapbook-viewer-gtk`, `tools/chapbook-cli`, `tools/kalam-reader-demo` | Their surface is an application, a command line or a window, not a Rust API. |
+| **Not a library** | `kalam`, `tools/chapbook-cli` | Their surface is an application or a command line, not a Rust API. |
 
 ## Why the lines fall there
 
@@ -30,9 +30,9 @@ rendering at once. Blast radius, not call frequency, earns the strictest
 tier.
 
 **`kalam-reader` is API, not Contract,** because it is the host-facing
-widget boundary. The Kalam app and the reader demo use it; other engine
-libraries do not depend on it. A breaking change requires updating those
-callers in the same workspace change.
+widget boundary. The Kalam app uses it; other engine libraries do not depend
+on it. A breaking change requires updating that caller in the same workspace
+change.
 
 **Internal means internal.** `chapbook-layout` — its `dom` binding, its
 `cascade` driver, and layout itself — is shaped by stylo's trait

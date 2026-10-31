@@ -32,15 +32,29 @@ struct TocHeading {
     anchor_id: Option<String>,
 }
 
-/// Preference key controlling whether EPUBs are polished and sanitized upon import.
+/// Preference key controlling whether EPUBs are polished and sanitized upon
+/// import. Off unless the user turns it on; see [`clean_on_import_enabled`].
 pub const PREF_CLEAN_EPUB: &str = "import.clean_epub";
 
-/// True unless the user has explicitly disabled EPUB sanitizing on import.
+/// True only when the user has explicitly turned EPUB sanitizing on.
+///
+/// Off by default as of 2026-10-30; it used to be on. That meant importing a
+/// book rewrote the file, and the `.orig` backup that would have made the
+/// rewrite recoverable is gated on a separate and unrelated setting — so a
+/// first run could alter somebody's book with no way back. The cleaning itself
+/// is not the problem and has not changed: it is still one switch away in
+/// Settings. What changed is that it is now something you turn on rather than
+/// something you discover had already happened.
+///
+/// The parse is strict for the same reason. Only `"1"` or `"true"` counts as
+/// on, so a stored value that is neither — corrupt, handwritten, left over from
+/// an older format — is treated as off rather than as permission to rewrite a
+/// book on the next import.
 pub fn clean_on_import_enabled(catalog: &crate::db::Catalog) -> bool {
     catalog
         .get_pref(PREF_CLEAN_EPUB)
-        .map(|v| v != "0" && v != "false")
-        .unwrap_or(true)
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false)
 }
 
 /// Set EPUB sanitizing on import preference.

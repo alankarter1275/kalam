@@ -53,9 +53,10 @@ fn crate_name(member: &str) -> String {
 fn every_workspace_member_has_a_stability_tier() {
     let policy = read("docs/STABILITY.md");
     let members = members();
-    // Ten since the Kalam strip (docs/kalam/PLAN.md §4 and §7 step 4);
-    // upstream had 21.
-    assert!(members.len() >= 10, "suspiciously few members: {members:?}");
+    // Nine since `chapbook-viewer-gtk` and `kalam-reader-demo` were deleted
+    // on 2026-10-30 (docs/review-2026-10-30.md, B8/B9). Ten after the Kalam
+    // strip (docs/kalam/PLAN.md §4 and §7 step 4); upstream had 21.
+    assert!(members.len() >= 9, "suspiciously few members: {members:?}");
 
     let missing: Vec<_> = members
         .iter()

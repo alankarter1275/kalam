@@ -4,14 +4,10 @@
 EPUBs are not supported. The public widget is `ReaderView`; the host owns
 navigation chrome, persistence, dictionary UI and other application features.
 
-## Build the demo
+## Seeing the widget on its own
 
-```bash
-cargo run --release -p kalam-reader-demo -- book.epub
-```
-
-The demo embeds the widget in a GTK window and prints the interaction callbacks
-it receives. The full app integration is in
+The standalone demo that used to live at `tools/kalam-reader-demo` was deleted
+on 2026-10-30 once nothing depended on it. The full app integration is in
 [`src/pages/reader/engine.rs`](../../src/pages/reader/engine.rs).
 
 ## Open and embed a book

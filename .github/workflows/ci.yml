@@ -104,7 +104,7 @@ jobs:
       # run looking at the old tree and reporting "not formatted" again, and the
       # only evidence that anything had happened would be a run that looked green.
       - name: one-shot reformat (temporary)
-        if: contains(github.event.head_commit.message, '[reformat]')
+        if: "contains(github.event.head_commit.message, '[reformat]')"
         run: |
           cargo fmt -p kalam
           if git diff --quiet; then
@@ -116,18 +116,14 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add -u
-          git commit -m "style: format the application tree with rustfmt
-
-cargo fmt -p kalam under CI's stable toolchain and the workspace
-rustfmt.toml (edition 2021, max_width 100, use_small_heuristics
-Default). Whitespace and line breaks only -- rustfmt does not change
-what the code does.
-
-crates/ is excluded on purpose. That is the vendored chapbook engine,
-and the rustfmt step below already records the decision to leave it
-unformatted.
-
-[skip ci]"
+          # Every line of this step stays indented, including the commit message.
+          # A `run: |` block is a YAML literal scalar: a line at column 0 ends the
+          # block, and whatever follows it has to parse as YAML in its place. The
+          # first version of this step wrote a conventionally wrapped commit body
+          # at column 0, so the workflow did not parse at all and the run finished
+          # with zero jobs -- no log, no step name, nothing to read. Hence one long
+          # line per paragraph instead of a wrapped one.
+          git commit -m "style: format the application tree with rustfmt [skip ci]" -m "cargo fmt -p kalam under CI's stable toolchain and the workspace rustfmt.toml (edition 2021, max_width 100, use_small_heuristics Default). Whitespace and line breaks only -- rustfmt does not change what the code does. crates/ is excluded on purpose: that is the vendored chapbook engine, and the rustfmt step below already records the decision to leave it unformatted."
           git pull --rebase -X theirs --autostash origin "$GITHUB_REF_NAME"
           git push origin "HEAD:$GITHUB_REF_NAME"
 

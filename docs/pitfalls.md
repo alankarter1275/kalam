@@ -3279,3 +3279,58 @@ match before pushing — especially impl blocks near the definition,
 which look like bookkeeping and are exhaustive matches in disguise.
 The cost of skipping it is a full CI round trip (run 1 of the rail
 entry, ~11 minutes for one line).
+
+## CI's own reporting broke the merges it was supposed to explain
+
+CI publishes its reports by committing them to whatever branch it runs on,
+because the agent cannot download Actions logs or artifacts from its sandbox —
+the whole mechanism exists so a failure can be read instead of pasted. That
+design has two failure modes, and both landed on the same day.
+
+**The reports made pull requests unmergeable.** `main` rewrites
+`ci-logs/*-latest.txt` on every run, and so did every branch. Both sides then
+held different content for the same paths relative to the merge base, so GitHub
+reported the pull request as `CONFLICTING` / `DIRTY` even when the branch itself
+changed one documentation file. It happened twice, and each time the fix was to
+rebuild the branch on top of `main` by hand and force-push, discarding CI's own
+commits. Now `CILOG_DIR` resolves to plain `ci-logs/` on `main` and to
+`ci-logs/branches/<ref>` anywhere else, so the two never touch the same path.
+`publish-screenshots` is gated to `main` outright instead: its settled PNGs are
+about 20 MB, and a per-branch copy would add that to every merge. On a branch the
+screenshots job still runs and still uploads artifacts, so they remain viewable in
+the Actions page — they are simply not committed until the work reaches `main`.
+Main also deletes `ci-logs/branches/` when it publishes, so merged branch
+directories do not accumulate one per branch forever.
+
+**The setting that hid the evidence was guarding a real race.** `concurrency`
+had `cancel-in-progress: true`, with a comment explaining that two runs on one
+branch race to commit the reports, the loser hits a rebase conflict, and its
+`git push ... || true` silently drops the report. That is a genuine mechanism and
+it had already cost a screenshot report. But cancelling solves it by destroying
+the evidence: a cancelled run never reaches its publish step, so the committed
+log belonged to an older commit, and a run that had already finished green was
+retroactively marked `cancelled` by the next push. Three debugging rounds were
+spent asking for compiler output that CI had already produced and could not show.
+
+The race is now closed at both ends instead of either extreme. Every job skips
+the duplicate `pull_request` run for a same-repo branch (`on:` fires for both
+`push` and `pull_request`, so one commit used to produce two runs and two
+publishers), and each publish step rebases with `-X theirs` so a new report wins
+over the copy already on the branch rather than being dropped. `|| true` on a
+push is still there, and still wrong in principle: a mechanism whose entire job
+is delivering evidence should not be allowed to fail quietly. It survives because
+removing it would fail builds for a reporting problem, which is the worse trade.
+
+**Read the comment above a setting before flipping it.** The `cancel-in-progress`
+comment stated exactly the failure mode that flipping it would reintroduce, and
+it was two lines above the line being changed. The setting was not wrong; the
+trade it made was, and the right response was to remove the need for the trade.
+
+**Two traps in the change itself.** A job-level `if:` added to a job that already
+had one produces a duplicate YAML mapping key, which is invalid and easy to miss
+because the file still looks plausible — caught by reading the diff rather than by
+any check available here, since the sandbox has no YAML parser and no toolchain.
+And `github.event.pull_request.head.repo.full_name` on a `push` event is not an
+error: GitHub expressions yield null through a missing property, so the
+same-repo condition needs `github.event_name != 'pull_request' ||` in front of it
+to let pushes through.

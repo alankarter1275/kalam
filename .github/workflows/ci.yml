@@ -8,12 +8,23 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A newer push cancels the run it supersedes. Without this, two runs of this
-# workflow on one branch race to commit ci-logs/ files back to it: both publish
-# steps `git pull --rebase` and the second one rebases onto a file the first
-# just rewrote, hits a conflict, and its `git push ... || true` silently drops
-# the report. That is how the first reader screenshot report was lost.
-# kalam-engine's own ci.yml uses the same group for the same reason.
+# One run per branch at a time, but a newer push does NOT cancel the run it
+# supersedes. It used to, and the reason was sound: two runs on one branch raced
+# to commit ci-logs/ back to it, the second rebased onto a file the first had
+# just rewritten, hit a conflict, and its `git push ... || true` silently dropped
+# the report -- that is how the first reader screenshot report was lost.
+#
+# Cancelling solved that by destroying the evidence instead: a cancelled run
+# never reaches its publish step, so the committed log belonged to an older
+# commit, and a run that had already finished green was retroactively marked
+# cancelled by the next push. Three debugging rounds in one session were spent
+# asking the owner to paste compiler output that CI had already produced.
+#
+# The race is now closed at both ends rather than papered over. Each job skips
+# the duplicate pull_request run for a same-repo branch, so one commit produces
+# one run instead of two; and every publish step rebases with -X theirs, so a
+# report always wins over the version already on the branch instead of being
+# dropped. kalam-engine's own ci.yml uses the same group.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   # Deliberately false. Cancelling looks tidy and costs everything: a cancelled
@@ -27,9 +38,18 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Branch runs write their reports somewhere main never touches. Both used to
+  # rewrite ci-logs/*-latest.txt, so a branch that had run CI and a main that had
+  # run CI arrived at the merge holding different content for the same paths and
+  # GitHub reported the pull request as CONFLICTING -- twice in one day, each time
+  # needing the branch rebuilt on top of main by hand before it could merge. On
+  # main this resolves to plain ci-logs/, so the canonical reports, and every
+  # guardrail test that reads them, are unaffected.
+  CILOG_DIR: ${{ github.ref_name == 'main' && 'ci-logs' || format('ci-logs/branches/{0}', github.ref_name) }}
 
 jobs:
   build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     name: build (ubuntu)
     # 26.04, not -latest: kalam-reader asks gtk4 for the v4_16 feature, Cargo
     # unifies that with Kalam's v4_12, and the gdk4-sys build script then
@@ -82,7 +102,7 @@ jobs:
             git config user.email "github-actions@github.com"
             git add -f Cargo.lock
             git commit -m "ci: update Cargo.lock [skip ci]"
-            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+            git pull --rebase -X theirs --autostash origin "$GITHUB_REF_NAME" || true
             git push origin "HEAD:$GITHUB_REF_NAME" || true
           fi
 
@@ -110,7 +130,7 @@ jobs:
           if ! git diff --cached --quiet; then
             echo "Committing downloaded OCR models..."
             git commit -m "chore(ocr): bundle text-detection and text-recognition rten models [skip ci]"
-            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+            git pull --rebase -X theirs --autostash origin "$GITHUB_REF_NAME" || true
             git push origin "HEAD:$GITHUB_REF_NAME" || true
           fi
 
@@ -140,11 +160,11 @@ jobs:
       - name: rustfmt (report only)
         id: fmt
         run: |
-          mkdir -p ci-logs
+          mkdir -p "$CILOG_DIR"
           # Start empty every run. Appending to the committed file would carry
           # the previous run's complaint forward, which reads as an outstanding
           # problem long after it was fixed.
-          : > ci-logs/rustfmt-latest.diff
+          : > $CILOG_DIR/rustfmt-latest.diff
           # Capture rustfmt's own output instead of letting it abort the step.
           # When the tree does not parse, `cargo fmt` fails and there is no diff
           # to show -- a step that dies here publishes nothing at all, which is
@@ -152,7 +172,7 @@ jobs:
           # round, because "rustfmt failed" arrived with no detail attached.
           fmt_output="$(cargo fmt --all 2>&1)" || true
           if [ -n "$fmt_output" ]; then
-            printf '%s\n' "$fmt_output" >> ci-logs/rustfmt-latest.diff
+            printf '%s\n' "$fmt_output" >> $CILOG_DIR/rustfmt-latest.diff
           fi
           if git diff --quiet; then
             echo "rustfmt: clean"
@@ -161,13 +181,13 @@ jobs:
               # removed the working copy -- the stale diff stayed committed, so
               # a later clean run still showed the previous run's complaint and
               # read as an outstanding problem.
-              echo "clean" >> ci-logs/rustfmt-latest.diff
+              echo "clean" >> $CILOG_DIR/rustfmt-latest.diff
             fi
           else
             echo "rustfmt: the tree is not formatted; diff follows"
-            git diff >> ci-logs/rustfmt-latest.diff
+            git diff >> $CILOG_DIR/rustfmt-latest.diff
           fi
-          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/rustfmt-latest.diff
+          echo "--- run $GITHUB_RUN_ID ---" >> $CILOG_DIR/rustfmt-latest.diff
           # Always publish, on clean runs too, so the committed file describes
           # the latest run rather than the last untidy one. (This used to be
           # written twice in the clean branch, as dirty=0 then dirty=1; the
@@ -184,9 +204,16 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/rustfmt-latest.diff
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            # Branch reports arrive with the merge and are stale the moment main
+            # rewrites the canonical ones. Drop them rather than accumulate one
+            # directory per branch forever.
+            rm -rf ci-logs/branches
+            git rm -r -q --cached --ignore-unmatch ci-logs/branches >/dev/null || true
+          fi
+          git add -f "$CILOG_DIR"/rustfmt-latest.diff
           git commit -m "ci: publish rustfmt diff [skip ci]" || true
-          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+          git pull --rebase -X theirs --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
         continue-on-error: true
 
@@ -233,27 +260,27 @@ jobs:
       - name: publish clippy log
         if: always() && steps.clippy.outcome != 'skipped'
         run: |
-          mkdir -p ci-logs
+          mkdir -p "$CILOG_DIR"
           # Prefer the diagnostic lines, but always fall back to the tail: a
           # grep that matches nothing used to publish an empty file, which is
           # worse than useless.
-          grep -E "error|warning:" /tmp/clippy.txt | head -100 > ci-logs/clippy-latest.txt || true
-          if [ ! -s ci-logs/clippy-latest.txt ]; then
-            echo "(no lines matched; last 100 lines of output)" > ci-logs/clippy-latest.txt
+          grep -E "error|warning:" /tmp/clippy.txt | head -100 > $CILOG_DIR/clippy-latest.txt || true
+          if [ ! -s $CILOG_DIR/clippy-latest.txt ]; then
+            echo "(no lines matched; last 100 lines of output)" > $CILOG_DIR/clippy-latest.txt
           fi
           # The grep keeps the compiler's own lines; a failed build script is
           # reported by cargo as one "error:" line and the real cause is on the
           # lines after it, which match neither pattern. Append the tail always.
-          echo "" >> ci-logs/clippy-latest.txt
-          echo "=== last 80 lines of the raw log ===" >> ci-logs/clippy-latest.txt
-          tail -80 /tmp/clippy.txt >> ci-logs/clippy-latest.txt || true
-          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/clippy-latest.txt
+          echo "" >> $CILOG_DIR/clippy-latest.txt
+          echo "=== last 80 lines of the raw log ===" >> $CILOG_DIR/clippy-latest.txt
+          tail -80 /tmp/clippy.txt >> $CILOG_DIR/clippy-latest.txt || true
+          echo "--- run $GITHUB_RUN_ID ---" >> $CILOG_DIR/clippy-latest.txt
           # Uncapped copy: the excerpt above is for humans, this is what the
           # agent reads when the first error is not in the tail.
-          cp /tmp/clippy.txt ci-logs/clippy-full.txt || true
+          cp /tmp/clippy.txt $CILOG_DIR/clippy-full.txt || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/clippy-latest.txt ci-logs/clippy-full.txt
+          git add -f "$CILOG_DIR"/clippy-latest.txt $CILOG_DIR/clippy-full.txt
           # These steps run under `if: always()`, so they publish on a clean
           # run too. Saying "failures" unconditionally put a lie into the
           # commit stream that an agent reads to find out what broke, and one
@@ -264,7 +291,7 @@ jobs:
             MSG="ci: publish clippy failures [skip ci]"
           fi
           git commit -m "$MSG" || true
-          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+          git pull --rebase -X theirs --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
 
       - name: fail if clippy failed
@@ -293,18 +320,18 @@ jobs:
       - name: publish test log
         if: always() && steps.test.outcome != 'skipped'
         run: |
-          mkdir -p ci-logs
+          mkdir -p "$CILOG_DIR"
           grep -E "error|FAILED|panicked|test result" /tmp/test.txt \
-            | head -100 > ci-logs/test-latest.txt || true
-          if [ ! -s ci-logs/test-latest.txt ]; then
-            echo "(no lines matched; last 100 lines of output)" > ci-logs/test-latest.txt
-            tail -100 /tmp/test.txt >> ci-logs/test-latest.txt || true
+            | head -100 > $CILOG_DIR/test-latest.txt || true
+          if [ ! -s $CILOG_DIR/test-latest.txt ]; then
+            echo "(no lines matched; last 100 lines of output)" > $CILOG_DIR/test-latest.txt
+            tail -100 /tmp/test.txt >> $CILOG_DIR/test-latest.txt || true
           fi
-          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/test-latest.txt
-          cp /tmp/test.txt ci-logs/test-full.txt || true
+          echo "--- run $GITHUB_RUN_ID ---" >> $CILOG_DIR/test-latest.txt
+          cp /tmp/test.txt $CILOG_DIR/test-full.txt || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/test-latest.txt ci-logs/test-full.txt
+          git add -f "$CILOG_DIR"/test-latest.txt $CILOG_DIR/test-full.txt
           # As above: outcome-aware, because this step publishes on green runs.
           if [ "${{ steps.test.outcome }}" = "success" ]; then
             MSG="ci: publish test log (all passing) [skip ci]"
@@ -312,7 +339,7 @@ jobs:
             MSG="ci: publish test failures [skip ci]"
           fi
           git commit -m "$MSG" || true
-          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+          git pull --rebase -X theirs --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
 
       - name: fail if tests failed
@@ -331,14 +358,14 @@ jobs:
           set -o pipefail
           status=0
           cargo test --release --bin kalam ocr_scan_probe -- --ignored --nocapture 2>&1 | tee /tmp/ocr-probe.txt || status=$?
-          mkdir -p ci-logs
-          cp /tmp/ocr-probe.txt ci-logs/ocr-probe-latest.txt
-          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/ocr-probe-latest.txt
+          mkdir -p "$CILOG_DIR"
+          cp /tmp/ocr-probe.txt $CILOG_DIR/ocr-probe-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> $CILOG_DIR/ocr-probe-latest.txt
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/ocr-probe-latest.txt
+          git add -f "$CILOG_DIR"/ocr-probe-latest.txt
           git commit -m "ci: publish OCR probe report [skip ci]" || true
-          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+          git pull --rebase -X theirs --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
           exit $status
 
@@ -383,6 +410,7 @@ jobs:
   # "it looks right". Read docs/ci/README-screenshots.md.
   # ---------------------------------------------------------------------------
   screenshots:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     name: smoke test (headless sway) — ${{ matrix.group }}
     needs: build
     strategy:
@@ -1535,6 +1563,15 @@ jobs:
           retention-days: 1
 
   publish-screenshots:
+    # Main only. These reports and settled PNGs are large, and a
+    # branch-specific copy would add roughly 20 MB per branch merged.
+    # On a branch the screenshots job still runs and still uploads its
+    # artifacts, so the owner can view them in the Actions page; they
+    # are simply not committed until the work reaches main.
+    # A pull_request event is never on refs/heads/main, so this one condition
+    # also removes the duplicate run; it does not need the same-repo clause the
+    # other two jobs carry.
+    if: github.ref == 'refs/heads/main'
     name: publish screenshot report
     needs: screenshots
     if: always() && needs.screenshots.result != 'cancelled'
@@ -2184,6 +2221,6 @@ jobs:
             if [ -f "$shot" ]; then git add -f "$shot"; fi
           done
           git commit -m "ci: publish smoke-test report [skip ci]" || true
-          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+          git pull --rebase -X theirs --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
 

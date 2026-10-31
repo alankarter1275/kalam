@@ -743,9 +743,16 @@ const ALLOWED_UI_THREAD_SITES: &[(&str, &str, &str)] = &[
         "crate::epub::replace_cover_bytes(&catalog, &fresh, &bytes)",
         "save handler writes the cover into the EPUB; same recorded follow-up",
     ),
+    // The needle stops at the open paren on purpose. This call has two sites in
+    // the file and rustfmt breaks the argument list across lines at one of them
+    // but not the other, so a needle naming the arguments matched only one --
+    // and the test reports that twice over, as a new UI-thread violation and as
+    // an allowlist entry that matched nothing. `OpenBook::open(` occurs nowhere
+    // else in remote_detail.rs, so the shorter needle pins exactly the same two
+    // lines and holds whichever way the call is wrapped.
     (
         "src/pages/remote_detail.rs",
-        "OpenBook::open(&b.file_path, &cache_dir)",
+        "OpenBook::open(",
         "ReadChapter checks its EPUB cache synchronously in the handler; recorded follow-up with the metadata editor",
     ),
     (

@@ -16,7 +16,14 @@ on:
 # kalam-engine's own ci.yml uses the same group for the same reason.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Deliberately false. Cancelling looks tidy and costs everything: a cancelled
+  # run never reaches its publish step, so the report the agent needs is never
+  # committed, and the log at the tip of the branch silently belongs to an older
+  # commit. Worse, a run that had already finished green was retroactively
+  # marked cancelled by the next push, which makes a good result look doubtful.
+  # This project has one contributor, so queueing runs costs nothing and every
+  # run leaves its evidence behind.
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -133,25 +140,39 @@ jobs:
       - name: rustfmt (report only)
         id: fmt
         run: |
-          cargo fmt --all
           mkdir -p ci-logs
+          # Start empty every run. Appending to the committed file would carry
+          # the previous run's complaint forward, which reads as an outstanding
+          # problem long after it was fixed.
+          : > ci-logs/rustfmt-latest.diff
+          # Capture rustfmt's own output instead of letting it abort the step.
+          # When the tree does not parse, `cargo fmt` fails and there is no diff
+          # to show -- a step that dies here publishes nothing at all, which is
+          # exactly when the text is needed. This has already cost a debugging
+          # round, because "rustfmt failed" arrived with no detail attached.
+          fmt_output="$(cargo fmt --all 2>&1)" || true
+          if [ -n "$fmt_output" ]; then
+            printf '%s\n' "$fmt_output" >> ci-logs/rustfmt-latest.diff
+          fi
           if git diff --quiet; then
             echo "rustfmt: clean"
-            echo "dirty=0" >> "$GITHUB_OUTPUT"
-            # Leave a note rather than deleting the file. Deleting it only
-            # removed the working copy -- the stale diff stayed committed, so
-            # a later clean run still showed the previous run's complaint and
-            # read as an outstanding problem.
-            mkdir -p ci-logs
-            printf 'clean\n--- run %s ---\n' "$GITHUB_RUN_ID" \
-              > ci-logs/rustfmt-latest.diff
-            echo "dirty=1" >> "$GITHUB_OUTPUT"
+            if [ -z "$fmt_output" ]; then
+              # Leave a note rather than deleting the file. Deleting it only
+              # removed the working copy -- the stale diff stayed committed, so
+              # a later clean run still showed the previous run's complaint and
+              # read as an outstanding problem.
+              echo "clean" >> ci-logs/rustfmt-latest.diff
+            fi
           else
             echo "rustfmt: the tree is not formatted; diff follows"
-            git diff | tee ci-logs/rustfmt-latest.diff
-            echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/rustfmt-latest.diff
-            echo "dirty=1" >> "$GITHUB_OUTPUT"
+            git diff >> ci-logs/rustfmt-latest.diff
           fi
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/rustfmt-latest.diff
+          # Always publish, on clean runs too, so the committed file describes
+          # the latest run rather than the last untidy one. (This used to be
+          # written twice in the clean branch, as dirty=0 then dirty=1; the
+          # first was dead because the last write to GITHUB_OUTPUT wins.)
+          echo "dirty=1" >> "$GITHUB_OUTPUT"
           # Restore, so clippy and the build see the committed source rather
           # than a locally reformatted copy.
           git checkout -- .

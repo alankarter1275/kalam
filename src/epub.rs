@@ -398,7 +398,7 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     // If this exact file was in the library before and had hand-edited
     // metadata, put those edits back rather than silently reverting to
     // whatever the EPUB's OPF says.
-    let restored = catalog.restore_overrides(id).unwrap_or(false);
+    let restored = catalog.restore_overrides(id, &hash).unwrap_or(false);
     let title = if restored {
         catalog
             .get_book(id)

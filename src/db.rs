@@ -930,10 +930,14 @@ impl Catalog {
         // this runs once per database and does nothing on a fresh one.
         let keyed_by_hash = {
             let mut cols = conn.prepare("PRAGMA table_info(metadata_overrides)")?;
-            let names: Vec<String> = cols
-                .query_map([], |r| r.get::<_, String>(1))?
-                .collect::<Result<Vec<_>, _>>()?;
-            names.iter().any(|n| n == "file_hash")
+            let mut names = cols.query_map([], |r| r.get::<_, String>(1))?;
+            let mut found = false;
+            for name in &mut names {
+                if name? == "file_hash" {
+                    found = true;
+                }
+            }
+            found
         };
         if keyed_by_hash {
             conn.execute_batch(
@@ -3598,9 +3602,10 @@ mod tests {
         cat.update_book_metadata(id, "Edited", "x", None, 0.0, "", "", "", &[])
             .unwrap();
 
-        // A book whose bytes differ has a different hash and must be untouched.
+        // A different book has no override row of its own and must be untouched.
+        // Under the old file-hash key this test was really about hashes; the book
+        // id separates two books directly, so the hash is no longer part of it.
         let other = seed(&cat, "B", "y", &[]);
-        let other_hash = cat.get_book(other).unwrap().unwrap().file_hash;
         assert!(!cat.restore_overrides(other).unwrap());
         assert_eq!(cat.get_book(other).unwrap().unwrap().title, "B");
     }
@@ -3609,7 +3614,6 @@ mod tests {
     fn forgetting_overrides_gives_a_clean_import() {
         let cat = Catalog::open_in_memory().unwrap();
         let id = seed(&cat, "A", "x", &[]);
-        let hash = cat.get_book(id).unwrap().unwrap().file_hash;
         cat.update_book_metadata(id, "Edited", "x", None, 0.0, "", "", "", &[])
             .unwrap();
 

@@ -3280,7 +3280,7 @@ which look like bookkeeping and are exhaustive matches in disguise.
 The cost of skipping it is a full CI round trip (run 1 of the rail
 entry, ~11 minutes for one line).
 
-## CI's own reporting broke the merges it was supposed to explain
+## §97 — CI's own reporting broke the merges it was supposed to explain
 
 CI publishes its reports by committing them to whatever branch it runs on,
 because the agent cannot download Actions logs or artifacts from its sandbox —

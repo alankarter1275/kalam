@@ -84,6 +84,53 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      # TEMPORARY -- DELETE THIS STEP ONCE IT HAS RUN.
+      #
+      # The application tree is not formatted under its own rustfmt.toml with
+      # CI's toolchain (114 files under src/ and one under tests/), and the owner
+      # chose to tidy it rather than leave the deviation recorded. The Arena
+      # sandbox has no Rust toolchain and no network route to static.rust-lang.org,
+      # so `cargo fmt` can only run here.
+      #
+      # Gated on a commit message rather than workflow_dispatch: a dispatchable
+      # workflow has to exist on the default branch before it can be dispatched at
+      # all, and this step never will. A message gate needs nothing from main.
+      #
+      # Placed before every check, and the tree is deliberately left formatted, so
+      # the rustfmt report, clippy, the tests and the release build in this same
+      # run all verify the reformatted source rather than the source that went in.
+      #
+      # The push is NOT `|| true`. A silently dropped reformat would leave the next
+      # run looking at the old tree and reporting "not formatted" again, and the
+      # only evidence that anything had happened would be a run that looked green.
+      - name: one-shot reformat (temporary)
+        if: contains(github.event.head_commit.message, '[reformat]')
+        run: |
+          cargo fmt -p kalam
+          if git diff --quiet; then
+            echo "nothing to reformat"
+            exit 0
+          fi
+          echo "files reformatted: $(git diff --name-only | wc -l)"
+          git diff --stat | tail -3
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -u
+          git commit -m "style: format the application tree with rustfmt
+
+cargo fmt -p kalam under CI's stable toolchain and the workspace
+rustfmt.toml (edition 2021, max_width 100, use_small_heuristics
+Default). Whitespace and line breaks only -- rustfmt does not change
+what the code does.
+
+crates/ is excluded on purpose. That is the vendored chapbook engine,
+and the rustfmt step below already records the decision to leave it
+unformatted.
+
+[skip ci]"
+          git pull --rebase -X theirs --autostash origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+
       # Cargo.lock is committed (see the ROADMAP entry for 2026-09-04). The
       # Arena sandbox has no network route to crates.io, so the agent cannot
       # generate or refresh it there; this step is how the lockfile gets
@@ -160,11 +207,6 @@ jobs:
       - name: rustfmt (report only)
         id: fmt
         run: |
-          mkdir -p "$CILOG_DIR"
-          # Start empty every run. Appending to the committed file would carry
-          # the previous run's complaint forward, which reads as an outstanding
-          # problem long after it was fixed.
-          : > $CILOG_DIR/rustfmt-latest.diff
           # Capture rustfmt's own output instead of letting it abort the step.
           # When the tree does not parse, `cargo fmt` fails and there is no diff
           # to show -- a step that dies here publishes nothing at all, which is
@@ -189,10 +231,37 @@ jobs:
           # Whether to reformat, or to accept that rustfmt.toml no longer
           # describes this codebase, is the owner's call and not CI's.
           fmt_output="$(cargo fmt -p kalam 2>&1)" || true
+          # Read the diff BEFORE restoring the source, and restore BEFORE writing
+          # the report.
+          #
+          # The restore is `git checkout -- .`, which reverts every TRACKED file,
+          # and this report becomes tracked the first time it is published. The
+          # step used to write the report first and restore last, so from the
+          # second run onward the restore put the first run's copy back over the
+          # top of the new one. The publish step then found nothing to commit,
+          # its `|| true` swallowed the empty commit, and the marker froze: the
+          # committed report belonged to the run that created the file, not to
+          # any run since. Three consecutive green runs published nothing here.
+          # (Found 31 October 2026, while checking why the 400-line cap below had
+          # never been observed working. It had never been reached.)
+          if git diff --quiet; then
+            fmt_diff=""
+          else
+            fmt_diff="$(git diff)"
+          fi
+          # Restore, so clippy and the build see the committed source rather
+          # than a locally reformatted copy.
+          git checkout -- .
+
+          mkdir -p "$CILOG_DIR"
+          # Start empty every run. Appending to the committed file would carry
+          # the previous run's complaint forward, which reads as an outstanding
+          # problem long after it was fixed.
+          : > $CILOG_DIR/rustfmt-latest.diff
           if [ -n "$fmt_output" ]; then
             printf '%s\n' "$fmt_output" >> $CILOG_DIR/rustfmt-latest.diff
           fi
-          if git diff --quiet; then
+          if [ -z "$fmt_diff" ]; then
             echo "rustfmt: clean"
             if [ -z "$fmt_output" ]; then
               # Leave a note rather than deleting the file. Deleting it only
@@ -206,8 +275,8 @@ jobs:
             # Capped. An uncapped diff is how a report becomes bigger than the
             # problem it describes, and a formatting report over a few hundred
             # lines is telling you something structural, not fixable line by line.
-            git diff | head -400 >> $CILOG_DIR/rustfmt-latest.diff
-            dropped=$(( $(git diff | wc -l) - 400 ))
+            printf '%s\n' "$fmt_diff" | head -400 >> $CILOG_DIR/rustfmt-latest.diff
+            dropped=$(( $(printf '%s\n' "$fmt_diff" | wc -l) - 400 ))
             if [ "$dropped" -gt 0 ]; then
               echo "(truncated: $dropped further diff lines not committed)" \
                 >> $CILOG_DIR/rustfmt-latest.diff
@@ -219,9 +288,6 @@ jobs:
           # written twice in the clean branch, as dirty=0 then dirty=1; the
           # first was dead because the last write to GITHUB_OUTPUT wins.)
           echo "dirty=1" >> "$GITHUB_OUTPUT"
-          # Restore, so clippy and the build see the committed source rather
-          # than a locally reformatted copy.
-          git checkout -- .
 
       # Runs on clean runs too, so the published file always describes the
       # latest run rather than the last untidy one.

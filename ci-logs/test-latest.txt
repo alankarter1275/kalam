@@ -9,76 +9,93 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test diagnostics::tests::installing_twice_is_not_an_error ... ok
 test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test missing_resources_error_cleanly ... ok
 test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test fonts::tests::a_source_that_finds_nothing_is_an_error_not_an_empty_database ... ok
-test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
 test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
-test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-test db::tests::book_first_opened_is_none_not_an_error_for_a_never_opened_book ... ok
-test db::tests::books_by_ids_on_no_ids_is_not_an_error ... ok
-test downloads::tests::locked_writes_are_visible_to_later_reads_when_nothing_panicked ... ok
-test dict::tests::unrecognized_format_error_names_the_expected_formats ... ok
-test epub_check::tests::broken_links_and_fragments_are_errors ... ok
-test epub_container::tests::xml_problem_reports_line_of_first_error ... ok
-test epub_metadata::tests::missing_metadata_block_is_an_error_not_a_panic ... ok
-test metadata::comic_vine::tests::missing_api_key_is_an_actionable_error ... ok
-test metadata::google_books::tests::empty_payload_is_not_an_error ... ok
-test metadata::google_books::tests::error_envelope_parses ... ok
-test metadata::myanimelist::tests::malformed_payload_is_a_parse_error ... ok
-test metadata::myanimelist::tests::missing_client_id_is_an_actionable_error_not_an_empty_result ... ok
-test metadata::tests::network_errors_are_collapsed_to_one_line ... ok
-test metadata::tests::unknown_network_errors_are_still_truncated ... ok
-test notify::tests::errors_linger_longer_than_chatter ... ok
-test notify::tests::report_passes_ok_through_and_flags_errors ... ok
-test service::tests::a_missing_shelf_yields_no_books_and_no_error ... ok
-test service::tests::an_empty_dashboard_is_not_an_error ... ok
-test service::tests::an_empty_log_is_not_an_error ... ok
-test service::tests::an_empty_vocabulary_is_not_an_error ... ok
-test service::tests::book_stats_are_zero_for_an_unread_book_without_erroring ... ok
-test service::tests::dashboard_reads_every_strip_without_errors ... ok
-test service::tests::history_and_lookup_history_return_rows_without_errors ... ok
-test service::tests::opening_a_book_with_no_marks_is_not_an_error ... ok
-test service::tests::reading_list_is_empty_without_an_error_when_nothing_is_queued ... ok
-test service::tests::shelves_are_returned_and_an_empty_grid_is_not_an_error ... ok
-test service::tests::there_are_no_quotes_at_all_is_not_an_error ... ok
-test tasks::tests::reporting_after_the_ui_is_gone_is_not_an_error ... ok
-test thumbs::tests::missing_source_is_not_an_error ... ok
-test result: ok. 719 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 1.91s
-test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
-test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
---- run 41151930422 ---
+test comic_folders::tests::a_placed_chapter_is_left_alone ... FAILED
+test comic_folders::tests::missing_files_leave_the_row_and_the_library_alone ... FAILED
+test comic_folders::tests::placed_chapter_adopts_its_stranded_cover ... FAILED
+test comic_folders::tests::deleting_a_comic_chapter_removes_the_whole_series ... FAILED
+test comic_folders::tests::places_a_chapter_with_cover_and_sidecar ... FAILED
+test comic_folders::tests::sweep_adopts_a_cover_the_row_does_not_know_about ... FAILED
+test comic_folders::tests::two_chapters_claiming_one_number_do_not_collide ... FAILED
+test content_index::tests::test_content_fts_roundtrip ... FAILED
+test db::annotations::tests::deleted_marks_restore_exactly ... FAILED
+test db::annotations::tests::annotation_style_and_details_crud ... FAILED
+test db::annotations::tests::insert_and_update_annotation_cfi_persists_locators ... FAILED
+test db::annotations::tests::reading_bookmarks_crud ... FAILED
+test db::annotations::tests::word_memory_scoped_queries ... FAILED
+test db::authors::tests::books_for_author_uses_minimal_queries ... FAILED
+test db::authors::tests::edit_author_creates_a_first_profile_without_renaming ... FAILED
+test db::authors::tests::edit_author_refuses_an_existing_author ... FAILED
+test db::authors::tests::edit_author_renames_identity_and_locks_fields ... FAILED
+test db::authors::tests::finds_author_by_display_or_sort_name ... FAILED
+test db::authors::tests::books_for_author_includes_profile_aliases ... FAILED
+test db::authors::tests::books_for_author_queries_database_indexed ... FAILED
+test db::dictionaries::dictionary_priority_order_and_reorder_change_the_merged_winner ... FAILED
+test db::authors::tests::merge_authors_moves_books_profiles_and_comic_authors ... FAILED
+test db::dictionaries::tests::combined_store_rebuilds_after_delete ... FAILED
+test db::dictionaries::tests::combined_store_dedupes_identical_senses ... FAILED
+test db::dictionaries::tests::combined_store_falls_back_to_the_next_dictionary ... FAILED
+test db::dictionaries::tests::combined_store_priority_ignores_sense_counts ... FAILED
+test db::dictionaries::tests::combined_store_shows_only_the_highest_priority_dictionary ... FAILED
+test db::dictionaries::tests::inserted_entries_carry_folded_keys ... FAILED
+test db::dictionaries::tests::exact_key_lookup_uses_the_key_index ... FAILED
+test db::dictionaries::tests::search_phrase_breaks_down_when_no_phrase_headword ... FAILED
+test db::dictionaries::tests::search_phrase_empty_when_nothing_matches ... FAILED
+test db::dictionaries::tests::search_dict_resolves_irregulars_to_headwords ... FAILED
+test db::dictionaries::tests::search_phrase_finds_a_contained_phrase_headword ... FAILED
+test db::dictionaries::tests::search_dict_folds_case_and_diacritics_into_keys ... FAILED
+test db::dictionaries::tests::search_phrase_handles_irregular_tokens_in_the_breakdown ... FAILED
+test db::dictionaries::tests::search_phrase_returns_the_full_phrase_headword ... FAILED
+test db::dictionaries::tests::search_phrase_omits_tokens_without_hits ... FAILED
+test db::editor::tests::snapshots_round_trip_newest_first ... FAILED
+test db::history::tests::a_checkpoint_is_clamped_like_a_close ... FAILED
+test db::history::tests::a_checkpoint_preserves_time_across_a_crash ... FAILED
+test db::history::tests::an_unclosed_session_is_reaped_at_startup ... FAILED
+test db::history::tests::reaping_leaves_properly_closed_sessions_alone ... FAILED
+test db::lookup_history::tests::lookup_history_logs_hits_misses_and_collapses_repeats ... FAILED
+test db::pdf_annotations::tests::applying_a_page_edit_moves_everything_with_its_page ... FAILED
+test db::pdf_annotations::tests::drawings_need_a_real_page_identity ... FAILED
+test db::pdf_annotations::tests::drawings_round_trip_update_delete_and_restore ... FAILED
+test db::pdf_annotations::tests::page_identities_are_stable_and_positions_fill_in ... FAILED
+test db::series::tests::comic_series_peers_by_ids_matches_the_single_book_form ... FAILED
+test db::series::tests::comic_series_hand_edits_lock_fields_against_metadata ... FAILED
+--- run 41155505051 ---

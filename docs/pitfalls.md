@@ -3334,3 +3334,83 @@ And `github.event.pull_request.head.repo.full_name` on a `push` event is not an
 error: GitHub expressions yield null through a missing property, so the
 same-repo condition needs `github.event_name != 'pull_request' ||` in front of it
 to let pushes through.
+
+## §98 — a step that restores the tree also restored the report it had just written
+
+Three findings from tidying the tree on 31 October 2026. All three are about
+verification that looked like it had happened and had not.
+
+**The rustfmt report was frozen at the run that created it.** The step wrote
+`$CILOG_DIR/rustfmt-latest.diff` and then ran `git checkout -- .`, so that clippy
+and the build would see committed source rather than a locally reformatted copy.
+That restore reverts every *tracked* file, and the report becomes tracked the
+first time it is published. From the second run onward the restore therefore put
+the first run's copy back over the top of the new one; the publish step found
+nothing to commit, its `|| true` swallowed the empty commit, and the marker stayed
+where it was. Three consecutive green runs published nothing at all — which is why
+a 400-line cap added in between had never been seen working. It had never been
+reached.
+
+A step that undoes its own working tree has to have finished writing first.
+Capture what you need into a shell variable, restore, then write. The ordering was
+the entire fix; nothing about the content changed.
+
+The general form is worth more than the instance: **`git checkout -- .` does not
+mean "undo the thing I just did", it means "undo every tracked modification in the
+repository"** — and a reporting mechanism that commits into the repository is
+precisely what that catches. Any step that both writes a report and restores the
+tree has to order the two deliberately.
+
+**A commit message at column 0 inside `run: |` made the workflow unparseable.**
+The one-shot step that did the tidying committed with a conventionally wrapped
+message body. A literal block scalar ends at the first line indented less than its
+content, so the body text landed where YAML expected a mapping key. The run
+finished `failure` with **zero jobs**: no log, no step name, nothing to read. That
+signature is worth memorising, because it is the only one available from outside.
+A completed failure whose jobs list is empty is a parse error — not slowness, not
+a runner problem, not a queue — and no amount of polling will produce detail.
+§97's duplicate `if:` produced exactly the same result by a different route.
+
+Inside a `run: |` block every line stays indented, the lines of a commit message
+included. One long line per `-m` paragraph rather than a wrapped body.
+
+**A check that reports nothing has not been shown to work.** The column-0
+validator was written after that failure and reported 0 suspicious lines against
+the fixed file, which is also what it reports if it never matches anything at all.
+Run against the commit that had failed, it reported the 8 offending lines. Only
+the second result makes the first one mean anything. Same trap as a `cd` that
+fails under `set -e` and leaves the verification printing nothing: empty output is
+not a passing check, and a positive marker on known-bad input is the cheapest way
+to prove a check is capable of failing.
+
+**A guardrail that pins an exact source line is a pin against formatting.**
+`pages_touch_disk_or_documents_only_inside_tasks` allows thirteen known UI-thread
+sites by matching a literal needle against the line the scanner hit. rustfmt broke
+`OpenBook::open(&b.file_path, &cache_dir)` across lines at one of its two call
+sites in `remote_detail.rs` and left the other alone, so the needle stopped
+matching one of them — and the test reported that twice over, once as a new
+violation and once as an allowlist entry that had matched nothing. Shortening the
+needle to `OpenBook::open(` pins the same two lines and survives either wrapping.
+Any pin expressed as a whole statement breaks the first time the statement is too
+long for `max_width`; pin the part that cannot be split.
+
+**115 files were formatted without a toolchain, and verified before the run.**
+The sandbox has no Rust and no route to `static.rust-lang.org`, so the only place
+`cargo fmt` could run was CI: a temporary step gated on a commit message and
+deleted once it had run. `workflow_dispatch` was not usable — a dispatchable
+workflow has to exist on the default branch before it can be dispatched at all,
+and that step never would. Before triggering it, the complete rustfmt diff saved
+from an earlier run was applied locally with `git apply` and the project's own
+scanners reimplemented over the result: production `.unwrap()`/`.expect()` 8
+before and 8 after against a ceiling of 8, `Arc<Catalog>` in `src/pages/` 44 and
+44 against a ceiling of 44, and the block assertions in `reader/mod.rs` and
+`author.rs` holding. That turned a fifteen-minute CI round trip into a prediction,
+and it is the only reason the one real breakage was found before the run instead
+of in it. Reimplementing a project's scanner is worth the effort whenever the
+alternative is guessing and waiting.
+
+`crates/` was excluded on purpose. Ten files there are unformatted too, but that
+is the vendored chapbook engine, and reformatting it is churn against a tree this
+project no longer follows upstream. The tidy covered `src/` and `tests/`: 115
+files, 6,685 insertions and 5,536 deletions, with 1,129 tests passing and clippy
+clean both before and after.

@@ -17,5 +17,4 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/db.rs:929:15: [1m[91merror[E0599][0m: no associated function or constant named `add_column_if_missing` found for struct `db::Catalog` in the current scope: associated function or constant not found in `db::Catalog`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 19.68s

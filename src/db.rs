@@ -3356,6 +3356,70 @@ mod tests {
         assert_eq!(stats.minutes_by_day.len(), 14);
     }
 
+    /// The sequence the owner actually performs, and the reason `import_hash`
+    /// exists. Importing copies the file into the library; editing metadata
+    /// rewrites that copy, so the copy's hash moves; deleting the book deletes
+    /// the copy; re-importing comes from the owner's own original file, whose
+    /// hash never changed. The edits must still come back, which means they have
+    /// to be filed under the arrival fingerprint rather than the one the
+    /// rewritten copy ended up with.
+    ///
+    /// `edits_survive_delete_and_reimport` does not cover this. It re-imports a
+    /// file whose bytes never changed, so the old hash key looked correct there
+    /// and the bug stayed invisible: the overrides had been re-pointed to a hash
+    /// belonging to a file that no longer existed. That gap is why this test
+    /// exists separately rather than as an extra assertion in the other one.
+    #[test]
+    fn edits_survive_a_hash_change_then_delete_and_reimport() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "Nyxia", "S. Reintgen", &["scifi"]);
+        let arrival = cat.get_book(id).unwrap().unwrap().file_hash;
+
+        cat.update_book_metadata(
+            id,
+            "Nyxia Uprising",
+            "Scott Reintgen",
+            None,
+            0.0,
+            "",
+            "",
+            "Edited by hand.",
+            &["scifi".into()],
+        )
+        .unwrap();
+
+        // The app wrote the edit into its own copy, so that copy's bytes and
+        // hash both moved. The owner's original file is untouched throughout.
+        cat.rehash_book(id, &arrival, "hash-of-the-rewritten-copy").unwrap();
+        let rewritten = cat.get_book(id).unwrap().unwrap();
+        assert_eq!(rewritten.file_hash, "hash-of-the-rewritten-copy");
+
+        cat.delete_book(id).unwrap();
+        assert!(cat.get_book(id).unwrap().is_none());
+
+        // Re-import from the owner's folder: original bytes, so the arrival
+        // hash, under a brand new book id.
+        let new_id = cat
+            .insert_book(
+                "uuid-original-again",
+                "Nyxia",
+                "S. Reintgen",
+                None,
+                "",
+                BookFormat::Epub,
+                "book.epub",
+                &arrival,
+                None,
+                &[],
+            )
+            .unwrap();
+
+        assert!(cat.restore_overrides(new_id).unwrap());
+        let restored = cat.get_book(new_id).unwrap().unwrap();
+        assert_eq!(restored.title, "Nyxia Uprising");
+        assert_eq!(restored.description, "Edited by hand.");
+    }
+
     #[test]
     fn edits_survive_delete_and_reimport() {
         let cat = Catalog::open_in_memory().unwrap();

@@ -153,6 +153,60 @@ impl Catalog {
     /// Remember the current metadata against the file's hash, so it can be
     /// restored if the book is removed and imported again.
     // Called from delete_book in the parent module.
+    /// The fingerprint this book arrived with — the identity its remembered
+    /// edits are filed under.
+    ///
+    /// `books.file_hash` follows the bytes. Cleaning a book, fixing its EPUB, or
+    /// writing metadata into it all change those bytes, and the library's copy is
+    /// not the file the owner imported: it is a copy the app made, which gets
+    /// deleted along with the book. Filing edits under the current hash therefore
+    /// detaches them from the only file the owner can re-import from, which is
+    /// exactly what the delete-and-reimport restore depends on.
+    ///
+    /// `import_hash` is written once, immediately before the bytes first change,
+    /// and never moves again. A book that has never been edited has no
+    /// `import_hash`, because its current hash still *is* the arrival hash.
+    ///
+    /// Books edited before this column existed have neither, but the app has
+    /// always kept a pristine backup from before a book's first edit. Hashing
+    /// that recovers the arrival fingerprint, so the repair reaches the existing
+    /// library instead of only future edits. It is done lazily, on first use, so
+    /// opening the catalog does not read every book back off disk.
+    pub(super) fn origin_hash(&self, book_id: i64) -> Result<Option<String>> {
+        let row: Option<(Option<String>, String, String)> = {
+            let conn = self.conn();
+            conn.query_row(
+                "SELECT import_hash, file_hash, file_path FROM books WHERE id = ?1",
+                params![book_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?
+        };
+        let Some((frozen, current, path)) = row else {
+            return Ok(None);
+        };
+        if let Some(h) = frozen.filter(|h| !h.trim().is_empty()) {
+            return Ok(Some(h));
+        }
+
+        let backup = crate::epub_metadata::backup_path(Path::new(&path));
+        if backup.is_file() {
+            if let Ok(recovered) = crate::db::hash_file(&backup) {
+                let conn = self.conn();
+                // Guarded so two threads recovering at once cannot fight, and so
+                // a fingerprint frozen properly later is never overwritten.
+                conn.execute(
+                    "UPDATE books SET import_hash = ?2
+                      WHERE id = ?1 AND import_hash IS NULL",
+                    params![book_id, recovered],
+                )?;
+                return Ok(Some(recovered));
+            }
+        }
+
+        Ok(Some(current))
+    }
+
     pub(super) fn remember_overrides(&self, book_id: i64) -> Result<()> {
         // A restore is not an edit: writing the freshly-imported state back
         // over the saved copy is exactly what we are trying to avoid.
@@ -165,6 +219,9 @@ impl Catalog {
         if book.file_hash.trim().is_empty() {
             return Ok(());
         }
+        let Some(origin) = self.origin_hash(book_id)? else {
+            return Ok(());
+        };
 
         // The cover lives in library/<uuid>/, which is deleted along with the
         // book, so remembering only its name would leave a dangling pointer.
@@ -206,7 +263,7 @@ impl Catalog {
                 cover_name = excluded.cover_name,
                 updated_at = excluded.updated_at",
             params![
-                book.file_hash,
+                origin,
                 book.title,
                 book.authors,
                 book.series,
@@ -225,7 +282,7 @@ impl Catalog {
 
     /// Re-apply remembered edits to a freshly imported book. Returns true when
     /// something was restored.
-    pub fn restore_overrides(&self, book_id: i64, file_hash: &str) -> Result<bool> {
+    pub fn restore_overrides(&self, book_id: i64) -> Result<bool> {
         // A named struct rather than a ten-element tuple: the tuple needed a
         // type annotation that tripped clippy::type_complexity, and this is
         // easier to read besides.
@@ -242,6 +299,10 @@ impl Catalog {
             cover_name: Option<String>,
         }
 
+        let Some(origin) = self.origin_hash(book_id)? else {
+            return Ok(false);
+        };
+
         let saved: Option<Saved> = {
             let conn = self.conn();
             conn.query_row(
@@ -250,7 +311,7 @@ impl Catalog {
                         IFNULL(published,''), IFNULL(description,''),
                         IFNULL(tags,''), IFNULL(rating,0), cover_name
                  FROM metadata_overrides WHERE file_hash = ?1",
-                params![file_hash],
+                params![origin],
                 |r| {
                     Ok(Saved {
                         title: r.get(0)?,
@@ -344,14 +405,17 @@ impl Catalog {
 
     /// Forget remembered edits for a file — used by "import fresh".
     #[cfg(test)]
-    pub fn forget_overrides(&self, file_hash: &str) -> Result<()> {
+    pub fn forget_overrides(&self, book_id: i64) -> Result<()> {
         // Drop the stashed cover too, otherwise the covers directory grows
         // forever with images nothing references.
+        let Some(origin) = self.origin_hash(book_id)? else {
+            return Ok(());
+        };
         let stashed: Option<String> = {
             let conn = self.conn();
             conn.query_row(
                 "SELECT IFNULL(cover_name, '') FROM metadata_overrides WHERE file_hash = ?1",
-                params![file_hash],
+                params![origin],
                 |r| r.get::<_, String>(0),
             )
             .optional()?
@@ -365,7 +429,7 @@ impl Catalog {
         let conn = self.conn();
         conn.execute(
             "DELETE FROM metadata_overrides WHERE file_hash = ?1",
-            params![file_hash],
+            params![origin],
         )?;
         Ok(())
     }
@@ -381,18 +445,19 @@ impl Catalog {
         }
         let conn = self.conn();
         conn.execute(
-            "UPDATE books SET file_hash = ?2 WHERE id = ?1",
+            // Freeze the arrival fingerprint in the same statement that moves the
+            // current one, so there is no window where a book has changed bytes
+            // without having recorded where it came from. IFNULL keeps an already
+            // frozen value: a book edited twice arrives once.
+            "UPDATE books
+                SET import_hash = IFNULL(import_hash, file_hash),
+                    file_hash = ?2
+              WHERE id = ?1",
             params![book_id, new_hash],
         )?;
-        // Drop any override already filed under the new hash, then move ours.
-        conn.execute(
-            "DELETE FROM metadata_overrides WHERE file_hash = ?1",
-            params![new_hash],
-        )?;
-        conn.execute(
-            "UPDATE metadata_overrides SET file_hash = ?2 WHERE file_hash = ?1",
-            params![old_hash, new_hash],
-        )?;
+        // Remembered edits need no re-pointing any more. They are filed under the
+        // arrival fingerprint, which the statement above just froze, so the move
+        // that used to be needed here is the thing that broke them.
         Ok(())
     }
 
@@ -412,17 +477,18 @@ impl Catalog {
             return Ok(());
         }
         conn.execute(
-            "UPDATE books SET file_hash = ?2 WHERE id = ?1",
+            // Freeze the arrival fingerprint in the same statement that moves the
+            // current one, so there is no window where a book has changed bytes
+            // without having recorded where it came from. IFNULL keeps an already
+            // frozen value: a book edited twice arrives once.
+            "UPDATE books
+                SET import_hash = IFNULL(import_hash, file_hash),
+                    file_hash = ?2
+              WHERE id = ?1",
             params![book_id, new_hash],
         )?;
-        conn.execute(
-            "DELETE FROM metadata_overrides WHERE file_hash = ?1",
-            params![new_hash],
-        )?;
-        conn.execute(
-            "UPDATE metadata_overrides SET file_hash = ?2 WHERE file_hash = ?1",
-            params![current_hash, new_hash],
-        )?;
+        // As in rehash_book: the edits are keyed on the arrival fingerprint, which
+        // the statement above froze, so nothing here moves them.
         Ok(())
     }
 

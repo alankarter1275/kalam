@@ -921,6 +921,13 @@ impl Catalog {
     #[cfg(test)]
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
+        // The fingerprint a book arrived with, frozen. `file_hash` follows the
+        // bytes, so cleaning a book or writing metadata into it moves that value;
+        // this one never moves. Remembered edits are filed under it, which is what
+        // keeps them reachable from the file the owner still has on disk after the
+        // library's own copy has been edited or deleted.
+        Self::add_column_if_missing(&conn, "books", "import_hash", "TEXT")?;
+
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let cat = Self {
             conn: Mutex::new(conn),
@@ -961,6 +968,7 @@ impl Catalog {
                 format        TEXT    NOT NULL,
                 file_name     TEXT    NOT NULL,
                 file_hash     TEXT    NOT NULL,
+                import_hash   TEXT,
                 cover_name    TEXT,
                 added_at      TEXT    NOT NULL,
                 progress      INTEGER NOT NULL DEFAULT 0
@@ -3388,7 +3396,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap());
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         assert_eq!(restored.title, "Nyxia Uprising");
@@ -3433,7 +3441,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap());
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         assert!(restored.cover_name.is_some(), "cover was not restored");
@@ -3444,7 +3452,7 @@ mod tests {
 
         // Tidy up so the test does not leave files in the real data dir.
         let _ = std::fs::remove_dir_all(crate::paths::book_dir(&restored.uuid));
-        let _ = cat.forget_overrides(&hash);
+        let _ = cat.forget_overrides(id);
     }
 
     #[test]
@@ -3483,7 +3491,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap());
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         let bytes = std::fs::read(restored.cover_path.as_ref().unwrap()).unwrap();
@@ -3491,7 +3499,7 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(crate::paths::book_dir(&restored.uuid));
         let _ = std::fs::remove_dir_all(dir);
-        let _ = cat.forget_overrides(&hash);
+        let _ = cat.forget_overrides(id);
     }
 
     #[test]
@@ -3534,7 +3542,7 @@ mod tests {
         std::fs::create_dir_all(&fresh_dir).unwrap();
         std::fs::write(fresh_dir.join("epub-default.png"), vec![b'E'; 800]).unwrap();
 
-        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap());
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         let bytes = std::fs::read(restored.cover_path.as_ref().unwrap()).unwrap();
@@ -3545,7 +3553,7 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&fresh_dir);
         let _ = std::fs::remove_dir_all(&dir);
-        let _ = cat.forget_overrides(&hash);
+        let _ = cat.forget_overrides(id);
     }
 
     #[test]
@@ -3557,8 +3565,7 @@ mod tests {
 
         // A book whose bytes differ has a different hash and must be untouched.
         let other = seed(&cat, "B", "y", &[]);
-        let other_hash = cat.get_book(other).unwrap().unwrap().file_hash;
-        assert!(!cat.restore_overrides(other, &other_hash).unwrap());
+        assert!(!cat.restore_overrides(other).unwrap());
         assert_eq!(cat.get_book(other).unwrap().unwrap().title, "B");
     }
 
@@ -3566,12 +3573,11 @@ mod tests {
     fn forgetting_overrides_gives_a_clean_import() {
         let cat = Catalog::open_in_memory().unwrap();
         let id = seed(&cat, "A", "x", &[]);
-        let hash = cat.get_book(id).unwrap().unwrap().file_hash;
         cat.update_book_metadata(id, "Edited", "x", None, 0.0, "", "", "", &[])
             .unwrap();
 
-        cat.forget_overrides(&hash).unwrap();
-        assert!(!cat.restore_overrides(id, &hash).unwrap());
+        cat.forget_overrides(id).unwrap();
+        assert!(!cat.restore_overrides(id).unwrap());
     }
 
     #[test]

@@ -665,19 +665,17 @@ impl Catalog {
             )?;
 
             if old_hash != new_hash {
-                tx.execute(
-                    "UPDATE books SET file_hash = ?1 WHERE id = ?2",
-                    params![new_hash, book_id],
-                )?;
-                tx.execute(
-                    "DELETE FROM metadata_overrides WHERE file_hash = ?1",
-                    params![new_hash],
-                )?;
-                tx.execute(
-                    "UPDATE metadata_overrides SET file_hash = ?1
-                     WHERE file_hash = ?2",
-                    params![new_hash, old_hash],
-                )?;
+                // Freeze the arrival fingerprint as the bytes move. Remembered edits are
+                  // filed under it, so they no longer need re-pointing here —
+                  // which is what used to detach them from the file the owner
+                  // still has on disk.
+                  tx.execute(
+                      "UPDATE books
+                          SET import_hash = IFNULL(import_hash, file_hash),
+                              file_hash = ?1
+                        WHERE id = ?2",
+                      params![new_hash, book_id],
+                  )?;
             }
 
             // The swap itself, inside the transaction: from here a

@@ -1568,13 +1568,21 @@ jobs:
     # On a branch the screenshots job still runs and still uploads its
     # artifacts, so the owner can view them in the Actions page; they
     # are simply not committed until the work reaches main.
-    # A pull_request event is never on refs/heads/main, so this one condition
-    # also removes the duplicate run; it does not need the same-repo clause the
-    # other two jobs carry.
-    if: github.ref == 'refs/heads/main'
     name: publish screenshot report
     needs: screenshots
-    if: always() && needs.screenshots.result != 'cancelled'
+    # One condition, not two: this job already carried an `if:`, and adding a
+    # second produced a duplicate YAML mapping key. The file still looked
+    # plausible and the run failed with zero jobs, which is the only way a
+    # parse error shows up from here.
+    #
+    # Main only, on top of the condition it already had. These reports and
+    # settled PNGs are large, and a branch-specific copy would add roughly
+    # 20 MB per branch merged. On a branch the screenshots job still runs and
+    # still uploads its artifacts, so the owner can view them in the Actions
+    # page; they are simply not committed until the work reaches main. A
+    # pull_request event is never on refs/heads/main, so this also removes the
+    # duplicate run without needing the same-repo clause the other jobs carry.
+    if: always() && needs.screenshots.result != 'cancelled' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     continue-on-error: true
     permissions:

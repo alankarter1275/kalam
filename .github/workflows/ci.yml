@@ -45,7 +45,7 @@ env:
   # needing the branch rebuilt on top of main by hand before it could merge. On
   # main this resolves to plain ci-logs/, so the canonical reports, and every
   # guardrail test that reads them, are unaffected.
-  CILOG_DIR: ${{ github.ref_name == 'main' && 'ci-logs' || format('ci-logs/branches/{0}', github.ref_name) }}
+  CILOG_DIR: ${{ github.ref_name == 'main' && 'ci-logs' || format('$CILOG_DIR/branches/{0}', github.ref_name) }}
 
 jobs:
   build:
@@ -234,8 +234,8 @@ jobs:
             # Branch reports arrive with the merge and are stale the moment main
             # rewrites the canonical ones. Drop them rather than accumulate one
             # directory per branch forever.
-            rm -rf ci-logs/branches
-            git rm -r -q --cached --ignore-unmatch ci-logs/branches >/dev/null || true
+            rm -rf $CILOG_DIR/branches
+            git rm -r -q --cached --ignore-unmatch $CILOG_DIR/branches >/dev/null || true
           fi
           git add -f "$CILOG_DIR"/rustfmt-latest.diff
           git commit -m "ci: publish rustfmt diff [skip ci]" || true

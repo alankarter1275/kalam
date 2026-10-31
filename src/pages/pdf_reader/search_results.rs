@@ -98,10 +98,7 @@ pub fn format_search_snippet(
     let (colour, alpha) = if current {
         (paint.current_colour.as_str(), 38)
     } else {
-        (
-            paint.match_colour.as_str(),
-            paint.match_alpha_percent,
-        )
+        (paint.match_colour.as_str(), paint.match_alpha_percent)
     };
 
     let mut markup = String::new();
@@ -465,10 +462,7 @@ impl PdfSearchResultsList {
         }
         state.current_raw_index = current_raw_index;
         for cell in &state.cells {
-            if matches!(
-                cell.bound_entry,
-                Some(PdfSearchResultsEntry::Result { .. })
-            ) {
+            if matches!(cell.bound_entry, Some(PdfSearchResultsEntry::Result { .. })) {
                 paint_cell(cell, &state);
             }
         }

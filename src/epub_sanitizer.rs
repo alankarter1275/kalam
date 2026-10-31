@@ -271,7 +271,10 @@ fn parse_manifest_items(opf_xml: &str, opf_path: &str) -> ManifestInfo {
     }
 
     let mut spine_paths = Vec::new();
-    for node in doc.descendants().filter(|n| n.tag_name().name() == "itemref") {
+    for node in doc
+        .descendants()
+        .filter(|n| n.tag_name().name() == "itemref")
+    {
         if let Some(idref) = node.attribute("idref") {
             if let Some(path) = manifest_map.get(idref) {
                 spine_paths.push(path.clone());
@@ -626,7 +629,9 @@ fn sanitize_xhtml_content(
                         _ => "</h3",
                     };
                     let text_start = tag_end + 1;
-                    let title_text = if let Some(close_pos) = xhtml[text_start..].to_ascii_lowercase().find(close_tag) {
+                    let title_text = if let Some(close_pos) =
+                        xhtml[text_start..].to_ascii_lowercase().find(close_tag)
+                    {
                         let inner = &xhtml[text_start..text_start + close_pos];
                         strip_xml_tags(inner)
                     } else {
@@ -758,7 +763,9 @@ fn build_ncx_content(book_title: &str, headings: &[TocHeading], opf_dir: &str) -
         let order = idx + 1;
         let mut rel_href = h.target_href.clone();
         if !opf_dir.is_empty() && rel_href.starts_with(opf_dir) {
-            rel_href = rel_href[opf_dir.len()..].trim_start_matches('/').to_string();
+            rel_href = rel_href[opf_dir.len()..]
+                .trim_start_matches('/')
+                .to_string();
         }
         let target = if let Some(anchor) = &h.anchor_id {
             format!("{rel_href}#{anchor}")
@@ -938,7 +945,8 @@ mod tests {
             return;
         }
 
-        let test_epub = std::env::temp_dir().join(format!("kalam-test-messy-{}.epub", uuid::Uuid::new_v4()));
+        let test_epub =
+            std::env::temp_dir().join(format!("kalam-test-messy-{}.epub", uuid::Uuid::new_v4()));
         fs::copy(fixture_path, &test_epub).expect("copy messy epub fixture");
 
         let report = sanitize_epub(&test_epub, false).expect("sanitize messy epub");

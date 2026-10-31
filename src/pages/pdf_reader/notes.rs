@@ -225,9 +225,9 @@ fn sync_notes_controls(model: &PdfReaderModel, widgets: &PdfNotesWidgets) {
         .annotations
         .iter()
         .any(|anno| anno.kind == "highlight" || anno.kind == "quote");
-    widgets.highlights_controls.set_visible(
-        model.notes_filter == PdfNotesFilter::Highlights && has_highlights,
-    );
+    widgets
+        .highlights_controls
+        .set_visible(model.notes_filter == PdfNotesFilter::Highlights && has_highlights);
     for (colour, button) in &widgets.highlight_colour_buttons {
         toggle_active(button, model.highlight_colour_filter == Some(*colour));
     }
@@ -244,9 +244,9 @@ fn sync_notes_controls(model: &PdfReaderModel, widgets: &PdfNotesWidgets) {
             .set_text(&model.highlight_search_query);
     }
 
-    widgets.words_controls.set_visible(
-        model.notes_filter == PdfNotesFilter::Words && !model.saved_words.is_empty(),
-    );
+    widgets
+        .words_controls
+        .set_visible(model.notes_filter == PdfNotesFilter::Words && !model.saved_words.is_empty());
     if widgets.word_search_entry.text().as_str() != model.word_search_query.as_str() {
         widgets.word_search_entry.set_text(&model.word_search_query);
     }
@@ -343,13 +343,8 @@ fn populate_bookmarks(
     let mut group_has_row = false;
     for mark in marks.into_iter().take(NOTES_ROW_CAP) {
         let page = mark.chapter_index.max(1) as usize;
-        let heading = pages_heading_for_page(
-            &model.toc_entries,
-            model.total_pages,
-            page,
-            &model.title,
-        )
-        .title;
+        let heading =
+            pages_heading_for_page(&model.toc_entries, model.total_pages, page, &model.title).title;
         if standing_heading.as_deref() != Some(heading.as_str()) {
             widgets.list.append(&notes_heading(&heading));
             standing_heading = Some(heading);
@@ -437,10 +432,20 @@ fn populate_all(
         .iter()
         .filter(|anno| anno.kind == "highlight" || anno.kind == "quote")
     {
-        items.push((anno.chapter_index, anno.created_at.as_str(), 0, NotesItem::Annotation(anno)));
+        items.push((
+            anno.chapter_index,
+            anno.created_at.as_str(),
+            0,
+            NotesItem::Annotation(anno),
+        ));
     }
     for mark in &model.bookmarks {
-        items.push((mark.chapter_index, mark.created_at.as_str(), 1, NotesItem::Bookmark(mark)));
+        items.push((
+            mark.chapter_index,
+            mark.created_at.as_str(),
+            1,
+            NotesItem::Bookmark(mark),
+        ));
     }
     for word in model
         .saved_words
@@ -462,7 +467,11 @@ fn populate_all(
         ));
         return;
     }
-    items.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)).then_with(|| a.2.cmp(&b.2)));
+    items.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.cmp(b.1))
+            .then_with(|| a.2.cmp(&b.2))
+    });
 
     let mut standing_heading: Option<String> = None;
     for (page, _, _, item) in items.into_iter().take(NOTES_ROW_CAP) {
@@ -487,10 +496,7 @@ fn annotation_page(anno: &Annotation) -> usize {
     anno.chapter_index.max(1) as usize
 }
 
-fn annotation_row(
-    anno: &Annotation,
-    sender: &ComponentSender<PdfReaderModel>,
-) -> gtk::Box {
+fn annotation_row(anno: &Annotation, sender: &ComponentSender<PdfReaderModel>) -> gtk::Box {
     let outer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     outer.add_css_class("kalam-pdf-notes-highlight-row");
 
@@ -537,7 +543,11 @@ fn annotation_row(
         let _ = tx.send(PdfReaderMsg::JumpToPage(page));
     });
     outer.append(&jump);
-    outer.append(&delete_button("Delete highlight", sender, PdfReaderMsg::DeleteAnnotation(anno.id)));
+    outer.append(&delete_button(
+        "Delete highlight",
+        sender,
+        PdfReaderMsg::DeleteAnnotation(anno.id),
+    ));
     outer
 }
 
@@ -595,14 +605,15 @@ fn bookmark_row(
         let _ = tx.send(PdfReaderMsg::JumpToPage(page));
     });
     outer.append(&jump);
-    outer.append(&delete_button("Delete bookmark", sender, PdfReaderMsg::DeleteBookmark(mark.id)));
+    outer.append(&delete_button(
+        "Delete bookmark",
+        sender,
+        PdfReaderMsg::DeleteBookmark(mark.id),
+    ));
     outer
 }
 
-fn saved_word_row(
-    word: &SavedWord,
-    sender: &ComponentSender<PdfReaderModel>,
-) -> gtk::Box {
+fn saved_word_row(word: &SavedWord, sender: &ComponentSender<PdfReaderModel>) -> gtk::Box {
     let outer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     outer.add_css_class("kalam-pdf-notes-word-row-wrap");
 
@@ -633,7 +644,11 @@ fn saved_word_row(
         let _ = tx.send(PdfReaderMsg::LookUpWord(text.clone()));
     });
     outer.append(&lookup);
-    outer.append(&delete_button("Forget this word", sender, PdfReaderMsg::DeleteSavedWord(word.id)));
+    outer.append(&delete_button(
+        "Forget this word",
+        sender,
+        PdfReaderMsg::DeleteSavedWord(word.id),
+    ));
     outer
 }
 
@@ -798,9 +813,9 @@ pub(super) fn word_in_scope(
     match scope {
         PdfWordScope::Chapter => {
             word.book_id == Some(book_id)
-                && word.chapter_index.is_some_and(|page| {
-                    page >= chapter_start as i64 && page <= chapter_end as i64
-                })
+                && word
+                    .chapter_index
+                    .is_some_and(|page| page >= chapter_start as i64 && page <= chapter_end as i64)
         }
         PdfWordScope::Book => word.book_id == Some(book_id),
         PdfWordScope::All => true,
@@ -897,11 +912,7 @@ mod tests {
             Some(HighlightColor::Yellow),
             "CHECK"
         ));
-        assert!(!annotation_matches(
-            &yellow,
-            Some(HighlightColor::Blue),
-            ""
-        ));
+        assert!(!annotation_matches(&yellow, Some(HighlightColor::Blue), ""));
         assert!(!annotation_matches(&yellow, None, "ocean"));
 
         let quote = annotation("quote", "yellow", "Plates meet", "");

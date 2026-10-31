@@ -77,10 +77,7 @@ pub fn build_series_page_entries(
         let book_id = current_chapter_idx.and_then(|idx| book_ids.get(idx).copied());
         return (0..current_total_pages)
             .map(|page_idx| {
-                SeriesPageEntry::new(
-                    SeriesPageRef::new(current_chapter_idx, page_idx),
-                    book_id,
-                )
+                SeriesPageEntry::new(SeriesPageRef::new(current_chapter_idx, page_idx), book_id)
             })
             .collect();
     }
@@ -122,8 +119,7 @@ pub fn opening_scroll_target_for_position(
 
     let aligned_max = (max_scroll / ROW_PITCH).floor() * ROW_PITCH;
     let current_row = position / COLUMNS;
-    let current_bottom =
-        current_row as f64 * ROW_PITCH + (CELL_GAP / 2 + CELL_HEIGHT) as f64;
+    let current_bottom = current_row as f64 * ROW_PITCH + (CELL_GAP / 2 + CELL_HEIGHT) as f64;
     if aligned_max + viewport_height.max(0.0) >= current_bottom {
         aligned_max
     } else {
@@ -190,12 +186,7 @@ fn page_description(entry: SeriesPageEntry) -> String {
     }
 }
 
-fn paint_cell(
-    cell: &PageThumbCell,
-    texture: Option<&gdk::Texture>,
-    failed: bool,
-    current: bool,
-) {
+fn paint_cell(cell: &PageThumbCell, texture: Option<&gdk::Texture>, failed: bool, current: bool) {
     match texture {
         Some(texture) => cell.picture.set_paintable(Some(texture)),
         None => cell.picture.set_paintable(None::<&gdk::Texture>),
@@ -346,13 +337,11 @@ impl SeriesPagesGrid {
                     });
                     cell.click_handler = Some(handler);
                     cell.bound_page = Some(entry.page);
-                    cell.num
-                        .set_label(&format!("{}", entry.page.page_idx + 1));
+                    cell.num.set_label(&format!("{}", entry.page.page_idx + 1));
                     let description = page_description(entry);
                     cell.button.set_tooltip_text(Some(&description));
-                    cell.button.update_property(&[gtk::accessible::Property::Label(
-                        &description,
-                    )]);
+                    cell.button
+                        .update_property(&[gtk::accessible::Property::Label(&description)]);
                     paint_cell(cell, texture.as_ref(), failed, current);
                 }
 
@@ -447,11 +436,7 @@ impl SeriesPagesGrid {
     /// Replace the list model only when the series shape has really
     /// changed. Rebuilding on every panel refresh would throw away
     /// the reader's scroll position and rebind the standing window.
-    pub fn set_entries(
-        &self,
-        entries: Vec<SeriesPageEntry>,
-        current: Option<SeriesPageRef>,
-    ) {
+    pub fn set_entries(&self, entries: Vec<SeriesPageEntry>, current: Option<SeriesPageRef>) {
         let changed = self.state.borrow().entries != entries;
         if !changed {
             self.set_current(current);
@@ -460,11 +445,8 @@ impl SeriesPagesGrid {
 
         let objects = {
             let mut state = self.state.borrow_mut();
-            let valid: HashSet<SeriesPageRef> =
-                entries.iter().map(|entry| entry.page).collect();
-            state
-                .textures
-                .retain(|page, _| valid.contains(page));
+            let valid: HashSet<SeriesPageRef> = entries.iter().map(|entry| entry.page).collect();
+            state.textures.retain(|page, _| valid.contains(page));
             state.texture_order.retain(|page| valid.contains(page));
             state.failed.retain(|page| valid.contains(page));
             state.entries = entries.clone();
@@ -487,12 +469,7 @@ impl SeriesPagesGrid {
 
     pub fn set_current(&self, current: Option<SeriesPageRef>) {
         let mut state = self.state.borrow_mut();
-        let current = current.filter(|page| {
-            state
-                .entries
-                .iter()
-                .any(|entry| entry.page == *page)
-        });
+        let current = current.filter(|page| state.entries.iter().any(|entry| entry.page == *page));
         state.current = current;
         for cell in &state.cells {
             if cell.bound_page.is_some() && cell.bound_page == current {
@@ -506,27 +483,17 @@ impl SeriesPagesGrid {
     pub fn current_position(&self) -> Option<usize> {
         let state = self.state.borrow();
         let current = state.current?;
-        state
-            .entries
-            .iter()
-            .position(|entry| entry.page == current)
+        state.entries.iter().position(|entry| entry.page == current)
     }
 
     pub fn scroll_to_current(&self) {
         if let Some(position) = self.current_position() {
-            self.view.scroll_to(
-                position as u32,
-                gtk::ListScrollFlags::empty(),
-                None,
-            );
+            self.view
+                .scroll_to(position as u32, gtk::ListScrollFlags::empty(), None);
         }
     }
 
-    pub fn opening_scroll_target(
-        &self,
-        max_scroll: f64,
-        viewport_height: f64,
-    ) -> Option<f64> {
+    pub fn opening_scroll_target(&self, max_scroll: f64, viewport_height: f64) -> Option<f64> {
         self.current_position().map(|position| {
             opening_scroll_target_for_position(position, max_scroll, viewport_height)
         })
@@ -590,12 +557,8 @@ mod tests {
 
     #[test]
     fn entries_cover_known_chapters_and_restart_page_numbers() {
-        let entries = build_series_page_entries(
-            &[10, 20, 30],
-            &[Some(2), None, Some(3)],
-            Some(2),
-            3,
-        );
+        let entries =
+            build_series_page_entries(&[10, 20, 30], &[Some(2), None, Some(3)], Some(2), 3);
 
         assert_eq!(entries.len(), 5);
         assert_eq!(
@@ -650,9 +613,6 @@ mod tests {
         );
         // In the final row, keeping the current page fully visible
         // wins over row alignment.
-        assert_eq!(
-            opening_scroll_target_for_position(21, 187.0, 805.0),
-            187.0
-        );
+        assert_eq!(opening_scroll_target_for_position(21, 187.0, 805.0), 187.0);
     }
 }

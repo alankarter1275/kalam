@@ -265,11 +265,8 @@ pub enum PdfTextSize {
 }
 
 impl PdfTextSize {
-    pub const ALL: &'static [PdfTextSize] = &[
-        PdfTextSize::Small,
-        PdfTextSize::Medium,
-        PdfTextSize::Large,
-    ];
+    pub const ALL: &'static [PdfTextSize] =
+        &[PdfTextSize::Small, PdfTextSize::Medium, PdfTextSize::Large];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -393,8 +390,7 @@ impl PdfDrawingSettings {
                     .as_deref()
                     .unwrap_or("ink"),
             ),
-            text_paper_background: catalog
-                .get_pref_i64("reader.pdf.draw.text_paper_background", 1)
+            text_paper_background: catalog.get_pref_i64("reader.pdf.draw.text_paper_background", 1)
                 != 0,
             sticky_color: PdfInkColor::from_name(
                 catalog
@@ -417,25 +413,16 @@ impl PdfDrawingSettings {
         catalog.set_pref("reader.pdf.draw.pen_color", self.pen_color.as_str());
         catalog.set_pref("reader.pdf.draw.pen_width", self.pen_width.pref_value());
         catalog.set_pref("reader.pdf.draw.shape_kind", self.shape_kind.as_str());
-        catalog.set_pref_i64(
-            "reader.pdf.draw.shape_filled",
-            i64::from(self.shape_filled),
-        );
+        catalog.set_pref_i64("reader.pdf.draw.shape_filled", i64::from(self.shape_filled));
         catalog.set_pref("reader.pdf.draw.shape_color", self.shape_color.as_str());
-        catalog.set_pref(
-            "reader.pdf.draw.shape_width",
-            self.shape_width.pref_value(),
-        );
+        catalog.set_pref("reader.pdf.draw.shape_width", self.shape_width.pref_value());
         catalog.set_pref("reader.pdf.draw.text_size", self.text_size.as_str());
         catalog.set_pref("reader.pdf.draw.text_color", self.text_color.as_str());
         catalog.set_pref_i64(
             "reader.pdf.draw.text_paper_background",
             i64::from(self.text_paper_background),
         );
-        catalog.set_pref(
-            "reader.pdf.draw.sticky_color",
-            self.sticky_color.as_str(),
-        );
+        catalog.set_pref("reader.pdf.draw.sticky_color", self.sticky_color.as_str());
     }
 
     pub fn highlighter_opacity(&self) -> f64 {
@@ -613,7 +600,12 @@ pub fn drawing_bounds(geometry: &PdfDrawingGeometry, width_pts: f64) -> (f32, f3
     min_y -= pad;
     max_x += pad;
     max_y += pad;
-    (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0))
+    (
+        min_x,
+        min_y,
+        (max_x - min_x).max(1.0),
+        (max_y - min_y).max(1.0),
+    )
 }
 
 fn point_segment_distance(point: (f32, f32), a: (f32, f32), b: (f32, f32)) -> f32 {
@@ -662,8 +654,7 @@ pub fn drawing_hit(
                 "ellipse" => {
                     let (cx, cy) = (x + w / 2.0, y + h / 2.0);
                     let (rx, ry) = ((w / 2.0).max(0.1), (h / 2.0).max(0.1));
-                    let norm =
-                        ((point.0 - cx) / rx).powi(2) + ((point.1 - cy) / ry).powi(2);
+                    let norm = ((point.0 - cx) / rx).powi(2) + ((point.1 - cy) / ry).powi(2);
                     if *filled {
                         norm <= 1.0
                     } else {
@@ -747,7 +738,13 @@ fn paint_stroke_path(cr: &cairo::Context, paint: StrokePaint<'_>) {
         })
         .collect();
     if mapped.len() == 1 {
-        cr.arc(mapped[0].0, mapped[0].1, line_width / 2.0, 0.0, std::f64::consts::TAU);
+        cr.arc(
+            mapped[0].0,
+            mapped[0].1,
+            line_width / 2.0,
+            0.0,
+            std::f64::consts::TAU,
+        );
         let _ = cr.fill();
         return;
     }
@@ -983,11 +980,7 @@ fn paint_text_box(
         let _ = cr.fill();
     }
     let font_size = PdfTextSize::from_name(size).pts() as f64 * scale;
-    cr.select_font_face(
-        "Sans",
-        cairo::FontSlant::Normal,
-        cairo::FontWeight::Normal,
-    );
+    cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
     cr.set_font_size(font_size.max(1.0));
     let (r, g, b) = PdfInkColor::from_name(&paint.drawing.color).rgb();
     cr.set_source_rgba(r, g, b, paint.drawing.opacity.clamp(0.0, 1.0));
@@ -1013,13 +1006,37 @@ fn rounded_rect_path(cr: &cairo::Context, x: f64, y: f64, w: f64, h: f64, radius
     let radius = radius.min(w / 2.0).min(h / 2.0).max(0.0);
     cr.move_to(x + radius, y);
     cr.line_to(x + w - radius, y);
-    cr.arc(x + w - radius, y + radius, radius, -std::f64::consts::FRAC_PI_2, 0.0);
+    cr.arc(
+        x + w - radius,
+        y + radius,
+        radius,
+        -std::f64::consts::FRAC_PI_2,
+        0.0,
+    );
     cr.line_to(x + w, y + h - radius);
-    cr.arc(x + w - radius, y + h - radius, radius, 0.0, std::f64::consts::FRAC_PI_2);
+    cr.arc(
+        x + w - radius,
+        y + h - radius,
+        radius,
+        0.0,
+        std::f64::consts::FRAC_PI_2,
+    );
     cr.line_to(x + radius, y + h);
-    cr.arc(x + radius, y + h - radius, radius, std::f64::consts::FRAC_PI_2, std::f64::consts::PI);
+    cr.arc(
+        x + radius,
+        y + h - radius,
+        radius,
+        std::f64::consts::FRAC_PI_2,
+        std::f64::consts::PI,
+    );
     cr.line_to(x, y + radius);
-    cr.arc(x + radius, y + radius, radius, std::f64::consts::PI, std::f64::consts::PI * 1.5);
+    cr.arc(
+        x + radius,
+        y + radius,
+        radius,
+        std::f64::consts::PI,
+        std::f64::consts::PI * 1.5,
+    );
     cr.close_path();
 }
 
@@ -1721,10 +1738,7 @@ pub fn build_selected_drawing_popover(
     card.add_css_class("kalam-pdf-draw-popover");
     card.set_size_request(252, -1);
 
-    if let PdfDrawingGeometry::Shape {
-        shape, filled, ..
-    } = &drawing.geometry
-    {
+    if let PdfDrawingGeometry::Shape { shape, filled, .. } = &drawing.geometry {
         let current_kind = PdfShapeKind::from_name(shape);
         let fills = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         fills.set_halign(gtk::Align::Center);
@@ -1994,12 +2008,7 @@ impl PdfReaderModel {
 
     /// A display point as `(page, page identity, source point,
     /// target size)` — the one conversion every drawing gesture uses.
-    fn source_point_for_display(
-        &self,
-        slot: PageSlot,
-        x: f64,
-        y: f64,
-    ) -> Option<SourcePointHit> {
+    fn source_point_for_display(&self, slot: PageSlot, x: f64, y: f64) -> Option<SourcePointHit> {
         let page = self.page_for_slot(slot)?;
         let page_id = self.page_id_for_position(page)?;
         let (target_w, target_h) = self.drawing_target_dimensions();
@@ -2081,10 +2090,7 @@ impl PdfReaderModel {
         self.draw_tool_shared.set(tool);
         self.draw_options_open = matches!(
             tool,
-            PdfDrawTool::Highlighter
-                | PdfDrawTool::Pen
-                | PdfDrawTool::Shape
-                | PdfDrawTool::TextBox
+            PdfDrawTool::Highlighter | PdfDrawTool::Pen | PdfDrawTool::Shape | PdfDrawTool::TextBox
         );
         if !tool.is_select() {
             self.clear_selection();
@@ -2101,7 +2107,11 @@ impl PdfReaderModel {
                 self.drawing_drag = None;
             }
         }
-        let cursor = if tool.is_select() { "text" } else { "crosshair" };
+        let cursor = if tool.is_select() {
+            "text"
+        } else {
+            "crosshair"
+        };
         for overlay in self.page_overlays.values() {
             overlay.set_cursor_from_name(Some(cursor));
         }
@@ -2125,10 +2135,7 @@ impl PdfReaderModel {
             .cloned()
     }
 
-    fn display_rect_for_source_rect(
-        &self,
-        rect: (f32, f32, f32, f32),
-    ) -> (i32, i32, i32, i32) {
+    fn display_rect_for_source_rect(&self, rect: (f32, f32, f32, f32)) -> (i32, i32, i32, i32) {
         let (target_w, target_h) = self.drawing_target_dimensions();
         let a = source_point_to_display(
             (rect.0, rect.1),
@@ -2228,10 +2235,7 @@ impl PdfReaderModel {
             .map(|drawing| *drawing)
             .unwrap_or_else(|| current.clone());
         let mut after = current;
-        if let PdfDrawingGeometry::Sticky {
-            text: saved, ..
-        } = &mut after.geometry
-        {
+        if let PdfDrawingGeometry::Sticky { text: saved, .. } = &mut after.geometry {
             *saved = text;
         }
         if crate::notify::report(
@@ -2245,11 +2249,7 @@ impl PdfReaderModel {
         self.queue_all_drawing_areas();
     }
 
-    pub fn mutate_selected_drawing(
-        &mut self,
-        error: &str,
-        change: impl FnOnce(&mut PdfDrawing),
-    ) {
+    pub fn mutate_selected_drawing(&mut self, error: &str, change: impl FnOnce(&mut PdfDrawing)) {
         self.commit_sticky_card_text();
         let Some(before) = self.selected_drawing_id.and_then(|id| {
             self.drawings
@@ -2338,8 +2338,7 @@ impl PdfReaderModel {
         view.set_top_margin(7);
         view.set_bottom_margin(7);
         view.update_property(&[gtk::accessible::Property::Label("Text box")]);
-        let (display_x, display_y, display_w, display_h) =
-            self.display_rect_for_source_rect(rect);
+        let (display_x, display_y, display_w, display_h) = self.display_rect_for_source_rect(rect);
         view.set_halign(gtk::Align::Start);
         view.set_valign(gtk::Align::Start);
         view.set_margin_start(display_x);
@@ -2393,18 +2392,10 @@ impl PdfReaderModel {
             if text.is_empty() {
                 self.delete_drawing_row(original);
             } else {
-                let height = Self::text_rect_height(
-                    &text,
-                    editor.size,
-                    editor.rect.2,
-                    editor.rect.3,
-                );
-                let rect = self.clamp_text_rect((
-                    editor.rect.0,
-                    editor.rect.1,
-                    editor.rect.2,
-                    height,
-                ));
+                let height =
+                    Self::text_rect_height(&text, editor.size, editor.rect.2, editor.rect.3);
+                let rect =
+                    self.clamp_text_rect((editor.rect.0, editor.rect.1, editor.rect.2, height));
                 let mut after = original.clone();
                 after.color = editor.color.as_str().to_string();
                 after.geometry = PdfDrawingGeometry::Text {
@@ -2418,23 +2409,15 @@ impl PdfReaderModel {
                         self.catalog.update_pdf_drawing(&after),
                         "Could not save the text box",
                     ) {
-                        self.remember_deleted(PdfDeletedMark::DrawingBefore(Box::new(
-                            original,
-                        )));
+                        self.remember_deleted(PdfDeletedMark::DrawingBefore(Box::new(original)));
                     }
                     self.reload_drawings();
                 }
                 self.selected_drawing_id = editor.editing_id;
             }
         } else if !text.is_empty() {
-            let height =
-                Self::text_rect_height(&text, editor.size, editor.rect.2, editor.rect.3);
-            let rect = self.clamp_text_rect((
-                editor.rect.0,
-                editor.rect.1,
-                editor.rect.2,
-                height,
-            ));
+            let height = Self::text_rect_height(&text, editor.size, editor.rect.2, editor.rect.3);
+            let rect = self.clamp_text_rect((editor.rect.0, editor.rect.1, editor.rect.2, height));
             let drawing = PdfDrawing {
                 id: 0,
                 book_id: self.book_id,
@@ -2455,14 +2438,10 @@ impl PdfReaderModel {
                 Ok(id) => {
                     self.selected_drawing_id = Some(id);
                     if let Ok(Some(saved)) = self.catalog.get_pdf_drawing(id) {
-                        self.remember_deleted(PdfDeletedMark::DrawingCreated(Box::new(
-                            saved,
-                        )));
+                        self.remember_deleted(PdfDeletedMark::DrawingCreated(Box::new(saved)));
                     }
                 }
-                Err(err) => {
-                    crate::notify::error("Could not save the text box", &err.to_string())
-                }
+                Err(err) => crate::notify::error("Could not save the text box", &err.to_string()),
             }
             self.reload_drawings();
         }
@@ -2542,8 +2521,7 @@ impl PdfReaderModel {
         y: f64,
         sender: &ComponentSender<Self>,
     ) {
-        let Some((_, page_id, point, _)) = self.source_point_for_display(slot, x, y)
-        else {
+        let Some((_, page_id, point, _)) = self.source_point_for_display(slot, x, y) else {
             return;
         };
         if let Some(hit) = self.drawing_at(slot, x, y) {
@@ -2567,12 +2545,7 @@ impl PdfReaderModel {
         match self.draw_tool {
             PdfDrawTool::TextBox => {
                 let size = self.draw_settings.text_size;
-                let rect = (
-                    point.0,
-                    point.1,
-                    190.0,
-                    size.pts() * 1.35 + 16.0,
-                );
+                let rect = (point.0, point.1, 190.0, size.pts() * 1.35 + 16.0);
                 self.open_drawing_text_editor(slot, None, page_id, rect, sender);
             }
             PdfDrawTool::Sticky => {
@@ -2594,14 +2567,10 @@ impl PdfReaderModel {
                     Ok(id) => {
                         self.selected_drawing_id = Some(id);
                         if let Ok(Some(saved)) = self.catalog.get_pdf_drawing(id) {
-                            self.remember_deleted(PdfDeletedMark::DrawingCreated(Box::new(
-                                saved,
-                            )));
+                            self.remember_deleted(PdfDeletedMark::DrawingCreated(Box::new(saved)));
                         }
                     }
-                    Err(err) => {
-                        crate::notify::error("Could not save the note", &err.to_string())
-                    }
+                    Err(err) => crate::notify::error("Could not save the note", &err.to_string()),
                 }
                 self.reload_drawings();
                 self.refresh_drawing_paints();
@@ -2692,9 +2661,7 @@ impl PdfReaderModel {
         let Some(drag) = self.drawing_drag.take() else {
             return false;
         };
-        if drag.slot != slot
-            || !matches!(drag.kind, PdfDrawingDragKind::Move { .. })
-        {
+        if drag.slot != slot || !matches!(drag.kind, PdfDrawingDragKind::Move { .. }) {
             self.drawing_drag = Some(drag);
             return false;
         }
@@ -2744,9 +2711,7 @@ impl PdfReaderModel {
                 self.erase_at(slot, x, y);
             }
             PdfDrawTool::Highlighter | PdfDrawTool::Pen => {
-                let Some((_, page_id, point, _)) =
-                    self.source_point_for_display(slot, x, y)
-                else {
+                let Some((_, page_id, point, _)) = self.source_point_for_display(slot, x, y) else {
                     return;
                 };
                 self.dismiss_drawing_popover();
@@ -2785,9 +2750,7 @@ impl PdfReaderModel {
                 self.queue_drawing_slot(slot);
             }
             PdfDrawTool::Shape => {
-                let Some((_, page_id, point, _)) =
-                    self.source_point_for_display(slot, x, y)
-                else {
+                let Some((_, page_id, point, _)) = self.source_point_for_display(slot, x, y) else {
                     return;
                 };
                 self.dismiss_drawing_popover();
@@ -2847,9 +2810,10 @@ impl PdfReaderModel {
                 };
                 if let Some(stroke) = self.active_drawing.borrow_mut().as_mut() {
                     if stroke.slot == slot {
-                        let far_enough = stroke.points.last().is_none_or(|last| {
-                            (point.0 - last.0).hypot(point.1 - last.1) >= 1.0
-                        });
+                        let far_enough = stroke
+                            .points
+                            .last()
+                            .is_none_or(|last| (point.0 - last.0).hypot(point.1 - last.1) >= 1.0);
                         if far_enough {
                             stroke.points.push(point);
                         }
@@ -2888,8 +2852,8 @@ impl PdfReaderModel {
         }
         match &drag.kind {
             PdfDrawingDragKind::Shape => {
-                if let Some((_, _, point, _)) = self
-                    .source_point_for_display(slot, drag.start_x + dx, drag.start_y + dy)
+                if let Some((_, _, point, _)) =
+                    self.source_point_for_display(slot, drag.start_x + dx, drag.start_y + dy)
                 {
                     if let Some(shape) = self.active_shape.borrow_mut().as_mut() {
                         shape.end = point;
@@ -2927,14 +2891,10 @@ impl PdfReaderModel {
                 match self.catalog.insert_pdf_drawing(&drawing) {
                     Ok(id) => {
                         if let Ok(Some(saved)) = self.catalog.get_pdf_drawing(id) {
-                            self.remember_deleted(PdfDeletedMark::DrawingCreated(Box::new(
-                                saved,
-                            )));
+                            self.remember_deleted(PdfDeletedMark::DrawingCreated(Box::new(saved)));
                         }
                     }
-                    Err(err) => {
-                        crate::notify::error("Could not save the shape", &err.to_string())
-                    }
+                    Err(err) => crate::notify::error("Could not save the shape", &err.to_string()),
                 }
                 self.reload_drawings();
                 self.refresh_drawing_paints();
@@ -3029,10 +2989,7 @@ impl PdfReaderModel {
 
     /// Open the selected drawing's popover on whichever materialised
     /// slot currently carries its page.
-    pub fn show_selected_drawing_popover_for_selection(
-        &mut self,
-        sender: &ComponentSender<Self>,
-    ) {
+    pub fn show_selected_drawing_popover_for_selection(&mut self, sender: &ComponentSender<Self>) {
         let Some(id) = self.selected_drawing_id else {
             return;
         };
@@ -3182,10 +3139,7 @@ mod tests {
 
     #[test]
     fn stroke_bounds_include_half_the_width() {
-        assert_eq!(
-            drawing_bounds(&stroke(), 4.0),
-            (8.0, 8.0, 104.0, 54.0)
-        );
+        assert_eq!(drawing_bounds(&stroke(), 4.0), (8.0, 8.0, 104.0, 54.0));
     }
 
     #[test]

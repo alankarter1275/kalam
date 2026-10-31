@@ -4,13 +4,13 @@
 //! Queries return matching books with snippet excerpts, match counters,
 //! chapter headers, and direct reader navigation.
 
-use std::collections::HashMap;
-use std::path::Path;
+use crate::db::Catalog;
+use crate::models::{Book, BookFormat};
 use anyhow::Result;
 use chapbook_core::Publication;
 use rusqlite::params;
-use crate::db::Catalog;
-use crate::models::{Book, BookFormat};
+use std::collections::HashMap;
+use std::path::Path;
 
 /// A single matched passage inside a chapter or page.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -240,7 +240,8 @@ pub fn reindex_all(catalog: &Catalog) -> Result<usize> {
     let conn = catalog.conn();
     conn.execute("DELETE FROM book_content_fts", [])?;
     conn.execute("DELETE FROM book_search_index_status", [])?;
-    let mut stmt = conn.prepare("SELECT id FROM books WHERE UPPER(format) IN ('EPUB', 'PDF') ORDER BY id ASC")?;
+    let mut stmt = conn
+        .prepare("SELECT id FROM books WHERE UPPER(format) IN ('EPUB', 'PDF') ORDER BY id ASC")?;
     let ids: Vec<i64> = stmt
         .query_map([], |r| r.get(0))?
         .filter_map(|r| r.ok())
@@ -365,9 +366,15 @@ mod tests {
     fn test_sanitize_fts5_query() {
         assert_eq!(sanitize_fts5_query("   "), "");
         assert_eq!(sanitize_fts5_query("darcy"), "darcy*");
-        assert_eq!(sanitize_fts5_query("Elizabeth Bennet"), "\"Elizabeth\" Bennet*");
+        assert_eq!(
+            sanitize_fts5_query("Elizabeth Bennet"),
+            "\"Elizabeth\" Bennet*"
+        );
         assert_eq!(sanitize_fts5_query("\"Mr. Darcy\""), "\"Mr. Darcy\"");
-        assert_eq!(sanitize_fts5_query("science-fiction novel"), "\"science\" \"fiction\" novel*");
+        assert_eq!(
+            sanitize_fts5_query("science-fiction novel"),
+            "\"science\" \"fiction\" novel*"
+        );
     }
 
     #[test]

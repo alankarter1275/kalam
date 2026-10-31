@@ -126,7 +126,12 @@ pub fn slider_row(
     header.append(&value);
     root.append(&header);
 
-    let scale = gtk::Scale::with_range(gtk::Orientation::Horizontal, min, max, step.max(f64::EPSILON));
+    let scale = gtk::Scale::with_range(
+        gtk::Orientation::Horizontal,
+        min,
+        max,
+        step.max(f64::EPSILON),
+    );
     scale.add_css_class("kalam-ui-slider");
     scale.set_value(initial.clamp(min.min(max), min.max(max)));
     scale.set_draw_value(false);

@@ -157,13 +157,13 @@ fn smarten_text(text: &str, count: &mut usize) -> String {
 // ── Reformat code ──────────────────────────────────────────────────
 
 const VOID: &[&str] = &[
-    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
-    "track", "wbr",
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track",
+    "wbr",
 ];
 const INLINE: &[&str] = &[
-    "a", "abbr", "b", "bdi", "bdo", "br", "cite", "code", "data", "dfn", "em", "i", "kbd",
-    "mark", "q", "rp", "rt", "ruby", "s", "samp", "small", "span", "strong", "sub", "sup",
-    "time", "u", "var", "wbr", "img", "audio", "video",
+    "a", "abbr", "b", "bdi", "bdo", "br", "cite", "code", "data", "dfn", "em", "i", "kbd", "mark",
+    "q", "rp", "rt", "ruby", "s", "samp", "small", "span", "strong", "sub", "sup", "time", "u",
+    "var", "wbr", "img", "audio", "video",
 ];
 const RAW: &[&str] = &["pre", "script", "style", "textarea"];
 
@@ -179,7 +179,12 @@ pub fn reformat(text: &str, kind: FileKind) -> Option<String> {
 
 enum Token {
     /// A whole tag as written, with its lowered name.
-    Tag { raw: String, name: String, closing: bool, self_closed: bool },
+    Tag {
+        raw: String,
+        name: String,
+        closing: bool,
+        self_closed: bool,
+    },
     /// <?xml?>, <!DOCTYPE>, comments: own line, verbatim.
     Misc(String),
     Text(String),
@@ -210,7 +215,10 @@ fn tokenize_markup(text: &str) -> Vec<Token> {
                 continue;
             }
             if text[i..].starts_with("<?") || text[i..].starts_with("<!") {
-                let end = text[i..].find('>').map(|n| i + n + 1).unwrap_or(bytes.len());
+                let end = text[i..]
+                    .find('>')
+                    .map(|n| i + n + 1)
+                    .unwrap_or(bytes.len());
                 out.push(Token::Misc(text[i..end].trim().to_string()));
                 i = end;
                 continue;
@@ -247,7 +255,11 @@ fn tokenize_markup(text: &str) -> Vec<Token> {
             let end = (k + 1).min(bytes.len());
             let raw = &text[i..end];
             let self_closed = VOID.contains(&name.as_str())
-                || raw.trim_end().trim_end_matches('>').trim_end().ends_with('/');
+                || raw
+                    .trim_end()
+                    .trim_end_matches('>')
+                    .trim_end()
+                    .ends_with('/');
             out.push(Token::Tag {
                 raw: raw.trim().to_string(),
                 name: name.clone(),
@@ -332,7 +344,12 @@ fn reformat_markup(text: &str) -> String {
                     }
                 }
             }
-            Token::Tag { raw, name, closing, self_closed } => {
+            Token::Tag {
+                raw,
+                name,
+                closing,
+                self_closed,
+            } => {
                 let inline = INLINE.contains(&name.as_str());
                 if closing {
                     if let Some(pos) = raw_stack.iter().rposition(|n| *n == name) {
@@ -552,7 +569,10 @@ pub fn all_element_chains(html: &str) -> Vec<Vec<Elem>> {
             continue;
         }
         if html[i..].starts_with("<!") || html[i..].starts_with("<?") {
-            i = html[i..].find('>').map(|n| i + n + 1).unwrap_or(bytes.len());
+            i = html[i..]
+                .find('>')
+                .map(|n| i + n + 1)
+                .unwrap_or(bytes.len());
             continue;
         }
         let closing = i + 1 < bytes.len() && bytes[i + 1] == b'/';
@@ -592,8 +612,7 @@ pub fn all_element_chains(html: &str) -> Vec<Vec<Elem>> {
             let mut chain = stack.clone();
             chain.push(elem.clone());
             out.push(chain);
-            let self_closed = VOID.contains(&name.as_str())
-                || html[j..k].trim_end().ends_with('/');
+            let self_closed = VOID.contains(&name.as_str()) || html[j..k].trim_end().ends_with('/');
             if !self_closed {
                 stack.push(elem);
             }
@@ -692,7 +711,10 @@ impl Searcher {
 
     /// Byte spans of every match.
     pub fn find_all(&self, text: &str) -> Vec<(usize, usize)> {
-        self.re.find_iter(text).map(|m| (m.start(), m.end())).collect()
+        self.re
+            .find_iter(text)
+            .map(|m| (m.start(), m.end()))
+            .collect()
     }
 
     /// Replace every match; `$1` groups expand in Regex mode only.
@@ -704,8 +726,7 @@ impl Searcher {
         let out = if self.expand {
             self.re.replace_all(text, replacement)
         } else {
-            self.re
-                .replace_all(text, regex::NoExpand(replacement))
+            self.re.replace_all(text, regex::NoExpand(replacement))
         };
         (out.into_owned(), count)
     }
@@ -835,8 +856,7 @@ pub fn retag(html: &str, rules: &[TagRule]) -> (String, usize) {
             let inner = &html[name_end..end];
             let classes = class_tokens(inner);
             let renamed = for_open(&name, &classes);
-            let self_closing =
-                inner.trim_end().ends_with('/') || VOID.contains(&name.as_str());
+            let self_closing = inner.trim_end().ends_with('/') || VOID.contains(&name.as_str());
             if renamed.is_some() {
                 count += 1;
             }
@@ -1009,8 +1029,7 @@ pub fn filter_inline_styles(html: &str, filter: &[&str]) -> (String, usize) {
         while j < bytes.len() && bytes[j].is_ascii_whitespace() {
             j += 1;
         }
-        let Some(q) = bytes.get(j).copied().filter(|b| *b == b'"' || *b == b'\'')
-        else {
+        let Some(q) = bytes.get(j).copied().filter(|b| *b == b'"' || *b == b'\'') else {
             i += 1;
             continue;
         };
@@ -1097,13 +1116,20 @@ mod tests {
         assert_eq!(s.find_all("Cat scatter cat").len(), 3);
         let s = Searcher::new(
             "cat",
-            SearchOptions { whole_word: true, match_case: true, regex: false },
+            SearchOptions {
+                whole_word: true,
+                match_case: true,
+                regex: false,
+            },
         )
         .expect("searcher");
         assert_eq!(s.find_all("Cat scatter cat").len(), 1);
         let s = Searcher::new(
             r"(\w+)@(\w+)",
-            SearchOptions { regex: true, ..Default::default() },
+            SearchOptions {
+                regex: true,
+                ..Default::default()
+            },
         )
         .expect("searcher");
         let (out, n) = s.replace_all("a@b!", "$2/$1");
@@ -1112,7 +1138,14 @@ mod tests {
         // Literal mode never expands $.
         let s = Searcher::new("a", SearchOptions::default()).expect("searcher");
         assert_eq!(s.replace_all("a a", "$1").0, "$1 $1");
-        assert!(Searcher::new("(", SearchOptions { regex: true, ..Default::default() }).is_err());
+        assert!(Searcher::new(
+            "(",
+            SearchOptions {
+                regex: true,
+                ..Default::default()
+            }
+        )
+        .is_err());
     }
 
     fn rule(from: &str, to: &str) -> TagRule {

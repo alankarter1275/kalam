@@ -1,7 +1,9 @@
 use crate::db::{BulkMetadataEdit, Catalog, SortKey};
 use crate::models::Book;
 use crate::service::{AllBooksSnapshot, LibraryService};
-use crate::widgets::book_row::{build_book_grid, build_book_grid_selectable, invalidate_cover_cache};
+use crate::widgets::book_row::{
+    build_book_grid, build_book_grid_selectable, invalidate_cover_cache,
+};
 use crate::widgets::in_app_dialog;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -11,10 +13,19 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum AllBooksOut {
-    OpenBook { book_id: i64 },
-    OpenBookDialog { book_id: i64 },
-    OpenReader { book_id: i64, chapter: Option<usize> },
-    ComicSeries { series_name: String },
+    OpenBook {
+        book_id: i64,
+    },
+    OpenBookDialog {
+        book_id: i64,
+    },
+    OpenReader {
+        book_id: i64,
+        chapter: Option<usize>,
+    },
+    ComicSeries {
+        series_name: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -50,7 +61,10 @@ pub enum AllBooksMsg {
     /// Carries the generation it was started with, so a slow reply from an
     /// older query cannot land after a newer one and put the wrong list on
     /// screen — which typing quickly into the search box makes easy to hit.
-    BooksLoaded { gen: u64, snap: AllBooksSnapshot },
+    BooksLoaded {
+        gen: u64,
+        snap: AllBooksSnapshot,
+    },
     ContentSearchLoaded {
         gen: u64,
         snap: crate::service::ContentSearchSnapshot,
@@ -427,7 +441,9 @@ impl Component for AllBooksModel {
             expanded_books: HashSet::new(),
         };
         let widgets = view_output!();
-        widgets.mode_content_btn.set_group(Some(&widgets.mode_meta_btn));
+        widgets
+            .mode_content_btn
+            .set_group(Some(&widgets.mode_meta_btn));
         model.check_index_status(&sender);
 
         for key in SortKey::ALL {
@@ -575,9 +591,17 @@ impl Component for AllBooksModel {
                             self.status = format!(
                                 "Found {} match{} across {} book{} ({} ms)",
                                 self.content_total_matches,
-                                if self.content_total_matches == 1 { "" } else { "es" },
+                                if self.content_total_matches == 1 {
+                                    ""
+                                } else {
+                                    "es"
+                                },
                                 self.content_total_books,
-                                if self.content_total_books == 1 { "" } else { "s" },
+                                if self.content_total_books == 1 {
+                                    ""
+                                } else {
+                                    "s"
+                                },
                                 self.content_duration_ms,
                             );
                         }
@@ -596,9 +620,7 @@ impl Component for AllBooksModel {
                 let done = sender.input_sender().clone();
                 crate::tasks::spawn(
                     "Indexing library",
-                    move |_reporter| {
-                        LibraryService::new(catalog).index_unindexed_books()
-                    },
+                    move |_reporter| LibraryService::new(catalog).index_unindexed_books(),
                     |_update| {},
                     move |res| {
                         let _ = done.send(AllBooksMsg::IndexFinished(res));
@@ -611,9 +633,7 @@ impl Component for AllBooksModel {
                 let done = sender.input_sender().clone();
                 crate::tasks::spawn(
                     "Reindexing library",
-                    move |_reporter| {
-                        LibraryService::new(catalog).reindex_all_books()
-                    },
+                    move |_reporter| LibraryService::new(catalog).reindex_all_books(),
                     |_update| {},
                     move |res| {
                         let _ = done.send(AllBooksMsg::IndexFinished(res));
@@ -677,7 +697,11 @@ impl Component for AllBooksModel {
                 let info = gtk::Label::new(Some(&format!(
                     "Editing metadata for {} selected book{}.",
                     self.selected_books.len(),
-                    if self.selected_books.len() == 1 { "" } else { "s" }
+                    if self.selected_books.len() == 1 {
+                        ""
+                    } else {
+                        "s"
+                    }
                 )));
                 info.set_halign(gtk::Align::Start);
                 info.add_css_class("kalam-muted");
@@ -915,7 +939,11 @@ impl Component for AllBooksModel {
                 let real_count = catalog.delete_scope_count(&ids).max(count);
                 let s = sender.input_sender().clone();
                 crate::tasks::spawn(
-                    format!("Deleting {} book{}", count, if count == 1 { "" } else { "s" }),
+                    format!(
+                        "Deleting {} book{}",
+                        count,
+                        if count == 1 { "" } else { "s" }
+                    ),
                     move |reporter| {
                         let mut failed = 0usize;
                         for (i, id) in ids.iter().enumerate() {
@@ -1037,7 +1065,9 @@ impl Component for AllBooksModel {
             widgets.sort_box.set_visible(false);
             widgets.select_btn.set_visible(false);
             widgets.selection_bar.set_visible(false);
-            widgets.search.set_placeholder_text(Some("Search inside book contents (phrases, quotes, names)…"));
+            widgets.search.set_placeholder_text(Some(
+                "Search inside book contents (phrases, quotes, names)…",
+            ));
             widgets.mode_meta_btn.set_active(false);
             widgets.mode_content_btn.set_active(true);
             rebuild_content_search_list(&widgets.list, self, &sender);
@@ -1045,7 +1075,9 @@ impl Component for AllBooksModel {
             widgets.sort_box.set_visible(true);
             widgets.select_btn.set_visible(true);
             widgets.selection_bar.set_visible(self.selection_mode);
-            widgets.search.set_placeholder_text(Some("Search title, author, tag:fantasy, status:unread, rating:>3…"));
+            widgets.search.set_placeholder_text(Some(
+                "Search title, author, tag:fantasy, status:unread, rating:>3…",
+            ));
             widgets.mode_meta_btn.set_active(true);
             widgets.mode_content_btn.set_active(false);
             rebuild_list(
@@ -1072,9 +1104,7 @@ impl AllBooksModel {
         let done = sender.input_sender().clone();
         crate::tasks::spawn(
             "Searching book contents",
-            move |_reporter| {
-                LibraryService::new(catalog).search_content(&query)
-            },
+            move |_reporter| LibraryService::new(catalog).search_content(&query),
             |_update| {},
             move |snap| {
                 let _ = done.send(AllBooksMsg::ContentSearchLoaded { gen, snap });
@@ -1088,9 +1118,7 @@ impl AllBooksModel {
         let done = sender.input_sender().clone();
         crate::tasks::spawn(
             "Checking search index status",
-            move |_reporter| {
-                LibraryService::new(catalog).index_status()
-            },
+            move |_reporter| LibraryService::new(catalog).index_status(),
             |_update| {},
             move |snap| {
                 let _ = done.send(AllBooksMsg::IndexStatusLoaded(snap));
@@ -1208,7 +1236,12 @@ fn rebuild_list(
     } else {
         let comics_map: std::collections::HashMap<i64, Option<String>> = books
             .iter()
-            .filter(|b| matches!(b.format, crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr))
+            .filter(|b| {
+                matches!(
+                    b.format,
+                    crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+                )
+            })
             .map(|b| (b.id, b.series.clone()))
             .collect();
         let cm_rc = std::rc::Rc::new(comics_map);
@@ -1217,7 +1250,10 @@ fn rebuild_list(
             books,
             move |id| {
                 if let Some(Some(ser)) = cm.get(&id) {
-                    s.output(AllBooksOut::ComicSeries { series_name: ser.clone() }).ok();
+                    s.output(AllBooksOut::ComicSeries {
+                        series_name: ser.clone(),
+                    })
+                    .ok();
                     return;
                 }
                 s.output(AllBooksOut::OpenBook { book_id: id }).ok();
@@ -1417,9 +1453,17 @@ fn rebuild_content_search_list(
     let summary_lbl = gtk::Label::new(Some(&format!(
         "Found {} match{} across {} book{} ({} ms)",
         model.content_total_matches,
-        if model.content_total_matches == 1 { "" } else { "es" },
+        if model.content_total_matches == 1 {
+            ""
+        } else {
+            "es"
+        },
         model.content_total_books,
-        if model.content_total_books == 1 { "" } else { "s" },
+        if model.content_total_books == 1 {
+            ""
+        } else {
+            "s"
+        },
         model.content_duration_ms,
     )));
     summary_lbl.add_css_class("kalam-muted");
@@ -1481,7 +1525,11 @@ fn rebuild_content_search_list(
         let b_id = res.book.id;
         let s = sender.clone();
         read_btn.connect_clicked(move |_| {
-            s.output(AllBooksOut::OpenReader { book_id: b_id, chapter: None }).ok();
+            s.output(AllBooksOut::OpenReader {
+                book_id: b_id,
+                chapter: None,
+            })
+            .ok();
         });
         actions.append(&read_btn);
 
@@ -1533,7 +1581,12 @@ fn rebuild_content_search_list(
             let s_snip = sender.clone();
             let ch_idx = m.chapter_index;
             snip_btn.connect_clicked(move |_| {
-                s_snip.output(AllBooksOut::OpenReader { book_id: b_id, chapter: Some(ch_idx) }).ok();
+                s_snip
+                    .output(AllBooksOut::OpenReader {
+                        book_id: b_id,
+                        chapter: Some(ch_idx),
+                    })
+                    .ok();
             });
             snippets_box.append(&snip_btn);
         }
@@ -1563,7 +1616,6 @@ fn rebuild_content_search_list(
         list.append(&card);
     }
 }
-
 
 #[cfg(test)]
 mod tests {

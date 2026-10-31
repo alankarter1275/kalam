@@ -227,4 +227,3 @@ fn install() {
     }
     crate::timing::span_end("icons_theme");
 }
-

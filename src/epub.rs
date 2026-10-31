@@ -62,7 +62,9 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         .unwrap_or("")
         .to_ascii_lowercase();
     if ext != "epub" && ext != "cbz" && ext != "cbr" && ext != "pdf" {
-        return Err(anyhow!("unsupported file format .{ext} (expected .epub, .cbz, .cbr, or .pdf)"));
+        return Err(anyhow!(
+            "unsupported file format .{ext} (expected .epub, .cbz, .cbr, or .pdf)"
+        ));
     }
 
     let hash = db::hash_file(source)?;
@@ -81,132 +83,132 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     }
 
     let mut series_index: f32 = 0.0;
-    let (title, authors, description, series, tags, format, file_name, cover_name) =
-        if ext == "pdf" {
-            // A PDF carries no title a library can trust — the file name is the
-            // safest label, same as a comic. Page one becomes the cover, so a
-            // book is never grey in the grid. Best-effort: a doc that renders
-            // nothing still imports.
-            let title = source
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .filter(|t| !t.is_empty())
-                .unwrap_or_else(|| "Untitled PDF".into());
-            let cover_name = crate::pdf::PdfDocument::open(source)
-                .ok()
-                .and_then(|doc| doc.render_page_image(1, false).ok())
-                .and_then(|img| {
-                    let mut bytes = std::io::Cursor::new(Vec::new());
-                    img.write_to(&mut bytes, image::ImageFormat::Png).ok()?;
-                    Some(("cover.png".to_string(), bytes.into_inner()))
-                });
-            (
-                title,
-                "Unknown".to_string(),
-                String::new(),
-                None,
-                Vec::new(),
-                BookFormat::Pdf,
-                "book.pdf".to_string(),
-                cover_name,
-            )
-        } else if ext == "cbz" || ext == "cbr" {
-            let meta = crate::comics::parse_comic_info(source);
-            let (s_opt, s_num) = if let Some(ref s) = meta.series {
-                let (clean_s, num) = crate::comics::sanitize_comic_series(s);
-                (Some(clean_s), num)
-            } else {
-                (None, None)
-            };
-            let s_idx = meta.number.or(s_num).unwrap_or(0.0);
-            series_index = s_idx;
+    let (title, authors, description, series, tags, format, file_name, cover_name) = if ext == "pdf"
+    {
+        // A PDF carries no title a library can trust — the file name is the
+        // safest label, same as a comic. Page one becomes the cover, so a
+        // book is never grey in the grid. Best-effort: a doc that renders
+        // nothing still imports.
+        let title = source
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| "Untitled PDF".into());
+        let cover_name = crate::pdf::PdfDocument::open(source)
+            .ok()
+            .and_then(|doc| doc.render_page_image(1, false).ok())
+            .and_then(|img| {
+                let mut bytes = std::io::Cursor::new(Vec::new());
+                img.write_to(&mut bytes, image::ImageFormat::Png).ok()?;
+                Some(("cover.png".to_string(), bytes.into_inner()))
+            });
+        (
+            title,
+            "Unknown".to_string(),
+            String::new(),
+            None,
+            Vec::new(),
+            BookFormat::Pdf,
+            "book.pdf".to_string(),
+            cover_name,
+        )
+    } else if ext == "cbz" || ext == "cbr" {
+        let meta = crate::comics::parse_comic_info(source);
+        let (s_opt, s_num) = if let Some(ref s) = meta.series {
+            let (clean_s, num) = crate::comics::sanitize_comic_series(s);
+            (Some(clean_s), num)
+        } else {
+            (None, None)
+        };
+        let s_idx = meta.number.or(s_num).unwrap_or(0.0);
+        series_index = s_idx;
 
-            let title = if let Some(ct) = meta.title {
-                if let Some(ref s) = s_opt {
-                    if s_idx > 0.0 {
-                        format!("{s} - Ch. {s_idx}")
-                    } else {
-                        ct
-                    }
-                } else {
-                    ct
-                }
-            } else if let Some(ref s) = s_opt {
+        let title = if let Some(ct) = meta.title {
+            if let Some(ref s) = s_opt {
                 if s_idx > 0.0 {
                     format!("{s} - Ch. {s_idx}")
                 } else {
-                    source
-                        .file_stem()
-                        .map(|stem| stem.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "Untitled Comic".into())
+                    ct
                 }
+            } else {
+                ct
+            }
+        } else if let Some(ref s) = s_opt {
+            if s_idx > 0.0 {
+                format!("{s} - Ch. {s_idx}")
             } else {
                 source
                     .file_stem()
                     .map(|stem| stem.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "Untitled Comic".into())
-            };
-            let authors = meta.writer.unwrap_or_else(|| "Unknown".to_string());
-            let format = if ext == "cbz" {
-                BookFormat::Cbz
-            } else {
-                BookFormat::Cbr
-            };
-            let file_name = format!("book.{ext}");
-
-            let cover_name = if let Ok(cover_bytes) = crate::comics::extract_comic_cover(source) {
-                let img_ext = guess_image_ext(&cover_bytes);
-                let cover_file = format!("cover.{img_ext}");
-                // Will be written once dest_dir is created below
-                Some((cover_file, cover_bytes))
-            } else {
-                None
-            };
-
-            (
-                title,
-                authors,
-                meta.summary.unwrap_or_default(),
-                s_opt,
-                Vec::new(),
-                format,
-                file_name,
-                cover_name,
-            )
+            }
         } else {
-            let meta = parse_epub_meta(source)?;
-            let title = meta
-                .title
-                .as_ref()
-                .map(|t| t.trim())
-                .filter(|t| !t.is_empty())
-                .map(|t| t.to_string())
-                .unwrap_or_else(|| {
-                    source
-                        .file_stem()
-                        .map(|s| s.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "Untitled".into())
-                });
-            let authors = if meta.authors.is_empty() {
-                "Unknown".to_string()
-            } else {
-                meta.authors.join(", ")
-            };
-            let description = strip_html(&meta.description.clone().unwrap_or_default());
-            let series = meta.series.clone();
-            let tags = meta.subjects.clone();
-
-            (
-                title,
-                authors,
-                description,
-                series,
-                tags,
-                BookFormat::Epub,
-                "book.epub".to_string(),
-                None,
-            )
+            source
+                .file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "Untitled Comic".into())
         };
+        let authors = meta.writer.unwrap_or_else(|| "Unknown".to_string());
+        let format = if ext == "cbz" {
+            BookFormat::Cbz
+        } else {
+            BookFormat::Cbr
+        };
+        let file_name = format!("book.{ext}");
+
+        let cover_name = if let Ok(cover_bytes) = crate::comics::extract_comic_cover(source) {
+            let img_ext = guess_image_ext(&cover_bytes);
+            let cover_file = format!("cover.{img_ext}");
+            // Will be written once dest_dir is created below
+            Some((cover_file, cover_bytes))
+        } else {
+            None
+        };
+
+        (
+            title,
+            authors,
+            meta.summary.unwrap_or_default(),
+            s_opt,
+            Vec::new(),
+            format,
+            file_name,
+            cover_name,
+        )
+    } else {
+        let meta = parse_epub_meta(source)?;
+        let title = meta
+            .title
+            .as_ref()
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty())
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| {
+                source
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "Untitled".into())
+            });
+        let authors = if meta.authors.is_empty() {
+            "Unknown".to_string()
+        } else {
+            meta.authors.join(", ")
+        };
+        let description = strip_html(&meta.description.clone().unwrap_or_default());
+        let series = meta.series.clone();
+        let tags = meta.subjects.clone();
+
+        (
+            title,
+            authors,
+            description,
+            series,
+            tags,
+            BookFormat::Epub,
+            "book.epub".to_string(),
+            None,
+        )
+    };
 
     let uuid = Uuid::new_v4().to_string();
 
@@ -232,7 +234,9 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         Some(if series_index > 0.0 {
             series_index
         } else {
-            crate::comics::parse_comic_title(&title).number.unwrap_or(1.0)
+            crate::comics::parse_comic_title(&title)
+                .number
+                .unwrap_or(1.0)
         })
     } else {
         None
@@ -314,7 +318,10 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     if format == BookFormat::Epub && crate::epub_sanitizer::clean_on_import_enabled(catalog) {
         let keep_orig = crate::epub_metadata::write_enabled(catalog);
         if let Err(e) = crate::epub_sanitizer::sanitize_epub(&dest_file, keep_orig) {
-            log::warn!("Failed to sanitize/polish EPUB {}: {e:#}", dest_file.display());
+            log::warn!(
+                "Failed to sanitize/polish EPUB {}: {e:#}",
+                dest_file.display()
+            );
         }
     }
 
@@ -931,11 +938,7 @@ pub fn restore_original_cover(
             img.write_to(&mut cursor, image::ImageFormat::Png)?;
             cursor.into_inner()
         }
-        BookFormat::Other => {
-            return Err(anyhow!(
-                "this format has no original cover to restore"
-            ))
-        }
+        BookFormat::Other => return Err(anyhow!("this format has no original cover to restore")),
     };
     replace_cover_bytes(catalog, book, &bytes)
 }
@@ -1241,8 +1244,14 @@ mod tests {
     #[test]
     fn join_zip_path_resolves_underflow_and_slashes() {
         assert_eq!(join_zip_path("OEBPS", "../../cover.jpg"), "cover.jpg");
-        assert_eq!(join_zip_path("OEBPS/text", "../images/cover.jpg"), "OEBPS/images/cover.jpg");
-        assert_eq!(join_zip_path("OEBPS", "/images/cover.jpg"), "images/cover.jpg");
+        assert_eq!(
+            join_zip_path("OEBPS/text", "../images/cover.jpg"),
+            "OEBPS/images/cover.jpg"
+        );
+        assert_eq!(
+            join_zip_path("OEBPS", "/images/cover.jpg"),
+            "images/cover.jpg"
+        );
     }
 
     #[test]
@@ -1263,7 +1272,10 @@ mod tests {
 
     #[test]
     fn normalize_zip_name_strips_leading_dot_slash_and_backslashes() {
-        assert_eq!(normalize_zip_name("./OEBPS\\content.opf"), "oebps/content.opf");
+        assert_eq!(
+            normalize_zip_name("./OEBPS\\content.opf"),
+            "oebps/content.opf"
+        );
         assert_eq!(normalize_zip_name("OEBPS/content.opf"), "oebps/content.opf");
     }
 
@@ -1287,10 +1299,8 @@ mod tests {
         use zip::write::SimpleFileOptions;
 
         let series = format!("Import Series {}", uuid::Uuid::new_v4());
-        let src_dir = std::env::temp_dir().join(format!(
-            "kalam-import-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let src_dir =
+            std::env::temp_dir().join(format!("kalam-import-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&src_dir).unwrap();
         let src = src_dir.join("chapter.cbz");
 
@@ -1309,7 +1319,10 @@ mod tests {
         zip.start_file("page-001.png", options).unwrap();
         let mut page = Vec::new();
         image::DynamicImage::new_rgb8(4, 6)
-            .write_to(&mut std::io::Cursor::new(&mut page), image::ImageFormat::Png)
+            .write_to(
+                &mut std::io::Cursor::new(&mut page),
+                image::ImageFormat::Png,
+            )
             .unwrap();
         zip.write_all(&page).unwrap();
         zip.finish().unwrap();

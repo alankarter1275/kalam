@@ -587,8 +587,6 @@ fn saved_words_anki_tsv(words: &[SavedWord]) -> String {
     out
 }
 
-
-
 /// Export every saved word to `~/SavedWords.csv`. Shared shape with the
 /// ~/Quotes.md export: fixed home path, count + path returned for a toast.
 pub fn export_saved_words_csv(catalog: &Arc<Catalog>) -> Result<(usize, PathBuf), String> {

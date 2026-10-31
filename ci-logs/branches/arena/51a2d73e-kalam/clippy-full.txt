@@ -1,0 +1,20 @@
+--- system libraries (the agent cannot read Actions logs, and
+--- kalam-reader's gtk4 v4_16 feature needs system GTK >= 4.16) ---
+gtk4: 4.22.4
+gdk4: Package gdk4 was not found in the pkg-config search path.
+Perhaps you should add the directory containing `gdk4.pc'
+to the PKG_CONFIG_PATH environment variable
+Package 'gdk4' not found
+not found
+libadwaita-1: 1.9.1
+glib-2.0: 2.88.0
+[1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
+[1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
+[1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
+[1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
+[1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
+[1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
+[1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
+[1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 19.05s

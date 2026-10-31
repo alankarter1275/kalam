@@ -45,10 +45,7 @@ pub fn rel_href(from_dir: &str, to_path: &str, fragment: Option<&str>) -> String
     let from: Vec<&str> = from_dir.split('/').filter(|p| !p.is_empty()).collect();
     let to: Vec<&str> = to_path.split('/').collect();
     let mut common = 0;
-    while common < from.len()
-        && common < to.len().saturating_sub(1)
-        && from[common] == to[common]
-    {
+    while common < from.len() && common < to.len().saturating_sub(1) && from[common] == to[common] {
         common += 1;
     }
     let mut rel = String::new();
@@ -94,11 +91,7 @@ pub type AttrAccept<'a> = dyn Fn(&[(String, String)]) -> bool + 'a;
 /// quick-xml. `accept` inspects the start tag's attributes.
 /// Nested elements with the same name are counted so the
 /// *matching* end tag is found.
-pub fn element_span(
-    text: &str,
-    local: &str,
-    accept: &AttrAccept<'_>,
-) -> Option<ElementSpan> {
+pub fn element_span(text: &str, local: &str, accept: &AttrAccept<'_>) -> Option<ElementSpan> {
     use quick_xml::events::Event;
     let mut reader = quick_xml::Reader::from_str(text);
     let mut depth = 0usize;
@@ -379,9 +372,8 @@ pub fn parse_nav(text: &str, nav_path: &str) -> Vec<TocEntry> {
     let toc_nav = doc.descendants().find(|n| {
         n.is_element()
             && n.tag_name().name() == "nav"
-            && n.attributes().any(|a| {
-                a.name() == "type" && a.value().split_whitespace().any(|t| t == "toc")
-            })
+            && n.attributes()
+                .any(|a| a.name() == "type" && a.value().split_whitespace().any(|t| t == "toc"))
     });
     let Some(nav) = toc_nav else {
         return Vec::new();
@@ -463,7 +455,12 @@ fn render_navpoints(entries: &[TocEntry], dir: &str, order: &mut usize, out: &mu
 /// Write entries into an NCX document, replacing the navMap's
 /// contents and keeping the head/docTitle exactly as they were.
 /// With no existing document, a fresh NCX is generated.
-pub fn render_ncx(existing: Option<&str>, entries: &[TocEntry], ncx_path: &str, title: &str) -> String {
+pub fn render_ncx(
+    existing: Option<&str>,
+    entries: &[TocEntry],
+    ncx_path: &str,
+    title: &str,
+) -> String {
     let dir = parent_dir(ncx_path);
     let mut inner = String::new();
     let mut order = 0usize;
@@ -494,7 +491,9 @@ fn update_ncx_depth(ncx: &str, depth: usize) -> String {
         if let Ok(re) = regex::Regex::new(pattern) {
             if re.is_match(ncx) {
                 return re
-                    .replace(ncx, |c: &regex::Captures| format!("{}{}{}", &c[1], depth, &c[2]))
+                    .replace(ncx, |c: &regex::Captures| {
+                        format!("{}{}{}", &c[1], depth, &c[2])
+                    })
                     .into_owned();
             }
         }
@@ -534,9 +533,9 @@ pub fn render_nav(existing: Option<&str>, entries: &[TocEntry], nav_path: &str) 
     list.push_str("</ol>");
     if let Some(text) = existing {
         let toc_nav = element_span(text, "nav", &|attrs| {
-            attrs.iter().any(|(k, v)| {
-                k.ends_with("type") && v.split_whitespace().any(|t| t == "toc")
-            })
+            attrs
+                .iter()
+                .any(|(k, v)| k.ends_with("type") && v.split_whitespace().any(|t| t == "toc"))
         });
         if let Some((_, inner_start, inner_end, _)) = toc_nav {
             // The first list inside this nav is the contents list.
@@ -651,7 +650,10 @@ pub struct OpfItem {
 
 /// Read the OPF's manifest + spine back out for rebuilding.
 /// `spine` is (item id, linear) in reading order.
-pub fn parse_opf_data(opf: &str, opf_path: &str) -> (Vec<OpfItem>, Vec<(String, bool)>, Option<String>) {
+pub fn parse_opf_data(
+    opf: &str,
+    opf_path: &str,
+) -> (Vec<OpfItem>, Vec<(String, bool)>, Option<String>) {
     let dir = parent_dir(opf_path);
     let Ok(doc) = roxmltree::Document::parse(opf) else {
         return (Vec::new(), Vec::new(), None);
@@ -795,8 +797,7 @@ pub fn set_cover_meta(opf: &str, cover_id: &str) -> String {
 pub fn opf_package_version(opf: &str) -> Option<String> {
     let (tag_start, inner_start, _, _) = element_span(opf, "package", &|_| true)?;
     let tag = &opf[tag_start..inner_start];
-    let re = regex::Regex::new(r#"(?i)version\s*=\s*"([^"]*)"|version\s*=\s*'([^']*)'"#)
-        .ok()?;
+    let re = regex::Regex::new(r#"(?i)version\s*=\s*"([^"]*)"|version\s*=\s*'([^']*)'"#).ok()?;
     let caps = re.captures(tag)?;
     caps.get(1)
         .or_else(|| caps.get(2))
@@ -810,8 +811,7 @@ pub fn opf_package_version(opf: &str) -> Option<String> {
 /// are the save path's business, as always.
 pub fn upgrade_opf(opf: &str, modified_iso: &str) -> String {
     let mut out = opf.to_string();
-    if let Some((tag_start, inner_start, _, _)) = element_span(&out, "package", &|_| true)
-    {
+    if let Some((tag_start, inner_start, _, _)) = element_span(&out, "package", &|_| true) {
         let mut tag = out[tag_start..inner_start].to_string();
         let re = regex::Regex::new(r#"(?i)version\s*=\s*"[^"]*"|version\s*=\s*'[^']*'"#);
         if let Ok(re) = re {
@@ -853,8 +853,7 @@ pub fn upgrade_opf(opf: &str, modified_iso: &str) -> String {
 /// equals `self_path`. External links are never touched.
 /// Where a link target moves to: given (container path,
 /// fragment), return the new (path, fragment) or `None` to keep.
-pub type LinkMap<'a> =
-    dyn Fn(&str, Option<&str>) -> Option<(String, Option<String>)> + 'a;
+pub type LinkMap<'a> = dyn Fn(&str, Option<&str>) -> Option<(String, Option<String>)> + 'a;
 
 pub fn rewrite_links(
     text: &str,
@@ -862,8 +861,7 @@ pub fn rewrite_links(
     frag_base_path: &str,
     map: &LinkMap<'_>,
 ) -> String {
-    let Ok(re) = regex::Regex::new(r#"(?i)(\b(?:href|src)\s*=\s*)("([^"]*)"|'([^']*)')"#)
-    else {
+    let Ok(re) = regex::Regex::new(r#"(?i)(\b(?:href|src)\s*=\s*)("([^"]*)"|'([^']*)')"#) else {
         return text.to_string();
     };
     let self_dir = parent_dir(self_path);
@@ -974,9 +972,7 @@ fn top_level_blocks(body: &str) -> Vec<(usize, usize, String)> {
             // Rescan inside the wrapper; wrapper re-wrapping is
             // the caller's grouping concern via returned spans:
             // mark spans so group_blocks can include the shell.
-            if let Some((_, inner_s, inner_e, _)) =
-                element_span(&body[*s..*e], tag, &|_| true)
-            {
+            if let Some((_, inner_s, inner_e, _)) = element_span(&body[*s..*e], tag, &|_| true) {
                 let inner = scan_blocks(&body[s + inner_s..s + inner_e], s + inner_s);
                 if inner.iter().filter(|b| !b.2.is_empty()).count() > 1 {
                     let mut wrapped: Vec<(usize, usize, String)> = inner;
@@ -1008,8 +1004,8 @@ fn scan_blocks(inner: &str, base: usize) -> Vec<(usize, usize, String)> {
         match reader.read_event() {
             Ok(Event::Start(e)) => {
                 if depth == 0 {
-                    block_tag = String::from_utf8_lossy(e.local_name().as_ref())
-                        .to_ascii_lowercase();
+                    block_tag =
+                        String::from_utf8_lossy(e.local_name().as_ref()).to_ascii_lowercase();
                     // Leading text (whitespace) joins this block:
                     // block_start is already where it began.
                     let _ = pos_before;
@@ -1161,10 +1157,7 @@ pub fn set_semantics(html: &str, types: &[&str]) -> String {
                 let html_tag = out[hs..hse].to_string();
                 if let Some(gt) = html_tag.rfind('>') {
                     let mut new_tag = html_tag.clone();
-                    new_tag.insert_str(
-                        gt,
-                        " xmlns:epub=\"http://www.idpf.org/2007/ops\"",
-                    );
+                    new_tag.insert_str(gt, " xmlns:epub=\"http://www.idpf.org/2007/ops\"");
                     out.replace_range(hs..hse, &new_tag);
                     // Recompute the body span after the shift.
                     if let Some((tag_start, inner_start, _, _)) =
@@ -1199,7 +1192,11 @@ pub fn linked_stylesheets(html: &str, self_path: &str) -> Vec<String> {
             continue;
         }
         if let Some(c) = href_re.captures(tag) {
-            let raw = c.get(1).or_else(|| c.get(2)).map(|m| m.as_str()).unwrap_or("");
+            let raw = c
+                .get(1)
+                .or_else(|| c.get(2))
+                .map(|m| m.as_str())
+                .unwrap_or("");
             let (path, _) = split_href(raw);
             if !path.is_empty() {
                 out.push(resolve_href(&dir, path));
@@ -1397,12 +1394,7 @@ pub fn suggestions(word: &str, known: &std::collections::HashSet<String>) -> Vec
     // the typo first (the strongest single signal a set without
     // frequencies has), then length closeness, then A–Z.
     let rank = |list: &mut Vec<String>| {
-        let prefix = |s: &str| {
-            s.chars()
-                .zip(w.chars())
-                .take_while(|(x, y)| x == y)
-                .count()
-        };
+        let prefix = |s: &str| s.chars().zip(w.chars()).take_while(|(x, y)| x == y).count();
         list.sort_by(|a, b| {
             prefix(b)
                 .cmp(&prefix(a))
@@ -1629,9 +1621,10 @@ mod tests {
     fn rewrite_links_retargets_fragments() {
         let text = "<p><a href=\"ch1.xhtml#moved\">x</a><a href=\"#here\">y</a><a href=\"https://example.com\">z</a></p>";
         let map = |path: &str, frag: Option<&str>| match (path, frag) {
-            ("OEBPS/ch1.xhtml", Some("moved")) => {
-                Some(("OEBPS/ch1_part2.xhtml".to_string(), Some("moved".to_string())))
-            }
+            ("OEBPS/ch1.xhtml", Some("moved")) => Some((
+                "OEBPS/ch1_part2.xhtml".to_string(),
+                Some("moved".to_string()),
+            )),
             _ => None,
         };
         let out = rewrite_links(text, "OEBPS/ch2.xhtml", "OEBPS/ch2.xhtml", &map);
@@ -1655,12 +1648,11 @@ mod tests {
 
     #[test]
     fn spell_suggestions_find_harrowed() {
-        let known: std::collections::HashSet<String> = [
-            "harrowed", "harrow", "harried", "she", "the", "lamps",
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+        let known: std::collections::HashSet<String> =
+            ["harrowed", "harrow", "harried", "she", "the", "lamps"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
         assert!(!word_known("harroed", &known));
         assert!(word_known("lamps", &known));
         assert!(word_known("EPUB", &known), "acronyms pass");
@@ -1693,9 +1685,7 @@ mod tests {
         let out = upgrade_opf(opf, "2026-10-27T14:32:00Z");
         assert!(out.contains("version=\"3.0\""), "{out}");
         assert!(
-            out.contains(
-                "<meta property=\"dcterms:modified\">2026-10-27T14:32:00Z</meta>"
-            ),
+            out.contains("<meta property=\"dcterms:modified\">2026-10-27T14:32:00Z</meta>"),
             "{out}"
         );
         assert_eq!(opf_package_version(&out).as_deref(), Some("3.0"));

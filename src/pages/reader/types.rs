@@ -11,11 +11,17 @@ pub(crate) type BookThemeSetter = std::rc::Rc<dyn Fn(Option<&str>)>;
 #[derive(Debug)]
 pub enum ReaderOut {
     Close,
-    MinimizeToBubble { book_id: i64 },
-    OpenAuthor { name: String },
+    MinimizeToBubble {
+        book_id: i64,
+    },
+    OpenAuthor {
+        name: String,
+    },
     /// The book head's edit pencil (decision 20): the book's own page,
     /// pushed over the reader so Back returns to the page.
-    OpenBook { book_id: i64 },
+    OpenBook {
+        book_id: i64,
+    },
 }
 
 /// The left panel's two tabs (decision 20). Settings lives alone in

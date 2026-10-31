@@ -40,14 +40,14 @@ mod page_edit;
 mod pages_grid;
 mod search_results;
 
-pub use image::{PdfImageSettings, PdfPageColour, PdfPagePicture};
-use page_edit::{
-    PdfPageEditAppliedInfo, PdfPageEditLeaveIntent, PdfPageEditState, PdfThumbnailSource,
-};
 use drawings::{
     PdfActiveShape, PdfActiveStroke, PdfDrawTool, PdfDrawingDragState, PdfDrawingPaint,
     PdfDrawingSettings, PdfDrawingTextEditor, PdfDrawingWidgets, PdfInkColor, PdfShapeKind,
     PdfStickyCardState, PdfStrokeWidth, PdfTextSize,
+};
+pub use image::{PdfImageSettings, PdfPageColour, PdfPagePicture};
+use page_edit::{
+    PdfPageEditAppliedInfo, PdfPageEditLeaveIntent, PdfPageEditState, PdfThumbnailSource,
 };
 
 /// The password that unlocked this reading session, shared with
@@ -133,7 +133,13 @@ impl PdfOpenState {
     }
 
     pub fn password_submitting(self) -> bool {
-        matches!(self, Self::Password { submitting: true, .. })
+        matches!(
+            self,
+            Self::Password {
+                submitting: true,
+                ..
+            }
+        )
     }
 
     pub fn icon_name(self) -> &'static str {
@@ -234,7 +240,11 @@ impl PdfSearchScope {
     }
 
     pub fn from_toggle_index(index: usize) -> Self {
-        if index == 1 { Self::Book } else { Self::Chapter }
+        if index == 1 {
+            Self::Book
+        } else {
+            Self::Chapter
+        }
     }
 
     pub fn placeholder(self) -> &'static str {
@@ -394,12 +404,24 @@ pub enum PdfDocRequest {
 /// so the first click on a just-opened page is never a dead click.
 #[derive(Debug)]
 pub enum PdfPendingSelection {
-    Word { slot: PageSlot, x: f64, y: f64 },
-    Line { slot: PageSlot, x: f64, y: f64 },
+    Word {
+        slot: PageSlot,
+        x: f64,
+        y: f64,
+    },
+    Line {
+        slot: PageSlot,
+        x: f64,
+        y: f64,
+    },
     /// A drag that began before the text was ready. A finished drag cannot
     /// be replayed, so when the text arrives the word at the drag's start
     /// point is selected -- the closest honest answer to the click.
-    Drag { slot: PageSlot, x: f64, y: f64 },
+    Drag {
+        slot: PageSlot,
+        x: f64,
+        y: f64,
+    },
 }
 
 /// What should happen to a stored click when some page's text arrives.
@@ -435,11 +457,17 @@ impl PdfReaderModel {
             return PdfPendingOutcome::Dropped;
         }
         let msg = match intent {
-            PdfPendingSelection::Word { slot, x, y } => PdfReaderMsg::SelectionWordAt { slot, x, y },
-            PdfPendingSelection::Line { slot, x, y } => PdfReaderMsg::SelectionLineAt { slot, x, y },
+            PdfPendingSelection::Word { slot, x, y } => {
+                PdfReaderMsg::SelectionWordAt { slot, x, y }
+            }
+            PdfPendingSelection::Line { slot, x, y } => {
+                PdfReaderMsg::SelectionLineAt { slot, x, y }
+            }
             // A finished drag cannot be replayed; the word at its start
             // point is the closest honest response.
-            PdfPendingSelection::Drag { slot, x, y } => PdfReaderMsg::SelectionWordAt { slot, x, y },
+            PdfPendingSelection::Drag { slot, x, y } => {
+                PdfReaderMsg::SelectionWordAt { slot, x, y }
+            }
         };
         PdfPendingOutcome::Replay(msg)
     }
@@ -642,8 +670,16 @@ fn source_rect_to_display(
         return (0.0, 0.0, 0.0, 0.0);
     }
     let (x0, y0, x1, y1) = rect;
-    let a = source_fraction_to_display(x0 as f64 / source_w as f64, y0 as f64 / source_h as f64, rotation);
-    let b = source_fraction_to_display(x1 as f64 / source_w as f64, y1 as f64 / source_h as f64, rotation);
+    let a = source_fraction_to_display(
+        x0 as f64 / source_w as f64,
+        y0 as f64 / source_h as f64,
+        rotation,
+    );
+    let b = source_fraction_to_display(
+        x1 as f64 / source_w as f64,
+        y1 as f64 / source_h as f64,
+        rotation,
+    );
     let rx = a.0.min(b.0) * display_w;
     let ry = a.1.min(b.1) * display_h;
     let rw = ((a.0.max(b.0) - a.0.min(b.0)) * display_w).max(1.0);
@@ -891,9 +927,7 @@ fn pdf_pages_current_pages(
         return HashSet::new();
     }
     let current = current_page.clamp(1, total_pages);
-    if spread_mode == PdfSpreadMode::NoSpreads
-        || scroll_mode == PdfScrollMode::WrappedScrolling
-    {
+    if spread_mode == PdfSpreadMode::NoSpreads || scroll_mode == PdfScrollMode::WrappedScrolling {
         return HashSet::from([current]);
     }
     let (left, right) = calculate_spread_for_page(spread_mode, total_pages, current);
@@ -1099,12 +1133,8 @@ fn pdf_search_scoped_indices(
     match scope {
         PdfSearchScope::Book => (0..results.len()).collect(),
         PdfSearchScope::Chapter => {
-            let span = pages_heading_for_page(
-                entries,
-                total_pages,
-                chapter_anchor_page,
-                fallback_title,
-            );
+            let span =
+                pages_heading_for_page(entries, total_pages, chapter_anchor_page, fallback_title);
             results
                 .iter()
                 .enumerate()
@@ -1160,9 +1190,7 @@ fn pdf_search_section_path(
         0 => pages_heading_for_page(entries, total_pages, page, fallback_title).title,
         1 => chain.remove(0),
         _ => match (chain.first(), chain.last()) {
-            (Some(root), Some(deepest)) if root.eq_ignore_ascii_case(deepest) => {
-                root.clone()
-            }
+            (Some(root), Some(deepest)) if root.eq_ignore_ascii_case(deepest) => root.clone(),
             (Some(root), Some(deepest)) => format!("{root} · {deepest}"),
             _ => pages_heading_for_page(entries, total_pages, page, fallback_title).title,
         },
@@ -1187,9 +1215,7 @@ fn pdf_search_result_entries(
         };
         let path = pdf_search_section_path(entries, total_pages, result.page, fallback_title);
         if standing_path.as_deref() != Some(path.as_str()) {
-            grouped.push(search_results::PdfSearchResultsEntry::Heading(
-                path.clone(),
-            ));
+            grouped.push(search_results::PdfSearchResultsEntry::Heading(path.clone()));
             standing_path = Some(path);
         }
         grouped.push(search_results::PdfSearchResultsEntry::Result {
@@ -1201,10 +1227,7 @@ fn pdf_search_result_entries(
     grouped
 }
 
-fn pdf_search_result_page_count(
-    results: &[PdfSearchResult],
-    scoped_indices: &[usize],
-) -> usize {
+fn pdf_search_result_page_count(results: &[PdfSearchResult], scoped_indices: &[usize]) -> usize {
     let mut pages = scoped_indices
         .iter()
         .filter_map(|raw| results.get(*raw).map(|result| result.page))
@@ -1597,14 +1620,50 @@ pub enum PdfReaderMsg {
     UserScrolled,
     ScrollDelta(f64),
     UpdateScrollPage(usize),
-    SelectionDragBegin { slot: PageSlot, x: f64, y: f64, is_block: bool },
-    SelectionDragUpdate { slot: PageSlot, dx: f64, dy: f64, is_block: bool },
-    SelectionDragEnd { slot: PageSlot, dx: f64, dy: f64, press_count: i32 },
-    DrawingDragBegin { slot: PageSlot, x: f64, y: f64 },
-    DrawingDragUpdate { slot: PageSlot, dx: f64, dy: f64 },
-    DrawingDragEnd { slot: PageSlot, dx: f64, dy: f64, press_count: i32 },
-    SelectionWordAt { slot: PageSlot, x: f64, y: f64 },
-    SelectionLineAt { slot: PageSlot, x: f64, y: f64 },
+    SelectionDragBegin {
+        slot: PageSlot,
+        x: f64,
+        y: f64,
+        is_block: bool,
+    },
+    SelectionDragUpdate {
+        slot: PageSlot,
+        dx: f64,
+        dy: f64,
+        is_block: bool,
+    },
+    SelectionDragEnd {
+        slot: PageSlot,
+        dx: f64,
+        dy: f64,
+        press_count: i32,
+    },
+    DrawingDragBegin {
+        slot: PageSlot,
+        x: f64,
+        y: f64,
+    },
+    DrawingDragUpdate {
+        slot: PageSlot,
+        dx: f64,
+        dy: f64,
+    },
+    DrawingDragEnd {
+        slot: PageSlot,
+        dx: f64,
+        dy: f64,
+        press_count: i32,
+    },
+    SelectionWordAt {
+        slot: PageSlot,
+        x: f64,
+        y: f64,
+    },
+    SelectionLineAt {
+        slot: PageSlot,
+        x: f64,
+        y: f64,
+    },
     PageOcrResult {
         generation: u64,
         revision: u64,
@@ -1937,7 +1996,9 @@ impl PdfReaderModel {
         let session_start = std::time::Instant::now();
 
         // 1. Scroll Mode: Check per-book setting first, fallback to global default, fallback to VerticalScrolling
-        let book_scroll = init.catalog.get_pref(&format!("book.{}.pdf.scroll_mode", init.book_id));
+        let book_scroll = init
+            .catalog
+            .get_pref(&format!("book.{}.pdf.scroll_mode", init.book_id));
         let global_scroll = init.catalog.get_pref("reader.pdf.scroll_mode");
         let scroll_mode = match book_scroll.as_deref().or(global_scroll.as_deref()) {
             Some("page") => PdfScrollMode::PageScrolling,
@@ -1950,7 +2011,9 @@ impl PdfReaderModel {
         // Neither stored anywhere means no layout choice has ever been
         // made: the layout then follows the window (decision 53), and
         // NoSpreads below is only the skeleton's provisional shape.
-        let book_spread = init.catalog.get_pref(&format!("book.{}.pdf.spread_mode", init.book_id));
+        let book_spread = init
+            .catalog
+            .get_pref(&format!("book.{}.pdf.spread_mode", init.book_id));
         let global_spread = init.catalog.get_pref("reader.pdf.spread_mode");
         let layout_auto = book_spread.is_none() && global_spread.is_none();
         let spread_mode = match book_spread.as_deref().or(global_spread.as_deref()) {
@@ -1978,7 +2041,9 @@ impl PdfReaderModel {
         // an older Kalam stored one absolute scale instead, which
         // opens as Original at that same effective size rather than
         // silently resizing under its reader.
-        let book_fit = init.catalog.get_pref(&format!("book.{}.pdf.fit_mode", init.book_id));
+        let book_fit = init
+            .catalog
+            .get_pref(&format!("book.{}.pdf.fit_mode", init.book_id));
         let book_zoom_percent = init
             .catalog
             .get_pref(&format!("book.{}.pdf.zoom_percent", init.book_id))
@@ -1989,7 +2054,10 @@ impl PdfReaderModel {
             .get_pref(&format!("book.{}.pdf.zoom", init.book_id))
             .and_then(|z| z.parse::<f64>().ok())
             .filter(|z| z.is_finite() && *z > 0.0);
-        let (fit_mode, zoom_percent) = match (PdfFitMode::from_pref(book_fit.as_deref()), book_zoom_percent) {
+        let (fit_mode, zoom_percent) = match (
+            PdfFitMode::from_pref(book_fit.as_deref()),
+            book_zoom_percent,
+        ) {
             (Some(fit), percent) => (fit, percent.unwrap_or(100)),
             (None, Some(percent)) => (PdfFitMode::Height, percent),
             (None, None) => match legacy_zoom {
@@ -2009,7 +2077,8 @@ impl PdfReaderModel {
         // Provisional until the document's real page size and the
         // viewport's real size are both known; DocumentLoaded and
         // the first resize recompute it from the fit.
-        let (provisional_w, provisional_h) = display_page_dimensions(595.0, 842.0, rotation_degrees);
+        let (provisional_w, provisional_h) =
+            display_page_dimensions(595.0, 842.0, rotation_degrees);
         let zoom_level = pdf_effective_zoom(
             pdf_fit_zoom(
                 fit_mode,
@@ -2027,7 +2096,8 @@ impl PdfReaderModel {
         // 4. Gaps: the two-page seam keeps its global pref; the gap
         // between successive pages in a scroll is per book, like the
         // rest of the page style, with the global as its seed.
-        let two_page_gap = (init.catalog.get_pref_i64("reader.pdf.two_page_gap", 12) as i32).clamp(0, 48);
+        let two_page_gap =
+            (init.catalog.get_pref_i64("reader.pdf.two_page_gap", 12) as i32).clamp(0, 48);
         let book_scroll_gap = init
             .catalog
             .get_pref(&format!("book.{}.pdf.scroll_gap", init.book_id))
@@ -2048,8 +2118,7 @@ impl PdfReaderModel {
         let smart_crop = smart_crop_pref.as_deref() == Some("1");
         let ui_theme = crate::theme::current(&init.catalog);
         let image_paper_rgb = image::rgb_from_hex(ui_theme.paper);
-        let mut image_settings =
-            PdfImageSettings::defaults_for_theme(ui_theme.dark, smart_crop);
+        let mut image_settings = PdfImageSettings::defaults_for_theme(ui_theme.dark, smart_crop);
         let page_colour_pref = init
             .catalog
             .get_pref(&format!("book.{}.pdf.image.page_colour", init.book_id))
@@ -2068,8 +2137,10 @@ impl PdfReaderModel {
                     .get_pref_i64(&format!("reader.pdf.image.{name}"), default)
             })
         };
-        image_settings.tint_strength =
-            image_i64("tint_strength", PdfImageSettings::DEFAULT_TINT_STRENGTH as i64) as i32;
+        image_settings.tint_strength = image_i64(
+            "tint_strength",
+            PdfImageSettings::DEFAULT_TINT_STRENGTH as i64,
+        ) as i32;
         image_settings.brightness = image_i64("brightness", 0) as i32;
         image_settings.contrast = image_i64("contrast", 0) as i32;
         image_settings.warmth = image_i64("warmth", 0) as i32;
@@ -2080,20 +2151,20 @@ impl PdfReaderModel {
         // approved assumption). They describe the next open as much
         // as this one: a pinned side reopens as page layout, not as
         // a floating layer.
-        let left_panel_pinned =
-            init.catalog.get_pref_i64("reader.pdf.left_panel_pinned", 0) != 0;
-        let right_panel_pinned =
-            init.catalog.get_pref_i64("reader.pdf.right_panel_pinned", 0) != 0;
+        let left_panel_pinned = init.catalog.get_pref_i64("reader.pdf.left_panel_pinned", 0) != 0;
+        let right_panel_pinned = init
+            .catalog
+            .get_pref_i64("reader.pdf.right_panel_pinned", 0)
+            != 0;
 
         // The Pages grid's density is a reader preference rather
         // than a property of one document; the board's three
         // columns are the starting answer.
-        let pages_columns =
-            if init.catalog.get_pref_i64("reader.pdf.pages_columns", 3) == 2 {
-                2
-            } else {
-                3
-            };
+        let pages_columns = if init.catalog.get_pref_i64("reader.pdf.pages_columns", 3) == 2 {
+            2
+        } else {
+            3
+        };
 
         // The drawing tools' remembered colour and weight, and the
         // accent a selected drawing's outline paints in.
@@ -2336,7 +2407,9 @@ impl PdfReaderModel {
         if let Some(sid) = self.session_id {
             let elapsed = self.session_start.elapsed().as_secs() as i64;
             let end_pct = (fraction * 100.0).round() as i64;
-            let _ = self.catalog.checkpoint_reading_session(sid, elapsed, end_pct);
+            let _ = self
+                .catalog
+                .checkpoint_reading_session(sid, elapsed, end_pct);
         }
     }
 
@@ -2390,7 +2463,9 @@ impl PdfReaderModel {
         let seq = self.draw_toolbar_seq;
         let s = sender.clone();
         glib::timeout_add_local_once(Duration::from_millis(250), move || {
-            let _ = s.input_sender().send(PdfReaderMsg::DrawToolbarRevealDue(seq));
+            let _ = s
+                .input_sender()
+                .send(PdfReaderMsg::DrawToolbarRevealDue(seq));
         });
     }
 
@@ -2417,7 +2492,9 @@ impl PdfReaderModel {
         let seq = self.right_close_seq;
         let s = sender.clone();
         glib::timeout_add_local_once(Duration::from_millis(600), move || {
-            let _ = s.input_sender().send(PdfReaderMsg::RightCloseTimerTick(seq));
+            let _ = s
+                .input_sender()
+                .send(PdfReaderMsg::RightCloseTimerTick(seq));
         });
     }
 
@@ -2498,9 +2575,7 @@ impl PdfReaderModel {
     }
 
     pub fn current_search_result_index(&self) -> Option<usize> {
-        self.search_scoped_indices()
-            .get(self.search_index)
-            .copied()
+        self.search_scoped_indices().get(self.search_index).copied()
     }
 
     pub fn search_has_matches(&self) -> bool {
@@ -2577,11 +2652,9 @@ impl PdfReaderModel {
     /// branch the reader folded earlier in the session does not
     /// stay folded over the current section.
     pub fn expand_current_toc_branch(&mut self) {
-        let Some(current) = current_toc_index(
-            &self.toc_entries,
-            self.current_page,
-            self.total_pages,
-        ) else {
+        let Some(current) =
+            current_toc_index(&self.toc_entries, self.current_page, self.total_pages)
+        else {
             return;
         };
         let parents = toc_parent_indices(&self.toc_entries);
@@ -2624,7 +2697,11 @@ impl PdfReaderModel {
                     page_w * 2 + self.two_page_gap + 32
                 };
                 let page_size = scroll.hadjustment().page_size() as i32;
-                let vp_w = if page_size > 0 { page_size } else { scroll.width() };
+                let vp_w = if page_size > 0 {
+                    page_size
+                } else {
+                    scroll.width()
+                };
                 if vp_w > 0 && content_w > vp_w {
                     scroll.set_hscrollbar_policy(gtk::PolicyType::Automatic);
                 } else {
@@ -2727,11 +2804,9 @@ impl PdfReaderModel {
         let changed_sources: Vec<String> = entries
             .iter()
             .filter(|entry| {
-                previous_sources
-                    .get(&entry.key)
-                    .is_some_and(|previous| {
-                        self.page_thumbnail_sources.get(&entry.key) != Some(previous)
-                    })
+                previous_sources.get(&entry.key).is_some_and(|previous| {
+                    self.page_thumbnail_sources.get(&entry.key) != Some(previous)
+                })
             })
             .map(|entry| entry.key.clone())
             .collect();
@@ -2936,10 +3011,8 @@ impl PdfReaderModel {
             ("warmth", self.image_settings.warmth as i64),
             ("grayscale", i64::from(self.image_settings.grayscale)),
         ] {
-            self.catalog.set_pref_i64(
-                &format!("book.{}.pdf.image.{}", self.book_id, name),
-                value,
-            );
+            self.catalog
+                .set_pref_i64(&format!("book.{}.pdf.image.{}", self.book_id, name), value);
             self.catalog
                 .set_pref_i64(&format!("reader.pdf.image.{name}"), value);
         }
@@ -2968,8 +3041,7 @@ impl PdfReaderModel {
                 .set_active(self.image_settings.grayscale);
         }
         if iw.trim_switch.is_active() != self.image_settings.trim_margins {
-            iw.trim_switch
-                .set_active(self.image_settings.trim_margins);
+            iw.trim_switch.set_active(self.image_settings.trim_margins);
         }
     }
 
@@ -3240,7 +3312,6 @@ impl Drop for PdfReaderModel {
 }
 
 impl PdfReaderModel {
-
     pub fn trigger_loads(&mut self, _sender: &ComponentSender<Self>) {
         let Some(path) = self.file_path.clone() else {
             return;
@@ -3257,15 +3328,20 @@ impl PdfReaderModel {
             _ => self.spread_mode,
         };
 
-        let cur_spread = calculate_spread_for_page(effective_spread_mode, self.total_pages, self.current_page);
+        let cur_spread =
+            calculate_spread_for_page(effective_spread_mode, self.total_pages, self.current_page);
 
         match self.scroll_mode {
             PdfScrollMode::PageScrolling => {
                 let mut spreads = vec![cur_spread];
-                if let Some(ns) = calculate_next_spread(effective_spread_mode, self.total_pages, cur_spread) {
+                if let Some(ns) =
+                    calculate_next_spread(effective_spread_mode, self.total_pages, cur_spread)
+                {
                     spreads.push(ns);
                 }
-                if let Some(ps) = calculate_prev_spread(effective_spread_mode, self.total_pages, cur_spread) {
+                if let Some(ps) =
+                    calculate_prev_spread(effective_spread_mode, self.total_pages, cur_spread)
+                {
                     spreads.push(ps);
                 }
                 for (left, right) in spreads {
@@ -3284,7 +3360,11 @@ impl PdfReaderModel {
 
                 for _ in 0..3 {
                     if has_next {
-                        if let Some(ns) = calculate_next_spread(effective_spread_mode, self.total_pages, next_cursor) {
+                        if let Some(ns) = calculate_next_spread(
+                            effective_spread_mode,
+                            self.total_pages,
+                            next_cursor,
+                        ) {
                             spreads.push(ns);
                             next_cursor = ns;
                         } else {
@@ -3292,7 +3372,11 @@ impl PdfReaderModel {
                         }
                     }
                     if has_prev {
-                        if let Some(ps) = calculate_prev_spread(effective_spread_mode, self.total_pages, prev_cursor) {
+                        if let Some(ps) = calculate_prev_spread(
+                            effective_spread_mode,
+                            self.total_pages,
+                            prev_cursor,
+                        ) {
                             spreads.push(ps);
                             prev_cursor = ps;
                         } else {
@@ -3445,7 +3529,9 @@ impl PdfReaderModel {
     /// arrives after it until the pointer moves again, so whatever the
     /// release sets is what the user sees (pitfalls 34).
     fn park_cursor_at(&self, slot: PageSlot, x: f64, y: f64) {
-        let Some(ov) = self.page_overlays.get(&slot) else { return };
+        let Some(ov) = self.page_overlays.get(&slot) else {
+            return;
+        };
         if !self.draw_tool.is_select() {
             ov.set_cursor_from_name(Some("crosshair"));
             return;
@@ -3477,7 +3563,9 @@ impl PdfReaderModel {
     ) {
         self.pending_selection = Some((page, intent));
         self.dismiss_recognizing_popover();
-        let Some(overlay) = self.page_overlays.get(&slot) else { return };
+        let Some(overlay) = self.page_overlays.get(&slot) else {
+            return;
+        };
 
         let popover = gtk::Popover::new();
         popover.set_parent(overlay);
@@ -3527,8 +3615,12 @@ impl PdfReaderModel {
         self.dismiss_selection_chip();
         let sel_opt = self.active_selection.borrow().clone();
         let Some(sel) = sel_opt else { return };
-        if sel.text.is_empty() { return };
-        let Some(overlay) = self.page_overlays.get(&slot) else { return };
+        if sel.text.is_empty() {
+            return;
+        };
+        let Some(overlay) = self.page_overlays.get(&slot) else {
+            return;
+        };
 
         let root_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -3552,7 +3644,11 @@ impl PdfReaderModel {
 
         // 1. Highlight button -> reveals Calibre drawer
         let highlight_btn = gtk::Button::new();
-        let hl_icon = crate::icons::symbolic_with_classes("kalam-highlight-symbolic", 14, &["kalam-inline-icon"]);
+        let hl_icon = crate::icons::symbolic_with_classes(
+            "kalam-highlight-symbolic",
+            14,
+            &["kalam-inline-icon"],
+        );
         highlight_btn.set_child(Some(&hl_icon));
         highlight_btn.set_tooltip_text(Some("Highlight"));
         highlight_btn.add_css_class("k-sel-action");
@@ -3590,7 +3686,11 @@ impl PdfReaderModel {
 
         // 2. Define button
         let dict_btn = gtk::Button::new();
-        let dict_icon = crate::icons::symbolic_with_classes("accessories-dictionary-symbolic", 14, &["kalam-inline-icon"]);
+        let dict_icon = crate::icons::symbolic_with_classes(
+            "accessories-dictionary-symbolic",
+            14,
+            &["kalam-inline-icon"],
+        );
         dict_btn.set_child(Some(&dict_icon));
         dict_btn.set_tooltip_text(Some("Define"));
         dict_btn.add_css_class("k-sel-action");
@@ -3624,10 +3724,13 @@ impl PdfReaderModel {
         }
         self.dismiss_dict_popover();
         let selection = self.active_selection.borrow().clone();
-        let entry = self.catalog.lookup_entry(&trimmed).unwrap_or_else(|_| crate::db::EntryData {
-            word: trimmed.clone(),
-            ..Default::default()
-        });
+        let entry = self
+            .catalog
+            .lookup_entry(&trimmed)
+            .unwrap_or_else(|_| crate::db::EntryData {
+                word: trimmed.clone(),
+                ..Default::default()
+            });
         let shown_word = if entry.word.is_empty() {
             trimmed.clone()
         } else {
@@ -3930,12 +4033,7 @@ impl PdfReaderModel {
                     }
                 } else {
                     let [r, g, b] = highlight.match_rgb;
-                    cr.set_source_rgba(
-                        r as f64,
-                        g as f64,
-                        b as f64,
-                        highlight.match_alpha as f64,
-                    );
+                    cr.set_source_rgba(r as f64, g as f64, b as f64, highlight.match_alpha as f64);
                     for &(rx, ry, rw, rh) in &screen_rects {
                         cr.rectangle(rx, ry, rw, rh);
                         let _ = cr.fill();
@@ -4035,9 +4133,17 @@ impl PdfReaderModel {
                 return;
             }
             if n_press == 2 {
-                let _ = tx_click.send(PdfReaderMsg::SelectionWordAt { slot: slot_copy, x, y });
+                let _ = tx_click.send(PdfReaderMsg::SelectionWordAt {
+                    slot: slot_copy,
+                    x,
+                    y,
+                });
             } else if n_press >= 3 {
-                let _ = tx_click.send(PdfReaderMsg::SelectionLineAt { slot: slot_copy, x, y });
+                let _ = tx_click.send(PdfReaderMsg::SelectionLineAt {
+                    slot: slot_copy,
+                    x,
+                    y,
+                });
             }
         });
         overlay.add_controller(click);
@@ -4108,11 +4214,22 @@ impl PdfReaderModel {
                 return;
             }
             if !drag_tool_begin.get().is_select() {
-                let _ = tx_drag_begin.send(PdfReaderMsg::DrawingDragBegin { slot: slot_copy, x, y });
+                let _ = tx_drag_begin.send(PdfReaderMsg::DrawingDragBegin {
+                    slot: slot_copy,
+                    x,
+                    y,
+                });
                 return;
             }
-            let is_block = drag_ctrl_begin.current_event_state().contains(gdk::ModifierType::ALT_MASK);
-            let _ = tx_drag_begin.send(PdfReaderMsg::SelectionDragBegin { slot: slot_copy, x, y, is_block });
+            let is_block = drag_ctrl_begin
+                .current_event_state()
+                .contains(gdk::ModifierType::ALT_MASK);
+            let _ = tx_drag_begin.send(PdfReaderMsg::SelectionDragBegin {
+                slot: slot_copy,
+                x,
+                y,
+                is_block,
+            });
         });
         let drag_ctrl_up = drag.clone();
         let mc_for_update = multi_click.clone();
@@ -4125,11 +4242,22 @@ impl PdfReaderModel {
                 return;
             }
             if !drag_tool_update.get().is_select() {
-                let _ = tx_drag_update.send(PdfReaderMsg::DrawingDragUpdate { slot: slot_copy, dx, dy });
+                let _ = tx_drag_update.send(PdfReaderMsg::DrawingDragUpdate {
+                    slot: slot_copy,
+                    dx,
+                    dy,
+                });
                 return;
             }
-            let is_block = drag_ctrl_up.current_event_state().contains(gdk::ModifierType::ALT_MASK);
-            let _ = tx_drag_update.send(PdfReaderMsg::SelectionDragUpdate { slot: slot_copy, dx, dy, is_block });
+            let is_block = drag_ctrl_up
+                .current_event_state()
+                .contains(gdk::ModifierType::ALT_MASK);
+            let _ = tx_drag_update.send(PdfReaderMsg::SelectionDragUpdate {
+                slot: slot_copy,
+                dx,
+                dy,
+                is_block,
+            });
         });
         let mc_for_end = multi_click.clone();
         drag.connect_drag_end(move |_, dx, dy| {
@@ -4138,10 +4266,20 @@ impl PdfReaderModel {
             // the drag (the EPUB reader gates its drag the same way).
             let press_count = mc_for_end.replace(0);
             if !drag_tool_end.get().is_select() {
-                let _ = tx_drag_end.send(PdfReaderMsg::DrawingDragEnd { slot: slot_copy, dx, dy, press_count });
+                let _ = tx_drag_end.send(PdfReaderMsg::DrawingDragEnd {
+                    slot: slot_copy,
+                    dx,
+                    dy,
+                    press_count,
+                });
                 return;
             }
-            let _ = tx_drag_end.send(PdfReaderMsg::SelectionDragEnd { slot: slot_copy, dx, dy, press_count });
+            let _ = tx_drag_end.send(PdfReaderMsg::SelectionDragEnd {
+                slot: slot_copy,
+                dx,
+                dy,
+                press_count,
+            });
         });
         overlay.add_controller(drag);
 
@@ -4171,197 +4309,199 @@ impl PdfReaderModel {
         self.two_page_label = None;
 
         match self.scroll_mode {
-            PdfScrollMode::PageScrolling => {
-                match self.spread_mode {
-                    PdfSpreadMode::NoSpreads => {
-                        let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
-                        container.set_halign(gtk::Align::Fill);
-                        container.set_valign(gtk::Align::Start);
-                        container.set_hexpand(true);
-                        container.set_vexpand(true);
-                        container.set_margin_top(28);
-                        container.set_margin_bottom(72);
-                        container.set_margin_start(16);
-                        container.set_margin_end(16);
+            PdfScrollMode::PageScrolling => match self.spread_mode {
+                PdfSpreadMode::NoSpreads => {
+                    let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                    container.set_halign(gtk::Align::Fill);
+                    container.set_valign(gtk::Align::Start);
+                    container.set_hexpand(true);
+                    container.set_vexpand(true);
+                    container.set_margin_top(28);
+                    container.set_margin_bottom(72);
+                    container.set_margin_start(16);
+                    container.set_margin_end(16);
 
-                        let page_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-                        page_row.set_hexpand(true);
-                        page_row.set_valign(gtk::Align::Start);
+                    let page_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                    page_row.set_hexpand(true);
+                    page_row.set_valign(gtk::Align::Start);
 
-                        let spacer_left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-                        spacer_left.set_hexpand(true);
-                        page_row.append(&spacer_left);
+                    let spacer_left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                    spacer_left.set_hexpand(true);
+                    page_row.append(&spacer_left);
 
-                        let pic = self.make_page_picture();
-                        pic.set_halign(gtk::Align::Center);
-                        pic.set_valign(gtk::Align::Start);
-                        pic.add_css_class("kalam-pdf-page-image");
+                    let pic = self.make_page_picture();
+                    pic.set_halign(gtk::Align::Center);
+                    pic.set_valign(gtk::Align::Start);
+                    pic.add_css_class("kalam-pdf-page-image");
 
-                        let loading_box = gtk::Box::new(gtk::Orientation::Vertical, 12);
-                        loading_box.set_halign(gtk::Align::Center);
-                        loading_box.set_valign(gtk::Align::Center);
+                    let loading_box = gtk::Box::new(gtk::Orientation::Vertical, 12);
+                    loading_box.set_halign(gtk::Align::Center);
+                    loading_box.set_valign(gtk::Align::Center);
 
-                        let spinner = gtk::Spinner::new();
-                        spinner.start();
-                        spinner.set_size_request(32, 32);
-                        loading_box.append(&spinner);
+                    let spinner = gtk::Spinner::new();
+                    spinner.start();
+                    spinner.set_size_request(32, 32);
+                    loading_box.append(&spinner);
 
-                        let label = gtk::Label::new(Some(&format!(
-                            "Rendering page {}...",
-                            self.current_page
-                        )));
-                        label.add_css_class("dim-label");
-                        loading_box.append(&label);
+                    let label =
+                        gtk::Label::new(Some(&format!("Rendering page {}...", self.current_page)));
+                    label.add_css_class("dim-label");
+                    loading_box.append(&label);
 
-                        let page_w = (self.base_page_width * self.zoom_level) as i32;
-                        let page_h = (self.base_page_height * self.zoom_level) as i32;
-                        pic.set_size_request(page_w, page_h);
+                    let page_w = (self.base_page_width * self.zoom_level) as i32;
+                    let page_h = (self.base_page_height * self.zoom_level) as i32;
+                    pic.set_size_request(page_w, page_h);
 
-                        if let Some(cached) = self.textures.get(&self.current_page) {
-                            pic.set_texture(Some(&cached.texture));
-                            pic.set_visible(true);
-                            loading_box.set_visible(false);
-                        } else {
-                            pic.set_visible(false);
-                            loading_box.set_visible(true);
-                        }
-
-                        self.paged_picture = Some(pic.clone());
-                        self.page_pictures.insert(self.current_page, pic.clone());
-                        let page_widget = self.wrap_page(PageSlot::PagedSingle, pic, sender);
-
-                        page_row.append(&page_widget);
-
-                        let spacer_right = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-                        spacer_right.set_hexpand(true);
-                        page_row.append(&spacer_right);
-
-                        container.append(&page_row);
-                        container.append(&loading_box);
-
-                        self.paged_loading_box = Some(loading_box);
-                        self.paged_label = Some(label);
-
-                        container.upcast()
+                    if let Some(cached) = self.textures.get(&self.current_page) {
+                        pic.set_texture(Some(&cached.texture));
+                        pic.set_visible(true);
+                        loading_box.set_visible(false);
+                    } else {
+                        pic.set_visible(false);
+                        loading_box.set_visible(true);
                     }
-                    _ => {
-                        let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
-                        container.set_halign(gtk::Align::Fill);
-                        container.set_valign(gtk::Align::Start);
-                        container.set_hexpand(true);
-                        container.set_vexpand(true);
-                        container.set_margin_top(28);
-                        container.set_margin_bottom(72);
-                        container.set_margin_start(16);
-                        container.set_margin_end(16);
 
-                        let spread_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-                        spread_box.set_hexpand(true);
-                        spread_box.set_valign(gtk::Align::Start);
+                    self.paged_picture = Some(pic.clone());
+                    self.page_pictures.insert(self.current_page, pic.clone());
+                    let page_widget = self.wrap_page(PageSlot::PagedSingle, pic, sender);
 
-                        let spacer_left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-                        spacer_left.set_hexpand(true);
-                        spread_box.append(&spacer_left);
+                    page_row.append(&page_widget);
 
-                        let spread_inner = gtk::Box::new(gtk::Orientation::Horizontal, self.two_page_gap);
-                        spread_inner.set_hexpand(false);
-                        spread_inner.set_halign(gtk::Align::Center);
-                        spread_inner.set_valign(gtk::Align::Start);
+                    let spacer_right = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                    spacer_right.set_hexpand(true);
+                    page_row.append(&spacer_right);
 
-                        let (left, right) = self.spread_for_page(self.current_page);
+                    container.append(&page_row);
+                    container.append(&loading_box);
 
-                        let page_w = (self.base_page_width * self.zoom_level) as i32;
-                        let page_h = (self.base_page_height * self.zoom_level) as i32;
+                    self.paged_loading_box = Some(loading_box);
+                    self.paged_label = Some(label);
 
-                        let left_pic = self.make_page_picture();
-                        left_pic.set_halign(if right.is_some() { gtk::Align::End } else { gtk::Align::Center });
-                        left_pic.set_valign(gtk::Align::Start);
-                        left_pic.set_size_request(page_w, page_h);
-                        left_pic.add_css_class("kalam-pdf-page-image");
-                        left_pic.add_css_class("kalam-pdf-two-page");
-
-                        let right_pic = self.make_page_picture();
-                        right_pic.set_halign(gtk::Align::Start);
-                        right_pic.set_valign(gtk::Align::Start);
-                        right_pic.set_size_request(page_w, page_h);
-                        right_pic.add_css_class("kalam-pdf-page-image");
-                        right_pic.add_css_class("kalam-pdf-two-page");
-
-                        let loading_box = gtk::Box::new(gtk::Orientation::Vertical, 12);
-                        loading_box.set_halign(gtk::Align::Center);
-                        loading_box.set_valign(gtk::Align::Center);
-                        let spinner = gtk::Spinner::new();
-                        spinner.start();
-                        spinner.set_size_request(32, 32);
-                        let label = gtk::Label::new(Some(&format!(
-                            "Rendering page {}...",
-                            if let Some(r) = right {
-                                format!("{} - {}", left, r)
-                            } else {
-                                format!("{}", left)
-                            }
-                        )));
-                        label.add_css_class("dim-label");
-                        loading_box.append(&spinner);
-                        loading_box.append(&label);
-
-                        let left_loaded = self.textures.get(&left);
-                        let right_loaded = right.and_then(|r| self.textures.get(&r));
-
-                        let all_needed_loaded = if right.is_some() {
-                            left_loaded.is_some() && right_loaded.is_some()
-                        } else {
-                            left_loaded.is_some()
-                        };
-
-                        if all_needed_loaded {
-                            if let Some(cached) = left_loaded {
-                                left_pic.set_texture(Some(&cached.texture));
-                                left_pic.set_visible(true);
-                            }
-                            if right.is_some() {
-                                if let Some(cached) = right_loaded {
-                                    right_pic.set_texture(Some(&cached.texture));
-                                    right_pic.set_visible(true);
-                                }
-                            } else {
-                                right_pic.set_visible(false);
-                            }
-                            loading_box.set_visible(false);
-                        } else {
-                            left_pic.set_visible(false);
-                            right_pic.set_visible(false);
-                            loading_box.set_visible(true);
-                        }
-
-                        self.two_page_left_pic = Some(left_pic.clone());
-                        self.two_page_right_pic = Some(right_pic.clone());
-                        self.page_pictures.insert(left, left_pic.clone());
-                        if let Some(r) = right {
-                            self.page_pictures.insert(r, right_pic.clone());
-                        }
-
-                        let left_widget = self.wrap_page(PageSlot::PagedSpreadLeft, left_pic, sender);
-                        let right_widget = self.wrap_page(PageSlot::PagedSpreadRight, right_pic, sender);
-
-                        spread_inner.append(&left_widget);
-                        spread_inner.append(&right_widget);
-                        spread_box.append(&spread_inner);
-
-                        let spacer_right = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-                        spacer_right.set_hexpand(true);
-                        spread_box.append(&spacer_right);
-
-                        container.append(&spread_box);
-                        container.append(&loading_box);
-
-                        self.two_page_loading_box = Some(loading_box);
-                        self.two_page_label = Some(label);
-
-                        container.upcast()
-                    }
+                    container.upcast()
                 }
-            }
+                _ => {
+                    let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                    container.set_halign(gtk::Align::Fill);
+                    container.set_valign(gtk::Align::Start);
+                    container.set_hexpand(true);
+                    container.set_vexpand(true);
+                    container.set_margin_top(28);
+                    container.set_margin_bottom(72);
+                    container.set_margin_start(16);
+                    container.set_margin_end(16);
+
+                    let spread_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                    spread_box.set_hexpand(true);
+                    spread_box.set_valign(gtk::Align::Start);
+
+                    let spacer_left = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                    spacer_left.set_hexpand(true);
+                    spread_box.append(&spacer_left);
+
+                    let spread_inner =
+                        gtk::Box::new(gtk::Orientation::Horizontal, self.two_page_gap);
+                    spread_inner.set_hexpand(false);
+                    spread_inner.set_halign(gtk::Align::Center);
+                    spread_inner.set_valign(gtk::Align::Start);
+
+                    let (left, right) = self.spread_for_page(self.current_page);
+
+                    let page_w = (self.base_page_width * self.zoom_level) as i32;
+                    let page_h = (self.base_page_height * self.zoom_level) as i32;
+
+                    let left_pic = self.make_page_picture();
+                    left_pic.set_halign(if right.is_some() {
+                        gtk::Align::End
+                    } else {
+                        gtk::Align::Center
+                    });
+                    left_pic.set_valign(gtk::Align::Start);
+                    left_pic.set_size_request(page_w, page_h);
+                    left_pic.add_css_class("kalam-pdf-page-image");
+                    left_pic.add_css_class("kalam-pdf-two-page");
+
+                    let right_pic = self.make_page_picture();
+                    right_pic.set_halign(gtk::Align::Start);
+                    right_pic.set_valign(gtk::Align::Start);
+                    right_pic.set_size_request(page_w, page_h);
+                    right_pic.add_css_class("kalam-pdf-page-image");
+                    right_pic.add_css_class("kalam-pdf-two-page");
+
+                    let loading_box = gtk::Box::new(gtk::Orientation::Vertical, 12);
+                    loading_box.set_halign(gtk::Align::Center);
+                    loading_box.set_valign(gtk::Align::Center);
+                    let spinner = gtk::Spinner::new();
+                    spinner.start();
+                    spinner.set_size_request(32, 32);
+                    let label = gtk::Label::new(Some(&format!(
+                        "Rendering page {}...",
+                        if let Some(r) = right {
+                            format!("{} - {}", left, r)
+                        } else {
+                            format!("{}", left)
+                        }
+                    )));
+                    label.add_css_class("dim-label");
+                    loading_box.append(&spinner);
+                    loading_box.append(&label);
+
+                    let left_loaded = self.textures.get(&left);
+                    let right_loaded = right.and_then(|r| self.textures.get(&r));
+
+                    let all_needed_loaded = if right.is_some() {
+                        left_loaded.is_some() && right_loaded.is_some()
+                    } else {
+                        left_loaded.is_some()
+                    };
+
+                    if all_needed_loaded {
+                        if let Some(cached) = left_loaded {
+                            left_pic.set_texture(Some(&cached.texture));
+                            left_pic.set_visible(true);
+                        }
+                        if right.is_some() {
+                            if let Some(cached) = right_loaded {
+                                right_pic.set_texture(Some(&cached.texture));
+                                right_pic.set_visible(true);
+                            }
+                        } else {
+                            right_pic.set_visible(false);
+                        }
+                        loading_box.set_visible(false);
+                    } else {
+                        left_pic.set_visible(false);
+                        right_pic.set_visible(false);
+                        loading_box.set_visible(true);
+                    }
+
+                    self.two_page_left_pic = Some(left_pic.clone());
+                    self.two_page_right_pic = Some(right_pic.clone());
+                    self.page_pictures.insert(left, left_pic.clone());
+                    if let Some(r) = right {
+                        self.page_pictures.insert(r, right_pic.clone());
+                    }
+
+                    let left_widget = self.wrap_page(PageSlot::PagedSpreadLeft, left_pic, sender);
+                    let right_widget =
+                        self.wrap_page(PageSlot::PagedSpreadRight, right_pic, sender);
+
+                    spread_inner.append(&left_widget);
+                    spread_inner.append(&right_widget);
+                    spread_box.append(&spread_inner);
+
+                    let spacer_right = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                    spacer_right.set_hexpand(true);
+                    spread_box.append(&spacer_right);
+
+                    container.append(&spread_box);
+                    container.append(&loading_box);
+
+                    self.two_page_loading_box = Some(loading_box);
+                    self.two_page_label = Some(label);
+
+                    container.upcast()
+                }
+            },
             PdfScrollMode::VerticalScrolling => {
                 let container = gtk::Box::new(gtk::Orientation::Vertical, self.scroll_gap);
                 container.set_halign(gtk::Align::Fill);
@@ -4422,13 +4562,18 @@ impl PdfReaderModel {
                             spacer_left.set_hexpand(true);
                             spread_row.append(&spacer_left);
 
-                            let spread_inner = gtk::Box::new(gtk::Orientation::Horizontal, self.two_page_gap);
+                            let spread_inner =
+                                gtk::Box::new(gtk::Orientation::Horizontal, self.two_page_gap);
                             spread_inner.set_hexpand(false);
                             spread_inner.set_halign(gtk::Align::Center);
                             spread_inner.set_valign(gtk::Align::Start);
 
                             let left_pic = self.make_page_picture();
-                            left_pic.set_halign(if right.is_some() { gtk::Align::End } else { gtk::Align::Center });
+                            left_pic.set_halign(if right.is_some() {
+                                gtk::Align::End
+                            } else {
+                                gtk::Align::Center
+                            });
                             left_pic.set_valign(gtk::Align::Start);
                             left_pic.set_size_request(page_w, page_h);
                             left_pic.add_css_class("kalam-pdf-two-page");
@@ -4449,7 +4594,8 @@ impl PdfReaderModel {
                             }
 
                             self.page_pictures.insert(left, left_pic.clone());
-                            let left_widget = self.wrap_page(PageSlot::Fixed(left), left_pic, sender);
+                            let left_widget =
+                                self.wrap_page(PageSlot::Fixed(left), left_pic, sender);
                             spread_inner.append(&left_widget);
 
                             if let Some(r) = right {
@@ -4469,7 +4615,8 @@ impl PdfReaderModel {
                                 }
 
                                 self.page_pictures.insert(r, right_pic.clone());
-                                let right_widget = self.wrap_page(PageSlot::Fixed(r), right_pic, sender);
+                                let right_widget =
+                                    self.wrap_page(PageSlot::Fixed(r), right_pic, sender);
                                 spread_inner.append(&right_widget);
                             }
 
@@ -4521,7 +4668,8 @@ impl PdfReaderModel {
                     }
                     _ => {
                         for (left, right) in self.all_spreads() {
-                            let spread_box = gtk::Box::new(gtk::Orientation::Horizontal, self.two_page_gap);
+                            let spread_box =
+                                gtk::Box::new(gtk::Orientation::Horizontal, self.two_page_gap);
                             spread_box.set_valign(gtk::Align::Start);
                             spread_box.add_css_class("kalam-pdf-spread-row");
 
@@ -4546,7 +4694,8 @@ impl PdfReaderModel {
                             }
 
                             self.page_pictures.insert(left, left_pic.clone());
-                            let left_widget = self.wrap_page(PageSlot::Fixed(left), left_pic, sender);
+                            let left_widget =
+                                self.wrap_page(PageSlot::Fixed(left), left_pic, sender);
                             spread_box.append(&left_widget);
 
                             if let Some(r) = right {
@@ -4565,7 +4714,8 @@ impl PdfReaderModel {
                                 }
 
                                 self.page_pictures.insert(r, right_pic.clone());
-                                let right_widget = self.wrap_page(PageSlot::Fixed(r), right_pic, sender);
+                                let right_widget =
+                                    self.wrap_page(PageSlot::Fixed(r), right_pic, sender);
                                 spread_box.append(&right_widget);
                             }
 
@@ -4616,9 +4766,11 @@ impl PdfReaderModel {
     }
 
     pub fn update_paged_view(&self) {
-        let (Some(ref pic), Some(ref loading_box), Some(ref label)) =
-            (&self.paged_picture, &self.paged_loading_box, &self.paged_label)
-        else {
+        let (Some(ref pic), Some(ref loading_box), Some(ref label)) = (
+            &self.paged_picture,
+            &self.paged_loading_box,
+            &self.paged_label,
+        ) else {
             return;
         };
         self.refresh_drawing_paints();
@@ -4671,7 +4823,11 @@ impl PdfReaderModel {
         if all_needed_loaded {
             if let Some(cached) = left_loaded {
                 left_pic.set_texture(Some(&cached.texture));
-                left_pic.set_halign(if right.is_some() { gtk::Align::End } else { gtk::Align::Center });
+                left_pic.set_halign(if right.is_some() {
+                    gtk::Align::End
+                } else {
+                    gtk::Align::Center
+                });
                 left_pic.set_valign(gtk::Align::Start);
                 left_pic.set_visible(true);
             }
@@ -4807,14 +4963,16 @@ impl PdfReaderModel {
             let hadj = scroll.hadjustment();
             let max = (hadj.upper() - hadj.page_size()).max(0.0);
             if max > 0.0 {
-                let ratio = (effective_page.saturating_sub(1)) as f64 / (self.total_pages - 1) as f64;
+                let ratio =
+                    (effective_page.saturating_sub(1)) as f64 / (self.total_pages - 1) as f64;
                 hadj.set_value((ratio * max).clamp(hadj.lower(), max));
             }
         } else {
             let vadj = scroll.vadjustment();
             let max = (vadj.upper() - vadj.page_size()).max(0.0);
             if max > 0.0 {
-                let ratio = (effective_page.saturating_sub(1)) as f64 / (self.total_pages - 1) as f64;
+                let ratio =
+                    (effective_page.saturating_sub(1)) as f64 / (self.total_pages - 1) as f64;
                 vadj.set_value((ratio * max).clamp(vadj.lower(), max));
             }
         }
@@ -4833,10 +4991,11 @@ impl PdfReaderModel {
             &sw.layout_spread_btn,
             pdf_layout_for_spread_mode(self.spread_mode) == PdfLayout::Spread,
         );
-        sw.flow_control.set_selected(match pdf_flow_for_scroll_mode(self.scroll_mode) {
-            PdfFlow::Paged => 0,
-            PdfFlow::Scroll => 1,
-        });
+        sw.flow_control
+            .set_selected(match pdf_flow_for_scroll_mode(self.scroll_mode) {
+                PdfFlow::Paged => 0,
+                PdfFlow::Scroll => 1,
+            });
 
         // The gap is a Scroll choice (decision 53); in Paged the row
         // stays visible but inert, exactly as the board draws it.
@@ -5584,8 +5743,7 @@ impl Component for PdfReaderModel {
         toc_scroll.set_child(Some(&toc_list_box));
         contents_pane.append(&toc_scroll);
 
-        let (pages_pane, pages_grid, pages_widgets) =
-            build_pdf_pages_pane(&model, &sender);
+        let (pages_pane, pages_grid, pages_widgets) = build_pdf_pages_pane(&model, &sender);
         {
             let tx = sender.input_sender().clone();
             pages_widgets
@@ -5596,11 +5754,9 @@ impl Component for PdfReaderModel {
                 });
         }
 
-        let (notes_pane, notes_widgets) =
-            notes::build_pdf_notes_pane(&sender, model.word_scope);
+        let (notes_pane, notes_widgets) = notes::build_pdf_notes_pane(&sender, model.word_scope);
 
-        let (search_results_pane, search_results_widgets) =
-            build_pdf_search_results_pane(&sender);
+        let (search_results_pane, search_results_widgets) = build_pdf_search_results_pane(&sender);
 
         left_stack.add_named(&contents_pane, Some("contents"));
         left_stack.add_named(&pages_pane, Some("pages"));
@@ -5798,9 +5954,8 @@ impl Component for PdfReaderModel {
                 &["kalam-inline-icon"],
             )));
             bubble_button.set_tooltip_text(Some("Minimize to Bubble"));
-            bubble_button.update_property(&[gtk::accessible::Property::Label(
-                "Minimize to Bubble",
-            )]);
+            bubble_button
+                .update_property(&[gtk::accessible::Property::Label("Minimize to Bubble")]);
             bubble_button.set_size_request(44, 44);
 
             let tx = sender.input_sender().clone();
@@ -5989,14 +6144,11 @@ impl Component for PdfReaderModel {
                 gtk::Shortcut::builder()
                     .trigger(&copy_trigger)
                     .action(&gtk::CallbackAction::new(move |w, _| {
-                        let typing = w
-                            .root()
-                            .and_then(|r| r.focus())
-                            .is_some_and(|f| {
-                                f.is::<gtk::Editable>()
-                                    || f.is::<gtk::Text>()
-                                    || f.is::<gtk::TextView>()
-                            });
+                        let typing = w.root().and_then(|r| r.focus()).is_some_and(|f| {
+                            f.is::<gtk::Editable>()
+                                || f.is::<gtk::Text>()
+                                || f.is::<gtk::TextView>()
+                        });
                         if typing {
                             return gtk::glib::Propagation::Proceed;
                         }
@@ -6011,14 +6163,11 @@ impl Component for PdfReaderModel {
                 gtk::Shortcut::builder()
                     .trigger(&search_trigger)
                     .action(&gtk::CallbackAction::new(move |w, _| {
-                        let typing = w
-                            .root()
-                            .and_then(|r| r.focus())
-                            .is_some_and(|f| {
-                                f.is::<gtk::Editable>()
-                                    || f.is::<gtk::Text>()
-                                    || f.is::<gtk::TextView>()
-                            });
+                        let typing = w.root().and_then(|r| r.focus()).is_some_and(|f| {
+                            f.is::<gtk::Editable>()
+                                || f.is::<gtk::Text>()
+                                || f.is::<gtk::TextView>()
+                        });
                         if typing {
                             return gtk::glib::Propagation::Proceed;
                         }
@@ -6136,7 +6285,9 @@ impl Component for PdfReaderModel {
             draw_toolbar_motion.connect_leave(move |_| {
                 let _ = tx_leave.send(PdfReaderMsg::DrawToolbarHover(false));
             });
-            widgets.draw_toolbar_host.add_controller(draw_toolbar_motion);
+            widgets
+                .draw_toolbar_host
+                .add_controller(draw_toolbar_motion);
         }
 
         // 7. Clicking the location text opens the jump field: it
@@ -6285,7 +6436,12 @@ impl Component for PdfReaderModel {
                         }
 
                         if let Some(ref doc) = cached_doc {
-                            if let Ok(rendered) = doc.render_page_rgba_rotated(req.page, req.scale, req.smart_crop, req.rotation) {
+                            if let Ok(rendered) = doc.render_page_rgba_rotated(
+                                req.page,
+                                req.scale,
+                                req.smart_crop,
+                                req.rotation,
+                            ) {
                                 if req.generation == gen.load(Ordering::Relaxed) {
                                     let bytes = glib::Bytes::from_owned(rendered.samples);
                                     let texture = gdk::MemoryTexture::new(
@@ -6318,8 +6474,7 @@ impl Component for PdfReaderModel {
         // available batch newest-first and renders a page once,
         // so a fast scroll does not leave the now-visible cells
         // queued behind every thumbnail they passed on the way.
-        let (thumbnail_tx, thumbnail_rx) =
-            async_channel::unbounded::<PdfThumbnailRequest>();
+        let (thumbnail_tx, thumbnail_rx) = async_channel::unbounded::<PdfThumbnailRequest>();
         let thumbnail_gen = Arc::new(AtomicU64::new(1));
         {
             let rx = thumbnail_rx.clone();
@@ -6353,8 +6508,7 @@ impl Component for PdfReaderModel {
                             }
 
                             let texture = cached_doc.as_ref().and_then(|doc| {
-                                let (width, height) =
-                                    doc.page_dimensions(req.page).ok()?;
+                                let (width, height) = doc.page_dimensions(req.page).ok()?;
                                 let scale = pages_grid::thumbnail_render_scale(
                                     width as f64,
                                     height as f64,
@@ -6362,12 +6516,7 @@ impl Component for PdfReaderModel {
                                     req.target_width,
                                 );
                                 let rendered = doc
-                                    .render_page_rgba_rotated(
-                                        req.page,
-                                        scale,
-                                        false,
-                                        req.rotation,
-                                    )
+                                    .render_page_rgba_rotated(req.page, scale, false, req.rotation)
                                     .ok()?;
                                 if req.generation != active.load(Ordering::Relaxed) {
                                     return None;
@@ -6434,9 +6583,14 @@ impl Component for PdfReaderModel {
                     if let Some(ref doc) = cached_doc {
                         let scale = 2.0f32; // 144 DPI for crisp OCR character boundaries
                         if let Ok(rendered) = doc.render_page_rgba(req.page, scale, false) {
-                            let (width_pts, height_pts) = doc.page_dimensions(req.page)
-                                .unwrap_or((rendered.width as f32 / scale, rendered.height as f32 / scale));
-                            match crate::ocr::perform_ocr(engine, &rendered, req.page, width_pts, height_pts) {
+                            let (width_pts, height_pts) =
+                                doc.page_dimensions(req.page).unwrap_or((
+                                    rendered.width as f32 / scale,
+                                    rendered.height as f32 / scale,
+                                ));
+                            match crate::ocr::perform_ocr(
+                                engine, &rendered, req.page, width_pts, height_pts,
+                            ) {
                                 Ok(page_text) => {
                                     if req.generation == ocr_gen.load(Ordering::Relaxed) {
                                         let _ = tx_ocr_msg.send(PdfReaderMsg::PageOcrResult {
@@ -6483,15 +6637,9 @@ impl Component for PdfReaderModel {
                 let mut cached_error: Option<PdfLoadError> = None;
                 while let Ok(req) = doc_rx.recv_blocking() {
                     let (path, revision) = match &req {
-                        PdfDocRequest::Info {
-                            path, revision, ..
-                        }
-                        | PdfDocRequest::ExtractText {
-                            path, revision, ..
-                        }
-                        | PdfDocRequest::Search {
-                            path, revision, ..
-                        } => (path.clone(), *revision),
+                        PdfDocRequest::Info { path, revision, .. }
+                        | PdfDocRequest::ExtractText { path, revision, .. }
+                        | PdfDocRequest::Search { path, revision, .. } => (path.clone(), *revision),
                     };
                     let request_key = (path.clone(), revision);
                     // A failed open is retried rather than cached as
@@ -6712,29 +6860,29 @@ impl Component for PdfReaderModel {
                     // The unsaved-changes answer sends Close
                     // again once the edit is discarded or applied.
                 } else {
-                self.commit_drawing_text_editor();
-                self.commit_sticky_card_text();
-                self.save_progress();
-                if let Some(sid) = self.session_id {
-                    let elapsed = self.session_start.elapsed().as_secs() as i64;
-                    let pct = if self.total_pages > 0 {
-                        ((self.current_page as f64 / self.total_pages as f64) * 100.0).round() as i64
-                    } else {
-                        0
-                    };
-                    let _ = self.catalog.end_reading_session(sid, elapsed, pct);
-                }
-                self.cleanup_memory();
-                let _ = sender.output_sender().send(PdfReaderOut::Close);
+                    self.commit_drawing_text_editor();
+                    self.commit_sticky_card_text();
+                    self.save_progress();
+                    if let Some(sid) = self.session_id {
+                        let elapsed = self.session_start.elapsed().as_secs() as i64;
+                        let pct = if self.total_pages > 0 {
+                            ((self.current_page as f64 / self.total_pages as f64) * 100.0).round()
+                                as i64
+                        } else {
+                            0
+                        };
+                        let _ = self.catalog.end_reading_session(sid, elapsed, pct);
+                    }
+                    self.cleanup_memory();
+                    let _ = sender.output_sender().send(PdfReaderOut::Close);
                 }
             }
             PdfReaderMsg::MinimizeToBubble => {
-                if !self.page_edit_blocks_leave(
-                    PdfPageEditLeaveIntent::MinimizeToBubble,
-                    &sender,
-                ) {
+                if !self.page_edit_blocks_leave(PdfPageEditLeaveIntent::MinimizeToBubble, &sender) {
                     self.save_progress();
-                    let _ = sender.output_sender().send(PdfReaderOut::MinimizeToBubble { book_id: self.book_id });
+                    let _ = sender.output_sender().send(PdfReaderOut::MinimizeToBubble {
+                        book_id: self.book_id,
+                    });
                 }
             }
             PdfReaderMsg::PasswordEdited => {
@@ -6754,8 +6902,7 @@ impl Component for PdfReaderModel {
             }
             PdfReaderMsg::SubmitPassword => {
                 if let PdfOpenState::Password {
-                    submitting: false,
-                    ..
+                    submitting: false, ..
                 } = self.open_state
                 {
                     let password = widgets.password_entry.text().to_string();
@@ -6822,9 +6969,7 @@ impl Component for PdfReaderModel {
                     let s = sender.input_sender().clone();
                     crate::tasks::spawn(
                         format!("Deleting {title}"),
-                        move |_reporter| {
-                            catalog.delete_book(id).map_err(|e| e.to_string())
-                        },
+                        move |_reporter| catalog.delete_book(id).map_err(|e| e.to_string()),
                         |_| {},
                         move |res| {
                             let _ = s.send(PdfReaderMsg::RemoveBookDone(res));
@@ -6874,9 +7019,7 @@ impl Component for PdfReaderModel {
                         drawings::sync_drawing_toolbar(widgets_draw, self);
                     }
                 } else if self.search_results_open {
-                    let _ = sender
-                        .input_sender()
-                        .send(PdfReaderMsg::CloseSearchResults);
+                    let _ = sender.input_sender().send(PdfReaderMsg::CloseSearchResults);
                 } else if self.search_active {
                     let _ = sender.input_sender().send(PdfReaderMsg::CloseSearch);
                 } else if self.jump_open {
@@ -6888,8 +7031,7 @@ impl Component for PdfReaderModel {
                     // Pages Edit is its own layer: a clean edit
                     // leaves, a dirty one asks (decision 70), and
                     // either way this Escape is spent on it.
-                    let _ = self
-                        .page_edit_blocks_leave(PdfPageEditLeaveIntent::ExitMode, &sender);
+                    let _ = self.page_edit_blocks_leave(PdfPageEditLeaveIntent::ExitMode, &sender);
                 } else if (self.left_panel_open && !self.left_panel_pinned)
                     || (self.right_panel_open && !self.right_panel_pinned)
                 {
@@ -6940,9 +7082,7 @@ impl Component for PdfReaderModel {
                 self.search_query_anchor_page = self.current_page;
                 self.search_pending = query.trim().chars().count() >= 2;
                 if self.search_pending {
-                    if let (Some(path), Some(tx)) =
-                        (self.file_path.clone(), self.doc_tx.as_ref())
-                    {
+                    if let (Some(path), Some(tx)) = (self.file_path.clone(), self.doc_tx.as_ref()) {
                         // Search runs on the doc service; results
                         // arrive in SearchReady and are applied
                         // only if the query is still current.
@@ -6981,11 +7121,7 @@ impl Component for PdfReaderModel {
                 self.search_index = standing_raw
                     .and_then(|raw| scoped.iter().position(|candidate| *candidate == raw))
                     .unwrap_or_else(|| {
-                        pdf_search_start_position(
-                            &self.search_results,
-                            &scoped,
-                            standing_page,
-                        )
+                        pdf_search_start_position(&self.search_results, &scoped, standing_page)
                     });
                 self.highlight_search_matches(widgets, &sender);
                 self.update_search_results_panel();
@@ -7061,8 +7197,7 @@ impl Component for PdfReaderModel {
             }
             PdfReaderMsg::JumpToSearchResult(raw_index) => {
                 let scoped = self.search_scoped_indices();
-                if let Some(position) =
-                    scoped.iter().position(|candidate| *candidate == raw_index)
+                if let Some(position) = scoped.iter().position(|candidate| *candidate == raw_index)
                 {
                     self.search_index = position;
                     self.highlight_search_matches(widgets, &sender);
@@ -7099,12 +7234,10 @@ impl Component for PdfReaderModel {
                     self.trigger_loads(&sender);
 
                     match self.scroll_mode {
-                        PdfScrollMode::PageScrolling => {
-                            match self.spread_mode {
-                                PdfSpreadMode::NoSpreads => self.update_paged_view(),
-                                _ => self.update_two_page_view(),
-                            }
-                        }
+                        PdfScrollMode::PageScrolling => match self.spread_mode {
+                            PdfSpreadMode::NoSpreads => self.update_paged_view(),
+                            _ => self.update_two_page_view(),
+                        },
                         _ => {
                             self.scroll_to_current_page(&widgets.viewport_scroll);
                         }
@@ -7132,12 +7265,10 @@ impl Component for PdfReaderModel {
                     self.trigger_loads(&sender);
 
                     match self.scroll_mode {
-                        PdfScrollMode::PageScrolling => {
-                            match self.spread_mode {
-                                PdfSpreadMode::NoSpreads => self.update_paged_view(),
-                                _ => self.update_two_page_view(),
-                            }
-                        }
+                        PdfScrollMode::PageScrolling => match self.spread_mode {
+                            PdfSpreadMode::NoSpreads => self.update_paged_view(),
+                            _ => self.update_two_page_view(),
+                        },
                         _ => {
                             self.scroll_to_current_page(&widgets.viewport_scroll);
                         }
@@ -7153,12 +7284,10 @@ impl Component for PdfReaderModel {
                     self.prune_textures();
                     self.trigger_loads(&sender);
                     match self.scroll_mode {
-                        PdfScrollMode::PageScrolling => {
-                            match self.spread_mode {
-                                PdfSpreadMode::NoSpreads => self.update_paged_view(),
-                                _ => self.update_two_page_view(),
-                            }
-                        }
+                        PdfScrollMode::PageScrolling => match self.spread_mode {
+                            PdfSpreadMode::NoSpreads => self.update_paged_view(),
+                            _ => self.update_two_page_view(),
+                        },
                         _ => {
                             self.scroll_to_current_page(&widgets.viewport_scroll);
                         }
@@ -7174,12 +7303,10 @@ impl Component for PdfReaderModel {
                     self.prune_textures();
                     self.trigger_loads(&sender);
                     match self.scroll_mode {
-                        PdfScrollMode::PageScrolling => {
-                            match self.spread_mode {
-                                PdfSpreadMode::NoSpreads => self.update_paged_view(),
-                                _ => self.update_two_page_view(),
-                            }
-                        }
+                        PdfScrollMode::PageScrolling => match self.spread_mode {
+                            PdfSpreadMode::NoSpreads => self.update_paged_view(),
+                            _ => self.update_two_page_view(),
+                        },
                         _ => {
                             self.scroll_to_current_page(&widgets.viewport_scroll);
                         }
@@ -7265,10 +7392,13 @@ impl Component for PdfReaderModel {
                         PdfSpreadMode::OddSpreads => "odd",
                         PdfSpreadMode::EvenSpreads => "even",
                     };
-                    self.catalog.set_pref(&format!("book.{}.pdf.spread_mode", self.book_id), mode_str);
+                    self.catalog
+                        .set_pref(&format!("book.{}.pdf.spread_mode", self.book_id), mode_str);
                     self.catalog.set_pref("reader.pdf.spread_mode", mode_str);
                 } else {
-                    let _ = sender.input_sender().send(PdfReaderMsg::SetSpreadMode(target));
+                    let _ = sender
+                        .input_sender()
+                        .send(PdfReaderMsg::SetSpreadMode(target));
                 }
             }
             PdfReaderMsg::SetFlow(flow) => {
@@ -7280,7 +7410,10 @@ impl Component for PdfReaderModel {
                 if self.cover_on_its_own != on {
                     self.cover_on_its_own = on;
                     let value = if on { "1" } else { "0" };
-                    self.catalog.set_pref(&format!("book.{}.pdf.cover_on_its_own", self.book_id), value);
+                    self.catalog.set_pref(
+                        &format!("book.{}.pdf.cover_on_its_own", self.book_id),
+                        value,
+                    );
                     self.catalog.set_pref("reader.pdf.cover_on_its_own", value);
                     if pdf_layout_for_spread_mode(self.spread_mode) == PdfLayout::Spread {
                         // Repairing is an explicit page-style choice too.
@@ -7295,8 +7428,12 @@ impl Component for PdfReaderModel {
                 let clamped = gap.clamp(0, PDF_MAX_SCROLL_GAP);
                 if self.scroll_gap != clamped {
                     self.scroll_gap = clamped;
-                    self.catalog.set_pref_i64(&format!("book.{}.pdf.scroll_gap", self.book_id), clamped as i64);
-                    self.catalog.set_pref_i64("reader.pdf.scroll_gap", clamped as i64);
+                    self.catalog.set_pref_i64(
+                        &format!("book.{}.pdf.scroll_gap", self.book_id),
+                        clamped as i64,
+                    );
+                    self.catalog
+                        .set_pref_i64("reader.pdf.scroll_gap", clamped as i64);
                     if self.scroll_mode != PdfScrollMode::PageScrolling {
                         // Container spacing is baked at build time.
                         let child = self.build_viewport_widget(&sender);
@@ -7314,7 +7451,8 @@ impl Component for PdfReaderModel {
                 if next != self.rotation_degrees {
                     let old_zoom = self.zoom_level;
                     self.rotation_degrees = next;
-                    self.catalog.set_pref_i64(&format!("book.{}.pdf.rotation", self.book_id), next as i64);
+                    self.catalog
+                        .set_pref_i64(&format!("book.{}.pdf.rotation", self.book_id), next as i64);
                     self.sync_display_page_dimensions();
                     self.invalidate_thumbnails();
                     // A quarter turn changes what every fit means.
@@ -7334,7 +7472,8 @@ impl Component for PdfReaderModel {
                         PdfScrollMode::HorizontalScrolling => "horizontal",
                         PdfScrollMode::WrappedScrolling => "wrapped",
                     };
-                    self.catalog.set_pref(&format!("book.{}.pdf.scroll_mode", self.book_id), mode_str);
+                    self.catalog
+                        .set_pref(&format!("book.{}.pdf.scroll_mode", self.book_id), mode_str);
                     self.catalog.set_pref("reader.pdf.scroll_mode", mode_str);
 
                     // The flow is one of the fit's inputs (its margins,
@@ -7373,7 +7512,8 @@ impl Component for PdfReaderModel {
                         PdfSpreadMode::OddSpreads => "odd",
                         PdfSpreadMode::EvenSpreads => "even",
                     };
-                    self.catalog.set_pref(&format!("book.{}.pdf.spread_mode", self.book_id), mode_str);
+                    self.catalog
+                        .set_pref(&format!("book.{}.pdf.spread_mode", self.book_id), mode_str);
                     self.catalog.set_pref("reader.pdf.spread_mode", mode_str);
 
                     if self.refresh_fit_zoom(&widgets.viewport_scroll) {
@@ -7420,7 +7560,8 @@ impl Component for PdfReaderModel {
                 let clamped = gap.clamp(0, 48);
                 if self.two_page_gap != clamped {
                     self.two_page_gap = clamped;
-                    self.catalog.set_pref_i64("reader.pdf.two_page_gap", clamped as i64);
+                    self.catalog
+                        .set_pref_i64("reader.pdf.two_page_gap", clamped as i64);
                     if self.spread_mode != PdfSpreadMode::NoSpreads {
                         if self.refresh_fit_zoom(&widgets.viewport_scroll) {
                             self.invalidate_renders();
@@ -7459,7 +7600,10 @@ impl Component for PdfReaderModel {
                         self.progress_fraction(),
                         &format!("Page {}", self.current_page),
                     );
-                    crate::notify::compact("Bookmark saved", &format!("Page {}", self.current_page));
+                    crate::notify::compact(
+                        "Bookmark saved",
+                        &format!("Page {}", self.current_page),
+                    );
                 }
                 self.reload_bookmarks();
                 self.refresh_notes_panel(&sender);
@@ -7560,14 +7704,15 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::SetSelectedDrawingColor(color) => {
-                let sticky = self.selected_drawing_id.and_then(|id| {
-                    self.drawings.iter().find(|drawing| drawing.id == id)
-                }).is_some_and(|drawing| {
-                    matches!(
-                        drawing.geometry,
-                        crate::db::PdfDrawingGeometry::Sticky { .. }
-                    )
-                });
+                let sticky = self
+                    .selected_drawing_id
+                    .and_then(|id| self.drawings.iter().find(|drawing| drawing.id == id))
+                    .is_some_and(|drawing| {
+                        matches!(
+                            drawing.geometry,
+                            crate::db::PdfDrawingGeometry::Sticky { .. }
+                        )
+                    });
                 if sticky {
                     self.draw_settings.sticky_color = color;
                     self.draw_settings.persist(&self.catalog);
@@ -7632,9 +7777,8 @@ impl Component for PdfReaderModel {
             }
             PdfReaderMsg::SetSelectedShapeKind(kind) => {
                 self.mutate_selected_drawing("Could not change the shape", |drawing| {
-                    if let crate::db::PdfDrawingGeometry::Shape {
-                        shape, filled, ..
-                    } = &mut drawing.geometry
+                    if let crate::db::PdfDrawingGeometry::Shape { shape, filled, .. } =
+                        &mut drawing.geometry
                     {
                         *shape = kind.as_str().to_string();
                         if !kind.can_fill() {
@@ -7671,16 +7815,14 @@ impl Component for PdfReaderModel {
                     } = &mut drawing.geometry
                     {
                         *saved = size.as_str().to_string();
-                        rect.3 =
-                            Self::text_rect_height(text, size, rect.2, rect.3);
+                        rect.3 = Self::text_rect_height(text, size, rect.2, rect.3);
                     }
                 });
             }
             PdfReaderMsg::SetSelectedTextPaper(enabled) => {
                 self.mutate_selected_drawing("Could not change the text box", |drawing| {
                     if let crate::db::PdfDrawingGeometry::Text {
-                        paper_background,
-                        ..
+                        paper_background, ..
                     } = &mut drawing.geometry
                     {
                         *paper_background = enabled;
@@ -7755,112 +7897,107 @@ impl Component for PdfReaderModel {
                         self.sync_pages_grid_document();
                     }
                 } else {
-                // Decision 30: deletions are direct because Ctrl+Z
-                // brings them back — the row as it stood, restored
-                // exactly. A failed restore keeps its place on the
-                // stack rather than being lost with the attempt.
-                if let Some(mark) = self.deleted_marks.pop() {
-                    match mark {
-                        PdfDeletedMark::Annotation(row) => {
-                            match self.catalog.restore_annotation(&row) {
-                                Ok(()) => self.reload_annotations(),
-                                Err(err) => {
-                                    self.deleted_marks
-                                        .push(PdfDeletedMark::Annotation(row));
-                                    crate::notify::error(
-                                        "Could not bring the highlight back",
-                                        &err.to_string(),
-                                    );
-                                }
-                            }
-                        }
-                        PdfDeletedMark::Bookmark(row) => {
-                            match self.catalog.restore_reading_bookmark(&row) {
-                                Ok(()) => {
-                                    self.reload_bookmarks();
-                                    self.update_bookmark_icon_state(widgets);
-                                }
-                                Err(err) => {
-                                    self.deleted_marks
-                                        .push(PdfDeletedMark::Bookmark(row));
-                                    crate::notify::error(
-                                        "Could not bring the bookmark back",
-                                        &err.to_string(),
-                                    );
-                                }
-                            }
-                        }
-                        PdfDeletedMark::SavedWord(row) => {
-                            match self.catalog.restore_saved_word(&row) {
-                                Ok(()) => self.reload_saved_words(),
-                                Err(err) => {
-                                    self.deleted_marks
-                                        .push(PdfDeletedMark::SavedWord(row));
-                                    crate::notify::error(
-                                        "Could not bring the word back",
-                                        &err.to_string(),
-                                    );
-                                }
-                            }
-                        }
-                        PdfDeletedMark::Drawing(row) => {
-                            match self.catalog.restore_pdf_drawing(&row) {
-                                Ok(()) => {
-                                    self.reload_drawings();
-                                    self.refresh_drawing_paints();
-                                    self.queue_all_drawing_areas();
-                                }
-                                Err(err) => {
-                                    self.deleted_marks
-                                        .push(PdfDeletedMark::Drawing(row));
-                                    crate::notify::error(
-                                        "Could not bring the drawing back",
-                                        &err.to_string(),
-                                    );
-                                }
-                            }
-                        }
-                        PdfDeletedMark::DrawingCreated(row) => {
-                            match self.catalog.delete_pdf_drawing(row.id) {
-                                Ok(()) => {
-                                    if self.selected_drawing_id == Some(row.id) {
-                                        self.selected_drawing_id = None;
-                                        self.dismiss_drawing_popover();
+                    // Decision 30: deletions are direct because Ctrl+Z
+                    // brings them back — the row as it stood, restored
+                    // exactly. A failed restore keeps its place on the
+                    // stack rather than being lost with the attempt.
+                    if let Some(mark) = self.deleted_marks.pop() {
+                        match mark {
+                            PdfDeletedMark::Annotation(row) => {
+                                match self.catalog.restore_annotation(&row) {
+                                    Ok(()) => self.reload_annotations(),
+                                    Err(err) => {
+                                        self.deleted_marks.push(PdfDeletedMark::Annotation(row));
+                                        crate::notify::error(
+                                            "Could not bring the highlight back",
+                                            &err.to_string(),
+                                        );
                                     }
-                                    self.reload_drawings();
-                                    self.refresh_drawing_paints();
-                                    self.queue_all_drawing_areas();
                                 }
-                                Err(err) => {
-                                    self.deleted_marks
-                                        .push(PdfDeletedMark::DrawingCreated(row));
-                                    crate::notify::error(
-                                        "Could not remove the drawing",
-                                        &err.to_string(),
-                                    );
+                            }
+                            PdfDeletedMark::Bookmark(row) => {
+                                match self.catalog.restore_reading_bookmark(&row) {
+                                    Ok(()) => {
+                                        self.reload_bookmarks();
+                                        self.update_bookmark_icon_state(widgets);
+                                    }
+                                    Err(err) => {
+                                        self.deleted_marks.push(PdfDeletedMark::Bookmark(row));
+                                        crate::notify::error(
+                                            "Could not bring the bookmark back",
+                                            &err.to_string(),
+                                        );
+                                    }
+                                }
+                            }
+                            PdfDeletedMark::SavedWord(row) => {
+                                match self.catalog.restore_saved_word(&row) {
+                                    Ok(()) => self.reload_saved_words(),
+                                    Err(err) => {
+                                        self.deleted_marks.push(PdfDeletedMark::SavedWord(row));
+                                        crate::notify::error(
+                                            "Could not bring the word back",
+                                            &err.to_string(),
+                                        );
+                                    }
+                                }
+                            }
+                            PdfDeletedMark::Drawing(row) => {
+                                match self.catalog.restore_pdf_drawing(&row) {
+                                    Ok(()) => {
+                                        self.reload_drawings();
+                                        self.refresh_drawing_paints();
+                                        self.queue_all_drawing_areas();
+                                    }
+                                    Err(err) => {
+                                        self.deleted_marks.push(PdfDeletedMark::Drawing(row));
+                                        crate::notify::error(
+                                            "Could not bring the drawing back",
+                                            &err.to_string(),
+                                        );
+                                    }
+                                }
+                            }
+                            PdfDeletedMark::DrawingCreated(row) => {
+                                match self.catalog.delete_pdf_drawing(row.id) {
+                                    Ok(()) => {
+                                        if self.selected_drawing_id == Some(row.id) {
+                                            self.selected_drawing_id = None;
+                                            self.dismiss_drawing_popover();
+                                        }
+                                        self.reload_drawings();
+                                        self.refresh_drawing_paints();
+                                        self.queue_all_drawing_areas();
+                                    }
+                                    Err(err) => {
+                                        self.deleted_marks
+                                            .push(PdfDeletedMark::DrawingCreated(row));
+                                        crate::notify::error(
+                                            "Could not remove the drawing",
+                                            &err.to_string(),
+                                        );
+                                    }
+                                }
+                            }
+                            PdfDeletedMark::DrawingBefore(row) => {
+                                match self.catalog.update_pdf_drawing(&row) {
+                                    Ok(()) => {
+                                        self.reload_drawings();
+                                        self.refresh_drawing_paints();
+                                        self.queue_all_drawing_areas();
+                                    }
+                                    Err(err) => {
+                                        self.deleted_marks.push(PdfDeletedMark::DrawingBefore(row));
+                                        crate::notify::error(
+                                            "Could not put the drawing back",
+                                            &err.to_string(),
+                                        );
+                                    }
                                 }
                             }
                         }
-                        PdfDeletedMark::DrawingBefore(row) => {
-                            match self.catalog.update_pdf_drawing(&row) {
-                                Ok(()) => {
-                                    self.reload_drawings();
-                                    self.refresh_drawing_paints();
-                                    self.queue_all_drawing_areas();
-                                }
-                                Err(err) => {
-                                    self.deleted_marks
-                                        .push(PdfDeletedMark::DrawingBefore(row));
-                                    crate::notify::error(
-                                        "Could not put the drawing back",
-                                        &err.to_string(),
-                                    );
-                                }
-                            }
-                        }
+                        self.refresh_notes_panel(&sender);
                     }
-                    self.refresh_notes_panel(&sender);
-                }
                 }
             }
             PdfReaderMsg::JumpToPage(target_page) => {
@@ -7871,12 +8008,10 @@ impl Component for PdfReaderModel {
                 self.trigger_loads(&sender);
 
                 match self.scroll_mode {
-                    PdfScrollMode::PageScrolling => {
-                        match self.spread_mode {
-                            PdfSpreadMode::NoSpreads => self.update_paged_view(),
-                            _ => self.update_two_page_view(),
-                        }
-                    }
+                    PdfScrollMode::PageScrolling => match self.spread_mode {
+                        PdfSpreadMode::NoSpreads => self.update_paged_view(),
+                        _ => self.update_two_page_view(),
+                    },
                     _ => {
                         self.scroll_to_current_page(&widgets.viewport_scroll);
                     }
@@ -7899,13 +8034,19 @@ impl Component for PdfReaderModel {
                     self.image_settings.trim_margins = crop;
                     self.catalog.set_pref(
                         &format!("book.{}.pdf.smart_crop", self.book_id),
-                        if self.image_settings.trim_margins { "1" } else { "0" },
+                        if self.image_settings.trim_margins {
+                            "1"
+                        } else {
+                            "0"
+                        },
                     );
                     self.apply_zoom_change(self.zoom_level, &sender, &widgets.viewport_scroll);
                 }
             }
             PdfReaderMsg::ToggleSmartCrop => {
-                let _ = sender.input_sender().send(PdfReaderMsg::SetSmartCrop(!self.image_settings.trim_margins));
+                let _ = sender.input_sender().send(PdfReaderMsg::SetSmartCrop(
+                    !self.image_settings.trim_margins,
+                ));
             }
             PdfReaderMsg::SetPageColour(colour) => {
                 if self.image_settings.page_colour != colour {
@@ -7971,24 +8112,19 @@ impl Component for PdfReaderModel {
                 let theme = crate::theme::current(&self.catalog);
                 self.image_paper_rgb = image::rgb_from_hex(theme.paper);
                 let was_trimmed = self.image_settings.trim_margins;
-                self.image_settings =
-                    PdfImageSettings::defaults_for_theme(theme.dark, false);
+                self.image_settings = PdfImageSettings::defaults_for_theme(theme.dark, false);
                 self.persist_image_settings();
                 self.refresh_page_images();
                 if was_trimmed {
-                    self.catalog.set_pref(
-                        &format!("book.{}.pdf.smart_crop", self.book_id),
-                        "0",
-                    );
+                    self.catalog
+                        .set_pref(&format!("book.{}.pdf.smart_crop", self.book_id), "0");
                     self.apply_zoom_change(self.zoom_level, &sender, &widgets.viewport_scroll);
                 }
             }
             PdfReaderMsg::SetLeftTab(tab) => {
                 if tab != PdfLeftTab::Pages
-                    && self.page_edit_blocks_leave(
-                        PdfPageEditLeaveIntent::SwitchLeftTab(tab),
-                        &sender,
-                    )
+                    && self
+                        .page_edit_blocks_leave(PdfPageEditLeaveIntent::SwitchLeftTab(tab), &sender)
                 {
                     // Restore the segmented control to the tab
                     // still on screen while the question stands.
@@ -8016,16 +8152,10 @@ impl Component for PdfReaderModel {
                 widgets.left_revealer.set_reveal_child(true);
                 self.expand_current_toc_branch();
                 self.refresh_left_panel(widgets, &sender);
-                if !was_open
-                    && self.left_tab == PdfLeftTab::Contents
-                    && !self.search_results_open
-                {
+                if !was_open && self.left_tab == PdfLeftTab::Contents && !self.search_results_open {
                     self.scroll_toc_to_current();
                 }
-                if !was_open
-                    && self.left_tab == PdfLeftTab::Pages
-                    && !self.search_results_open
-                {
+                if !was_open && self.left_tab == PdfLeftTab::Pages && !self.search_results_open {
                     self.scroll_pages_to_current();
                 }
                 if !was_open && self.search_results_open {
@@ -8099,12 +8229,11 @@ impl Component for PdfReaderModel {
                 self.refresh_notes_panel(&sender);
             }
             PdfReaderMsg::ToggleHighlightColourFilter(colour) => {
-                self.highlight_colour_filter =
-                    if self.highlight_colour_filter == Some(colour) {
-                        None
-                    } else {
-                        Some(colour)
-                    };
+                self.highlight_colour_filter = if self.highlight_colour_filter == Some(colour) {
+                    None
+                } else {
+                    Some(colour)
+                };
                 self.refresh_notes_panel(&sender);
             }
             PdfReaderMsg::ToggleHighlightSearch => {
@@ -8145,13 +8274,9 @@ impl Component for PdfReaderModel {
                         .pages_widgets
                         .as_ref()
                         .and_then(|pages| {
-                            self.pages_grid
-                                .as_ref()
-                                .and_then(|grid| {
-                                    grid.first_visible_page(
-                                        pages.scroll.vadjustment().value(),
-                                    )
-                                })
+                            self.pages_grid.as_ref().and_then(|grid| {
+                                grid.first_visible_page(pages.scroll.vadjustment().value())
+                            })
                         })
                         .unwrap_or(self.current_page);
                     self.pages_columns = columns;
@@ -8355,21 +8480,19 @@ impl Component for PdfReaderModel {
                 }
 
                 match self.scroll_mode {
-                    PdfScrollMode::PageScrolling => {
-                        match self.spread_mode {
-                            PdfSpreadMode::NoSpreads => {
-                                if page == self.current_page {
-                                    self.update_paged_view();
-                                }
-                            }
-                            _ => {
-                                let (left, right) = self.spread_for_page(self.current_page);
-                                if page == left || right == Some(page) {
-                                    self.update_two_page_view();
-                                }
+                    PdfScrollMode::PageScrolling => match self.spread_mode {
+                        PdfSpreadMode::NoSpreads => {
+                            if page == self.current_page {
+                                self.update_paged_view();
                             }
                         }
-                    }
+                        _ => {
+                            let (left, right) = self.spread_for_page(self.current_page);
+                            if page == left || right == Some(page) {
+                                self.update_two_page_view();
+                            }
+                        }
+                    },
                     PdfScrollMode::WrappedScrolling => {
                         if let Some(pic) = self.page_pictures.get(&page) {
                             pic.set_texture(Some(&texture));
@@ -8383,39 +8506,50 @@ impl Component for PdfReaderModel {
                             widgets.viewport_scroll.queue_draw();
                         }
                     }
-                    _ => {
-                        match self.spread_mode {
-                            PdfSpreadMode::NoSpreads => {
-                                if let Some(pic) = self.page_pictures.get(&page) {
-                                    pic.set_texture(Some(&texture));
-                                    let target_w = (self.base_page_width * self.zoom_level) as i32;
-                                    let target_h = (self.base_page_height * self.zoom_level) as i32;
-                                    pic.set_size_request(target_w, target_h);
-                                    pic.remove_css_class("kalam-pdf-placeholder");
-                                    pic.add_css_class("kalam-pdf-page-image");
-                                    pic.queue_resize();
-                                    pic.queue_draw();
-                                    widgets.viewport_scroll.queue_draw();
-                                }
+                    _ => match self.spread_mode {
+                        PdfSpreadMode::NoSpreads => {
+                            if let Some(pic) = self.page_pictures.get(&page) {
+                                pic.set_texture(Some(&texture));
+                                let target_w = (self.base_page_width * self.zoom_level) as i32;
+                                let target_h = (self.base_page_height * self.zoom_level) as i32;
+                                pic.set_size_request(target_w, target_h);
+                                pic.remove_css_class("kalam-pdf-placeholder");
+                                pic.add_css_class("kalam-pdf-page-image");
+                                pic.queue_resize();
+                                pic.queue_draw();
+                                widgets.viewport_scroll.queue_draw();
                             }
-                            _ => {
-                                let (left, right) = self.spread_for_page(page);
-                                let left_cached = self.textures.get(&left);
-                                let right_cached = right.and_then(|r| self.textures.get(&r));
+                        }
+                        _ => {
+                            let (left, right) = self.spread_for_page(page);
+                            let left_cached = self.textures.get(&left);
+                            let right_cached = right.and_then(|r| self.textures.get(&r));
 
-                                let spread_ready = if right.is_some() {
-                                    left_cached.is_some() && right_cached.is_some()
-                                } else {
-                                    left_cached.is_some()
-                                };
+                            let spread_ready = if right.is_some() {
+                                left_cached.is_some() && right_cached.is_some()
+                            } else {
+                                left_cached.is_some()
+                            };
 
-                                if spread_ready {
-                                    let target_w = (self.base_page_width * self.zoom_level) as i32;
-                                    let target_h = (self.base_page_height * self.zoom_level) as i32;
+                            if spread_ready {
+                                let target_w = (self.base_page_width * self.zoom_level) as i32;
+                                let target_h = (self.base_page_height * self.zoom_level) as i32;
 
-                                    if let Some(left_tex) = left_cached {
-                                        if let Some(pic) = self.page_pictures.get(&left) {
-                                            pic.set_texture(Some(&left_tex.texture));
+                                if let Some(left_tex) = left_cached {
+                                    if let Some(pic) = self.page_pictures.get(&left) {
+                                        pic.set_texture(Some(&left_tex.texture));
+                                        pic.set_size_request(target_w, target_h);
+                                        pic.remove_css_class("kalam-pdf-placeholder");
+                                        pic.add_css_class("kalam-pdf-page-image");
+                                        pic.queue_resize();
+                                        pic.queue_draw();
+                                    }
+                                }
+
+                                if let Some(r) = right {
+                                    if let Some(right_tex) = right_cached {
+                                        if let Some(pic) = self.page_pictures.get(&r) {
+                                            pic.set_texture(Some(&right_tex.texture));
                                             pic.set_size_request(target_w, target_h);
                                             pic.remove_css_class("kalam-pdf-placeholder");
                                             pic.add_css_class("kalam-pdf-page-image");
@@ -8423,25 +8557,12 @@ impl Component for PdfReaderModel {
                                             pic.queue_draw();
                                         }
                                     }
-
-                                    if let Some(r) = right {
-                                        if let Some(right_tex) = right_cached {
-                                            if let Some(pic) = self.page_pictures.get(&r) {
-                                                pic.set_texture(Some(&right_tex.texture));
-                                                pic.set_size_request(target_w, target_h);
-                                                pic.remove_css_class("kalam-pdf-placeholder");
-                                                pic.add_css_class("kalam-pdf-page-image");
-                                                pic.queue_resize();
-                                                pic.queue_draw();
-                                            }
-                                        }
-                                    }
-
-                                    widgets.viewport_scroll.queue_draw();
                                 }
+
+                                widgets.viewport_scroll.queue_draw();
                             }
                         }
-                    }
+                    },
                 }
             }
             PdfReaderMsg::PageThumbnailVisible(key) => {
@@ -8545,13 +8666,10 @@ impl Component for PdfReaderModel {
             PdfReaderMsg::ExtractPagesDone(result) => {
                 self.page_edit.busy = false;
                 match result {
-                    Ok(path) => crate::notify::success(
-                        "Pages extracted",
-                        &path.display().to_string(),
-                    ),
-                    Err(error) => {
-                        crate::notify::error("Pages could not be extracted", &error)
+                    Ok(path) => {
+                        crate::notify::success("Pages extracted", &path.display().to_string())
                     }
+                    Err(error) => crate::notify::error("Pages could not be extracted", &error),
                 }
                 self.sync_page_edit_header();
                 self.resume_page_edit_leave(&sender);
@@ -8624,12 +8742,8 @@ impl Component for PdfReaderModel {
                                 .position(|item| item.key() == first)
                         })
                         .unwrap_or(0);
-                    let drop_index =
-                        (first_position + 5).min(self.page_edit.items().len());
-                    grid.set_drag_state(
-                        selected.into_iter().collect(),
-                        Some(drop_index),
-                    );
+                    let drop_index = (first_position + 5).min(self.page_edit.items().len());
+                    grid.set_drag_state(selected.into_iter().collect(), Some(drop_index));
                 }
             }
             PdfReaderMsg::DocumentLoaded { revision, info } => {
@@ -8670,7 +8784,8 @@ impl Component for PdfReaderModel {
                         // before the build below so the first real
                         // frame is already the right shape.
                         if self.layout_auto {
-                            self.spread_mode = self.desired_auto_spread_mode(&widgets.viewport_scroll);
+                            self.spread_mode =
+                                self.desired_auto_spread_mode(&widgets.viewport_scroll);
                         }
                         self.refresh_fit_zoom(&widgets.viewport_scroll);
 
@@ -8696,8 +8811,7 @@ impl Component for PdfReaderModel {
                             glib::idle_add_local_once(move || {
                                 let max = (vadj.upper() - vadj.page_size()).max(0.0);
                                 if max > 0.0 {
-                                    let ratio =
-                                        (cur.saturating_sub(1)) as f64 / (total - 1) as f64;
+                                    let ratio = (cur.saturating_sub(1)) as f64 / (total - 1) as f64;
                                     vadj.set_value((ratio * max).clamp(vadj.lower(), max));
                                 }
                             });
@@ -8824,13 +8938,13 @@ impl Component for PdfReaderModel {
                         );
                         if let Some(started) = started_fp {
                             if file_unchanged {
-                                if let Err(err) = self
-                                    .catalog
-                                    .save_page_ocr(self.book_id, page, &started, &ocr_text)
-                                {
-                                    log::warn!(
-                                        "Could not cache OCR result for page {page}: {err}"
-                                    );
+                                if let Err(err) = self.catalog.save_page_ocr(
+                                    self.book_id,
+                                    page,
+                                    &started,
+                                    &ocr_text,
+                                ) {
+                                    log::warn!("Could not cache OCR result for page {page}: {err}");
                                 }
                             }
                         }
@@ -8966,8 +9080,15 @@ impl Component for PdfReaderModel {
                     self.update_bookmark_icon_state(widgets);
                 }
             }
-            PdfReaderMsg::SelectionDragBegin { slot, x, y, is_block } => {
-                let Some(page) = self.page_for_slot(slot) else { return };
+            PdfReaderMsg::SelectionDragBegin {
+                slot,
+                x,
+                y,
+                is_block,
+            } => {
+                let Some(page) = self.page_for_slot(slot) else {
+                    return;
+                };
                 self.dismiss_dict_popover();
                 if !self.draw_tool.is_select() {
                     self.begin_active_drawing(slot, x, y);
@@ -9016,7 +9137,12 @@ impl Component for PdfReaderModel {
                 }
                 self.selection_drag_state = Some((slot, x, y, adjusting, is_block));
             }
-            PdfReaderMsg::SelectionDragUpdate { slot, dx, dy, is_block } => {
+            PdfReaderMsg::SelectionDragUpdate {
+                slot,
+                dx,
+                dy,
+                is_block,
+            } => {
                 if !self.draw_tool.is_select() {
                     self.update_active_drawing(slot, dx, dy);
                     return;
@@ -9024,13 +9150,16 @@ impl Component for PdfReaderModel {
                 if self.update_drawing_move(slot, dx, dy) {
                     return;
                 }
-                let Some((drag_slot, start_x, start_y, adjusting, _)) = self.selection_drag_state else {
+                let Some((drag_slot, start_x, start_y, adjusting, _)) = self.selection_drag_state
+                else {
                     return;
                 };
                 if drag_slot != slot {
                     return;
                 }
-                let Some(page) = self.page_for_slot(slot) else { return };
+                let Some(page) = self.page_for_slot(slot) else {
+                    return;
+                };
 
                 let (target_w, target_h) = if self.scroll_mode == PdfScrollMode::WrappedScrolling {
                     (
@@ -9054,8 +9183,10 @@ impl Component for PdfReaderModel {
                     return;
                 }
 
-                let start_pt = self.display_point_to_page(start_x, start_y, target_w, target_h, page_text);
-                let curr_pt = self.display_point_to_page(curr_x, curr_y, target_w, target_h, page_text);
+                let start_pt =
+                    self.display_point_to_page(start_x, start_y, target_w, target_h, page_text);
+                let curr_pt =
+                    self.display_point_to_page(curr_x, curr_y, target_w, target_h, page_text);
                 // A handle drag moves that end and leaves the other where
                 // it is. Alt mid-drag turns the same press into a block
                 // marquee, so the grip is only honoured while it is not a
@@ -9092,12 +9223,8 @@ impl Component for PdfReaderModel {
                     self.active_selection.replace(None);
                     self.dismiss_selection_chip();
                 } else {
-                    let screen_rects = self.page_rects_to_display(
-                        &highlight_rects,
-                        target_w,
-                        target_h,
-                        page_text,
-                    );
+                    let screen_rects =
+                        self.page_rects_to_display(&highlight_rects, target_w, target_h, page_text);
                     let mut min_x = f64::MAX;
                     let mut min_y = f64::MAX;
                     let mut max_x = f64::MIN;
@@ -9110,11 +9237,19 @@ impl Component for PdfReaderModel {
                         max_y = max_y.max(ry + rh);
                     }
 
-                    let first = screen_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let first = screen_rects
+                        .first()
+                        .copied()
+                        .unwrap_or((0.0, 0.0, 0.0, 0.0));
                     let last = screen_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
 
                     let (start_handle, end_handle) = self.selection_handles(first, last);
-                    let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
+                    let bounds = (
+                        min_x,
+                        min_y,
+                        (max_x - min_x).max(1.0),
+                        (max_y - min_y).max(1.0),
+                    );
 
                     self.active_selection.replace(Some(PdfActiveSelection {
                         page,
@@ -9135,7 +9270,12 @@ impl Component for PdfReaderModel {
                     da.queue_draw();
                 }
             }
-            PdfReaderMsg::SelectionDragEnd { slot, dx, dy, press_count } => {
+            PdfReaderMsg::SelectionDragEnd {
+                slot,
+                dx,
+                dy,
+                press_count,
+            } => {
                 if !self.draw_tool.is_select() {
                     self.finish_active_drawing(slot, dx, dy, &sender);
                     return;
@@ -9199,7 +9339,9 @@ impl Component for PdfReaderModel {
                 if self.open_drawing_object_at(slot, x, y, &sender) {
                     return;
                 }
-                let Some(page) = self.page_for_slot(slot) else { return };
+                let Some(page) = self.page_for_slot(slot) else {
+                    return;
+                };
                 let _ = self.ensure_page_text(page);
 
                 let (target_w, target_h) = if self.scroll_mode == PdfScrollMode::WrappedScrolling {
@@ -9227,16 +9369,14 @@ impl Component for PdfReaderModel {
                     );
                     return;
                 };
-                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return }
+                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 {
+                    return;
+                }
 
                 let pt = self.display_point_to_page(x, y, target_w, target_h, page_text);
                 if let Some((word_text, highlight_rects)) = page_text.word_at(pt) {
-                    let screen_rects = self.page_rects_to_display(
-                        &highlight_rects,
-                        target_w,
-                        target_h,
-                        page_text,
-                    );
+                    let screen_rects =
+                        self.page_rects_to_display(&highlight_rects, target_w, target_h, page_text);
                     let mut min_x = f64::MAX;
                     let mut min_y = f64::MAX;
                     let mut max_x = f64::MIN;
@@ -9249,7 +9389,10 @@ impl Component for PdfReaderModel {
                         max_y = max_y.max(ry + rh);
                     }
 
-                    let first = screen_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let first = screen_rects
+                        .first()
+                        .copied()
+                        .unwrap_or((0.0, 0.0, 0.0, 0.0));
                     let last = screen_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
 
                     // The ends a later handle-drag takes hold of are the
@@ -9259,13 +9402,24 @@ impl Component for PdfReaderModel {
                     // the selection instead of restarting it from the
                     // click (the owner's re-test: "the end handle became
                     // the starting handle").
-                    let first_pt = highlight_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
-                    let last_pt = highlight_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let first_pt = highlight_rects
+                        .first()
+                        .copied()
+                        .unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let last_pt = highlight_rects
+                        .last()
+                        .copied()
+                        .unwrap_or((0.0, 0.0, 0.0, 0.0));
                     let anchor_pt = (first_pt.0, (first_pt.1 + first_pt.3) * 0.5);
                     let active_pt = (last_pt.2, (last_pt.1 + last_pt.3) * 0.5);
 
                     let (start_handle, end_handle) = self.selection_handles(first, last);
-                    let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
+                    let bounds = (
+                        min_x,
+                        min_y,
+                        (max_x - min_x).max(1.0),
+                        (max_y - min_y).max(1.0),
+                    );
 
                     self.active_selection.replace(Some(PdfActiveSelection {
                         page,
@@ -9294,7 +9448,9 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::SelectionLineAt { slot, x, y } => {
-                let Some(page) = self.page_for_slot(slot) else { return };
+                let Some(page) = self.page_for_slot(slot) else {
+                    return;
+                };
                 let _ = self.ensure_page_text(page);
 
                 let (target_w, target_h) = if self.scroll_mode == PdfScrollMode::WrappedScrolling {
@@ -9319,16 +9475,14 @@ impl Component for PdfReaderModel {
                     );
                     return;
                 };
-                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 { return }
+                if page_text.width_pts <= 0.0 || page_text.height_pts <= 0.0 {
+                    return;
+                }
 
                 let pt = self.display_point_to_page(x, y, target_w, target_h, page_text);
                 if let Some((line_text, highlight_rects)) = page_text.line_at(pt) {
-                    let screen_rects = self.page_rects_to_display(
-                        &highlight_rects,
-                        target_w,
-                        target_h,
-                        page_text,
-                    );
+                    let screen_rects =
+                        self.page_rects_to_display(&highlight_rects, target_w, target_h, page_text);
                     let mut min_x = f64::MAX;
                     let mut min_y = f64::MAX;
                     let mut max_x = f64::MIN;
@@ -9341,18 +9495,32 @@ impl Component for PdfReaderModel {
                         max_y = max_y.max(ry + rh);
                     }
 
-                    let first = screen_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let first = screen_rects
+                        .first()
+                        .copied()
+                        .unwrap_or((0.0, 0.0, 0.0, 0.0));
                     let last = screen_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
 
                     // Same as the word selection: the handle-drag anchors
                     // are the selection's ends, not the click point.
-                    let first_pt = highlight_rects.first().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
-                    let last_pt = highlight_rects.last().copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let first_pt = highlight_rects
+                        .first()
+                        .copied()
+                        .unwrap_or((0.0, 0.0, 0.0, 0.0));
+                    let last_pt = highlight_rects
+                        .last()
+                        .copied()
+                        .unwrap_or((0.0, 0.0, 0.0, 0.0));
                     let anchor_pt = (first_pt.0, (first_pt.1 + first_pt.3) * 0.5);
                     let active_pt = (last_pt.2, (last_pt.1 + last_pt.3) * 0.5);
 
                     let (start_handle, end_handle) = self.selection_handles(first, last);
-                    let bounds = (min_x, min_y, (max_x - min_x).max(1.0), (max_y - min_y).max(1.0));
+                    let bounds = (
+                        min_x,
+                        min_y,
+                        (max_x - min_x).max(1.0),
+                        (max_y - min_y).max(1.0),
+                    );
 
                     self.active_selection.replace(Some(PdfActiveSelection {
                         page,
@@ -9375,7 +9543,11 @@ impl Component for PdfReaderModel {
                 }
             }
             PdfReaderMsg::CopySelection => {
-                let text_opt = self.active_selection.borrow().as_ref().map(|s| s.text.clone());
+                let text_opt = self
+                    .active_selection
+                    .borrow()
+                    .as_ref()
+                    .map(|s| s.text.clone());
                 if let Some(text) = text_opt {
                     if let Some(display) = gdk::Display::default() {
                         display.clipboard().set_text(&text);
@@ -9390,9 +9562,18 @@ impl Component for PdfReaderModel {
                 self.clear_selection();
             }
             PdfReaderMsg::SaveAnnotation { color, style, note } => {
-                let text_opt = self.active_selection.borrow().as_ref().map(|s| s.text.clone());
+                let text_opt = self
+                    .active_selection
+                    .borrow()
+                    .as_ref()
+                    .map(|s| s.text.clone());
                 if let Some(text) = text_opt {
-                    let page_num = self.active_selection.borrow().as_ref().map(|s| s.page).unwrap_or(self.current_page);
+                    let page_num = self
+                        .active_selection
+                        .borrow()
+                        .as_ref()
+                        .map(|s| s.page)
+                        .unwrap_or(self.current_page);
                     let _ = self.catalog.insert_annotation(
                         self.book_id,
                         "highlight",
@@ -9413,9 +9594,18 @@ impl Component for PdfReaderModel {
                 self.clear_selection();
             }
             PdfReaderMsg::QuoteSelection => {
-                let text_opt = self.active_selection.borrow().as_ref().map(|s| s.text.clone());
+                let text_opt = self
+                    .active_selection
+                    .borrow()
+                    .as_ref()
+                    .map(|s| s.text.clone());
                 if let Some(text) = text_opt {
-                    let page_num = self.active_selection.borrow().as_ref().map(|s| s.page).unwrap_or(self.current_page);
+                    let page_num = self
+                        .active_selection
+                        .borrow()
+                        .as_ref()
+                        .map(|s| s.page)
+                        .unwrap_or(self.current_page);
                     let _ = self.catalog.insert_annotation(
                         self.book_id,
                         "quote",
@@ -9648,8 +9838,7 @@ impl PdfReaderModel {
         match self.left_tab {
             PdfLeftTab::Contents => {
                 if let Some(list) = &self.toc_list_box {
-                    let (rows, current_visible) =
-                        populate_toc_list(list, self, sender);
+                    let (rows, current_visible) = populate_toc_list(list, self, sender);
                     self.toc_rows = rows;
                     self.toc_current_visible_row = current_visible;
                     self.toc_current_page_synced = self.current_page;
@@ -9713,8 +9902,7 @@ impl PdfReaderModel {
     /// opens. Rows are the spec's 44px, so the target is arithmetic
     /// rather than a hunt through allocations.
     pub fn scroll_toc_to_current(&self) {
-        let (Some(scroll), Some(row)) = (&self.toc_scroll, self.toc_current_visible_row)
-        else {
+        let (Some(scroll), Some(row)) = (&self.toc_scroll, self.toc_current_visible_row) else {
             return;
         };
         let adjustment = scroll.vadjustment();
@@ -9815,9 +10003,7 @@ impl PdfReaderModel {
                 sender.input(PdfReaderMsg::OpenLeftPanel);
                 let s = sender.clone();
                 glib::timeout_add_local_once(Duration::from_secs(9), move || {
-                    let _ = s
-                        .input_sender()
-                        .send(PdfReaderMsg::StagePageEditScreenshot);
+                    let _ = s.input_sender().send(PdfReaderMsg::StagePageEditScreenshot);
                 });
             }
             Ok("pages-edit-delete") => {
@@ -9899,9 +10085,7 @@ impl PdfReaderModel {
             }
             Ok("search-no-matches") => {
                 sender.input(PdfReaderMsg::ToggleSearch);
-                sender.input(PdfReaderMsg::UpdateSearchQuery(
-                    "volcanx".to_string(),
-                ));
+                sender.input(PdfReaderMsg::UpdateSearchQuery("volcanx".to_string()));
             }
             Ok("drawing") => {
                 self.draw_toolbar_visible = true;
@@ -9915,10 +10099,7 @@ impl PdfReaderModel {
                 self.draw_toolbar_visible = true;
                 sender.input(PdfReaderMsg::SetDrawTool(PdfDrawTool::TextBox));
                 if let Some(drawing) = self.drawings.iter().find(|drawing| {
-                    matches!(
-                        drawing.geometry,
-                        crate::db::PdfDrawingGeometry::Text { .. }
-                    )
+                    matches!(drawing.geometry, crate::db::PdfDrawingGeometry::Text { .. })
                 }) {
                     let id = drawing.id;
                     let s = sender.clone();
@@ -9955,9 +10136,7 @@ impl PdfReaderModel {
                     // surface from ever presenting.
                     let s = sender.clone();
                     glib::timeout_add_local_once(Duration::from_secs(9), move || {
-                        let _ = s
-                            .input_sender()
-                            .send(PdfReaderMsg::ShowDrawingPopover);
+                        let _ = s.input_sender().send(PdfReaderMsg::ShowDrawingPopover);
                     });
                 }
             }
@@ -9966,9 +10145,7 @@ impl PdfReaderModel {
                 sender.input(PdfReaderMsg::OpenRightPanel);
             }
             Ok("jump") => sender.input(PdfReaderMsg::OpenJump(None)),
-            Ok("jump-range") => {
-                sender.input(PdfReaderMsg::OpenJump(Some("999".to_string())))
-            }
+            Ok("jump-range") => sender.input(PdfReaderMsg::OpenJump(Some("999".to_string()))),
             _ => {}
         }
     }
@@ -10110,10 +10287,7 @@ impl PdfReaderModel {
                 )],
             )
         } else if self.search_no_text {
-            (
-                "This book has no searchable text".to_string(),
-                Vec::new(),
-            )
+            ("This book has no searchable text".to_string(), Vec::new())
         } else if scoped.is_empty() {
             if self.search_scope == PdfSearchScope::Chapter && !self.search_results.is_empty() {
                 (
@@ -10136,7 +10310,11 @@ impl PdfReaderModel {
                 format!(
                     "\"{query}\" · {} {} on {} {}",
                     scoped.len(),
-                    if scoped.len() == 1 { "result" } else { "results" },
+                    if scoped.len() == 1 {
+                        "result"
+                    } else {
+                        "results"
+                    },
                     pages,
                     if pages == 1 { "page" } else { "pages" },
                 ),
@@ -10224,7 +10402,10 @@ impl PdfReaderModel {
                     .page_text_cache
                     .get(&result.page)
                     .map(|text| (text.width_pts, text.height_pts))
-                    .unwrap_or((self.source_page_width as f32, self.source_page_height as f32));
+                    .unwrap_or((
+                        self.source_page_width as f32,
+                        self.source_page_height as f32,
+                    ));
                 highlights.push(PdfSearchHighlight {
                     slot,
                     page: result.page,
@@ -10437,10 +10618,7 @@ fn build_pdf_search_results_pane(
     pane.append(&meta_label);
     pane.append(&scroll);
 
-    (
-        pane,
-        PdfSearchResultsWidgets { meta_label, list },
-    )
+    (pane, PdfSearchResultsWidgets { meta_label, list })
 }
 
 fn pdf_pages_edit_icon_button<F>(
@@ -10501,11 +10679,7 @@ fn pdf_pages_column_button(
 fn build_pdf_pages_pane(
     model: &PdfReaderModel,
     sender: &ComponentSender<PdfReaderModel>,
-) -> (
-    gtk::Overlay,
-    pages_grid::PdfPagesGrid,
-    PdfPagesWidgets,
-) {
+) -> (gtk::Overlay, pages_grid::PdfPagesGrid, PdfPagesWidgets) {
     let grid = pages_grid::PdfPagesGrid::new(
         sender.input_sender().clone(),
         model.pages_columns,
@@ -10543,18 +10717,10 @@ fn build_pdf_pages_pane(
     heading_text.append(&heading_title);
     heading_text.append(&heading_meta);
 
-    let columns_3_button = pdf_pages_column_button(
-        "kalam-columns-3-symbolic",
-        "Three columns",
-        3,
-        sender,
-    );
-    let columns_2_button = pdf_pages_column_button(
-        "kalam-columns-2-symbolic",
-        "Two columns",
-        2,
-        sender,
-    );
+    let columns_3_button =
+        pdf_pages_column_button("kalam-columns-3-symbolic", "Three columns", 3, sender);
+    let columns_2_button =
+        pdf_pages_column_button("kalam-columns-2-symbolic", "Two columns", 2, sender);
     let edit_button = pdf_pages_edit_icon_button(
         "document-edit-symbolic",
         "Edit pages",
@@ -10844,8 +11010,7 @@ fn populate_toc_list(
                 format!("Collapse {}", item.title)
             };
             chevron.set_tooltip_text(Some(&chevron_label));
-            chevron
-                .update_property(&[gtk::accessible::Property::Label(&chevron_label)]);
+            chevron.update_property(&[gtk::accessible::Property::Label(&chevron_label)]);
             let entry_index = visible_row.index;
             let tx = sender.input_sender().clone();
             chevron.connect_clicked(move |_| {
@@ -10870,8 +11035,7 @@ fn populate_toc_list(
 
         // The right-hand name is the document's page label
         // (decision 58), not the physical page the row jumps to.
-        let page_lbl =
-            gtk::Label::new(Some(&displayed_page_label(page_labels, page_target)));
+        let page_lbl = gtk::Label::new(Some(&displayed_page_label(page_labels, page_target)));
         page_lbl.add_css_class("kalam-pdf-contents-page");
         page_lbl.set_halign(gtk::Align::End);
         page_lbl.set_valign(gtk::Align::Center);
@@ -11086,22 +11250,16 @@ fn build_pdf_settings_panel(
     layout_row.set_margin_top(12);
     layout_row.set_margin_bottom(12);
 
-    let layout_single_btn = pdf_tile_button(
-        "view-paged-symbolic",
-        "Single",
-        "Show one page at a time",
-    );
+    let layout_single_btn =
+        pdf_tile_button("view-paged-symbolic", "Single", "Show one page at a time");
     let tx = sender.input_sender().clone();
     layout_single_btn.connect_clicked(move |_| {
         let _ = tx.send(PdfReaderMsg::SetLayout(PdfLayout::Single));
     });
     layout_row.append(&layout_single_btn);
 
-    let layout_spread_btn = pdf_tile_button(
-        "view-dual-symbolic",
-        "Spread",
-        "Show two facing pages",
-    );
+    let layout_spread_btn =
+        pdf_tile_button("view-dual-symbolic", "Spread", "Show two facing pages");
     let tx = sender.input_sender().clone();
     layout_spread_btn.connect_clicked(move |_| {
         let _ = tx.send(PdfReaderMsg::SetLayout(PdfLayout::Spread));
@@ -11301,8 +11459,7 @@ fn build_pdf_settings_panel(
         let _ = tx.send(PdfReaderMsg::RotateView(-90));
     });
     rotate_left_btn.set_tooltip_text(Some("Rotate the view left"));
-    rotate_left_btn
-        .update_property(&[gtk::accessible::Property::Label("Rotate the view left")]);
+    rotate_left_btn.update_property(&[gtk::accessible::Property::Label("Rotate the view left")]);
     rotate_buttons.append(&rotate_left_btn);
 
     let rotate_right_btn = gtk::Button::new();
@@ -11319,8 +11476,7 @@ fn build_pdf_settings_panel(
         let _ = tx.send(PdfReaderMsg::RotateView(90));
     });
     rotate_right_btn.set_tooltip_text(Some("Rotate the view right"));
-    rotate_right_btn
-        .update_property(&[gtk::accessible::Property::Label("Rotate the view right")]);
+    rotate_right_btn.update_property(&[gtk::accessible::Property::Label("Rotate the view right")]);
     rotate_buttons.append(&rotate_right_btn);
     rotate_row.append(&rotate_buttons);
     view_card.append(&rotate_row);
@@ -11526,11 +11682,7 @@ fn build_pdf_image_panel(
         1.0,
         model.image_settings.contrast as f64,
     );
-    connect_pdf_image_scale(
-        &contrast_scale,
-        sender,
-        Rc::new(PdfReaderMsg::SetContrast),
-    );
+    connect_pdf_image_scale(&contrast_scale, sender, Rc::new(PdfReaderMsg::SetContrast));
     adjust_card.append(&contrast_row);
     adjust_card.append(&pdf_reading_separator());
 
@@ -11541,11 +11693,7 @@ fn build_pdf_image_panel(
         1.0,
         model.image_settings.warmth as f64,
     );
-    connect_pdf_image_scale(
-        &warmth_scale,
-        sender,
-        Rc::new(PdfReaderMsg::SetWarmth),
-    );
+    connect_pdf_image_scale(&warmth_scale, sender, Rc::new(PdfReaderMsg::SetWarmth));
     adjust_card.append(&warmth_row);
     adjust_card.append(&pdf_reading_separator());
 
@@ -11570,12 +11718,10 @@ fn build_pdf_image_panel(
     wrap.append(&adjust_card);
 
     let tx = sender.input_sender().clone();
-    let reset_button = crate::widgets::pill_button::boxed_ghost_button(
-        "Reset image settings",
-        move || {
+    let reset_button =
+        crate::widgets::pill_button::boxed_ghost_button("Reset image settings", move || {
             let _ = tx.send(PdfReaderMsg::ResetImageSettings);
-        },
-    );
+        });
     reset_button.set_halign(gtk::Align::Center);
     reset_button.set_margin_top(4);
     wrap.append(&reset_button);
@@ -11707,19 +11853,11 @@ mod tests {
 
         let results = sample_search_results();
         let scoped: Vec<usize> = (0..results.len()).collect();
-        let entries = pdf_search_result_entries(
-            &results,
-            &scoped,
-            &sample_toc(),
-            12,
-            "The Book",
-        );
+        let entries = pdf_search_result_entries(&results, &scoped, &sample_toc(), 12, "The Book");
         let headings: Vec<String> = entries
             .iter()
             .filter_map(|entry| match entry {
-                search_results::PdfSearchResultsEntry::Heading(title) => {
-                    Some(title.clone())
-                }
+                search_results::PdfSearchResultsEntry::Heading(title) => Some(title.clone()),
                 _ => None,
             })
             .collect();
@@ -11740,17 +11878,10 @@ mod tests {
     #[test]
     fn pdf_search_without_an_outline_searches_the_whole_book_as_its_chapter() {
         let results = sample_search_results();
-        let scoped = pdf_search_scoped_indices(
-            &results,
-            &[],
-            12,
-            PdfSearchScope::Chapter,
-            4,
-            "The Book",
-        );
+        let scoped =
+            pdf_search_scoped_indices(&results, &[], 12, PdfSearchScope::Chapter, 4, "The Book");
         assert_eq!(scoped.len(), results.len());
-        let entries =
-            pdf_search_result_entries(&results, &scoped, &[], 12, "The Book");
+        let entries = pdf_search_result_entries(&results, &scoped, &[], 12, "The Book");
         assert_eq!(
             entries.first(),
             Some(&search_results::PdfSearchResultsEntry::Heading(
@@ -11991,17 +12122,35 @@ mod tests {
     fn test_keep_window_pages_paged_mode() {
         // Paged reading keeps the current spread plus one spread each way.
         assert_eq!(
-            window(PdfSpreadMode::NoSpreads, PdfScrollMode::PageScrolling, 20, 10, 1),
+            window(
+                PdfSpreadMode::NoSpreads,
+                PdfScrollMode::PageScrolling,
+                20,
+                10,
+                1
+            ),
             vec![9, 10, 11]
         );
         // At the start of the book there is no previous spread.
         assert_eq!(
-            window(PdfSpreadMode::NoSpreads, PdfScrollMode::PageScrolling, 20, 1, 1),
+            window(
+                PdfSpreadMode::NoSpreads,
+                PdfScrollMode::PageScrolling,
+                20,
+                1,
+                1
+            ),
             vec![1, 2]
         );
         // At the end there is no next spread.
         assert_eq!(
-            window(PdfSpreadMode::NoSpreads, PdfScrollMode::PageScrolling, 20, 20, 1),
+            window(
+                PdfSpreadMode::NoSpreads,
+                PdfScrollMode::PageScrolling,
+                20,
+                20,
+                1
+            ),
             vec![19, 20]
         );
     }
@@ -12041,7 +12190,10 @@ mod tests {
             6,
         );
         assert_eq!(image, vec![22, 23, 24, 25, 26, 27, 28]);
-        assert_eq!(text, vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]);
+        assert_eq!(
+            text,
+            vec![19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+        );
         for p in &image {
             assert!(text.contains(p), "text window must cover the image window");
         }
@@ -12067,7 +12219,14 @@ mod tests {
         // A word click stored on page 5 replays as SelectionWordAt the
         // moment page 5's text lands (2.20 step 3: the first click is
         // never a dead click).
-        let mut pending = Some((5usize, PdfPendingSelection::Word { slot: PageSlot::Fixed(5), x: 120.0, y: 40.0 }));
+        let mut pending = Some((
+            5usize,
+            PdfPendingSelection::Word {
+                slot: PageSlot::Fixed(5),
+                x: 120.0,
+                y: 40.0,
+            },
+        ));
         match PdfReaderModel::take_pending_replay(&mut pending, 5, true) {
             PdfPendingOutcome::Replay(PdfReaderMsg::SelectionWordAt { x, y, .. }) => {
                 assert_eq!((x, y), (120.0, 40.0));
@@ -12080,7 +12239,14 @@ mod tests {
     #[test]
     fn test_pending_selection_line_and_drag_replay() {
         // A line click (triple-click) replays as SelectionLineAt.
-        let mut pending = Some((3usize, PdfPendingSelection::Line { slot: PageSlot::Fixed(3), x: 10.0, y: 20.0 }));
+        let mut pending = Some((
+            3usize,
+            PdfPendingSelection::Line {
+                slot: PageSlot::Fixed(3),
+                x: 10.0,
+                y: 20.0,
+            },
+        ));
         match PdfReaderModel::take_pending_replay(&mut pending, 3, true) {
             PdfPendingOutcome::Replay(PdfReaderMsg::SelectionLineAt { x, y, .. }) => {
                 assert_eq!((x, y), (10.0, 20.0));
@@ -12090,7 +12256,14 @@ mod tests {
 
         // A drag that began on an unready page cannot be replayed as a
         // drag; the word at its start point is the honest answer.
-        let mut pending = Some((7usize, PdfPendingSelection::Drag { slot: PageSlot::Fixed(7), x: 55.0, y: 66.0 }));
+        let mut pending = Some((
+            7usize,
+            PdfPendingSelection::Drag {
+                slot: PageSlot::Fixed(7),
+                x: 55.0,
+                y: 66.0,
+            },
+        ));
         match PdfReaderModel::take_pending_replay(&mut pending, 7, true) {
             PdfPendingOutcome::Replay(PdfReaderMsg::SelectionWordAt { x, y, .. }) => {
                 assert_eq!((x, y), (55.0, 66.0));
@@ -12102,19 +12275,36 @@ mod tests {
     #[test]
     fn test_pending_selection_waits_for_its_own_page() {
         // Text arriving for a different page must not consume the intent.
-        let mut pending = Some((5usize, PdfPendingSelection::Word { slot: PageSlot::Fixed(5), x: 1.0, y: 2.0 }));
+        let mut pending = Some((
+            5usize,
+            PdfPendingSelection::Word {
+                slot: PageSlot::Fixed(5),
+                x: 1.0,
+                y: 2.0,
+            },
+        ));
         match PdfReaderModel::take_pending_replay(&mut pending, 9, true) {
             PdfPendingOutcome::KeepWaiting => {}
             other => panic!("expected KeepWaiting, got {other:?}"),
         }
-        assert!(pending.is_some(), "the intent must survive other pages' text");
+        assert!(
+            pending.is_some(),
+            "the intent must survive other pages' text"
+        );
     }
 
     #[test]
     fn test_pending_selection_dropped_when_page_left_viewport() {
         // The user scrolled on: the intent is stale and must be dropped,
         // not replayed onto a page nobody is looking at.
-        let mut pending = Some((5usize, PdfPendingSelection::Word { slot: PageSlot::Fixed(5), x: 1.0, y: 2.0 }));
+        let mut pending = Some((
+            5usize,
+            PdfPendingSelection::Word {
+                slot: PageSlot::Fixed(5),
+                x: 1.0,
+                y: 2.0,
+            },
+        ));
         match PdfReaderModel::take_pending_replay(&mut pending, 5, false) {
             PdfPendingOutcome::Dropped => {}
             other => panic!("expected Dropped, got {other:?}"),
@@ -12150,7 +12340,10 @@ mod tests {
             rotation: 0,
         };
         assert!(over_selection_handle(&sel, 300.0, 236.0), "end grip centre");
-        assert!(over_selection_handle(&sel, 100.0, 200.0), "start grip centre");
+        assert!(
+            over_selection_handle(&sel, 100.0, 200.0),
+            "start grip centre"
+        );
         assert!(
             !over_selection_handle(&sel, 200.0, 220.0),
             "the middle of the page is no grip"
@@ -12161,27 +12354,64 @@ mod tests {
     #[test]
     fn test_calculate_spread_for_page_odd_spreads() {
         let total = 6;
-        assert_eq!(calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 1), (1, None));
-        assert_eq!(calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 2), (2, Some(3)));
-        assert_eq!(calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 3), (2, Some(3)));
-        assert_eq!(calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 4), (4, Some(5)));
-        assert_eq!(calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 5), (4, Some(5)));
-        assert_eq!(calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 6), (6, None));
+        assert_eq!(
+            calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 1),
+            (1, None)
+        );
+        assert_eq!(
+            calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 2),
+            (2, Some(3))
+        );
+        assert_eq!(
+            calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 3),
+            (2, Some(3))
+        );
+        assert_eq!(
+            calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 4),
+            (4, Some(5))
+        );
+        assert_eq!(
+            calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 5),
+            (4, Some(5))
+        );
+        assert_eq!(
+            calculate_spread_for_page(PdfSpreadMode::OddSpreads, total, 6),
+            (6, None)
+        );
     }
 
     #[test]
     fn test_calculate_spread_for_page_even_spreads() {
         let total = 5;
-        assert_eq!(calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 1), (1, Some(2)));
-        assert_eq!(calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 2), (1, Some(2)));
-        assert_eq!(calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 3), (3, Some(4)));
-        assert_eq!(calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 4), (3, Some(4)));
-        assert_eq!(calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 5), (5, None));
+        assert_eq!(
+            calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 1),
+            (1, Some(2))
+        );
+        assert_eq!(
+            calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 2),
+            (1, Some(2))
+        );
+        assert_eq!(
+            calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 3),
+            (3, Some(4))
+        );
+        assert_eq!(
+            calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 4),
+            (3, Some(4))
+        );
+        assert_eq!(
+            calculate_spread_for_page(PdfSpreadMode::EvenSpreads, total, 5),
+            (5, None)
+        );
     }
 
     #[test]
     fn test_spread_chain_navigation() {
-        for mode in [PdfSpreadMode::NoSpreads, PdfSpreadMode::OddSpreads, PdfSpreadMode::EvenSpreads] {
+        for mode in [
+            PdfSpreadMode::NoSpreads,
+            PdfSpreadMode::OddSpreads,
+            PdfSpreadMode::EvenSpreads,
+        ] {
             for total in 1..=20 {
                 let spreads = calculate_all_spreads(mode, total);
                 assert!(!spreads.is_empty());
@@ -12193,7 +12423,11 @@ mod tests {
                     forward.push(next);
                     curr = next;
                 }
-                assert_eq!(forward, spreads, "Forward chain mismatch for mode {:?}, total {}", mode, total);
+                assert_eq!(
+                    forward, spreads,
+                    "Forward chain mismatch for mode {:?}, total {}",
+                    mode, total
+                );
 
                 // Backward traversal
                 let mut backward = vec![*spreads.last().unwrap()];
@@ -12203,7 +12437,11 @@ mod tests {
                     curr = prev;
                 }
                 backward.reverse();
-                assert_eq!(backward, spreads, "Backward chain mismatch for mode {:?}, total {}", mode, total);
+                assert_eq!(
+                    backward, spreads,
+                    "Backward chain mismatch for mode {:?}, total {}",
+                    mode, total
+                );
             }
         }
     }
@@ -12348,10 +12586,16 @@ mod tests {
         assert!((turned.2 - 80.0).abs() < 0.001, "{turned:?}");
         assert!((turned.3 - 40.0).abs() < 0.001, "{turned:?}");
         let back = display_point_to_source(320.0, 40.0, 400.0, 200.0, 100.0, 200.0, 90);
-        assert!((back.0 - 20.0).abs() < 0.001 && (back.1 - 40.0).abs() < 0.001, "{back:?}");
+        assert!(
+            (back.0 - 20.0).abs() < 0.001 && (back.1 - 40.0).abs() < 0.001,
+            "{back:?}"
+        );
 
         let back = display_point_to_source(80.0, 160.0, 400.0, 200.0, 100.0, 200.0, 270);
-        assert!((back.0 - 20.0).abs() < 0.001 && (back.1 - 40.0).abs() < 0.001, "{back:?}");
+        assert!(
+            (back.0 - 20.0).abs() < 0.001 && (back.1 - 40.0).abs() < 0.001,
+            "{back:?}"
+        );
 
         let flipped = source_rect_to_display(rect, 100.0, 200.0, 200.0, 400.0, 180);
         assert!((flipped.0 - 140.0).abs() < 0.001, "{flipped:?}");

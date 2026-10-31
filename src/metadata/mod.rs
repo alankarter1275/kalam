@@ -386,20 +386,14 @@ pub trait MetadataSource: Send + Sync {
     /// payloads are thinner than detail payloads (Comic Vine's volume
     /// credits are the standing example). Default: search already said
     /// everything this provider knows.
-    fn fetch_candidate_details(
-        &self,
-        candidate: &Candidate,
-    ) -> Result<Candidate, FetchError> {
+    fn fetch_candidate_details(&self, candidate: &Candidate) -> Result<Candidate, FetchError> {
         Ok(candidate.clone())
     }
 
     /// Fetch one record by the provider's own stable id — the refresh
     /// path for a series already linked to this source. Default: this
     /// provider cannot do that.
-    fn fetch_by_external_id(
-        &self,
-        _external_id: &str,
-    ) -> Result<Option<Candidate>, FetchError> {
+    fn fetch_by_external_id(&self, _external_id: &str) -> Result<Option<Candidate>, FetchError> {
         Ok(None)
     }
 }
@@ -432,10 +426,7 @@ fn build_source(
                 .get_pref("meta.googlebooks.country")
                 .filter(|c| !c.trim().is_empty())
                 .unwrap_or_else(google_books::detect_country),
-            on_key_state: Some(key_state_reporter(
-                catalog,
-                "meta.googlebooks.key_rejected",
-            )),
+            on_key_state: Some(key_state_reporter(catalog, "meta.googlebooks.key_rejected")),
         }),
         SourceId::MyAnimeList => Box::new(myanimelist::MyAnimeList {
             client_id: catalog
@@ -448,10 +439,7 @@ fn build_source(
         }),
         SourceId::ComicVine => Box::new(comic_vine::ComicVine {
             api_key: catalog.get_pref("meta.comicvine.key").unwrap_or_default(),
-            on_key_state: Some(key_state_reporter(
-                catalog,
-                "meta.comicvine.key_rejected",
-            )),
+            on_key_state: Some(key_state_reporter(catalog, "meta.comicvine.key_rejected")),
         }),
     }
 }

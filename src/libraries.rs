@@ -627,7 +627,10 @@ mod global_pref_tests {
             name: "Gone".into(),
             path: gone,
         };
-        assert!(!entry.path.is_dir(), "a missing folder must read as missing");
+        assert!(
+            !entry.path.is_dir(),
+            "a missing folder must read as missing"
+        );
 
         let _ = std::fs::remove_dir_all(&base);
     }

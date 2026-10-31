@@ -76,12 +76,10 @@ impl PdfPageEditItem {
                 PdfPageEditItemSource::Existing { page, .. } => {
                     PdfPageEditSource::Existing { page: *page }
                 }
-                PdfPageEditItemSource::Inserted { path, page, .. } => {
-                    PdfPageEditSource::Inserted {
-                        path: path.clone(),
-                        page: *page,
-                    }
-                }
+                PdfPageEditItemSource::Inserted { path, page, .. } => PdfPageEditSource::Inserted {
+                    path: path.clone(),
+                    page: *page,
+                },
             },
             rotation_clockwise: self.rotation_clockwise,
         }
@@ -384,8 +382,7 @@ impl PdfPageEditState {
         self.push_undo();
         for item in &mut self.items {
             if self.selected.contains(item.key()) {
-                item.rotation_clockwise =
-                    normalize_edit_rotation(item.rotation_clockwise + delta);
+                item.rotation_clockwise = normalize_edit_rotation(item.rotation_clockwise + delta);
             }
         }
         true
@@ -461,10 +458,7 @@ impl PdfPageEditState {
         }
         let slot = self.insertion_index(current_page);
         self.push_undo();
-        self.selected = inserted
-            .iter()
-            .map(|item| item.key().to_string())
-            .collect();
+        self.selected = inserted.iter().map(|item| item.key().to_string()).collect();
         self.anchor = inserted.first().map(|item| item.key().to_string());
         for (offset, item) in inserted.into_iter().enumerate() {
             self.items.insert(slot + offset, item);
@@ -498,8 +492,7 @@ impl PdfPageEditState {
     }
 
     pub fn summary(&self) -> PdfPageEditSummary {
-        let baseline_keys: HashSet<&str> =
-            self.baseline.iter().map(|item| item.key()).collect();
+        let baseline_keys: HashSet<&str> = self.baseline.iter().map(|item| item.key()).collect();
         let item_keys: HashSet<&str> = self.items.iter().map(|item| item.key()).collect();
         let baseline_index: HashMap<&str, usize> = self
             .baseline
@@ -657,8 +650,7 @@ pub fn page_edit_summary_sentence(summary: PdfPageEditSummary) -> String {
     phrase("rotated", summary.rotated, &mut phrases);
     phrase("moved", summary.moved, &mut phrases);
     if phrases.is_empty() {
-        return "Nothing is written to your copy of the book until you apply them."
-            .to_string();
+        return "Nothing is written to your copy of the book until you apply them.".to_string();
     }
     format!(
         "You {}. Nothing is written to your copy of the book until you apply them.",
@@ -708,11 +700,8 @@ pub fn page_edit_delete_copy(
     part(counts.notes, "note", "notes");
     part(counts.drawings, "drawing", "drawings");
     part(counts.bookmarks, "bookmark", "bookmarks");
-    let total = counts.highlights
-        + counts.quotes
-        + counts.notes
-        + counts.drawings
-        + counts.bookmarks;
+    let total =
+        counts.highlights + counts.quotes + counts.notes + counts.drawings + counts.bookmarks;
     let pronoun = if total == 1 { "It" } else { "They" };
     let body = format!(
         "{subject} {}. {pronoun} will be removed too. \
@@ -762,9 +751,11 @@ pub fn show_page_edit_delete_dialog(
     let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
 
     let cancel_slot = slot.clone();
-    shell.footer().append(&boxed_ghost_button("Cancel", move || {
-        close_dialog_from_slot(&cancel_slot);
-    }));
+    shell
+        .footer()
+        .append(&boxed_ghost_button("Cancel", move || {
+            close_dialog_from_slot(&cancel_slot);
+        }));
     shell.footer().append(&footer_spacer());
     let confirm_slot = slot.clone();
     let tx = sender.input_sender().clone();
@@ -945,9 +936,7 @@ fn extract_page_edit(
     destination: PathBuf,
 ) -> std::result::Result<PathBuf, String> {
     if destination == book_path {
-        return Err(
-            "Extracted pages need their own file, not the book's copy.".to_string(),
-        );
+        return Err("Extracted pages need their own file, not the book's copy.".to_string());
     }
     let temp = temp_sibling_path(&destination, "extracting");
     let outcome = (|| -> std::result::Result<(), String> {
@@ -965,9 +954,7 @@ fn extract_page_edit(
         let check = pdf_open_document(&temp, &shared_password)
             .map_err(|error| error.log_message().to_string())?;
         if check.page_count() != written {
-            return Err(
-                "The extracted copy does not have the pages it should.".to_string()
-            );
+            return Err("The extracted copy does not have the pages it should.".to_string());
         }
         std::fs::rename(&temp, &destination)
             .map_err(|error| format!("Could not save the extracted copy: {error}"))?;
@@ -985,8 +972,7 @@ fn extract_page_edit(
 fn inspect_insert_pdf(path: &Path) -> std::result::Result<usize, String> {
     let doc = PdfDocument::open(path).map_err(|error| {
         if error.to_string().contains("password") {
-            "That PDF is password protected, so its pages cannot be inserted."
-                .to_string()
+            "That PDF is password protected, so its pages cannot be inserted.".to_string()
         } else {
             format!("That file could not be opened as a PDF: {error}")
         }
@@ -1099,9 +1085,9 @@ impl PdfReaderModel {
         pages.edit_rotate_left_button.set_sensitive(has_selection);
         pages.edit_rotate_right_button.set_sensitive(has_selection);
         pages.edit_extract_button.set_sensitive(has_selection);
-        pages.edit_delete_button.set_sensitive(
-            has_selection && selected < self.page_edit.items().len(),
-        );
+        pages
+            .edit_delete_button
+            .set_sensitive(has_selection && selected < self.page_edit.items().len());
         pages.edit_insert_button.set_sensitive(!busy);
     }
 
@@ -1135,10 +1121,8 @@ impl PdfReaderModel {
                 if normalize_edit_rotation(item.rotation_clockwise) != 0 {
                     rotated.insert(item.key().to_string());
                 }
-                self.page_thumbnail_sources.insert(
-                    item.key().to_string(),
-                    item.thumbnail_source(&book_path),
-                );
+                self.page_thumbnail_sources
+                    .insert(item.key().to_string(), item.thumbnail_source(&book_path));
                 entries.push(pages_grid::PdfPagesGridEntry {
                     key: item.key().to_string(),
                     label: position.to_string(),
@@ -1217,9 +1201,7 @@ impl PdfReaderModel {
             key: key.to_string(),
             page: source.page,
             target_width: pages_grid::THUMBNAIL_TARGET_WIDTH,
-            rotation: normalize_edit_rotation(
-                self.rotation_degrees + source.extra_rotation,
-            ),
+            rotation: normalize_edit_rotation(self.rotation_degrees + source.extra_rotation),
             path: source.path,
         });
     }
@@ -1238,10 +1220,7 @@ impl PdfReaderModel {
     /// Delete, asking only where the pages carry work of the
     /// reader's (decision 69).
     pub fn request_page_edit_delete(&mut self, sender: &ComponentSender<Self>) {
-        if !self.page_edit.active
-            || self.page_edit.busy
-            || self.page_edit.selected().is_empty()
-        {
+        if !self.page_edit.active || self.page_edit.busy || self.page_edit.selected().is_empty() {
             return;
         }
         if self.page_edit.selected().len() >= self.page_edit.items().len() {
@@ -1251,10 +1230,10 @@ impl PdfReaderModel {
             );
             return;
         }
-        let counts = match self.catalog.pdf_page_bound_counts(
-            self.book_id,
-            &self.page_edit.selected_existing_pages(),
-        ) {
+        let counts = match self
+            .catalog
+            .pdf_page_bound_counts(self.book_id, &self.page_edit.selected_existing_pages())
+        {
             Ok(counts) => counts,
             Err(error) => {
                 crate::notify::error("Could not check those pages", &error.to_string());
@@ -1267,8 +1246,7 @@ impl PdfReaderModel {
             }
             return;
         }
-        let (title, body) =
-            page_edit_delete_copy(&self.page_edit.selected_positions(), counts);
+        let (title, body) = page_edit_delete_copy(&self.page_edit.selected_positions(), counts);
         let Some(anchor) = self
             .pages_widgets
             .as_ref()
@@ -1416,11 +1394,7 @@ impl PdfReaderModel {
         });
     }
 
-    pub fn begin_insert_inspection(
-        &mut self,
-        path: PathBuf,
-        sender: &ComponentSender<Self>,
-    ) {
+    pub fn begin_insert_inspection(&mut self, path: PathBuf, sender: &ComponentSender<Self>) {
         if !self.page_edit.active || self.page_edit.busy {
             return;
         }
@@ -1444,11 +1418,7 @@ impl PdfReaderModel {
         }
     }
 
-    pub fn begin_extract_pages(
-        &mut self,
-        destination: PathBuf,
-        sender: &ComponentSender<Self>,
-    ) {
+    pub fn begin_extract_pages(&mut self, destination: PathBuf, sender: &ComponentSender<Self>) {
         if !self.page_edit.active || self.page_edit.busy {
             return;
         }
@@ -1466,8 +1436,7 @@ impl PdfReaderModel {
         let spawned = std::thread::Builder::new()
             .name("kalam-pdf-extract".to_string())
             .spawn(move || {
-                let result =
-                    extract_page_edit(book_path, password, entries, destination);
+                let result = extract_page_edit(book_path, password, entries, destination);
                 let _ = tx.send(PdfReaderMsg::ExtractPagesDone(result));
             });
         if spawned.is_err() {
@@ -1661,7 +1630,10 @@ mod tests {
         let mut state = edit_state(6, 1);
         state.click("page-2", false, false);
         state.click("page-4", false, true);
-        assert_eq!(state.selected_keys_in_order(), vec!["page-2", "page-3", "page-4"]);
+        assert_eq!(
+            state.selected_keys_in_order(),
+            vec!["page-2", "page-3", "page-4"]
+        );
         state.click("page-3", true, false);
         assert_eq!(state.selected_keys_in_order(), vec!["page-2", "page-4"]);
         state.select_all();

@@ -77,11 +77,11 @@ pub struct SearchPage {
 pub trait Source: Send + Sync {
     /// Internal unique ID of this source (e.g., "mangadex").
     fn id(&self) -> &str;
-    
+
     /// Human-readable name of this source.
     #[allow(dead_code)] // part of the Source interface; no source is registered yet
     fn name(&self) -> &str;
-    
+
     /// Base URL for this source, if applicable.
     #[allow(dead_code)] // used when a source implementation is registered
     fn base_url(&self) -> &str;

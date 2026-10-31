@@ -70,10 +70,7 @@ impl DialogShell {
 /// Build the content shell for a redesign dialog. The title is supplied
 /// when presenting, because `in_app_dialog` owns the panel header.
 pub fn dialog_shell(size: DialogSize, subtitle: Option<&str>) -> DialogShell {
-    let root = gtk::Box::new(
-        gtk::Orientation::Vertical,
-        crate::style::spacing::MD,
-    );
+    let root = gtk::Box::new(gtk::Orientation::Vertical, crate::style::spacing::MD);
     root.set_hexpand(true);
     root.set_vexpand(size != DialogSize::Form);
     // The panel's 24px body padding sits outside this shell. Requesting the
@@ -99,18 +96,12 @@ pub fn dialog_shell(size: DialogSize, subtitle: Option<&str>) -> DialogShell {
         root.append(&label);
     }
 
-    let body = gtk::Box::new(
-        gtk::Orientation::Vertical,
-        crate::style::spacing::MD,
-    );
+    let body = gtk::Box::new(gtk::Orientation::Vertical, crate::style::spacing::MD);
     body.set_hexpand(true);
     body.set_vexpand(size != DialogSize::Form);
     root.append(&body);
 
-    let footer = gtk::Box::new(
-        gtk::Orientation::Horizontal,
-        crate::style::spacing::SM,
-    );
+    let footer = gtk::Box::new(gtk::Orientation::Horizontal, crate::style::spacing::SM);
     footer.add_css_class("kalam-ui-dialog-footer");
     footer.set_halign(gtk::Align::End);
     footer.set_valign(gtk::Align::Center);
@@ -191,19 +182,19 @@ pub fn confirmation_dialog(
     let dialog_slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
 
     let slot_for_cancel = dialog_slot.clone();
-    shell.footer.append(&boxed_ghost_button(cancel_label, move || {
-        close_from_slot(&slot_for_cancel);
-    }));
+    shell
+        .footer
+        .append(&boxed_ghost_button(cancel_label, move || {
+            close_from_slot(&slot_for_cancel);
+        }));
 
     let slot_for_confirm = dialog_slot.clone();
-    shell.footer.append(&pill_button(
-        confirm_label,
-        kind.button_kind(),
-        move || {
+    shell
+        .footer
+        .append(&pill_button(confirm_label, kind.button_kind(), move || {
             close_from_slot(&slot_for_confirm);
             on_confirm();
-        },
-    ));
+        }));
 
     let dialog = present_dialog(anchor, title, DialogExit::OwnButtons, &shell)?;
     *dialog_slot.borrow_mut() = Some(dialog.clone());
@@ -244,10 +235,7 @@ impl TextField {
 
 /// Build a §31 field: Label-style caption above a 44px entry.
 pub fn text_field(label: &str, placeholder: &str, initial: &str) -> TextField {
-    let root = gtk::Box::new(
-        gtk::Orientation::Vertical,
-        crate::style::spacing::XS,
-    );
+    let root = gtk::Box::new(gtk::Orientation::Vertical, crate::style::spacing::XS);
 
     let caption = gtk::Label::new(Some(&label.to_ascii_uppercase()));
     caption.add_css_class("kalam-ui-field-label");

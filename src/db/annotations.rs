@@ -88,7 +88,8 @@ impl Catalog {
                  ORDER BY created_at DESC"
             );
             let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), row_to_annotation)?;
+            let rows =
+                stmt.query_map(rusqlite::params_from_iter(chunk.iter()), row_to_annotation)?;
             for row in rows {
                 out.push(row?);
             }
@@ -142,7 +143,8 @@ impl Catalog {
                  ORDER BY created_at DESC"
             );
             let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), row_to_saved_word)?;
+            let rows =
+                stmt.query_map(rusqlite::params_from_iter(chunk.iter()), row_to_saved_word)?;
             for row in rows {
                 out.push(row?);
             }
@@ -780,7 +782,9 @@ mod tests {
 
         cat.update_annotation_cfi(id, cfi_json).expect("update cfi");
 
-        let annotations = cat.get_annotations_for_book(book_id).expect("get annotations");
+        let annotations = cat
+            .get_annotations_for_book(book_id)
+            .expect("get annotations");
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].cfi.as_deref(), Some(cfi_json));
         assert_eq!(annotations[0].kind, "highlight");
@@ -807,14 +811,20 @@ mod tests {
             )
             .expect("insert annotation");
 
-        let anno = cat.get_annotation_by_id(id).expect("get annotation").expect("found");
+        let anno = cat
+            .get_annotation_by_id(id)
+            .expect("get annotation")
+            .expect("found");
         assert_eq!(anno.color, "green");
         assert_eq!(anno.style, "squiggly");
         assert_eq!(anno.note, "Initial note");
 
         cat.update_annotation_details(id, "pink", "strikeout", "Updated note")
             .expect("update details");
-        let anno2 = cat.get_annotation_by_id(id).expect("get annotation").expect("found");
+        let anno2 = cat
+            .get_annotation_by_id(id)
+            .expect("get annotation")
+            .expect("found");
         assert_eq!(anno2.color, "pink");
         assert_eq!(anno2.style, "strikeout");
         assert_eq!(anno2.note, "Updated note");
@@ -852,21 +862,48 @@ mod tests {
             )
             .expect("insert book 3");
 
-        let _ = cat.insert_saved_word("ubiquitous", "present everywhere", None, Some(book_id1), None, None);
-        let _ = cat.insert_saved_word("serendipity", "fortunate accident", None, Some(book_id2), None, None);
-        let _ = cat.insert_saved_word("ephemeral", "lasting a short time", None, Some(book_id3), None, None);
+        let _ = cat.insert_saved_word(
+            "ubiquitous",
+            "present everywhere",
+            None,
+            Some(book_id1),
+            None,
+            None,
+        );
+        let _ = cat.insert_saved_word(
+            "serendipity",
+            "fortunate accident",
+            None,
+            Some(book_id2),
+            None,
+            None,
+        );
+        let _ = cat.insert_saved_word(
+            "ephemeral",
+            "lasting a short time",
+            None,
+            Some(book_id3),
+            None,
+            None,
+        );
 
         // Off scope
-        let off = cat.get_saved_words_for_scope(book_id2, "off").expect("query off");
+        let off = cat
+            .get_saved_words_for_scope(book_id2, "off")
+            .expect("query off");
         assert!(off.is_empty());
 
         // Book scope
-        let book_only = cat.get_saved_words_for_scope(book_id2, "book").expect("query book");
+        let book_only = cat
+            .get_saved_words_for_scope(book_id2, "book")
+            .expect("query book");
         assert_eq!(book_only.len(), 1);
         assert_eq!(book_only[0].word, "serendipity");
 
         // Series scope (book2 and book3 share "Test Series")
-        let series_words = cat.get_saved_words_for_scope(book_id2, "series").expect("query series");
+        let series_words = cat
+            .get_saved_words_for_scope(book_id2, "series")
+            .expect("query series");
         assert_eq!(series_words.len(), 2);
         let words: Vec<&str> = series_words.iter().map(|w| w.word.as_str()).collect();
         assert!(words.contains(&"serendipity"));
@@ -874,7 +911,9 @@ mod tests {
         assert!(!words.contains(&"ubiquitous"));
 
         // Library scope (all saved words)
-        let all = cat.get_saved_words_for_scope(book_id2, "library").expect("query library");
+        let all = cat
+            .get_saved_words_for_scope(book_id2, "library")
+            .expect("query library");
         assert_eq!(all.len(), 3);
     }
 
@@ -917,7 +956,14 @@ mod tests {
         assert_eq!(back.note, "with the note");
 
         let word_id = cat
-            .insert_saved_word("restore", "to bring back", None, Some(book_id), Some(1), None)
+            .insert_saved_word(
+                "restore",
+                "to bring back",
+                None,
+                Some(book_id),
+                Some(1),
+                None,
+            )
             .expect("insert word");
         cat.set_saved_word_known(word_id, true).expect("mark known");
         let word = cat
@@ -942,8 +988,10 @@ mod tests {
             .into_iter()
             .next()
             .expect("bookmark listed");
-        cat.delete_reading_bookmark(mark_id).expect("delete bookmark");
-        cat.restore_reading_bookmark(&mark).expect("restore bookmark");
+        cat.delete_reading_bookmark(mark_id)
+            .expect("delete bookmark");
+        cat.restore_reading_bookmark(&mark)
+            .expect("restore bookmark");
         let marks = cat.list_reading_bookmarks(book_id).expect("list bookmarks");
         assert_eq!(marks.len(), 1);
         assert_eq!(marks[0].id, mark_id);
@@ -964,7 +1012,8 @@ mod tests {
         assert!((marks[0].fraction - 0.45).abs() < f64::EPSILON);
         assert_eq!(marks[0].label, "Chapter 2 - Middle");
 
-        cat.delete_reading_bookmark(mark_id).expect("delete bookmark");
+        cat.delete_reading_bookmark(mark_id)
+            .expect("delete bookmark");
         let marks2 = cat.list_reading_bookmarks(book_id).expect("list bookmarks");
         assert!(marks2.is_empty());
     }

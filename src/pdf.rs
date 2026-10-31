@@ -6,7 +6,10 @@
 use anyhow::{anyhow, Result};
 use image::{DynamicImage, GenericImageView, RgbaImage};
 use mupdf::pdf::PdfDocument as MuPdfDocument;
-use mupdf::{Colorspace, Document, Matrix, Outline, Rect, TextBlockContent, TextExtractOptions, TextPageFlags};
+use mupdf::{
+    Colorspace, Document, Matrix, Outline, Rect, TextBlockContent, TextExtractOptions,
+    TextPageFlags,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
@@ -111,11 +114,7 @@ impl PdfPageText {
     /// prevents drag selection in one column/box from bleeding into adjacent columns,
     /// sidebars, or callouts located at the same vertical height.
     #[allow(dead_code)]
-    pub fn select_between(
-        &self,
-        p0: (f32, f32),
-        p1: (f32, f32),
-    ) -> PdfSelectionResult {
+    pub fn select_between(&self, p0: (f32, f32), p1: (f32, f32)) -> PdfSelectionResult {
         if self.lines.is_empty() {
             return (String::new(), Vec::new());
         }
@@ -199,7 +198,9 @@ impl PdfPageText {
                 let mid_x = (cx0 + cx1) * 0.5;
 
                 let selected = match (is_first_line, is_last_line) {
-                    (true, true) => mid_x >= start_pt.0.min(end_pt.0) && mid_x <= start_pt.0.max(end_pt.0),
+                    (true, true) => {
+                        mid_x >= start_pt.0.min(end_pt.0) && mid_x <= start_pt.0.max(end_pt.0)
+                    }
                     (true, false) => mid_x >= start_pt.0,
                     (false, true) => mid_x <= end_pt.0,
                     (false, false) => true,
@@ -223,7 +224,12 @@ impl PdfPageText {
                 };
                 if selected {
                     selected_lines.push(line.text.clone());
-                    highlight_rects.push((line_x0, line.y0.min(line.y1), line_x1, line.y0.max(line.y1)));
+                    highlight_rects.push((
+                        line_x0,
+                        line.y0.min(line.y1),
+                        line_x1,
+                        line.y0.max(line.y1),
+                    ));
                 }
             } else if !line_chars.is_empty() {
                 let line_str: String = line_chars.into_iter().collect();
@@ -241,11 +247,7 @@ impl PdfPageText {
     /// - Selected text string (lines separated by newlines)
     /// - List of highlight bounding boxes `(x0, y0, x1, y1)` in document points
     #[allow(dead_code)]
-    pub fn select_rect(
-        &self,
-        p0: (f32, f32),
-        p1: (f32, f32),
-    ) -> PdfSelectionResult {
+    pub fn select_rect(&self, p0: (f32, f32), p1: (f32, f32)) -> PdfSelectionResult {
         if self.lines.is_empty() {
             return (String::new(), Vec::new());
         }
@@ -281,7 +283,8 @@ impl PdfPageText {
                 let ch_mid_x = (ch_min_x + ch_max_x) * 0.5;
                 let ch_mid_y = (ch_min_y + ch_max_y) * 0.5;
 
-                if ch_mid_x >= min_x && ch_mid_x <= max_x && ch_mid_y >= min_y && ch_mid_y <= max_y {
+                if ch_mid_x >= min_x && ch_mid_x <= max_x && ch_mid_y >= min_y && ch_mid_y <= max_y
+                {
                     line_selected_chars.push(ch.ch);
                     line_min_x = line_min_x.min(ch_min_x);
                     line_max_x = line_max_x.max(ch_max_x);
@@ -295,7 +298,12 @@ impl PdfPageText {
                 let lx1 = line.x0.max(line.x1);
                 if lx1 >= min_x && lx0 <= max_x {
                     selected_lines.push(line.text.clone());
-                    highlight_rects.push((lx0.max(min_x), line_top.max(min_y), lx1.min(max_x), line_bottom.min(max_y)));
+                    highlight_rects.push((
+                        lx0.max(min_x),
+                        line_top.max(min_y),
+                        lx1.min(max_x),
+                        line_bottom.min(max_y),
+                    ));
                 }
             } else if !line_selected_chars.is_empty() {
                 let line_str: String = line_selected_chars.into_iter().collect();
@@ -304,7 +312,10 @@ impl PdfPageText {
             }
         }
 
-        (selected_lines.join("\n").trim().to_string(), highlight_rects)
+        (
+            selected_lines.join("\n").trim().to_string(),
+            highlight_rects,
+        )
     }
 
     /// Find word under point in document coordinates (PDF points).
@@ -333,7 +344,8 @@ impl PdfPageText {
                 }
 
                 let mut end_idx = char_idx;
-                while end_idx + 1 < line.chars.len() && !line.chars[end_idx + 1].ch.is_whitespace() {
+                while end_idx + 1 < line.chars.len() && !line.chars[end_idx + 1].ch.is_whitespace()
+                {
                     end_idx += 1;
                 }
 
@@ -351,7 +363,8 @@ impl PdfPageText {
                     max_y = max_y.max(c.y0.max(c.y1));
                 }
 
-                let trimmed = word_text.trim_matches(|c: char| c.is_ascii_punctuation() && c != '\'' && c != '-');
+                let trimmed = word_text
+                    .trim_matches(|c: char| c.is_ascii_punctuation() && c != '\'' && c != '-');
                 if !trimmed.is_empty() {
                     return Some((trimmed.to_string(), vec![(min_x, min_y, max_x, max_y)]));
                 }
@@ -385,7 +398,6 @@ impl PdfPageText {
         }
         None
     }
-
 }
 
 /// Ink bounding box representing content boundaries in normalized (0.0 .. 1.0) coordinates.
@@ -665,9 +677,9 @@ impl PdfDocument {
         let mut doc = Document::open(&*path_str)
             .map_err(|e| anyhow!("Failed to load PDF document {:?}: {}", path_buf, e))?;
 
-        let needs_password = doc.needs_password().map_err(|e| {
-            anyhow!("Failed to inspect PDF document {:?}: {}", path_buf, e)
-        })?;
+        let needs_password = doc
+            .needs_password()
+            .map_err(|e| anyhow!("Failed to inspect PDF document {:?}: {}", path_buf, e))?;
         let supplied = password.is_some();
         let authenticated = if needs_password {
             Some(doc.authenticate(password.unwrap_or("")).unwrap_or(false))
@@ -690,11 +702,7 @@ impl PdfDocument {
 
         let doc = if doc.is_pdf() {
             PdfDocHandle::Pdf(mupdf::pdf::PdfDocument::try_from(doc).map_err(|e| {
-                anyhow!(
-                    "Failed to open PDF-specific document {:?}: {}",
-                    path_buf,
-                    e
-                )
+                anyhow!("Failed to open PDF-specific document {:?}: {}", path_buf, e)
             })?)
         } else {
             PdfDocHandle::Generic(doc)
@@ -715,18 +723,14 @@ impl PdfDocument {
     fn pdf_handle(&self) -> Result<&MuPdfDocument> {
         match &self.doc {
             PdfDocHandle::Pdf(doc) => Ok(doc),
-            PdfDocHandle::Generic(_) => {
-                Err(anyhow!("Page editing needs a PDF document"))
-            }
+            PdfDocHandle::Generic(_) => Err(anyhow!("Page editing needs a PDF document")),
         }
     }
 
     fn pdf_handle_mut(&mut self) -> Result<&mut MuPdfDocument> {
         match &mut self.doc {
             PdfDocHandle::Pdf(doc) => Ok(doc),
-            PdfDocHandle::Generic(_) => {
-                Err(anyhow!("Page editing needs a PDF document"))
-            }
+            PdfDocHandle::Generic(_) => Err(anyhow!("Page editing needs a PDF document")),
         }
     }
 
@@ -807,9 +811,8 @@ impl PdfDocument {
         for (position, entry) in entries.iter().enumerate() {
             if let PdfPageEditSource::Inserted { path, page } = &entry.source {
                 if !inserted_sources.contains_key(path) {
-                    let source = PdfDocument::open(path).map_err(|e| {
-                        anyhow!("Failed to open inserted PDF {:?}: {}", path, e)
-                    })?;
+                    let source = PdfDocument::open(path)
+                        .map_err(|e| anyhow!("Failed to open inserted PDF {:?}: {}", path, e))?;
                     inserted_sources.insert(path.clone(), source);
                 }
                 let Some(source) = inserted_sources.get(path) else {
@@ -827,8 +830,7 @@ impl PdfDocument {
         }
 
         let survivors_zero_based: Vec<usize> = {
-            let mut survivors: Vec<usize> =
-                seen_existing.iter().map(|page| page - 1).collect();
+            let mut survivors: Vec<usize> = seen_existing.iter().map(|page| page - 1).collect();
             survivors.sort_unstable();
             survivors
         };
@@ -906,11 +908,7 @@ impl PdfDocument {
                     PageEditTempKey::Inserted(_) => None,
                 })
                 .collect();
-            remap_outline_destinations(
-                &mut outlines,
-                &old_to_new,
-                &survivors_zero_based,
-            );
+            remap_outline_destinations(&mut outlines, &old_to_new, &survivors_zero_based);
             destination
                 .set_outlines(&outlines)
                 .map_err(|e| anyhow!("Failed to rewrite the contents: {}", e))?;
@@ -982,9 +980,7 @@ impl PdfDocument {
                         inserted_sources.insert(path.clone(), source);
                     }
                     let Some(source) = inserted_sources.get(path) else {
-                        return Err(anyhow!(
-                            "An inserted PDF went missing during extraction"
-                        ));
+                        return Err(anyhow!("An inserted PDF went missing during extraction"));
                     };
                     source.page_rotation(*page)?
                 }
@@ -1004,9 +1000,7 @@ impl PdfDocument {
                 }
                 PdfPageEditSource::Inserted { path, page } => {
                     let Some(source) = inserted_sources.get(path) else {
-                        return Err(anyhow!(
-                            "An inserted PDF went missing during extraction"
-                        ));
+                        return Err(anyhow!("An inserted PDF went missing during extraction"));
                     };
                     if *page == 0 || *page > source.page_count() {
                         return Err(anyhow!(
@@ -1146,10 +1140,34 @@ impl PdfDocument {
                         .chars
                         .into_iter()
                         .map(|c| {
-                            let x0 = c.quad.ul.x.min(c.quad.ur.x).min(c.quad.ll.x).min(c.quad.lr.x);
-                            let y0 = c.quad.ul.y.min(c.quad.ur.y).min(c.quad.ll.y).min(c.quad.lr.y);
-                            let x1 = c.quad.ul.x.max(c.quad.ur.x).max(c.quad.ll.x).max(c.quad.lr.x);
-                            let y1 = c.quad.ul.y.max(c.quad.ur.y).max(c.quad.ll.y).max(c.quad.lr.y);
+                            let x0 = c
+                                .quad
+                                .ul
+                                .x
+                                .min(c.quad.ur.x)
+                                .min(c.quad.ll.x)
+                                .min(c.quad.lr.x);
+                            let y0 = c
+                                .quad
+                                .ul
+                                .y
+                                .min(c.quad.ur.y)
+                                .min(c.quad.ll.y)
+                                .min(c.quad.lr.y);
+                            let x1 = c
+                                .quad
+                                .ul
+                                .x
+                                .max(c.quad.ur.x)
+                                .max(c.quad.ll.x)
+                                .max(c.quad.lr.x);
+                            let y1 = c
+                                .quad
+                                .ul
+                                .y
+                                .max(c.quad.ur.y)
+                                .max(c.quad.ll.y)
+                                .max(c.quad.lr.y);
                             PdfTextChar {
                                 ch: c.ch,
                                 x0,
@@ -1192,7 +1210,12 @@ impl PdfDocument {
     }
 
     /// Search for text on a page (1-indexed). Returns bounding rects (x0, y0, x1, y1) in document points.
-    pub fn search_page(&self, page_num: usize, needle: &str, hit_max: u32) -> Result<Vec<PdfTextRect>> {
+    pub fn search_page(
+        &self,
+        page_num: usize,
+        needle: &str,
+        hit_max: u32,
+    ) -> Result<Vec<PdfTextRect>> {
         if page_num == 0 || page_num > self.page_count {
             return Err(anyhow!("Page number {} out of range", page_num));
         }
@@ -1302,8 +1325,8 @@ impl PdfDocument {
                     // ellipses where the text runs on.
                     let mut start_char = char_idx.saturating_sub(34);
                     if start_char > 0 {
-                        if let Some(space) = (start_char..char_idx)
-                            .find(|&idx| chars[idx].is_whitespace())
+                        if let Some(space) =
+                            (start_char..char_idx).find(|&idx| chars[idx].is_whitespace())
                         {
                             start_char = space + 1;
                         }
@@ -1318,8 +1341,7 @@ impl PdfDocument {
                             end_char = space;
                         }
                     }
-                    let mut snippet: String =
-                        chars[start_char..end_char].iter().collect();
+                    let mut snippet: String = chars[start_char..end_char].iter().collect();
                     if start_char > 0 {
                         snippet = format!("…{snippet}");
                     }
@@ -1411,41 +1433,42 @@ impl PdfDocument {
         let raw_samples = pixmap.samples();
         let raw_stride = pixmap.stride();
 
-        let tight_raw = if raw_stride == (w_usize * 4) as isize && raw_samples.len() >= w_usize * h_usize * 4 {
-            raw_samples[..w_usize * h_usize * 4].to_vec()
-        } else if raw_stride > 0 {
-            let row_stride = raw_stride as usize;
-            let mut buf = Vec::with_capacity(w_usize * h_usize * 4);
-            for y in 0..h_usize {
-                let start = y * row_stride;
-                let end = start + w_usize * 4;
-                if end <= raw_samples.len() {
-                    buf.extend_from_slice(&raw_samples[start..end]);
-                } else if start < raw_samples.len() {
-                    buf.extend_from_slice(&raw_samples[start..]);
-                    buf.resize(buf.len() + (end - raw_samples.len()), 255);
-                } else {
-                    buf.resize(buf.len() + w_usize * 4, 255);
+        let tight_raw =
+            if raw_stride == (w_usize * 4) as isize && raw_samples.len() >= w_usize * h_usize * 4 {
+                raw_samples[..w_usize * h_usize * 4].to_vec()
+            } else if raw_stride > 0 {
+                let row_stride = raw_stride as usize;
+                let mut buf = Vec::with_capacity(w_usize * h_usize * 4);
+                for y in 0..h_usize {
+                    let start = y * row_stride;
+                    let end = start + w_usize * 4;
+                    if end <= raw_samples.len() {
+                        buf.extend_from_slice(&raw_samples[start..end]);
+                    } else if start < raw_samples.len() {
+                        buf.extend_from_slice(&raw_samples[start..]);
+                        buf.resize(buf.len() + (end - raw_samples.len()), 255);
+                    } else {
+                        buf.resize(buf.len() + w_usize * 4, 255);
+                    }
                 }
-            }
-            buf
-        } else {
-            let row_stride = raw_stride.unsigned_abs();
-            let mut buf = Vec::with_capacity(w_usize * h_usize * 4);
-            for y in 0..h_usize {
-                let start = (h_usize - 1 - y) * row_stride;
-                let end = start + w_usize * 4;
-                if end <= raw_samples.len() {
-                    buf.extend_from_slice(&raw_samples[start..end]);
-                } else if start < raw_samples.len() {
-                    buf.extend_from_slice(&raw_samples[start..]);
-                    buf.resize(buf.len() + (end - raw_samples.len()), 255);
-                } else {
-                    buf.resize(buf.len() + w_usize * 4, 255);
+                buf
+            } else {
+                let row_stride = raw_stride.unsigned_abs();
+                let mut buf = Vec::with_capacity(w_usize * h_usize * 4);
+                for y in 0..h_usize {
+                    let start = (h_usize - 1 - y) * row_stride;
+                    let end = start + w_usize * 4;
+                    if end <= raw_samples.len() {
+                        buf.extend_from_slice(&raw_samples[start..end]);
+                    } else if start < raw_samples.len() {
+                        buf.extend_from_slice(&raw_samples[start..]);
+                        buf.resize(buf.len() + (end - raw_samples.len()), 255);
+                    } else {
+                        buf.resize(buf.len() + w_usize * 4, 255);
+                    }
                 }
-            }
-            buf
-        };
+                buf
+            };
 
         if smart_crop {
             if let Some(rgba) = RgbaImage::from_raw(width, height, tight_raw.clone()) {
@@ -1512,7 +1535,10 @@ impl PdfDocument {
 
         // Sample corner pixels to determine background paper luminance (handles white, cream, off-white)
         let sample_pts = [
-            (2.min(width.saturating_sub(1)), 2.min(height.saturating_sub(1))),
+            (
+                2.min(width.saturating_sub(1)),
+                2.min(height.saturating_sub(1)),
+            ),
             (width.saturating_sub(3), 2.min(height.saturating_sub(1))),
             (2.min(width.saturating_sub(1)), height.saturating_sub(3)),
             (width.saturating_sub(3), height.saturating_sub(3)),
@@ -1687,7 +1713,11 @@ fn is_header_or_footer(line: &str) -> bool {
     let lower = line.to_lowercase();
     if lower.starts_with("page ") || lower.starts_with("chapter ") {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() <= 3 && parts.get(1).is_some_and(|p| p.chars().all(|c| c.is_numeric())) {
+        if parts.len() <= 3
+            && parts
+                .get(1)
+                .is_some_and(|p| p.chars().all(|c| c.is_numeric()))
+        {
             return true;
         }
     }
@@ -1709,16 +1739,12 @@ mod tests {
 
     #[test]
     fn test_calculate_ink_box_for_blank_and_content_image() {
-        let blank_img = DynamicImage::ImageRgba8(RgbaImage::from_pixel(
-            100,
-            100,
-            Rgba([255, 255, 255, 255]),
-        ));
+        let blank_img =
+            DynamicImage::ImageRgba8(RgbaImage::from_pixel(100, 100, Rgba([255, 255, 255, 255])));
         let ink_box = PdfDocument::calculate_ink_box_for_image(&blank_img);
         assert_eq!(ink_box, InkBoundingBox::default());
 
-        let mut content_img =
-            RgbaImage::from_pixel(100, 100, Rgba([255, 255, 255, 255]));
+        let mut content_img = RgbaImage::from_pixel(100, 100, Rgba([255, 255, 255, 255]));
         // Draw ink rect from x=20..80, y=30..70
         for y in 30..70 {
             for x in 20..80 {
@@ -1786,7 +1812,10 @@ mod tests {
 
         assert_eq!(reflowed.len(), 2);
         assert!(reflowed[0].contains("across twolines due to PDF formatting."));
-        assert_eq!(reflowed[1], "This is a second paragraph. It continues here.");
+        assert_eq!(
+            reflowed[1],
+            "This is a second paragraph. It continues here."
+        );
     }
 
     #[test]
@@ -1804,28 +1833,92 @@ mod tests {
             page_num: 1,
             width_pts: 600.0,
             height_pts: 800.0,
-            lines: vec![
-                PdfTextLine {
-                    text: "Hello world".to_string(),
-                    x0: 50.0,
-                    y0: 100.0,
-                    x1: 150.0,
-                    y1: 120.0,
-                    chars: vec![
-                        PdfTextChar { ch: 'H', x0: 50.0, y0: 100.0, x1: 60.0, y1: 120.0 },
-                        PdfTextChar { ch: 'e', x0: 60.0, y0: 100.0, x1: 70.0, y1: 120.0 },
-                        PdfTextChar { ch: 'l', x0: 70.0, y0: 100.0, x1: 75.0, y1: 120.0 },
-                        PdfTextChar { ch: 'l', x0: 75.0, y0: 100.0, x1: 80.0, y1: 120.0 },
-                        PdfTextChar { ch: 'o', x0: 80.0, y0: 100.0, x1: 90.0, y1: 120.0 },
-                        PdfTextChar { ch: ' ', x0: 90.0, y0: 100.0, x1: 95.0, y1: 120.0 },
-                        PdfTextChar { ch: 'w', x0: 95.0, y0: 100.0, x1: 110.0, y1: 120.0 },
-                        PdfTextChar { ch: 'o', x0: 110.0, y0: 100.0, x1: 120.0, y1: 120.0 },
-                        PdfTextChar { ch: 'r', x0: 120.0, y0: 100.0, x1: 130.0, y1: 120.0 },
-                        PdfTextChar { ch: 'l', x0: 130.0, y0: 100.0, x1: 135.0, y1: 120.0 },
-                        PdfTextChar { ch: 'd', x0: 135.0, y0: 100.0, x1: 145.0, y1: 120.0 },
-                    ],
-                },
-            ],
+            lines: vec![PdfTextLine {
+                text: "Hello world".to_string(),
+                x0: 50.0,
+                y0: 100.0,
+                x1: 150.0,
+                y1: 120.0,
+                chars: vec![
+                    PdfTextChar {
+                        ch: 'H',
+                        x0: 50.0,
+                        y0: 100.0,
+                        x1: 60.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'e',
+                        x0: 60.0,
+                        y0: 100.0,
+                        x1: 70.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'l',
+                        x0: 70.0,
+                        y0: 100.0,
+                        x1: 75.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'l',
+                        x0: 75.0,
+                        y0: 100.0,
+                        x1: 80.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'o',
+                        x0: 80.0,
+                        y0: 100.0,
+                        x1: 90.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: ' ',
+                        x0: 90.0,
+                        y0: 100.0,
+                        x1: 95.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'w',
+                        x0: 95.0,
+                        y0: 100.0,
+                        x1: 110.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'o',
+                        x0: 110.0,
+                        y0: 100.0,
+                        x1: 120.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'r',
+                        x0: 120.0,
+                        y0: 100.0,
+                        x1: 130.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'l',
+                        x0: 130.0,
+                        y0: 100.0,
+                        x1: 135.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'd',
+                        x0: 135.0,
+                        y0: 100.0,
+                        x1: 145.0,
+                        y1: 120.0,
+                    },
+                ],
+            }],
         };
 
         let (text, rects) = page_text.select_between((50.0, 105.0), (90.0, 105.0));
@@ -1841,28 +1934,92 @@ mod tests {
             page_num: 1,
             width_pts: 600.0,
             height_pts: 800.0,
-            lines: vec![
-                PdfTextLine {
-                    text: "Quick brown fox".to_string(),
-                    x0: 50.0,
-                    y0: 100.0,
-                    x1: 200.0,
-                    y1: 120.0,
-                    chars: vec![
-                        PdfTextChar { ch: 'Q', x0: 50.0, y0: 100.0, x1: 60.0, y1: 120.0 },
-                        PdfTextChar { ch: 'u', x0: 60.0, y0: 100.0, x1: 70.0, y1: 120.0 },
-                        PdfTextChar { ch: 'i', x0: 70.0, y0: 100.0, x1: 75.0, y1: 120.0 },
-                        PdfTextChar { ch: 'c', x0: 75.0, y0: 100.0, x1: 85.0, y1: 120.0 },
-                        PdfTextChar { ch: 'k', x0: 85.0, y0: 100.0, x1: 95.0, y1: 120.0 },
-                        PdfTextChar { ch: ' ', x0: 95.0, y0: 100.0, x1: 100.0, y1: 120.0 },
-                        PdfTextChar { ch: 'b', x0: 100.0, y0: 100.0, x1: 110.0, y1: 120.0 },
-                        PdfTextChar { ch: 'r', x0: 110.0, y0: 100.0, x1: 120.0, y1: 120.0 },
-                        PdfTextChar { ch: 'o', x0: 120.0, y0: 100.0, x1: 130.0, y1: 120.0 },
-                        PdfTextChar { ch: 'w', x0: 130.0, y0: 100.0, x1: 145.0, y1: 120.0 },
-                        PdfTextChar { ch: 'n', x0: 145.0, y0: 100.0, x1: 155.0, y1: 120.0 },
-                    ],
-                },
-            ],
+            lines: vec![PdfTextLine {
+                text: "Quick brown fox".to_string(),
+                x0: 50.0,
+                y0: 100.0,
+                x1: 200.0,
+                y1: 120.0,
+                chars: vec![
+                    PdfTextChar {
+                        ch: 'Q',
+                        x0: 50.0,
+                        y0: 100.0,
+                        x1: 60.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'u',
+                        x0: 60.0,
+                        y0: 100.0,
+                        x1: 70.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'i',
+                        x0: 70.0,
+                        y0: 100.0,
+                        x1: 75.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'c',
+                        x0: 75.0,
+                        y0: 100.0,
+                        x1: 85.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'k',
+                        x0: 85.0,
+                        y0: 100.0,
+                        x1: 95.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: ' ',
+                        x0: 95.0,
+                        y0: 100.0,
+                        x1: 100.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'b',
+                        x0: 100.0,
+                        y0: 100.0,
+                        x1: 110.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'r',
+                        x0: 110.0,
+                        y0: 100.0,
+                        x1: 120.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'o',
+                        x0: 120.0,
+                        y0: 100.0,
+                        x1: 130.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'w',
+                        x0: 130.0,
+                        y0: 100.0,
+                        x1: 145.0,
+                        y1: 120.0,
+                    },
+                    PdfTextChar {
+                        ch: 'n',
+                        x0: 145.0,
+                        y0: 100.0,
+                        x1: 155.0,
+                        y1: 120.0,
+                    },
+                ],
+            }],
         };
 
         let result = page_text.word_at((125.0, 110.0));
@@ -1880,16 +2037,14 @@ mod tests {
             page_num: 1,
             width_pts: 600.0,
             height_pts: 800.0,
-            lines: vec![
-                PdfTextLine {
-                    text: "Single complete line.".to_string(),
-                    x0: 50.0,
-                    y0: 100.0,
-                    x1: 200.0,
-                    y1: 120.0,
-                    chars: vec![],
-                },
-            ],
+            lines: vec![PdfTextLine {
+                text: "Single complete line.".to_string(),
+                x0: 50.0,
+                y0: 100.0,
+                x1: 200.0,
+                y1: 120.0,
+                chars: vec![],
+            }],
         };
 
         let result = page_text.line_at((100.0, 110.0));
@@ -1989,8 +2144,20 @@ mod tests {
                     x1: 150.0,
                     y1: 120.0,
                     chars: vec![
-                        PdfTextChar { ch: 'C', x0: 50.0, y0: 100.0, x1: 60.0, y1: 120.0 },
-                        PdfTextChar { ch: '1', x0: 60.0, y0: 100.0, x1: 70.0, y1: 120.0 },
+                        PdfTextChar {
+                            ch: 'C',
+                            x0: 50.0,
+                            y0: 100.0,
+                            x1: 60.0,
+                            y1: 120.0,
+                        },
+                        PdfTextChar {
+                            ch: '1',
+                            x0: 60.0,
+                            y0: 100.0,
+                            x1: 70.0,
+                            y1: 120.0,
+                        },
                     ],
                 },
                 PdfTextLine {
@@ -2000,8 +2167,20 @@ mod tests {
                     x1: 400.0,
                     y1: 120.0,
                     chars: vec![
-                        PdfTextChar { ch: 'B', x0: 300.0, y0: 100.0, x1: 310.0, y1: 120.0 },
-                        PdfTextChar { ch: '1', x0: 310.0, y0: 100.0, x1: 320.0, y1: 120.0 },
+                        PdfTextChar {
+                            ch: 'B',
+                            x0: 300.0,
+                            y0: 100.0,
+                            x1: 310.0,
+                            y1: 120.0,
+                        },
+                        PdfTextChar {
+                            ch: '1',
+                            x0: 310.0,
+                            y0: 100.0,
+                            x1: 320.0,
+                            y1: 120.0,
+                        },
                     ],
                 },
                 PdfTextLine {
@@ -2011,8 +2190,20 @@ mod tests {
                     x1: 400.0,
                     y1: 150.0,
                     chars: vec![
-                        PdfTextChar { ch: 'B', x0: 300.0, y0: 130.0, x1: 310.0, y1: 150.0 },
-                        PdfTextChar { ch: '2', x0: 310.0, y0: 130.0, x1: 320.0, y1: 150.0 },
+                        PdfTextChar {
+                            ch: 'B',
+                            x0: 300.0,
+                            y0: 130.0,
+                            x1: 310.0,
+                            y1: 150.0,
+                        },
+                        PdfTextChar {
+                            ch: '2',
+                            x0: 310.0,
+                            y0: 130.0,
+                            x1: 320.0,
+                            y1: 150.0,
+                        },
                     ],
                 },
             ],
@@ -2031,16 +2222,14 @@ mod tests {
             page_num: 1,
             width_pts: 800.0,
             height_pts: 1200.0,
-            lines: vec![
-                PdfTextLine {
-                    text: "Left only.".to_string(),
-                    x0: 50.0,
-                    y0: 100.0,
-                    x1: 150.0,
-                    y1: 120.0,
-                    chars: vec![],
-                },
-            ],
+            lines: vec![PdfTextLine {
+                text: "Left only.".to_string(),
+                x0: 50.0,
+                y0: 100.0,
+                x1: 150.0,
+                y1: 120.0,
+                chars: vec![],
+            }],
         };
 
         // Inside horizontal bounds
@@ -2154,8 +2343,7 @@ mod tests {
 
         let result = (|| -> std::result::Result<(usize, (f32, f32), i32, usize), String> {
             let mut doc = PdfDocument::open(&source_path).map_err(|e| e.to_string())?;
-            let (a4_width, a4_height) =
-                doc.page_dimensions(2).map_err(|e| e.to_string())?;
+            let (a4_width, a4_height) = doc.page_dimensions(2).map_err(|e| e.to_string())?;
 
             // Keep pages 3 then 2, delete page 1, and turn the A4
             // page a quarter clockwise on its way to the back.
@@ -2174,23 +2362,18 @@ mod tests {
                 .write_edited_pages_to(&entries, &mut edited)
                 .map_err(|e| e.to_string())?;
             std::fs::write(&edited_path, edited).map_err(|e| e.to_string())?;
-            let reopened =
-                PdfDocument::open(&edited_path).map_err(|e| e.to_string())?;
-            let rotated_dims = reopened
-                .page_dimensions(2)
-                .map_err(|e| e.to_string())?;
+            let reopened = PdfDocument::open(&edited_path).map_err(|e| e.to_string())?;
+            let rotated_dims = reopened.page_dimensions(2).map_err(|e| e.to_string())?;
             let rotation = reopened.page_rotation(2).map_err(|e| e.to_string())?;
 
             // Dimensions keyed by the old pages, for the caller's
             // drawing arithmetic.
-            if info.existing_page_dimensions.get(&2) != Some(&(a4_width, a4_height))
-            {
+            if info.existing_page_dimensions.get(&2) != Some(&(a4_width, a4_height)) {
                 return Err("old page dimensions were not reported".to_string());
             }
 
             // Extract reads the *original* document: page 2 only.
-            let original =
-                PdfDocument::open(&source_path).map_err(|e| e.to_string())?;
+            let original = PdfDocument::open(&source_path).map_err(|e| e.to_string())?;
             let mut extracted = Vec::new();
             original
                 .write_extracted_pages_to(
@@ -2202,8 +2385,7 @@ mod tests {
                 )
                 .map_err(|e| e.to_string())?;
             std::fs::write(&extracted_path, extracted).map_err(|e| e.to_string())?;
-            let extracted_doc =
-                PdfDocument::open(&extracted_path).map_err(|e| e.to_string())?;
+            let extracted_doc = PdfDocument::open(&extracted_path).map_err(|e| e.to_string())?;
 
             Ok((
                 reopened.page_count(),

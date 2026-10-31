@@ -25,10 +25,7 @@ pub enum AuthorsOut {
 
 #[derive(Debug)]
 pub enum AuthorsMsg {
-    Loaded {
-        gen: u64,
-        load: Box<AuthorsLoad>,
-    },
+    Loaded { gen: u64, load: Box<AuthorsLoad> },
     SearchChanged(String),
     SortChanged(usize),
 }
@@ -205,9 +202,7 @@ impl AuthorsModel {
                     .entries
                     .iter()
                     .filter_map(|entry| entry.photo_path.as_deref())
-                    .filter_map(|path| {
-                        crate::preload::decode_for_cache(path, PORTRAIT, PORTRAIT)
-                    })
+                    .filter_map(|path| crate::preload::decode_for_cache(path, PORTRAIT, PORTRAIT))
                     .collect();
                 AuthorsLoad { snap, covers }
             },
@@ -265,9 +260,9 @@ impl AuthorsModel {
         };
         match self.sort {
             AuthorSort::Name => entries.sort_by(|a, b| by_name(a, b)),
-            AuthorSort::MostBooks => entries.sort_by(|a, b| {
-                b.book_count.cmp(&a.book_count).then_with(|| by_name(a, b))
-            }),
+            AuthorSort::MostBooks => {
+                entries.sort_by(|a, b| b.book_count.cmp(&a.book_count).then_with(|| by_name(a, b)))
+            }
             AuthorSort::MostRead => entries.sort_by(|a, b| {
                 b.read_count
                     .cmp(&a.read_count)
@@ -381,11 +376,7 @@ fn lifespan(entry: &AuthorIndexEntry) -> Option<String> {
 }
 
 fn detail_line(entry: &AuthorIndexEntry) -> String {
-    let bio = entry
-        .bio
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let bio = entry.bio.split_whitespace().collect::<Vec<_>>().join(" ");
     if !bio.is_empty() {
         return bio;
     }
@@ -475,10 +466,7 @@ fn author_card(entry: &AuthorIndexEntry, sender: &ComponentSender<AuthorsModel>)
         entry.book_count, entry.read_count
     );
     if entry.series_count > 0 {
-        meta.push_str(&format!(
-            " · {} series",
-            entry.series_count
-        ));
+        meta.push_str(&format!(" · {} series", entry.series_count));
     }
     if let Some(known) = entry.known_works {
         if known > entry.book_count as i64 {

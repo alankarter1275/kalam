@@ -523,7 +523,10 @@ impl Catalog {
         let mut out = Vec::new();
         for row in rows {
             let key = row?;
-            if key.chars().all(|c| c.is_alphabetic() || c == '\'' || c == '-') {
+            if key
+                .chars()
+                .all(|c| c.is_alphabetic() || c == '\'' || c == '-')
+            {
                 out.push(key);
             }
         }
@@ -720,7 +723,6 @@ impl Catalog {
         )?;
         Ok(n > 0)
     }
-
 }
 
 /// A combined_words row -> the entry the reader shows: the word once, its
@@ -901,7 +903,6 @@ fn split_example(def: &str) -> Option<(String, String)> {
     }
     None
 }
-
 
 pub(crate) fn dictionary_query_variants(term: &str) -> Vec<String> {
     let trimmed = term.trim();
@@ -1565,8 +1566,6 @@ mod tests {
         assert_eq!(senses[2].def, "plain row");
         assert_eq!(senses[2].pos, None);
     }
-
-
 }
 
 #[test]

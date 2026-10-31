@@ -1,8 +1,8 @@
 use anyhow::Result;
 use epub_builder::{EpubBuilder, EpubContent, ReferenceType, ZipLibrary};
 use std::fs::File;
-use std::path::Path;
 use std::io::Cursor;
+use std::path::Path;
 
 pub struct WebChapter {
     pub title: String,
@@ -20,14 +20,18 @@ pub fn generate_epub(
 
     epub.metadata("author", author)?;
     epub.metadata("title", title)?;
-    
+
     let css = b"body { font-family: sans-serif; line-height: 1.5; padding: 1em; } h1 { text-align: center; }";
     epub.stylesheet(Cursor::new(css))?;
 
     if let Some(cover) = cover_bytes {
-        let ext = if cover.starts_with(b"\x89PNG\r\n\x1a\n") { "png" }
-                  else if cover.starts_with(b"GIF8") { "gif" }
-                  else { "jpg" };
+        let ext = if cover.starts_with(b"\x89PNG\r\n\x1a\n") {
+            "png"
+        } else if cover.starts_with(b"GIF8") {
+            "gif"
+        } else {
+            "jpg"
+        };
         epub.add_cover_image(format!("cover.{}", ext), Cursor::new(cover), "image/*")?;
     }
 
@@ -46,9 +50,9 @@ pub fn generate_epub(
         );
 
         let file_name = format!("chapter_{}.xhtml", i + 1);
-        let mut content = EpubContent::new(&file_name, Cursor::new(xhtml.into_bytes()))
-            .title(&ch.title);
-        
+        let mut content =
+            EpubContent::new(&file_name, Cursor::new(xhtml.into_bytes())).title(&ch.title);
+
         if i == 0 {
             content = content.reftype(ReferenceType::Text);
         }

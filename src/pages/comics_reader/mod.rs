@@ -17,13 +17,13 @@
 //! - Reading progress checkpointing, bookmark persistence, and memory
 //!   release on close.
 
-pub mod types;
-pub mod provider;
-pub mod providers;
-pub mod reading_settings;
 pub mod image_processing;
 pub mod page_picture;
 pub mod pages_grid;
+pub mod provider;
+pub mod providers;
+pub mod reading_settings;
+pub mod types;
 
 pub use types::*;
 
@@ -255,7 +255,9 @@ impl ComicsReaderModel {
                     let authors = if !series.author.trim().is_empty() {
                         series.author.clone()
                     } else {
-                        chs.first().map(|c| c.book.authors.clone()).unwrap_or_default()
+                        chs.first()
+                            .map(|c| c.book.authors.clone())
+                            .unwrap_or_default()
                     };
                     let (mut books, mut meta) = (Vec::new(), Vec::new());
                     for c in chs {
@@ -301,9 +303,9 @@ impl ComicsReaderModel {
                 (None, Vec::new(), Vec::new(), String::new(), None)
             };
 
-        let current_chapter_idx = init.book_id.and_then(|bid| {
-            series_chapters.iter().position(|b| b.id == bid)
-        });
+        let current_chapter_idx = init
+            .book_id
+            .and_then(|bid| series_chapters.iter().position(|b| b.id == bid));
 
         // The series-wide page accounting (decision 35): listing an
         // archive's entries reads only its central directory, so the
@@ -359,11 +361,8 @@ impl ComicsReaderModel {
         // values seed that record on first open — the current
         // chapter's choices win, then the first chapter that has any.
         let chapter_book_ids: Vec<i64> = series_chapters.iter().map(|b| b.id).collect();
-        let series_settings_key = reading_settings::series_pref_key(
-            series_id,
-            &chapter_book_ids,
-            init.book_id,
-        );
+        let series_settings_key =
+            reading_settings::series_pref_key(series_id, &chapter_book_ids, init.book_id);
         let (settings, series_override_on) = if let Some(ref catalog) = init.catalog {
             let globals = ComicReadingSettings::load_globals(catalog);
             let mut series_settings = series_settings_key
@@ -381,9 +380,10 @@ impl ComicsReaderModel {
                             .copied()
                             .filter(|id| Some(*id) != init.book_id),
                     );
-                    if let Some(migrated) = candidates.iter().find_map(|id| {
-                        ComicReadingSettings::legacy_book(catalog, *id, &globals)
-                    }) {
+                    if let Some(migrated) = candidates
+                        .iter()
+                        .find_map(|id| ComicReadingSettings::legacy_book(catalog, *id, &globals))
+                    {
                         migrated.save_series(catalog, key);
                         for id in &candidates {
                             ComicReadingSettings::clear_legacy_book(catalog, *id);
@@ -607,8 +607,7 @@ impl ComicsReaderModel {
     }
 
     fn rebuild_preset_rows(&mut self) {
-        let (Some(host), Some(sender)) = (&self.preset_list_host, &self.preset_sender)
-        else {
+        let (Some(host), Some(sender)) = (&self.preset_list_host, &self.preset_sender) else {
             return;
         };
         while let Some(child) = host.first_child() {
@@ -625,9 +624,10 @@ impl ComicsReaderModel {
             apply.set_hexpand(true);
             apply.set_halign(gtk::Align::Fill);
             apply.set_tooltip_text(Some(&format!("Apply “{}”", preset.name)));
-            apply.update_property(&[gtk::accessible::Property::Label(
-                &format!("Apply preset {}", preset.name),
-            )]);
+            apply.update_property(&[gtk::accessible::Property::Label(&format!(
+                "Apply preset {}",
+                preset.name
+            ))]);
 
             let apply_content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
             let text = gtk::Box::new(gtk::Orientation::Vertical, 1);
@@ -667,9 +667,10 @@ impl ComicsReaderModel {
             delete.add_css_class("danger");
             delete.set_valign(gtk::Align::Center);
             delete.set_tooltip_text(Some(&format!("Delete “{}”", preset.name)));
-            delete.update_property(&[gtk::accessible::Property::Label(
-                &format!("Delete preset {}", preset.name),
-            )]);
+            delete.update_property(&[gtk::accessible::Property::Label(&format!(
+                "Delete preset {}",
+                preset.name
+            ))]);
             {
                 let tx = sender.clone();
                 let name = preset.name.clone();
@@ -779,12 +780,8 @@ impl ComicsReaderModel {
             return;
         }
         if let (Some(ref catalog), Some(book_id)) = (&self.catalog, self.book_id) {
-            let _ = catalog.set_reading_progress(
-                book_id,
-                self.total_pages - 1,
-                1.0,
-                self.total_pages,
-            );
+            let _ =
+                catalog.set_reading_progress(book_id, self.total_pages - 1, 1.0, self.total_pages);
             if let Some(sid) = self.session_id {
                 let elapsed = self.session_start.elapsed().as_secs() as i64;
                 let _ = catalog.checkpoint_reading_session(sid, elapsed, 100);
@@ -799,19 +796,31 @@ impl ComicsReaderModel {
             return Vec::new();
         }
         let curr = self.current_page;
-        let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+        let is_webtoon =
+            self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
 
         let (min_keep, max_keep) = if is_webtoon {
-            (curr.saturating_sub(4), (curr + 6).min(total.saturating_sub(1)))
+            (
+                curr.saturating_sub(4),
+                (curr + 6).min(total.saturating_sub(1)),
+            )
         } else if self.page_style == PageStyle::Double {
-            (curr.saturating_sub(2), (curr + 3).min(total.saturating_sub(1)))
+            (
+                curr.saturating_sub(2),
+                (curr + 3).min(total.saturating_sub(1)),
+            )
         } else {
-            (curr.saturating_sub(2), (curr + 2).min(total.saturating_sub(1)))
+            (
+                curr.saturating_sub(2),
+                (curr + 2).min(total.saturating_sub(1)),
+            )
         };
 
         // Retain textures and pending loads inside active preloading range to bound memory
-        self.textures.retain(|&idx, _| idx >= min_keep && idx <= max_keep);
-        self.pending_loads.retain(|&idx| idx >= min_keep && idx <= max_keep);
+        self.textures
+            .retain(|&idx, _| idx >= min_keep && idx <= max_keep);
+        self.pending_loads
+            .retain(|&idx| idx >= min_keep && idx <= max_keep);
 
         let mut missing = Vec::new();
         for idx in min_keep..=max_keep {
@@ -896,15 +905,12 @@ impl ComicsReaderModel {
                             );
                             (Some(mem_tex.upcast::<gdk::Texture>()), crop)
                         }
-                        Some(DecodedPage::RawBytes(b)) => (
-                            gdk::Texture::from_bytes(&glib::Bytes::from(&b)).ok(),
-                            None,
-                        ),
+                        Some(DecodedPage::RawBytes(b)) => {
+                            (gdk::Texture::from_bytes(&glib::Bytes::from(&b)).ok(), None)
+                        }
                         None => (None, None),
                     };
-                    let _ = s.send(types::ComicsReaderMsg::PageLoaded(
-                        gen, idx, tex_opt, crop,
-                    ));
+                    let _ = s.send(types::ComicsReaderMsg::PageLoaded(gen, idx, tex_opt, crop));
                 },
             );
         }
@@ -951,9 +957,8 @@ impl ComicsReaderModel {
                     return Some(provider.clone());
                 }
                 let book = self.series_chapters.get(chapter_idx)?;
-                let provider: Arc<dyn provider::ImageProvider> = Arc::new(
-                    providers::LocalProvider::new(book.file_path.clone()).ok()?,
-                );
+                let provider: Arc<dyn provider::ImageProvider> =
+                    Arc::new(providers::LocalProvider::new(book.file_path.clone()).ok()?);
                 self.thumb_providers.insert(chapter_idx, provider.clone());
                 Some(provider)
             }
@@ -1057,7 +1062,11 @@ impl ComicsReaderModel {
     }
 
     pub fn prev_page(&mut self) {
-        let step = if self.page_style == PageStyle::Double { 2 } else { 1 };
+        let step = if self.page_style == PageStyle::Double {
+            2
+        } else {
+            1
+        };
         self.set_page(self.current_page.saturating_sub(step));
     }
 
@@ -1078,8 +1087,8 @@ impl ComicsReaderModel {
         if self.total_pages == 0 {
             return "0 / 0".to_string();
         }
-        let spread = self.page_style == PageStyle::Double
-            && self.current_page + 1 < self.total_pages;
+        let spread =
+            self.page_style == PageStyle::Double && self.current_page + 1 < self.total_pages;
         if let Some((first, total)) = self.series_page_position() {
             if spread {
                 format!("{}–{} / {}", first, first + 1, total)
@@ -1203,11 +1212,13 @@ impl ComicsReaderModel {
         } else {
             widgets.ribbon_button.remove_css_class("set");
         }
-        widgets.ribbon_button.set_tooltip_text(Some(if is_bookmarked {
-            "Remove the bookmark here (B)"
-        } else {
-            "Bookmark this page (B)"
-        }));
+        widgets
+            .ribbon_button
+            .set_tooltip_text(Some(if is_bookmarked {
+                "Remove the bookmark here (B)"
+            } else {
+                "Bookmark this page (B)"
+            }));
     }
 
     pub fn sync_settings_ui(&self, widgets: &ComicsReaderModelWidgets) {
@@ -1261,8 +1272,7 @@ impl ComicsReaderModel {
         for (idx, button) in self.image_background_buttons.iter().enumerate() {
             toggle_active(
                 button,
-                ComicBackground::ALL.get(idx).copied()
-                    == Some(self.image_settings.background),
+                ComicBackground::ALL.get(idx).copied() == Some(self.image_settings.background),
             );
         }
         for (slider, value) in [
@@ -1284,21 +1294,40 @@ impl ComicsReaderModel {
             set(self.image_settings.crop_blank_borders);
         }
 
-        toggle_active(&widgets.style_single_btn, self.page_style == PageStyle::Single);
-        toggle_active(&widgets.style_double_btn, self.page_style == PageStyle::Double);
-        toggle_active(&widgets.style_strip_btn, self.page_style == PageStyle::LongStrip);
+        toggle_active(
+            &widgets.style_single_btn,
+            self.page_style == PageStyle::Single,
+        );
+        toggle_active(
+            &widgets.style_double_btn,
+            self.page_style == PageStyle::Double,
+        );
+        toggle_active(
+            &widgets.style_strip_btn,
+            self.page_style == PageStyle::LongStrip,
+        );
 
-        toggle_active(&widgets.dir_ltr_btn, self.direction == ReadingDirection::Ltr);
-        toggle_active(&widgets.dir_rtl_btn, self.direction == ReadingDirection::Rtl);
+        toggle_active(
+            &widgets.dir_ltr_btn,
+            self.direction == ReadingDirection::Ltr,
+        );
+        toggle_active(
+            &widgets.dir_rtl_btn,
+            self.direction == ReadingDirection::Rtl,
+        );
 
         // The spread gap only exists in Spread (decision 39 puts a
         // gap row under the page style it belongs to): hide the row
         // and the section heading directly before it together.
-        widgets.gap_box.set_visible(self.page_style == PageStyle::Double);
+        widgets
+            .gap_box
+            .set_visible(self.page_style == PageStyle::Double);
         if let Some(heading) = widgets.gap_box.prev_sibling() {
             heading.set_visible(self.page_style == PageStyle::Double);
         }
-        widgets.gap_box.set_sensitive(self.page_style == PageStyle::Double);
+        widgets
+            .gap_box
+            .set_sensitive(self.page_style == PageStyle::Double);
         toggle_active(&widgets.gap_0_btn, self.two_page_gap == 0);
         toggle_active(&widgets.gap_4_btn, self.two_page_gap == 4);
         toggle_active(&widgets.gap_8_btn, self.two_page_gap == 8);
@@ -1309,7 +1338,6 @@ impl ComicsReaderModel {
         toggle_active(&widgets.fit_height_btn, self.fit_mode == FitMode::Height);
         toggle_active(&widgets.fit_screen_btn, self.fit_mode == FitMode::Screen);
         toggle_active(&widgets.fit_orig_btn, self.fit_mode == FitMode::Original);
-
     }
 
     /// Bring the left panel's stack and tab pill into line with
@@ -1352,9 +1380,7 @@ impl ComicsReaderModel {
                     let vadj = widgets.pages_scroll.vadjustment();
                     glib::idle_add_local_once(move || {
                         let max = (vadj.upper() - vadj.page_size()).max(0.0);
-                        if let Some(target) =
-                            grid.opening_scroll_target(max, vadj.page_size())
-                        {
+                        if let Some(target) = grid.opening_scroll_target(max, vadj.page_size()) {
                             vadj.set_value(target);
                         }
                     });
@@ -1376,11 +1402,13 @@ impl ComicsReaderModel {
                 ComicRightTab::Shortcuts => 2,
             });
         }
-        widgets.right_stack.set_visible_child_name(match self.right_tab {
-            ComicRightTab::Reading => "reading",
-            ComicRightTab::Image => "image",
-            ComicRightTab::Shortcuts => "shortcuts",
-        });
+        widgets
+            .right_stack
+            .set_visible_child_name(match self.right_tab {
+                ComicRightTab::Reading => "reading",
+                ComicRightTab::Image => "image",
+                ComicRightTab::Shortcuts => "shortcuts",
+            });
         self.sync_settings_ui(widgets);
     }
 
@@ -1523,10 +1551,19 @@ fn rebuild_viewport_widget(
     viewport_height: i32,
     sender: Option<&ComponentSender<ComicsReaderModel>>,
 ) -> gtk::Widget {
-    let win_w = if viewport_width > 100 { viewport_width } else { 850 };
-    let win_h = if viewport_height > 100 { viewport_height } else { 700 };
+    let win_w = if viewport_width > 100 {
+        viewport_width
+    } else {
+        850
+    };
+    let win_h = if viewport_height > 100 {
+        viewport_height
+    } else {
+        700
+    };
     let zoom = zoom_factor(model);
-    let is_webtoon = model.direction == ReadingDirection::Webtoon || model.page_style == PageStyle::LongStrip;
+    let is_webtoon =
+        model.direction == ReadingDirection::Webtoon || model.page_style == PageStyle::LongStrip;
 
     if !is_webtoon && model.at_chapter_end {
         let card_box = gtk::Box::new(gtk::Orientation::Vertical, 16);
@@ -1622,14 +1659,7 @@ fn rebuild_viewport_widget(
                 );
                 pic.set_size_request(avail_w, target_h);
                 pic.set_halign(gtk::Align::Center);
-                let wrapped = wrap_comic_page(
-                    model,
-                    idx,
-                    pic,
-                    avail_w,
-                    target_h,
-                    sender,
-                );
+                let wrapped = wrap_comic_page(model, idx, pic, avail_w, target_h, sender);
                 item_box.append(&wrapped);
             } else {
                 let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -1680,7 +1710,11 @@ fn rebuild_viewport_widget(
         let create_page_widget = |opt_idx: Option<usize>, is_left: bool| -> gtk::Widget {
             let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
             container.set_hexpand(true);
-            container.set_halign(if is_left { gtk::Align::End } else { gtk::Align::Start });
+            container.set_halign(if is_left {
+                gtk::Align::End
+            } else {
+                gtk::Align::Start
+            });
             if model.fit_mode == FitMode::Width {
                 container.set_valign(gtk::Align::Start);
                 container.set_vexpand(false);
@@ -1697,12 +1731,18 @@ fn rebuild_viewport_widget(
                         model.image_settings,
                         model.effective_crop(idx),
                     );
-                    pic.set_halign(if is_left { gtk::Align::End } else { gtk::Align::Start });
+                    pic.set_halign(if is_left {
+                        gtk::Align::End
+                    } else {
+                        gtk::Align::Start
+                    });
 
                     let (target_w, target_h) = match model.fit_mode {
                         FitMode::Screen => {
                             if (zoom - 1.0).abs() > f64::EPSILON && tw > 0 && th > 0 {
-                                let scale = (((win_w - 32 - model.two_page_gap).max(400) / 2) as f64 / tw as f64)
+                                let scale = (((win_w - 32 - model.two_page_gap).max(400) / 2)
+                                    as f64
+                                    / tw as f64)
                                     .min(win_h as f64 / th as f64)
                                     * zoom;
                                 let (target_w, target_h) = zoomed_size(tw, th, scale);
@@ -1733,7 +1773,9 @@ fn rebuild_viewport_widget(
                             }
                         }
                         FitMode::Width => {
-                            let avail_w = ((((win_w - 32 - model.two_page_gap).max(400) / 2) as f64) * zoom).round() as i32;
+                            let avail_w =
+                                ((((win_w - 32 - model.two_page_gap).max(400) / 2) as f64) * zoom)
+                                    .round() as i32;
                             let target_h = if tw > 0 {
                                 ((avail_w as f64) * (th as f64 / tw as f64)).round() as i32
                             } else {
@@ -1750,14 +1792,7 @@ fn rebuild_viewport_widget(
                             (target_w, target_h)
                         }
                     };
-                    let wrapped = wrap_comic_page(
-                        model,
-                        idx,
-                        pic,
-                        target_w,
-                        target_h,
-                        sender,
-                    );
+                    let wrapped = wrap_comic_page(model, idx, pic, target_w, target_h, sender);
                     container.append(&wrapped);
                 } else {
                     let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -1826,8 +1861,7 @@ fn rebuild_viewport_widget(
             }
             FitMode::Height => {
                 if (zoom - 1.0).abs() > f64::EPSILON && tw > 0 && th > 0 {
-                    let (target_w, target_h) =
-                        zoomed_size(tw, th, win_h as f64 / th as f64 * zoom);
+                    let (target_w, target_h) = zoomed_size(tw, th, win_h as f64 / th as f64 * zoom);
                     pic.set_size_request(target_w, target_h);
                     pic.set_valign(gtk::Align::Center);
                     (target_w, target_h)
@@ -1857,14 +1891,7 @@ fn rebuild_viewport_widget(
                 (target_w, target_h)
             }
         };
-        let wrapped = wrap_comic_page(
-            model,
-            model.current_page,
-            pic,
-            target_w,
-            target_h,
-            sender,
-        );
+        let wrapped = wrap_comic_page(model, model.current_page, pic, target_w, target_h, sender);
         vbox.append(&wrapped);
     } else {
         let spinner = gtk::Spinner::new();
@@ -1892,7 +1919,9 @@ fn chapter_display(
         .or_else(|| (book.series_index > 0.0).then_some(book.series_index))
         .or(info.number)
         .unwrap_or((idx + 1) as f32);
-    let volume = meta.and_then(|m| m.volume).or_else(|| info.volume.map(|v| v as f32));
+    let volume = meta
+        .and_then(|m| m.volume)
+        .or_else(|| info.volume.map(|v| v as f32));
     let series = model.series_name.as_deref().unwrap_or("");
     let usable = |candidate: &str| {
         let candidate = candidate.trim();
@@ -1903,7 +1932,11 @@ fn chapter_display(
         .and_then(|m| usable(&m.title))
         .or_else(|| info.title.as_deref().and_then(usable))
         .unwrap_or_else(|| format!("Chapter {}", format_chapter_number(number)));
-    (format!("Ch. {}", format_chapter_number(number)), title, volume)
+    (
+        format!("Ch. {}", format_chapter_number(number)),
+        title,
+        volume,
+    )
 }
 
 /// The Chapters tab (decision 38): the series head — cover, title,
@@ -1929,9 +1962,7 @@ fn populate_chapters_list(
     let head_copy = gtk::Box::new(gtk::Orientation::Vertical, 3);
     head_copy.set_valign(gtk::Align::Center);
     head_copy.set_hexpand(true);
-    let title_lbl = gtk::Label::new(Some(
-        model.series_name.as_deref().unwrap_or(&model.title),
-    ));
+    let title_lbl = gtk::Label::new(Some(model.series_name.as_deref().unwrap_or(&model.title)));
     title_lbl.add_css_class("kalam-comics-series-title");
     title_lbl.set_halign(gtk::Align::Start);
     title_lbl.set_wrap(true);
@@ -2062,14 +2093,12 @@ fn update_pages_heading(widgets: &ComicsReaderModelWidgets, model: &ComicsReader
     let visible_chapter_idx = model
         .page_grid
         .as_ref()
-        .and_then(|grid| {
-            grid.first_visible_page(widgets.pages_scroll.vadjustment().value())
-        })
+        .and_then(|grid| grid.first_visible_page(widgets.pages_scroll.vadjustment().value()))
         .map(|page| page.chapter_idx)
         .unwrap_or(model.current_chapter_idx);
 
-    let (chapter, page_count, state) = if let Some((idx, book)) = visible_chapter_idx
-        .and_then(|idx| model.series_chapters.get(idx).map(|book| (idx, book)))
+    let (chapter, page_count, state) = if let Some((idx, book)) =
+        visible_chapter_idx.and_then(|idx| model.series_chapters.get(idx).map(|book| (idx, book)))
     {
         // The heading spells the word out (`CHAPTER 2`, in the
         // section label's uppercase) where the chapter rows
@@ -2221,10 +2250,7 @@ fn guarded_switch_row(
     initial: bool,
     sender: &ComponentSender<ComicsReaderModel>,
     make_msg: Rc<dyn Fn(bool) -> ComicsReaderMsg>,
-) -> (
-    crate::widgets::setting_row::SwitchRow,
-    Rc<dyn Fn(bool)>,
-) {
+) -> (crate::widgets::setting_row::SwitchRow, Rc<dyn Fn(bool)>) {
     let guard = Rc::new(std::cell::Cell::new(false));
     let tx = sender.input_sender().clone();
     let guard_cb = guard.clone();
@@ -2975,10 +3001,22 @@ impl Component for ComicsReaderModel {
             .add_named(&widgets.settings_scroll, Some("reading"));
 
         // Explicitly register stack page names so GTK child lookup succeeds without warnings
-        widgets.left_stack.page(&widgets.chapters_scroll).set_name("chapters");
-        widgets.left_stack.page(&widgets.pages_overlay).set_name("pages");
-        widgets.right_stack.page(&widgets.image_scroll).set_name("image");
-        widgets.right_stack.page(&widgets.shortcuts_scroll).set_name("shortcuts");
+        widgets
+            .left_stack
+            .page(&widgets.chapters_scroll)
+            .set_name("chapters");
+        widgets
+            .left_stack
+            .page(&widgets.pages_overlay)
+            .set_name("pages");
+        widgets
+            .right_stack
+            .page(&widgets.image_scroll)
+            .set_name("image");
+        widgets
+            .right_stack
+            .page(&widgets.shortcuts_scroll)
+            .set_name("shortcuts");
         widgets.left_stack.set_visible_child_name("chapters");
         widgets.right_stack.set_visible_child_name("reading");
 
@@ -2987,8 +3025,7 @@ impl Component for ComicsReaderModel {
         // its cells against the real viewport; thumbnails are only
         // requested as those cells bind.
         {
-            let page_grid =
-                pages_grid::SeriesPagesGrid::new(sender.input_sender().clone());
+            let page_grid = pages_grid::SeriesPagesGrid::new(sender.input_sender().clone());
             page_grid.set_entries(
                 model.page_grid_entries(),
                 Some(model.current_series_page_ref()),
@@ -3068,9 +3105,13 @@ impl Component for ComicsReaderModel {
                     }));
                 },
             ));
-            widgets
-                .jump_mode_host
-                .append(&model.jump_mode_control.as_ref().expect("just built").widget());
+            widgets.jump_mode_host.append(
+                &model
+                    .jump_mode_control
+                    .as_ref()
+                    .expect("just built")
+                    .widget(),
+            );
         }
 
         // The Back+Bubble unit (decision 15): the shell's own Back
@@ -3106,9 +3147,8 @@ impl Component for ComicsReaderModel {
                 &["kalam-inline-icon"],
             )));
             bubble_button.set_tooltip_text(Some("Minimize to Bubble"));
-            bubble_button.update_property(&[gtk::accessible::Property::Label(
-                "Minimize to Bubble",
-            )]);
+            bubble_button
+                .update_property(&[gtk::accessible::Property::Label("Minimize to Bubble")]);
             bubble_button.set_size_request(44, 44);
 
             let tx = sender.input_sender().clone();
@@ -3187,8 +3227,7 @@ impl Component for ComicsReaderModel {
                 &sender,
                 Rc::new(ComicsReaderMsg::SetAutoNextChapter),
             );
-            row.widget()
-                .add_css_class("kalam-comics-setting-divider");
+            row.widget().add_css_class("kalam-comics-setting-divider");
             widgets.behaviour_host.append(&row.widget());
             model.set_auto_next_switch = Some(set);
 
@@ -3281,9 +3320,7 @@ impl Component for ComicsReaderModel {
             {
                 let tx = sender.input_sender().clone();
                 entry.connect_changed(move |entry| {
-                    let _ = tx.send(ComicsReaderMsg::PresetNameChanged(
-                        entry.text().to_string(),
-                    ));
+                    let _ = tx.send(ComicsReaderMsg::PresetNameChanged(entry.text().to_string()));
                 });
                 let tx = sender.input_sender().clone();
                 entry.connect_activate(move |_| {
@@ -3293,9 +3330,7 @@ impl Component for ComicsReaderModel {
             form.append(&entry);
             model.preset_name_entry = Some(entry);
 
-            let note = gtk::Label::new(Some(
-                "Presets keep Reading and Image settings together.",
-            ));
+            let note = gtk::Label::new(Some("Presets keep Reading and Image settings together."));
             note.add_css_class("kalam-comics-preset-note");
             note.set_halign(gtk::Align::Start);
             note.set_xalign(0.0);
@@ -3313,12 +3348,9 @@ impl Component for ComicsReaderModel {
                 },
             ));
             let tx = sender.input_sender().clone();
-            let save = crate::widgets::pill_button::primary_button(
-                "Save preset",
-                move || {
-                    let _ = tx.send(ComicsReaderMsg::SaveCurrentPreset);
-                },
-            );
+            let save = crate::widgets::pill_button::primary_button("Save preset", move || {
+                let _ = tx.send(ComicsReaderMsg::SaveCurrentPreset);
+            });
             save.set_sensitive(false);
             actions.append(&save);
             model.preset_save_button = Some(save);
@@ -3375,9 +3407,7 @@ impl Component for ComicsReaderModel {
                     ComicBackground::White => "White background",
                 };
                 button.set_tooltip_text(Some(accessible_label));
-                button.update_property(&[gtk::accessible::Property::Label(
-                    accessible_label,
-                )]);
+                button.update_property(&[gtk::accessible::Property::Label(accessible_label)]);
                 let tx = sender.input_sender().clone();
                 button.connect_clicked(move |_| {
                     let _ = tx.send(ComicsReaderMsg::SetImageBackground(background));
@@ -3391,24 +3421,23 @@ impl Component for ComicsReaderModel {
             add_image_section("Adjustments");
             let adjustments_card = gtk::Box::new(gtk::Orientation::Vertical, 0);
             adjustments_card.add_css_class("kalam-comics-inset-card");
-            let make_adjustment = |label: &str,
-                                   initial: i32,
-                                   make_msg: Rc<dyn Fn(i32) -> ComicsReaderMsg>| {
-                let tx = sender.input_sender().clone();
-                crate::widgets::setting_row::slider_row(
-                    label,
-                    None,
-                    ComicImageSettings::MIN_ADJUSTMENT as f64,
-                    ComicImageSettings::MAX_ADJUSTMENT as f64,
-                    1.0,
-                    initial as f64,
-                    0,
-                    "",
-                    move |value| {
-                        let _ = tx.send(make_msg(value.round() as i32));
-                    },
-                )
-            };
+            let make_adjustment =
+                |label: &str, initial: i32, make_msg: Rc<dyn Fn(i32) -> ComicsReaderMsg>| {
+                    let tx = sender.input_sender().clone();
+                    crate::widgets::setting_row::slider_row(
+                        label,
+                        None,
+                        ComicImageSettings::MIN_ADJUSTMENT as f64,
+                        ComicImageSettings::MAX_ADJUSTMENT as f64,
+                        1.0,
+                        initial as f64,
+                        0,
+                        "",
+                        move |value| {
+                            let _ = tx.send(make_msg(value.round() as i32));
+                        },
+                    )
+                };
 
             let brightness = make_adjustment(
                 "Brightness",
@@ -3451,8 +3480,7 @@ impl Component for ComicsReaderModel {
                 &sender,
                 Rc::new(ComicsReaderMsg::SetGrayscale),
             );
-            row.widget()
-                .add_css_class("kalam-comics-setting-divider");
+            row.widget().add_css_class("kalam-comics-setting-divider");
             filters_card.append(&row.widget());
             model.set_grayscale_switch = Some(set);
 
@@ -3497,8 +3525,14 @@ impl Component for ComicsReaderModel {
         model.update_bookmark_icon_state(&widgets);
         model.sync_settings_ui(&widgets);
 
-        let is_webtoon = model.direction == ReadingDirection::Webtoon || model.page_style == PageStyle::LongStrip;
-        update_viewport_policies(&widgets.viewport_box, model.fit_mode, is_webtoon, model.zoom_percent);
+        let is_webtoon = model.direction == ReadingDirection::Webtoon
+            || model.page_style == PageStyle::LongStrip;
+        update_viewport_policies(
+            &widgets.viewport_box,
+            model.fit_mode,
+            is_webtoon,
+            model.zoom_percent,
+        );
         let child = rebuild_viewport_widget(&model, 850, 700, Some(&sender));
         widgets.viewport_box.set_child(Some(&child));
 
@@ -3627,7 +3661,9 @@ impl Component for ComicsReaderModel {
             let max = (adj.upper() - adj.page_size()).max(1.0);
             if max > 0.0 {
                 let ratio = (adj.value() / max).clamp(0.0, 1.0);
-                let _ = s_scroll.input_sender().send(ComicsReaderMsg::UpdateScrollPage(ratio));
+                let _ = s_scroll
+                    .input_sender()
+                    .send(ComicsReaderMsg::UpdateScrollPage(ratio));
             }
         });
 
@@ -3665,13 +3701,21 @@ impl Component for ComicsReaderModel {
 
         // 6. Viewport resize notification (for Fit Width)
         let s_hadj = sender.clone();
-        widgets.viewport_box.hadjustment().connect_page_size_notify(move |_| {
-            let _ = s_hadj.input_sender().send(ComicsReaderMsg::ViewportResized);
-        });
+        widgets
+            .viewport_box
+            .hadjustment()
+            .connect_page_size_notify(move |_| {
+                let _ = s_hadj.input_sender().send(ComicsReaderMsg::ViewportResized);
+            });
         let s_vadj_size = sender.clone();
-        widgets.viewport_box.vadjustment().connect_page_size_notify(move |_| {
-            let _ = s_vadj_size.input_sender().send(ComicsReaderMsg::ViewportResized);
-        });
+        widgets
+            .viewport_box
+            .vadjustment()
+            .connect_page_size_notify(move |_| {
+                let _ = s_vadj_size
+                    .input_sender()
+                    .send(ComicsReaderMsg::ViewportResized);
+            });
 
         // 7. Keyboard shortcuts on root with Capture propagation phase
         let key_controller = gtk::EventControllerKey::new();
@@ -3705,12 +3749,20 @@ impl Component for ComicsReaderModel {
                     let _ = s_key.input_sender().send(ComicsReaderMsg::KeyLeft);
                     glib::Propagation::Stop
                 }
-                gdk::Key::Right | gdk::Key::Page_Down | gdk::Key::space | gdk::Key::Return | gdk::Key::KP_Enter | gdk::Key::l | gdk::Key::L => {
+                gdk::Key::Right
+                | gdk::Key::Page_Down
+                | gdk::Key::space
+                | gdk::Key::Return
+                | gdk::Key::KP_Enter
+                | gdk::Key::l
+                | gdk::Key::L => {
                     let _ = s_key.input_sender().send(ComicsReaderMsg::KeyRight);
                     glib::Propagation::Stop
                 }
                 gdk::Key::Up | gdk::Key::k | gdk::Key::K => {
-                    let _ = s_key.input_sender().send(ComicsReaderMsg::ScrollDelta(-1.0));
+                    let _ = s_key
+                        .input_sender()
+                        .send(ComicsReaderMsg::ScrollDelta(-1.0));
                     glib::Propagation::Stop
                 }
                 gdk::Key::Down | gdk::Key::j | gdk::Key::J => {
@@ -3722,7 +3774,9 @@ impl Component for ComicsReaderModel {
                     glib::Propagation::Stop
                 }
                 gdk::Key::End => {
-                    let _ = s_key.input_sender().send(ComicsReaderMsg::SetPage(usize::MAX));
+                    let _ = s_key
+                        .input_sender()
+                        .send(ComicsReaderMsg::SetPage(usize::MAX));
                     glib::Propagation::Stop
                 }
                 gdk::Key::b | gdk::Key::B => {
@@ -3810,18 +3864,14 @@ impl Component for ComicsReaderModel {
                 sender.input(ComicsReaderMsg::SetPageStyle(PageStyle::Single));
                 sender.input(ComicsReaderMsg::SetFitMode(FitMode::Screen));
                 sender.input(ComicsReaderMsg::ShowSavePresetForm);
-                sender.input(ComicsReaderMsg::PresetNameChanged(
-                    "Western".to_string(),
-                ));
+                sender.input(ComicsReaderMsg::PresetNameChanged("Western".to_string()));
                 sender.input(ComicsReaderMsg::SaveCurrentPreset);
 
                 sender.input(ComicsReaderMsg::SetDirection(ReadingDirection::Rtl));
                 sender.input(ComicsReaderMsg::SetPageStyle(PageStyle::LongStrip));
                 sender.input(ComicsReaderMsg::SetFitMode(FitMode::Width));
                 sender.input(ComicsReaderMsg::SetZoomPercent(45));
-                sender.input(ComicsReaderMsg::SetImageBackground(
-                    ComicBackground::Black,
-                ));
+                sender.input(ComicsReaderMsg::SetImageBackground(ComicBackground::Black));
                 sender.input(ComicsReaderMsg::SetBrightness(10));
                 sender.input(ComicsReaderMsg::ShowSavePresetForm);
                 sender.input(ComicsReaderMsg::PresetNameChanged(
@@ -3829,9 +3879,7 @@ impl Component for ComicsReaderModel {
                 ));
                 sender.input(ComicsReaderMsg::SaveCurrentPreset);
                 sender.input(ComicsReaderMsg::ApplyPreset("Western".to_string()));
-                sender.input(ComicsReaderMsg::ApplyPreset(
-                    "Manga night".to_string(),
-                ));
+                sender.input(ComicsReaderMsg::ApplyPreset("Manga night".to_string()));
                 sender.input(ComicsReaderMsg::OpenRightPanel);
             }
             Ok("image") => {
@@ -3842,9 +3890,7 @@ impl Component for ComicsReaderModel {
                 // Real Image edits: the frame has to prove the stage
                 // colour, the GSK colour matrix and crop all reached
                 // the painted page, not only that the pane exists.
-                sender.input(ComicsReaderMsg::SetImageBackground(
-                    ComicBackground::White,
-                ));
+                sender.input(ComicsReaderMsg::SetImageBackground(ComicBackground::White));
                 sender.input(ComicsReaderMsg::SetBrightness(15));
                 sender.input(ComicsReaderMsg::SetContrast(25));
                 sender.input(ComicsReaderMsg::SetWarmth(45));
@@ -3857,9 +3903,7 @@ impl Component for ComicsReaderModel {
                 sender.input(ComicsReaderMsg::OpenRightPanel);
             }
             Ok("jump") => sender.input(ComicsReaderMsg::OpenJump(None)),
-            Ok("jump-range") => {
-                sender.input(ComicsReaderMsg::OpenJump(Some("240".to_string())))
-            }
+            Ok("jump-range") => sender.input(ComicsReaderMsg::OpenJump(Some("240".to_string()))),
             _ => {}
         }
 
@@ -3883,8 +3927,11 @@ impl Component for ComicsReaderModel {
                 self.update_bookmark_icon_state(widgets);
                 sync_pages_current(self);
                 update_pages_heading(widgets, self);
-                widgets.page_indicator_label.set_label(&self.page_indicator_label());
-                let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+                widgets
+                    .page_indicator_label
+                    .set_label(&self.page_indicator_label());
+                let is_webtoon = self.direction == ReadingDirection::Webtoon
+                    || self.page_style == PageStyle::LongStrip;
                 if is_webtoon {
                     let vadj = widgets.viewport_box.vadjustment();
                     let max = (vadj.upper() - vadj.page_size()).max(0.0);
@@ -3893,13 +3940,24 @@ impl Component for ComicsReaderModel {
                         vadj.set_value(ratio * max);
                     }
                 } else {
-                    let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                    let child = rebuild_viewport_widget(
+                        self,
+                        widgets.viewport_box.width(),
+                        widgets.viewport_box.height(),
+                        Some(&sender),
+                    );
                     widgets.viewport_box.set_child(Some(&child));
-                    update_viewport_policies(&widgets.viewport_box, self.fit_mode, false, self.zoom_percent);
+                    update_viewport_policies(
+                        &widgets.viewport_box,
+                        self.fit_mode,
+                        false,
+                        self.zoom_percent,
+                    );
                 }
             }
             ComicsReaderMsg::UpdateScrollPage(ratio) => {
-                let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+                let is_webtoon = self.direction == ReadingDirection::Webtoon
+                    || self.page_style == PageStyle::LongStrip;
                 if !is_webtoon || self.total_pages <= 1 {
                     return;
                 }
@@ -3912,7 +3970,9 @@ impl Component for ComicsReaderModel {
                     self.update_bookmark_icon_state(widgets);
                     sync_pages_current(self);
                     update_pages_heading(widgets, self);
-                    widgets.page_indicator_label.set_label(&self.page_indicator_label());
+                    widgets
+                        .page_indicator_label
+                        .set_label(&self.page_indicator_label());
                 }
             }
             ComicsReaderMsg::ScrollDelta(dir) => {
@@ -3925,7 +3985,8 @@ impl Component for ComicsReaderModel {
             }
             ComicsReaderMsg::NextPage => {
                 self.hide_chrome_on_interaction();
-                let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+                let is_webtoon = self.direction == ReadingDirection::Webtoon
+                    || self.page_style == PageStyle::LongStrip;
                 if self.at_chapter_end {
                     let _ = sender.input_sender().send(ComicsReaderMsg::NextChapter);
                     return;
@@ -3954,9 +4015,16 @@ impl Component for ComicsReaderModel {
                         && (self.next_chapter().is_some() || self.series_chapters.len() > 1)
                     {
                         self.at_chapter_end = true;
-                        let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                        let child = rebuild_viewport_widget(
+                            self,
+                            widgets.viewport_box.width(),
+                            widgets.viewport_box.height(),
+                            Some(&sender),
+                        );
                         widgets.viewport_box.set_child(Some(&child));
-                        widgets.page_indicator_label.set_label(&self.page_indicator_label());
+                        widgets
+                            .page_indicator_label
+                            .set_label(&self.page_indicator_label());
                         return;
                     }
                 }
@@ -3967,7 +4035,9 @@ impl Component for ComicsReaderModel {
                 self.update_bookmark_icon_state(widgets);
                 sync_pages_current(self);
                 update_pages_heading(widgets, self);
-                widgets.page_indicator_label.set_label(&self.page_indicator_label());
+                widgets
+                    .page_indicator_label
+                    .set_label(&self.page_indicator_label());
                 if is_webtoon {
                     let vadj = widgets.viewport_box.vadjustment();
                     let max = (vadj.upper() - vadj.page_size()).max(0.0);
@@ -3976,18 +4046,35 @@ impl Component for ComicsReaderModel {
                         vadj.set_value(ratio * max);
                     }
                 } else {
-                    let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                    let child = rebuild_viewport_widget(
+                        self,
+                        widgets.viewport_box.width(),
+                        widgets.viewport_box.height(),
+                        Some(&sender),
+                    );
                     widgets.viewport_box.set_child(Some(&child));
-                    update_viewport_policies(&widgets.viewport_box, self.fit_mode, false, self.zoom_percent);
+                    update_viewport_policies(
+                        &widgets.viewport_box,
+                        self.fit_mode,
+                        false,
+                        self.zoom_percent,
+                    );
                 }
             }
             ComicsReaderMsg::PrevPage => {
                 self.hide_chrome_on_interaction();
                 if self.at_chapter_end {
                     self.at_chapter_end = false;
-                    let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                    let child = rebuild_viewport_widget(
+                        self,
+                        widgets.viewport_box.width(),
+                        widgets.viewport_box.height(),
+                        Some(&sender),
+                    );
                     widgets.viewport_box.set_child(Some(&child));
-                    widgets.page_indicator_label.set_label(&self.page_indicator_label());
+                    widgets
+                        .page_indicator_label
+                        .set_label(&self.page_indicator_label());
                     return;
                 }
                 self.prev_page();
@@ -3996,8 +4083,11 @@ impl Component for ComicsReaderModel {
                 self.update_bookmark_icon_state(widgets);
                 sync_pages_current(self);
                 update_pages_heading(widgets, self);
-                widgets.page_indicator_label.set_label(&self.page_indicator_label());
-                let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+                widgets
+                    .page_indicator_label
+                    .set_label(&self.page_indicator_label());
+                let is_webtoon = self.direction == ReadingDirection::Webtoon
+                    || self.page_style == PageStyle::LongStrip;
                 if is_webtoon {
                     let vadj = widgets.viewport_box.vadjustment();
                     let max = (vadj.upper() - vadj.page_size()).max(0.0);
@@ -4006,9 +4096,19 @@ impl Component for ComicsReaderModel {
                         vadj.set_value(ratio * max);
                     }
                 } else {
-                    let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                    let child = rebuild_viewport_widget(
+                        self,
+                        widgets.viewport_box.width(),
+                        widgets.viewport_box.height(),
+                        Some(&sender),
+                    );
                     widgets.viewport_box.set_child(Some(&child));
-                    update_viewport_policies(&widgets.viewport_box, self.fit_mode, false, self.zoom_percent);
+                    update_viewport_policies(
+                        &widgets.viewport_box,
+                        self.fit_mode,
+                        false,
+                        self.zoom_percent,
+                    );
                 }
             }
             ComicsReaderMsg::KeyLeft => {
@@ -4039,14 +4139,16 @@ impl Component for ComicsReaderModel {
                     if let Some(crop) = crop {
                         self.page_crop_boxes.insert(idx, crop);
                     }
-                    let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+                    let is_webtoon = self.direction == ReadingDirection::Webtoon
+                        || self.page_style == PageStyle::LongStrip;
 
                     if is_webtoon {
                         let mut in_place_applied = false;
                         if let Some(vbox) = get_webtoon_vbox(&widgets.viewport_box) {
                             let vp_w = widgets.viewport_box.width();
                             let win_w = if vp_w > 100 { vp_w } else { 850 };
-                            let avail_w = (((win_w - 24).max(300) as f64) * zoom_factor(self)).round() as i32;
+                            let avail_w =
+                                (((win_w - 24).max(300) as f64) * zoom_factor(self)).round() as i32;
                             let (tw, th) = self.effective_page_size(idx, &tex);
                             let target_h = if tw > 0 {
                                 ((avail_w as f64) * (th as f64 / tw as f64)).round() as i32
@@ -4087,9 +4189,19 @@ impl Component for ComicsReaderModel {
                             }
                         }
                         if !in_place_applied {
-                            let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                            let child = rebuild_viewport_widget(
+                                self,
+                                widgets.viewport_box.width(),
+                                widgets.viewport_box.height(),
+                                Some(&sender),
+                            );
                             widgets.viewport_box.set_child(Some(&child));
-                            update_viewport_policies(&widgets.viewport_box, self.fit_mode, true, self.zoom_percent);
+                            update_viewport_policies(
+                                &widgets.viewport_box,
+                                self.fit_mode,
+                                true,
+                                self.zoom_percent,
+                            );
                         }
                     } else {
                         let in_view = if self.page_style == PageStyle::Double {
@@ -4098,9 +4210,19 @@ impl Component for ComicsReaderModel {
                             idx == self.current_page
                         };
                         if in_view {
-                            let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                            let child = rebuild_viewport_widget(
+                                self,
+                                widgets.viewport_box.width(),
+                                widgets.viewport_box.height(),
+                                Some(&sender),
+                            );
                             widgets.viewport_box.set_child(Some(&child));
-                            update_viewport_policies(&widgets.viewport_box, self.fit_mode, false, self.zoom_percent);
+                            update_viewport_policies(
+                                &widgets.viewport_box,
+                                self.fit_mode,
+                                false,
+                                self.zoom_percent,
+                            );
                         }
                     }
                 }
@@ -4118,9 +4240,7 @@ impl Component for ComicsReaderModel {
                 self.request_page_thumbnail(page, &sender);
             }
             ComicsReaderMsg::OpenSeriesPage(page) => {
-                if page.chapter_idx.is_none()
-                    || page.chapter_idx == self.current_chapter_idx
-                {
+                if page.chapter_idx.is_none() || page.chapter_idx == self.current_chapter_idx {
                     let _ = sender
                         .input_sender()
                         .send(ComicsReaderMsg::SetPage(page.page_idx));
@@ -4129,9 +4249,10 @@ impl Component for ComicsReaderModel {
                     .as_ref()
                     .and_then(|grid| grid.book_id_for_page(page))
                 {
-                    let _ = sender.input_sender().send(
-                        ComicsReaderMsg::SwitchChapterAt(book_id, Some(page.page_idx)),
-                    );
+                    let _ = sender.input_sender().send(ComicsReaderMsg::SwitchChapterAt(
+                        book_id,
+                        Some(page.page_idx),
+                    ));
                 }
             }
             ComicsReaderMsg::PagesGridScrolled(_) => {
@@ -4141,7 +4262,9 @@ impl Component for ComicsReaderModel {
             }
             ComicsReaderMsg::ToggleDirection => {
                 let next = self.direction.next();
-                let _ = sender.input_sender().send(ComicsReaderMsg::SetDirection(next));
+                let _ = sender
+                    .input_sender()
+                    .send(ComicsReaderMsg::SetDirection(next));
             }
             ComicsReaderMsg::SetDirection(dir) => {
                 // A Webtoon direction is the old spelling of Long
@@ -4157,9 +4280,20 @@ impl Component for ComicsReaderModel {
                     self.store_series_setting();
                     self.trigger_osd(dir.label(), &sender);
                     self.trigger_loads(&sender);
-                    let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
-                    update_viewport_policies(&widgets.viewport_box, self.fit_mode, is_webtoon, self.zoom_percent);
-                    let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                    let is_webtoon = self.direction == ReadingDirection::Webtoon
+                        || self.page_style == PageStyle::LongStrip;
+                    update_viewport_policies(
+                        &widgets.viewport_box,
+                        self.fit_mode,
+                        is_webtoon,
+                        self.zoom_percent,
+                    );
+                    let child = rebuild_viewport_widget(
+                        self,
+                        widgets.viewport_box.width(),
+                        widgets.viewport_box.height(),
+                        Some(&sender),
+                    );
                     widgets.viewport_box.set_child(Some(&child));
                     self.sync_settings_ui(widgets);
                 }
@@ -4170,10 +4304,23 @@ impl Component for ComicsReaderModel {
                     self.store_series_setting();
                     self.trigger_osd(style.label(), &sender);
                     self.trigger_loads(&sender);
-                    widgets.page_indicator_label.set_label(&self.page_indicator_label());
-                    let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
-                    update_viewport_policies(&widgets.viewport_box, self.fit_mode, is_webtoon, self.zoom_percent);
-                    let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                    widgets
+                        .page_indicator_label
+                        .set_label(&self.page_indicator_label());
+                    let is_webtoon = self.direction == ReadingDirection::Webtoon
+                        || self.page_style == PageStyle::LongStrip;
+                    update_viewport_policies(
+                        &widgets.viewport_box,
+                        self.fit_mode,
+                        is_webtoon,
+                        self.zoom_percent,
+                    );
+                    let child = rebuild_viewport_widget(
+                        self,
+                        widgets.viewport_box.width(),
+                        widgets.viewport_box.height(),
+                        Some(&sender),
+                    );
                     widgets.viewport_box.set_child(Some(&child));
                     self.sync_settings_ui(widgets);
                 }
@@ -4184,11 +4331,15 @@ impl Component for ComicsReaderModel {
                 } else {
                     PageStyle::Double
                 };
-                let _ = sender.input_sender().send(ComicsReaderMsg::SetPageStyle(next));
+                let _ = sender
+                    .input_sender()
+                    .send(ComicsReaderMsg::SetPageStyle(next));
             }
             ComicsReaderMsg::ToggleFitMode => {
                 let next = self.fit_mode.next();
-                let _ = sender.input_sender().send(ComicsReaderMsg::SetFitMode(next));
+                let _ = sender
+                    .input_sender()
+                    .send(ComicsReaderMsg::SetFitMode(next));
             }
             ComicsReaderMsg::SetFitMode(fit) => {
                 // Choosing a fit means that fit exactly: any zoom
@@ -4199,9 +4350,20 @@ impl Component for ComicsReaderModel {
                     self.pre_zoom_fit = None;
                     self.store_series_setting();
                     self.trigger_osd(fit.label(), &sender);
-                    let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
-                    update_viewport_policies(&widgets.viewport_box, self.fit_mode, is_webtoon, self.zoom_percent);
-                    let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                    let is_webtoon = self.direction == ReadingDirection::Webtoon
+                        || self.page_style == PageStyle::LongStrip;
+                    update_viewport_policies(
+                        &widgets.viewport_box,
+                        self.fit_mode,
+                        is_webtoon,
+                        self.zoom_percent,
+                    );
+                    let child = rebuild_viewport_widget(
+                        self,
+                        widgets.viewport_box.width(),
+                        widgets.viewport_box.height(),
+                        Some(&sender),
+                    );
                     widgets.viewport_box.set_child(Some(&child));
                     self.sync_settings_ui(widgets);
                 }
@@ -4212,7 +4374,12 @@ impl Component for ComicsReaderModel {
                     self.two_page_gap = clamped;
                     self.store_series_setting();
                     if self.page_style == PageStyle::Double {
-                        let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                        let child = rebuild_viewport_widget(
+                            self,
+                            widgets.viewport_box.width(),
+                            widgets.viewport_box.height(),
+                            Some(&sender),
+                        );
                         widgets.viewport_box.set_child(Some(&child));
                     }
                     self.sync_settings_ui(widgets);
@@ -4222,11 +4389,22 @@ impl Component for ComicsReaderModel {
                 if self.strip_gap != on {
                     self.strip_gap = on;
                     self.store_series_setting();
-                    let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+                    let is_webtoon = self.direction == ReadingDirection::Webtoon
+                        || self.page_style == PageStyle::LongStrip;
                     if is_webtoon {
-                        let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                        let child = rebuild_viewport_widget(
+                            self,
+                            widgets.viewport_box.width(),
+                            widgets.viewport_box.height(),
+                            Some(&sender),
+                        );
                         widgets.viewport_box.set_child(Some(&child));
-                        update_viewport_policies(&widgets.viewport_box, self.fit_mode, true, self.zoom_percent);
+                        update_viewport_policies(
+                            &widgets.viewport_box,
+                            self.fit_mode,
+                            true,
+                            self.zoom_percent,
+                        );
                     }
                     self.sync_settings_ui(widgets);
                 }
@@ -4240,9 +4418,20 @@ impl Component for ComicsReaderModel {
                     self.zoom_percent = clamped;
                     self.store_series_setting();
                     self.trigger_osd(&format!("{}%", self.zoom_percent), &sender);
-                    let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
-                    update_viewport_policies(&widgets.viewport_box, self.fit_mode, is_webtoon, self.zoom_percent);
-                    let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                    let is_webtoon = self.direction == ReadingDirection::Webtoon
+                        || self.page_style == PageStyle::LongStrip;
+                    update_viewport_policies(
+                        &widgets.viewport_box,
+                        self.fit_mode,
+                        is_webtoon,
+                        self.zoom_percent,
+                    );
+                    let child = rebuild_viewport_widget(
+                        self,
+                        widgets.viewport_box.width(),
+                        widgets.viewport_box.height(),
+                        Some(&sender),
+                    );
                     widgets.viewport_box.set_child(Some(&child));
                     self.sync_settings_ui(widgets);
                 }
@@ -4277,9 +4466,20 @@ impl Component for ComicsReaderModel {
                     },
                     &sender,
                 );
-                let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
-                update_viewport_policies(&widgets.viewport_box, self.fit_mode, is_webtoon, self.zoom_percent);
-                let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                let is_webtoon = self.direction == ReadingDirection::Webtoon
+                    || self.page_style == PageStyle::LongStrip;
+                update_viewport_policies(
+                    &widgets.viewport_box,
+                    self.fit_mode,
+                    is_webtoon,
+                    self.zoom_percent,
+                );
+                let child = rebuild_viewport_widget(
+                    self,
+                    widgets.viewport_box.width(),
+                    widgets.viewport_box.height(),
+                    Some(&sender),
+                );
                 widgets.viewport_box.set_child(Some(&child));
                 self.sync_settings_ui(widgets);
             }
@@ -4373,9 +4573,20 @@ impl Component for ComicsReaderModel {
                     // Crop changes the page's effective aspect, not
                     // just its paint: the fit sizes have to be laid
                     // out again around the cropped rectangle.
-                    let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
-                    update_viewport_policies(&widgets.viewport_box, self.fit_mode, is_webtoon, self.zoom_percent);
-                    let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                    let is_webtoon = self.direction == ReadingDirection::Webtoon
+                        || self.page_style == PageStyle::LongStrip;
+                    update_viewport_policies(
+                        &widgets.viewport_box,
+                        self.fit_mode,
+                        is_webtoon,
+                        self.zoom_percent,
+                    );
+                    let child = rebuild_viewport_widget(
+                        self,
+                        widgets.viewport_box.width(),
+                        widgets.viewport_box.height(),
+                        Some(&sender),
+                    );
                     widgets.viewport_box.set_child(Some(&child));
                     self.sync_settings_ui(widgets);
                 }
@@ -4388,9 +4599,20 @@ impl Component for ComicsReaderModel {
                     self.image_settings = defaults;
                     self.store_series_setting();
                     if crop_changed {
-                        let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
-                        update_viewport_policies(&widgets.viewport_box, self.fit_mode, is_webtoon, self.zoom_percent);
-                        let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                        let is_webtoon = self.direction == ReadingDirection::Webtoon
+                            || self.page_style == PageStyle::LongStrip;
+                        update_viewport_policies(
+                            &widgets.viewport_box,
+                            self.fit_mode,
+                            is_webtoon,
+                            self.zoom_percent,
+                        );
+                        let child = rebuild_viewport_widget(
+                            self,
+                            widgets.viewport_box.width(),
+                            widgets.viewport_box.height(),
+                            Some(&sender),
+                        );
                         widgets.viewport_box.set_child(Some(&child));
                     } else if let Some(child) = widgets.viewport_box.child() {
                         update_page_pictures(&child, self.image_settings);
@@ -4418,10 +4640,23 @@ impl Component for ComicsReaderModel {
                     };
                     self.apply_reading_settings(&globals);
                     self.trigger_loads(&sender);
-                    widgets.page_indicator_label.set_label(&self.page_indicator_label());
-                    let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
-                    update_viewport_policies(&widgets.viewport_box, self.fit_mode, is_webtoon, self.zoom_percent);
-                    let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                    widgets
+                        .page_indicator_label
+                        .set_label(&self.page_indicator_label());
+                    let is_webtoon = self.direction == ReadingDirection::Webtoon
+                        || self.page_style == PageStyle::LongStrip;
+                    update_viewport_policies(
+                        &widgets.viewport_box,
+                        self.fit_mode,
+                        is_webtoon,
+                        self.zoom_percent,
+                    );
+                    let child = rebuild_viewport_widget(
+                        self,
+                        widgets.viewport_box.width(),
+                        widgets.viewport_box.height(),
+                        Some(&sender),
+                    );
                     widgets.viewport_box.set_child(Some(&child));
                     self.sync_settings_ui(widgets);
                 }
@@ -4477,9 +4712,7 @@ impl Component for ComicsReaderModel {
                         entry.grab_focus();
                     }
                     self.sync_settings_ui(widgets);
-                } else if name.chars().count()
-                    > reading_settings::MAX_PRESET_NAME_CHARS
-                {
+                } else if name.chars().count() > reading_settings::MAX_PRESET_NAME_CHARS {
                     self.preset_form_open = true;
                     self.preset_form_error = format!(
                         "Keep the name to {} characters or fewer.",
@@ -4574,10 +4807,16 @@ impl Component for ComicsReaderModel {
                         || self.fit_mode == FitMode::Screen
                         || self.zoom_percent != 100;
                     if size_dependent {
-                        let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
+                        let is_webtoon = self.direction == ReadingDirection::Webtoon
+                            || self.page_style == PageStyle::LongStrip;
                         let child = rebuild_viewport_widget(self, curr_w, curr_h, Some(&sender));
                         widgets.viewport_box.set_child(Some(&child));
-                        update_viewport_policies(&widgets.viewport_box, self.fit_mode, is_webtoon, self.zoom_percent);
+                        update_viewport_policies(
+                            &widgets.viewport_box,
+                            self.fit_mode,
+                            is_webtoon,
+                            self.zoom_percent,
+                        );
                     }
                 }
             }
@@ -4607,10 +4846,7 @@ impl Component for ComicsReaderModel {
                         }
                         return;
                     }
-                    let target_idx = self
-                        .series_chapters
-                        .iter()
-                        .position(|b| b.id == new_bid);
+                    let target_idx = self.series_chapters.iter().position(|b| b.id == new_bid);
                     mark_read_on_leave = should_mark_read_on_advance(
                         self.mark_read_on_advance,
                         self.current_chapter_idx,
@@ -4619,7 +4855,11 @@ impl Component for ComicsReaderModel {
                 }
                 if let Some(catalog) = self.catalog.clone() {
                     if let Ok(Some(new_book)) = catalog.get_book(new_bid) {
-                        if let Ok(new_prov) = crate::pages::comics_reader::providers::LocalProvider::new(new_book.file_path.clone()) {
+                        if let Ok(new_prov) =
+                            crate::pages::comics_reader::providers::LocalProvider::new(
+                                new_book.file_path.clone(),
+                            )
+                        {
                             if mark_read_on_leave {
                                 self.mark_current_chapter_read();
                             } else {
@@ -4654,7 +4894,8 @@ impl Component for ComicsReaderModel {
                                 },
                             };
 
-                            self.current_chapter_idx = self.series_chapters.iter().position(|b| b.id == new_bid);
+                            self.current_chapter_idx =
+                                self.series_chapters.iter().position(|b| b.id == new_bid);
                             // The chapter just opened has a provider-
                             // true count now, whatever the up-front
                             // listing said; keep the series accounting
@@ -4682,14 +4923,27 @@ impl Component for ComicsReaderModel {
                             update_pages_heading(widgets, self);
 
                             self.trigger_loads(&sender);
-                            let child = rebuild_viewport_widget(self, widgets.viewport_box.width(), widgets.viewport_box.height(), Some(&sender));
+                            let child = rebuild_viewport_widget(
+                                self,
+                                widgets.viewport_box.width(),
+                                widgets.viewport_box.height(),
+                                Some(&sender),
+                            );
                             widgets.viewport_box.set_child(Some(&child));
-                            let is_webtoon = self.direction == ReadingDirection::Webtoon || self.page_style == PageStyle::LongStrip;
-                            update_viewport_policies(&widgets.viewport_box, self.fit_mode, is_webtoon, self.zoom_percent);
+                            let is_webtoon = self.direction == ReadingDirection::Webtoon
+                                || self.page_style == PageStyle::LongStrip;
+                            update_viewport_policies(
+                                &widgets.viewport_box,
+                                self.fit_mode,
+                                is_webtoon,
+                                self.zoom_percent,
+                            );
                             if is_webtoon {
                                 widgets.viewport_box.vadjustment().set_value(0.0);
                             }
-                            widgets.page_indicator_label.set_label(&self.page_indicator_label());
+                            widgets
+                                .page_indicator_label
+                                .set_label(&self.page_indicator_label());
                         }
                     }
                 }
@@ -4856,9 +5110,9 @@ impl Component for ComicsReaderModel {
                             if Some(chapter_idx) == self.current_chapter_idx {
                                 let _ = sender.input_sender().send(ComicsReaderMsg::SetPage(page));
                             } else if let Some(book) = self.series_chapters.get(chapter_idx) {
-                                let _ = sender.input_sender().send(
-                                    ComicsReaderMsg::SwitchChapterAt(book.id, Some(page)),
-                                );
+                                let _ = sender
+                                    .input_sender()
+                                    .send(ComicsReaderMsg::SwitchChapterAt(book.id, Some(page)));
                             }
                         } else {
                             let _ = sender
@@ -4868,9 +5122,9 @@ impl Component for ComicsReaderModel {
                     }
                     JumpMode::Chapter => {
                         if let Some(book) = self.series_chapters.get(number - 1) {
-                            let _ = sender.input_sender().send(
-                                ComicsReaderMsg::SwitchChapterAt(book.id, Some(0)),
-                            );
+                            let _ = sender
+                                .input_sender()
+                                .send(ComicsReaderMsg::SwitchChapterAt(book.id, Some(0)));
                         } else {
                             let _ = sender.input_sender().send(ComicsReaderMsg::SetPage(0));
                         }
@@ -5214,16 +5468,25 @@ mod tests {
         model.direction = ReadingDirection::Ltr;
         model.current_page = 0;
 
-        let is_webtoon = model.direction == ReadingDirection::Webtoon || model.page_style == PageStyle::LongStrip;
-        assert!(!is_webtoon, "Single page mode must not be treated as webtoon");
+        let is_webtoon = model.direction == ReadingDirection::Webtoon
+            || model.page_style == PageStyle::LongStrip;
+        assert!(
+            !is_webtoon,
+            "Single page mode must not be treated as webtoon"
+        );
 
         model.page_style = PageStyle::Double;
-        let is_webtoon_double = model.direction == ReadingDirection::Webtoon || model.page_style == PageStyle::LongStrip;
-        assert!(!is_webtoon_double, "Double page mode must not be treated as webtoon");
+        let is_webtoon_double = model.direction == ReadingDirection::Webtoon
+            || model.page_style == PageStyle::LongStrip;
+        assert!(
+            !is_webtoon_double,
+            "Double page mode must not be treated as webtoon"
+        );
 
         // Webtoon mode
         model.direction = ReadingDirection::Webtoon;
-        let is_webtoon_active = model.direction == ReadingDirection::Webtoon || model.page_style == PageStyle::LongStrip;
+        let is_webtoon_active = model.direction == ReadingDirection::Webtoon
+            || model.page_style == PageStyle::LongStrip;
         assert!(is_webtoon_active);
         let ratio = 0.5;
         let target = ((model.total_pages - 1) as f64 * ratio).round() as usize;
@@ -5325,5 +5588,4 @@ mod tests {
         // the "completed" news.
         assert_eq!(model.page_indicator_label(), "5 / 5");
     }
-
 }

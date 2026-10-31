@@ -199,16 +199,17 @@ impl EditorPickerModel {
         widgets.content_host.append(&heading);
 
         for entry in visible {
-            widgets
-                .content_host
-                .append(&picker_row(entry, sender));
+            widgets.content_host.append(&picker_row(entry, sender));
         }
     }
 }
 
 /// One 72-high picker row (§40): 40 x 56 cover, title over author,
 /// the edited state at the right.
-fn picker_row(entry: &EditorPickerEntry, sender: &ComponentSender<EditorPickerModel>) -> gtk::Button {
+fn picker_row(
+    entry: &EditorPickerEntry,
+    sender: &ComponentSender<EditorPickerModel>,
+) -> gtk::Button {
     let book: &Book = &entry.book;
     let row = gtk::Button::new();
     row.add_css_class("kalam-editorpicker-row");

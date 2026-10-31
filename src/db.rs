@@ -11,29 +11,29 @@ use thiserror::Error;
 
 mod annotations;
 mod authors;
-mod pdf_annotations;
 mod dictionaries;
 mod editor;
 mod history;
 mod lookup_history;
 mod metadata;
 mod patches;
+mod pdf_annotations;
 mod prefs;
 mod pronunciation;
-mod series;
 pub mod search;
+mod series;
 mod shelves;
 mod stats;
 
 mod tags;
 
-pub use editor::EditorVersion;
-pub use tags::BulkMetadataEdit;
-pub(crate) use series::heuristic_series_key;
 pub use dictionaries::{
-    EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME,
-    BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
+    EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME,
+    BUNDLED_WORDNET_NAME,
 };
+pub use editor::EditorVersion;
+pub(crate) use series::heuristic_series_key;
+pub use tags::BulkMetadataEdit;
 // Only the engine's tests name `Sense` directly; keep it out of the non-test
 // build so it is not an unused import.
 #[cfg(test)]
@@ -321,12 +321,7 @@ impl PdfDrawingGeometry {
     /// are re-set upright in the page's new orientation when they
     /// are next painted, exactly as they would be had the page
     /// always stood that way.
-    pub fn rotate_clockwise(
-        &mut self,
-        degrees: i32,
-        page_width: f32,
-        page_height: f32,
-    ) {
+    pub fn rotate_clockwise(&mut self, degrees: i32, page_width: f32, page_height: f32) {
         if page_width <= 0.0 || page_height <= 0.0 {
             return;
         }
@@ -527,7 +522,8 @@ pub struct Dictionary {
     #[allow(dead_code)] // bookkeeping column; not displayed
     pub added_at: String,
     /// Merged-store priority (schema v12): lower numbers speak first.
-    #[allow(dead_code)] // the merged store orders by priority in SQL; the field mirrors the column
+    #[allow(dead_code)]
+    // the merged store orders by priority in SQL; the field mirrors the column
     pub priority: i64,
 }
 
@@ -835,9 +831,6 @@ thread_local! {
 
 #[cfg(test)]
 impl Catalog {
-
-
-
     /// Count the SQL statements one call issues.
     ///
     /// `Connection::trace` takes a bare `fn(&str)`, not a closure, so the
@@ -1461,12 +1454,32 @@ impl Catalog {
         // default to 0 (unknown), so nothing needs a backfill.
         add_column_if_missing(&conn, "saved_words", "known", "INTEGER NOT NULL DEFAULT 0")?;
         // Roadmap #5: spaced-repetition review state for saved words.
-        add_column_if_missing(&conn, "saved_words", "srs_due", "INTEGER NOT NULL DEFAULT 0")?;
-        add_column_if_missing(&conn, "saved_words", "srs_interval", "REAL NOT NULL DEFAULT 0")?;
-        add_column_if_missing(&conn, "saved_words", "srs_ease", "REAL NOT NULL DEFAULT 2.5")?;
+        add_column_if_missing(
+            &conn,
+            "saved_words",
+            "srs_due",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "saved_words",
+            "srs_interval",
+            "REAL NOT NULL DEFAULT 0",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "saved_words",
+            "srs_ease",
+            "REAL NOT NULL DEFAULT 2.5",
+        )?;
 
         // Unified annotation system: style column (solid, underline, squiggly, strikeout)
-        add_column_if_missing(&conn, "annotations", "style", "TEXT NOT NULL DEFAULT 'solid'")?;
+        add_column_if_missing(
+            &conn,
+            "annotations",
+            "style",
+            "TEXT NOT NULL DEFAULT 'solid'",
+        )?;
 
         // v21: hand-edited author fields (see AUTHOR_FIELD_*).
         add_column_if_missing(
@@ -1600,7 +1613,11 @@ impl Catalog {
             0 => (0.0, (ease - 0.2).max(1.3)),
             1 => (if interval < 1.0 { 1.0 } else { interval * ease }, ease),
             _ => (
-                if interval < 1.0 { 2.0 } else { interval * ease * 1.3 },
+                if interval < 1.0 {
+                    2.0
+                } else {
+                    interval * ease * 1.3
+                },
                 ease + 0.15,
             ),
         };
@@ -1667,12 +1684,14 @@ impl Catalog {
 
     /// Index a book's full content for library-wide search.
     pub fn index_book_content(&self, book_id: i64) -> Result<()> {
-        crate::content_index::index_book(self, book_id).map_err(|e| DbError::ContentSearch(e.to_string()))
+        crate::content_index::index_book(self, book_id)
+            .map_err(|e| DbError::ContentSearch(e.to_string()))
     }
 
     /// Index all unindexed books into the full-text search index.
     pub fn index_all_unindexed_books(&self) -> Result<usize> {
-        crate::content_index::index_all_unindexed(self).map_err(|e| DbError::ContentSearch(e.to_string()))
+        crate::content_index::index_all_unindexed(self)
+            .map_err(|e| DbError::ContentSearch(e.to_string()))
     }
 
     /// Rebuild the library full-text search index from scratch.
@@ -1682,7 +1701,8 @@ impl Catalog {
 
     /// Status of the library-wide content search index.
     pub fn get_content_index_status(&self) -> Result<crate::content_index::ContentIndexStatus> {
-        crate::content_index::get_index_status(self).map_err(|e| DbError::ContentSearch(e.to_string()))
+        crate::content_index::get_index_status(self)
+            .map_err(|e| DbError::ContentSearch(e.to_string()))
     }
 
     /// Search across the full text of all books in the library.
@@ -1690,7 +1710,8 @@ impl Catalog {
         &self,
         query: &str,
     ) -> Result<Vec<crate::content_index::BookContentSearchResult>> {
-        crate::content_index::search_content(self, query).map_err(|e| DbError::ContentSearch(e.to_string()))
+        crate::content_index::search_content(self, query)
+            .map_err(|e| DbError::ContentSearch(e.to_string()))
     }
 
     /// Newest books, capped. Pages that show a handful of covers were calling
@@ -1737,11 +1758,15 @@ impl Catalog {
                  WHERE c.book_id IN ({holders})"
             );
             let ids: Vec<i64> = books.iter().map(|b| b.id).collect();
-            let mut by_book: std::collections::HashMap<i64, (String, String)> = std::collections::HashMap::new();
+            let mut by_book: std::collections::HashMap<i64, (String, String)> =
+                std::collections::HashMap::new();
             {
                 let mut stmt = conn.prepare(&sql)?;
                 let rows = stmt.query_map(rusqlite::params_from_iter(ids.iter()), |r| {
-                    Ok((r.get::<_, i64>(0)?, (r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        (r.get::<_, String>(1)?, r.get::<_, String>(2)?),
+                    ))
                 })?;
                 for row in rows {
                     let (book_id, meta) = row?;
@@ -1763,15 +1788,19 @@ impl Catalog {
         Ok(books)
     }
 
-    pub fn add_remote_book(&self, book: &crate::sources::RemoteBookDetails, source_id: &str) -> anyhow::Result<()> {
+    pub fn add_remote_book(
+        &self,
+        book: &crate::sources::RemoteBookDetails,
+        source_id: &str,
+    ) -> anyhow::Result<()> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
             "INSERT OR REPLACE INTO remote_books (id, source_id, remote_id, title, author, description, cover_url, added_at, status)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'), ?8)"
         )?;
-        
+
         let id_str = format!("{}-{}", source_id, book.remote_id);
-        
+
         stmt.execute(rusqlite::params![
             id_str,
             source_id,
@@ -1785,15 +1814,20 @@ impl Catalog {
         Ok(())
     }
 
-    pub fn list_remote_books(&self, source_id_filter: Option<&str>) -> anyhow::Result<Vec<crate::sources::RemoteBookDetails>> {
+    pub fn list_remote_books(
+        &self,
+        source_id_filter: Option<&str>,
+    ) -> anyhow::Result<Vec<crate::sources::RemoteBookDetails>> {
         let conn = self.conn();
 
         // Two separate queries with proper parameterized placeholders — never
         // format user-supplied strings into SQL. The `source_id_filter` path
         // used to do `format!("WHERE source_id = '{src}'")`; that is gone.
-        let sql_filtered   = "SELECT source_id, remote_id, title, author, description, cover_url, status \
+        let sql_filtered =
+            "SELECT source_id, remote_id, title, author, description, cover_url, status \
                                FROM remote_books WHERE source_id = ?1 ORDER BY added_at DESC";
-        let sql_unfiltered = "SELECT source_id, remote_id, title, author, description, cover_url, status \
+        let sql_unfiltered =
+            "SELECT source_id, remote_id, title, author, description, cover_url, status \
                                FROM remote_books ORDER BY added_at DESC";
 
         let mut res = Vec::new();
@@ -1812,7 +1846,9 @@ impl Catalog {
                         tags: Vec::new(),
                     })
                 })?;
-                for r in rows { res.push(r?); }
+                for r in rows {
+                    res.push(r?);
+                }
             }
             None => {
                 let mut stmt = conn.prepare(sql_unfiltered)?;
@@ -1827,14 +1863,21 @@ impl Catalog {
                         tags: Vec::new(),
                     })
                 })?;
-                for r in rows { res.push(r?); }
+                for r in rows {
+                    res.push(r?);
+                }
             }
         }
 
         Ok(res)
     }
 
-    pub fn add_remote_chapters(&self, book_remote_id: &str, source_id: &str, chapters: &[crate::sources::RemoteChapter]) -> anyhow::Result<()> {
+    pub fn add_remote_chapters(
+        &self,
+        book_remote_id: &str,
+        source_id: &str,
+        chapters: &[crate::sources::RemoteChapter],
+    ) -> anyhow::Result<()> {
         let book_id_str = format!("{}-{}", source_id, book_remote_id);
 
         // Use the poisoned-lock-safe helper, and batch all inserts in one
@@ -2169,8 +2212,14 @@ impl Catalog {
         let _ = self.remember_overrides(id);
         {
             let conn = self.conn();
-            let _ = conn.execute("DELETE FROM book_content_fts WHERE book_id = ?1", params![id]);
-            let _ = conn.execute("DELETE FROM book_search_index_status WHERE book_id = ?1", params![id]);
+            let _ = conn.execute(
+                "DELETE FROM book_content_fts WHERE book_id = ?1",
+                params![id],
+            );
+            let _ = conn.execute(
+                "DELETE FROM book_search_index_status WHERE book_id = ?1",
+                params![id],
+            );
             let _ = conn.execute("DELETE FROM page_ocr_cache WHERE book_id = ?1", params![id]);
             conn.execute("DELETE FROM books WHERE id = ?1", params![id])?;
         }
@@ -2279,10 +2328,7 @@ impl Catalog {
     /// Opened event; the step-4 `service.dashboard()` budget exists to keep
     /// it batched. Same shape as `books_by_ids`: dedupe, chunk at 500,
     /// empty input is not an error and issues nothing.
-    pub fn reading_progress_by_ids(
-        &self,
-        ids: &[i64],
-    ) -> Result<HashMap<i64, (usize, f64)>> {
+    pub fn reading_progress_by_ids(&self, ids: &[i64]) -> Result<HashMap<i64, (usize, f64)>> {
         let mut out: HashMap<i64, (usize, f64)> = HashMap::new();
         if ids.is_empty() {
             return Ok(out);
@@ -2427,7 +2473,12 @@ impl Catalog {
             .map(|(old, new)| format!("WHEN {old} THEN {new}"))
             .collect::<Vec<_>>()
             .join(" ");
-        for table in ["reading_progress", "annotations", "saved_words", "reading_bookmarks"] {
+        for table in [
+            "reading_progress",
+            "annotations",
+            "saved_words",
+            "reading_bookmarks",
+        ] {
             conn.execute(
                 &format!(
                     "UPDATE {table} SET chapter_index = CASE chapter_index {cases} \
@@ -2439,9 +2490,8 @@ impl Catalog {
         // The annotations' locator JSON: rewrite `spine_index` in place,
         // preserving every other field — including fields a future version
         // might add that this one does not know.
-        let mut stmt = conn.prepare(
-            "SELECT id, cfi FROM annotations WHERE book_id = ?1 AND cfi IS NOT NULL",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, cfi FROM annotations WHERE book_id = ?1 AND cfi IS NOT NULL")?;
         let rows: Vec<(i64, String)> = stmt
             .query_map(params![book_id], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<std::result::Result<_, _>>()?;
@@ -2484,7 +2534,8 @@ impl Catalog {
 }
 
 /// Shared projection so every book query returns the same column order.
-pub(crate) const BOOK_COLUMNS: &str = "books.id, books.uuid, books.title, books.authors, books.series, \
+pub(crate) const BOOK_COLUMNS: &str =
+    "books.id, books.uuid, books.title, books.authors, books.series, \
      books.description, books.format, books.file_name, books.file_hash, books.cover_name, \
      books.added_at, books.progress, books.rating, books.publisher, books.published, \
      books.series_index";
@@ -2963,12 +3014,32 @@ mod tests {
         cat.set_reading_progress(other, 1, 0.9, 4).unwrap();
         let moved = cat
             .insert_annotation(
-                book, "highlight", 1, "", 0, "", 0, "yellow", "solid", "moved excerpt", "n",
+                book,
+                "highlight",
+                1,
+                "",
+                0,
+                "",
+                0,
+                "yellow",
+                "solid",
+                "moved excerpt",
+                "n",
             )
             .unwrap();
         let still = cat
             .insert_annotation(
-                book, "highlight", 2, "", 0, "", 0, "yellow", "solid", "still excerpt", "n",
+                book,
+                "highlight",
+                2,
+                "",
+                0,
+                "",
+                0,
+                "yellow",
+                "solid",
+                "still excerpt",
+                "n",
             )
             .unwrap();
         cat.update_annotation_cfi(
@@ -3007,13 +3078,20 @@ mod tests {
         assert_eq!(cfi["start"]["char_offset"], 10);
         let still_cfi: serde_json::Value =
             serde_json::from_str(still_row.cfi.as_deref().unwrap()).unwrap();
-        assert_eq!(still_cfi["start"]["spine_index"], 2, "unmoved locator untouched");
+        assert_eq!(
+            still_cfi["start"]["spine_index"], 2,
+            "unmoved locator untouched"
+        );
         let words = cat.get_saved_words_for_scope(book, "book").unwrap();
         assert_eq!(words[0].chapter_index, Some(0));
         let marks = cat.list_reading_bookmarks(book).unwrap();
         assert_eq!(marks[0].chapter_index, 0);
         let other_words = cat.get_saved_words_for_scope(other, "book").unwrap();
-        assert_eq!(other_words[0].chapter_index, Some(1), "other books untouched");
+        assert_eq!(
+            other_words[0].chapter_index,
+            Some(1),
+            "other books untouched"
+        );
 
         // An identity order is a no-op, not a shuffle.
         cat.remap_spine_indices(book, &[0, 1, 2]).unwrap();
@@ -3390,7 +3468,8 @@ mod tests {
 
         // The app wrote the edit into its own copy, so that copy's bytes and
         // hash both moved. The owner's original file is untouched throughout.
-        cat.rehash_book(id, &arrival, "hash-of-the-rewritten-copy").unwrap();
+        cat.rehash_book(id, &arrival, "hash-of-the-rewritten-copy")
+            .unwrap();
         let rewritten = cat.get_book(id).unwrap().unwrap();
         assert_eq!(rewritten.file_hash, "hash-of-the-rewritten-copy");
 
@@ -3900,8 +3979,20 @@ mod tests {
                 x1: 200.0,
                 y1: 118.0,
                 chars: vec![
-                    PdfTextChar { ch: 'H', x0: 57.0, y0: 100.0, x1: 66.0, y1: 118.0 },
-                    PdfTextChar { ch: 'i', x0: 68.0, y0: 100.0, x1: 73.0, y1: 118.0 },
+                    PdfTextChar {
+                        ch: 'H',
+                        x0: 57.0,
+                        y0: 100.0,
+                        x1: 66.0,
+                        y1: 118.0,
+                    },
+                    PdfTextChar {
+                        ch: 'i',
+                        x0: 68.0,
+                        y0: 100.0,
+                        x1: 73.0,
+                        y1: 118.0,
+                    },
                 ],
             }],
         };
@@ -4105,9 +4196,9 @@ mod tests {
             (1970, 1, 1, 0i64),
             (1969, 12, 31, -1i64),
             (2000, 1, 1, 10957i64),
-            (2024, 2, 29, 19782i64), // Leap day
+            (2024, 2, 29, 19782i64),  // Leap day
             (1900, 2, 28, -25509i64), // Non-leap year century
-            (2000, 2, 29, 11016i64), // Leap year century
+            (2000, 2, 29, 11016i64),  // Leap year century
         ];
 
         for &(y, m, d, expected_days) in &test_cases {

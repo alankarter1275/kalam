@@ -21,7 +21,10 @@ pub enum HistoryMsg {
     Refresh,
     /// A background history query finished. Carries the generation it was
     /// started with so a superseded reply cannot overwrite a newer one.
-    Loaded { gen: u64, snap: HistorySnapshot },
+    Loaded {
+        gen: u64,
+        snap: HistorySnapshot,
+    },
 }
 
 pub struct HistoryModel {
@@ -229,9 +232,7 @@ impl HistoryModel {
         let done = sender.input_sender().clone();
         crate::tasks::spawn(
             "Loading history",
-            move |_reporter| {
-                LibraryService::new(catalog).history(filter, &query, PAGE_LIMIT)
-            },
+            move |_reporter| LibraryService::new(catalog).history(filter, &query, PAGE_LIMIT),
             // One query, not a sequence of steps, so nothing to report.
             |_update| {},
             move |snap| {

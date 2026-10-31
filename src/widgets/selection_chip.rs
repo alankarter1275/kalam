@@ -48,14 +48,8 @@ impl SelectionChip {
 }
 
 /// Build the approved five-colour chip.
-pub fn selection_chip(
-    on_action: impl Fn(SelectionChipAction) + 'static,
-) -> SelectionChip {
-    selection_chip_with_colors(
-        HighlightColor::SOFT_FIVE,
-        HighlightColor::Yellow,
-        on_action,
-    )
+pub fn selection_chip(on_action: impl Fn(SelectionChipAction) + 'static) -> SelectionChip {
+    selection_chip_with_colors(HighlightColor::SOFT_FIVE, HighlightColor::Yellow, on_action)
 }
 
 /// Build a chip with a caller-selected colour set. An empty colour slice
@@ -121,13 +115,7 @@ pub fn selection_chip_with_colors(
                 if selected.get() == color {
                     set_source(cr, probe_color(&ring_probe), 1.0);
                     cr.set_line_width(2.0);
-                    cr.arc(
-                        centre_x,
-                        centre_y,
-                        radius - 1.0,
-                        0.0,
-                        std::f64::consts::TAU,
-                    );
+                    cr.arc(centre_x, centre_y, radius - 1.0, 0.0, std::f64::consts::TAU);
                     let _ = cr.stroke();
                 }
             });
@@ -136,15 +124,9 @@ pub fn selection_chip_with_colors(
 
         let button = gtk::Button::new();
         button.add_css_class("kalam-ui-selection-color");
-        button.set_size_request(
-            crate::style::size::COMPACT,
-            crate::style::size::COMPACT,
-        );
+        button.set_size_request(crate::style::size::COMPACT, crate::style::size::COMPACT);
         button.set_child(Some(&dot));
-        button.set_tooltip_text(Some(&format!(
-            "Highlight in {}",
-            highlight_label(color)
-        )));
+        button.set_tooltip_text(Some(&format!("Highlight in {}", highlight_label(color))));
         button.set_can_focus(true);
 
         let selected_for_click = selected.clone();

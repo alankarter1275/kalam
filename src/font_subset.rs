@@ -13,8 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::Read as _;
 
 fn u16_at(b: &[u8], at: usize) -> Option<u16> {
-    b.get(at..at + 2)
-        .map(|s| u16::from_be_bytes([s[0], s[1]]))
+    b.get(at..at + 2).map(|s| u16::from_be_bytes([s[0], s[1]]))
 }
 
 fn u32_at(b: &[u8], at: usize) -> Option<u32> {
@@ -113,16 +112,11 @@ impl Sfnt {
         while !out.len().is_multiple_of(4) {
             out.push(0);
         }
-        if let Some(head) = self
-            .tables
-            .iter()
-            .position(|t| &t.tag == b"head")
-        {
+        if let Some(head) = self.tables.iter().position(|t| &t.tag == b"head") {
             let (offset, _) = offsets[head];
             if offset + 12 <= out.len() {
                 let adjustment = 0xB1B0AFBAu32.wrapping_sub(checksum(&out));
-                out[offset + 8..offset + 12]
-                    .copy_from_slice(&adjustment.to_be_bytes());
+                out[offset + 8..offset + 12].copy_from_slice(&adjustment.to_be_bytes());
             }
         }
         out
@@ -144,9 +138,7 @@ fn parse_sfnt(font: &[u8]) -> Result<Sfnt, String> {
     let mut tables = Vec::new();
     for i in 0..num {
         let rec = 12 + i * 16;
-        let tag_bytes = font
-            .get(rec..rec + 4)
-            .ok_or("truncated table directory")?;
+        let tag_bytes = font.get(rec..rec + 4).ok_or("truncated table directory")?;
         let mut tag = [0u8; 4];
         tag.copy_from_slice(tag_bytes);
         let offset = u32_at(font, rec + 8).ok_or("truncated table directory")? as usize;
@@ -215,29 +207,28 @@ fn build_woff(sfnt: &Sfnt, sfnt_bytes: &[u8]) -> Vec<u8> {
             out.push(0);
         }
         let offset = out.len();
-        let mut encoder =
-            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
+        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
         let compressed = encoder
             .write_all(&table.data)
             .and_then(|_| encoder.finish())
             .unwrap_or_default();
-        let (stored, comp_len) = if !compressed.is_empty()
-            && compressed.len() < table.data.len()
-        {
+        let (stored, comp_len) = if !compressed.is_empty() && compressed.len() < table.data.len() {
             (compressed, 0usize)
         } else {
             (table.data.clone(), table.data.len())
         };
-        let comp_len = if comp_len == 0 { stored.len() } else { comp_len };
+        let comp_len = if comp_len == 0 {
+            stored.len()
+        } else {
+            comp_len
+        };
         out.extend_from_slice(&stored);
         let rec = dir_at + index * 20;
         out[rec..rec + 4].copy_from_slice(&table.tag);
         out[rec + 4..rec + 8].copy_from_slice(&(offset as u32).to_be_bytes());
         out[rec + 8..rec + 12].copy_from_slice(&(comp_len as u32).to_be_bytes());
-        out[rec + 12..rec + 16]
-            .copy_from_slice(&(table.data.len() as u32).to_be_bytes());
-        out[rec + 16..rec + 20]
-            .copy_from_slice(&checksum(&table.data).to_be_bytes());
+        out[rec + 12..rec + 16].copy_from_slice(&(table.data.len() as u32).to_be_bytes());
+        out[rec + 16..rec + 20].copy_from_slice(&checksum(&table.data).to_be_bytes());
     }
     let total = out.len() as u32;
     out[8..12].copy_from_slice(&total.to_be_bytes());
@@ -247,11 +238,17 @@ fn build_woff(sfnt: &Sfnt, sfnt_bytes: &[u8]) -> Vec<u8> {
 /// Unicode → GID from every format-4/12 cmap subtable.
 fn cmap_map(cmap: &[u8]) -> HashMap<u32, u16> {
     let mut map = HashMap::new();
-    let Some(count) = u16_at(cmap, 2) else { return map };
+    let Some(count) = u16_at(cmap, 2) else {
+        return map;
+    };
     for i in 0..count as usize {
         let rec = 4 + i * 8;
-        let Some(offset) = u32_at(cmap, rec + 4) else { continue };
-        let Some(sub) = cmap.get(offset as usize..) else { continue };
+        let Some(offset) = u32_at(cmap, rec + 4) else {
+            continue;
+        };
+        let Some(sub) = cmap.get(offset as usize..) else {
+            continue;
+        };
         match u16_at(sub, 0) {
             Some(4) => cmap_format4(sub, &mut map),
             Some(12) => cmap_format12(sub, &mut map),
@@ -281,8 +278,7 @@ fn cmap_format4(sub: &[u8], map: &mut HashMap<u32, u16>) {
             let gid = if range_off == 0 {
                 (code as i32 + delta as i32).rem_euclid(65536) as u16
             } else {
-                let at = range_at + s * 2 + range_off as usize
-                    + (code - start) as usize * 2;
+                let at = range_at + s * 2 + range_off as usize + (code - start) as usize * 2;
                 match u16_at(sub, at) {
                     Some(0) | None => continue,
                     Some(g) => (g as i32 + delta as i32).rem_euclid(65536) as u16,
@@ -296,14 +292,14 @@ fn cmap_format4(sub: &[u8], map: &mut HashMap<u32, u16>) {
 }
 
 fn cmap_format12(sub: &[u8], map: &mut HashMap<u32, u16>) {
-    let Some(groups) = u32_at(sub, 12) else { return };
+    let Some(groups) = u32_at(sub, 12) else {
+        return;
+    };
     for g in 0..groups as usize {
         let at = 16 + g * 12;
-        let (Some(start), Some(end), Some(first)) = (
-            u32_at(sub, at),
-            u32_at(sub, at + 4),
-            u32_at(sub, at + 8),
-        ) else {
+        let (Some(start), Some(end), Some(first)) =
+            (u32_at(sub, at), u32_at(sub, at + 4), u32_at(sub, at + 8))
+        else {
             continue;
         };
         for (step, code) in (start..=end).enumerate() {
@@ -339,9 +335,7 @@ fn glyph_components(glyph: &[u8]) -> Vec<u16> {
         return out;
     }
     let mut at = 10usize;
-    while let (Some(flags), Some(component)) =
-        (u16_at(glyph, at), u16_at(glyph, at + 2))
-    {
+    while let (Some(flags), Some(component)) = (u16_at(glyph, at), u16_at(glyph, at + 2)) {
         out.push(component);
         at += 4;
         at += if flags & 0x0001 != 0 { 4 } else { 2 };
@@ -468,7 +462,12 @@ mod tests {
     #[test]
     fn subsetting_shrinks_and_stays_a_font() {
         let out = subset_font(DM_MONO, &chars("AaBb ")).expect("subset");
-        assert!(out.len() < DM_MONO.len(), "{} !< {}", out.len(), DM_MONO.len());
+        assert!(
+            out.len() < DM_MONO.len(),
+            "{} !< {}",
+            out.len(),
+            DM_MONO.len()
+        );
         let mut db = fontdb::Database::new();
         db.load_font_data(out.clone());
         assert_eq!(db.faces().count(), 1, "fontdb still parses the subset");

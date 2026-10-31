@@ -1,4 +1,3 @@
-
 //! Offline pronunciation for the dictionary popup.
 //!
 //! The CMU Pronouncing Dictionary (cmudict 0.7a, BSD-style license — see

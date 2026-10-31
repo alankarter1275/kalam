@@ -209,18 +209,13 @@ impl TaskManagerModel {
     /// redrawing twice a second is not something anyone reads closely enough
     /// to notice.
     fn render(&self, sender: &ComponentSender<Self>) {
-        let visible_running: Vec<_> = self
-            .running
-            .iter()
-            .filter(|t| !t.hidden)
-            .cloned()
-            .collect();
-        self.status.set_label(&status_line(&visible_running, &self.recent));
+        let visible_running: Vec<_> = self.running.iter().filter(|t| !t.hidden).cloned().collect();
+        self.status
+            .set_label(&status_line(&visible_running, &self.recent));
         let s = sender.input_sender().clone();
-        let on_cancel: CancelFn =
-            Rc::new(move |id| {
-                s.send(TaskManagerMsg::Cancel(id)).ok();
-            });
+        let on_cancel: CancelFn = Rc::new(move |id| {
+            s.send(TaskManagerMsg::Cancel(id)).ok();
+        });
 
         clear_list(&self.running_list);
         if visible_running.is_empty() {
@@ -233,7 +228,8 @@ impl TaskManagerModel {
 
         clear_list(&self.recent_list);
         if self.recent.is_empty() {
-            self.recent_list.append(&empty_row("Nothing has finished yet."));
+            self.recent_list
+                .append(&empty_row("Nothing has finished yet."));
         }
         for task in &self.recent {
             self.recent_list.append(&recent_row(task));
@@ -507,7 +503,11 @@ fn recent_row(task: &FinishedTask) -> gtk::ListBoxRow {
             move |_| {
                 let show = !revealer.is_child_revealed();
                 revealer.set_reveal_child(show);
-                let text = if show { "Hide".to_string() } else { format!("Show all {n}") };
+                let text = if show {
+                    "Hide".to_string()
+                } else {
+                    format!("Show all {n}")
+                };
                 toggle.set_label(&text);
             }
         });

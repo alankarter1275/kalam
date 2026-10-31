@@ -60,14 +60,10 @@ pub(crate) fn sync_reader_controls(model: &ReaderModel) {
     // A spread is a paged-mode thing: the toggle stays on record but does
     // nothing under continuous scroll, so the row greys out instead of
     // pretending (2.7, first field report).
-    model
-        .dual_page_switch
-        .set_sensitive(!model.scrolled);
+    model.dual_page_switch.set_sensitive(!model.scrolled);
     // Arrow scrolling is active only in continuous scroll mode; in paged
     // mode Up/Down step chapters, so the scroll speed setting greys out.
-    model
-        .arrow_step_row
-        .set_sensitive(model.scrolled);
+    model.arrow_step_row.set_sensitive(model.scrolled);
     model
         .wheel_step_label
         .set_label(&model.wheel_step.to_string());

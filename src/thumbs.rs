@@ -267,8 +267,7 @@ mod tests {
         // A thumb destination DISTINCT from the source: mapping the cover
         // onto its own path would make `thumb.is_file()` true because the
         // source exists — a test that could not fail (§19).
-        let thumb_of =
-            |cover: &Path| Some(dir.join("thumbs").join(cover.file_name()?.to_str()?));
+        let thumb_of = |cover: &Path| Some(dir.join("thumbs").join(cover.file_name()?.to_str()?));
 
         // First call produces the thumbnail.
         assert!(backfill_one("abc", &cover, &thumb_of));
@@ -281,8 +280,7 @@ mod tests {
     #[test]
     fn backfill_missing_source_is_a_noop() {
         let dir = Scratch::new();
-        let thumb_of =
-            |cover: &Path| Some(dir.join("thumbs").join(cover.file_name()?.to_str()?));
+        let thumb_of = |cover: &Path| Some(dir.join("thumbs").join(cover.file_name()?.to_str()?));
         // A missing source is not created, but it is not an error either.
         let got = backfill_one("nope", &dir.join("absent.png"), &thumb_of);
         assert!(!got);
@@ -300,8 +298,7 @@ mod tests {
         let dir = Scratch::new();
         let cover = dir.join("cover.png");
         write_solid_png(&cover, 600, 900, [20, 40, 60]);
-        let thumb_of =
-            |cover: &Path| Some(dir.join("thumbs").join(cover.file_name()?.to_str()?));
+        let thumb_of = |cover: &Path| Some(dir.join("thumbs").join(cover.file_name()?.to_str()?));
         // The pre-migration state: only the legacy file exists.
         let legacy = crate::paths::thumbs_dir().join("legacy-uuid.png");
         if let Some(parent) = legacy.parent() {

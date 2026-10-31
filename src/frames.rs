@@ -116,9 +116,7 @@ impl FramesState {
         // previous frame completed, not long before this frame's paint
         // began, and not after the paint it was supposed to precede.
         let layout = self.layout_start.take().filter(|l| {
-            *l <= paint
-                && paint - *l <= STALE_LAYOUT_MS
-                && self.last_done.is_none_or(|d| *l > d)
+            *l <= paint && paint - *l <= STALE_LAYOUT_MS && self.last_done.is_none_or(|d| *l > d)
         });
         self.last_done = Some(now_ms);
         for (label, ended) in self.pending.drain(..) {
@@ -130,9 +128,7 @@ impl FramesState {
                 ms: (paint - ended).max(0.0),
             });
         }
-        let interest_hot = self
-            .interest_until
-            .is_some_and(|until| now_ms <= until);
+        let interest_hot = self.interest_until.is_some_and(|until| now_ms <= until);
         if interest_hot {
             if let Some(label) = self.interest_label {
                 let paint_ms = now_ms - paint;

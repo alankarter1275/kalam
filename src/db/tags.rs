@@ -140,7 +140,10 @@ impl Catalog {
                 "UPDATE OR IGNORE book_tags SET tag_id = ?1 WHERE tag_id = ?2",
                 params![target_id, source_id],
             )?;
-            tx.execute("DELETE FROM book_tags WHERE tag_id = ?1", params![source_id])?;
+            tx.execute(
+                "DELETE FROM book_tags WHERE tag_id = ?1",
+                params![source_id],
+            )?;
             tx.execute("DELETE FROM tags WHERE id = ?1", params![source_id])?;
         }
 

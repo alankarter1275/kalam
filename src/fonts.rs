@@ -77,7 +77,10 @@ const FONT_FILES: &[(&str, &[u8])] = &[
 pub fn init_ui_fonts() {
     let dir = gtk::glib::user_cache_dir().join("kalam").join("fonts");
     if let Err(err) = write_fonts(&dir) {
-        eprintln!("kalam: could not write bundled fonts to {}: {err}", dir.display());
+        eprintln!(
+            "kalam: could not write bundled fonts to {}: {err}",
+            dir.display()
+        );
         return;
     }
     if !register_font_dir(&dir) {

@@ -13,10 +13,16 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum ShelfDetailOut {
-    OpenBook { book_id: i64 },
-    OpenBookDialog { book_id: i64 },
+    OpenBook {
+        book_id: i64,
+    },
+    OpenBookDialog {
+        book_id: i64,
+    },
     /// A comic series card — chapters are only ever seen on the series page.
-    ComicSeries { series_name: String },
+    ComicSeries {
+        series_name: String,
+    },
 }
 
 #[derive(Debug)]
@@ -218,16 +224,11 @@ impl Component for ShelfDetailModel {
                 if let Some(shelf) = &self.shelf {
                     if shelf.kind == ShelfKind::Manual {
                         let s = sender.clone();
-                        open_book_picker(
-                            root,
-                            self.service.clone(),
-                            shelf.id,
-                            move || {
-                                // Non-modal dialog: quiet no-op if the page
-                                // is gone by the time it closes.
-                                let _ = s.input_sender().send(ShelfDetailMsg::Refresh);
-                            },
-                        );
+                        open_book_picker(root, self.service.clone(), shelf.id, move || {
+                            // Non-modal dialog: quiet no-op if the page
+                            // is gone by the time it closes.
+                            let _ = s.input_sender().send(ShelfDetailMsg::Refresh);
+                        });
                     }
                 }
             }

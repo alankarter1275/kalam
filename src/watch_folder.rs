@@ -290,7 +290,11 @@ pub fn import_watch_files_with_rules(
                 if !res.duplicate {
                     imported_count += 1;
                     last_title = res.title;
-                    log::info!("Watch folder: imported '{}' from {}", last_title, path.display());
+                    log::info!(
+                        "Watch folder: imported '{}' from {}",
+                        last_title,
+                        path.display()
+                    );
                     // Watch-imported scanned PDFs join the import-time OCR
                     // scan, same as a manual import (2.20).
                     if res.format == crate::models::BookFormat::Pdf {
@@ -307,7 +311,11 @@ pub fn import_watch_files_with_rules(
                         }
                     }
                 } else {
-                    log::debug!("Watch folder: duplicate '{}' ({})", res.title, path.display());
+                    log::debug!(
+                        "Watch folder: duplicate '{}' ({})",
+                        res.title,
+                        path.display()
+                    );
                 }
 
                 // Apply target shelf & subfolder rules
@@ -322,16 +330,15 @@ pub fn import_watch_files_with_rules(
                         if let Ok(rel) = path.strip_prefix(&rule.path) {
                             if let Some(first_comp) = rel.components().next() {
                                 if rel.components().count() > 1 {
-                                    let subfolder_name = first_comp
-                                        .as_os_str()
-                                        .to_string_lossy()
-                                        .trim()
-                                        .to_string();
+                                    let subfolder_name =
+                                        first_comp.as_os_str().to_string_lossy().trim().to_string();
                                     if !subfolder_name.is_empty() {
                                         let shelf_id = if let Ok(shelves) = catalog.list_shelves() {
                                             shelves
                                                 .iter()
-                                                .find(|s| s.name.eq_ignore_ascii_case(&subfolder_name))
+                                                .find(|s| {
+                                                    s.name.eq_ignore_ascii_case(&subfolder_name)
+                                                })
                                                 .map(|s| s.id)
                                         } else {
                                             None
@@ -605,7 +612,10 @@ mod tests {
         assert!(rule.allows_file(Path::new("chapter2.cbr")));
         assert!(!rule.allows_file(Path::new("novel.epub")));
         assert!(!rule.allows_file(Path::new("paper.pdf")));
-        assert_eq!(rule.target_shelf_for_file(Path::new("chapter1.cbz")), Some(42));
+        assert_eq!(
+            rule.target_shelf_for_file(Path::new("chapter1.cbz")),
+            Some(42)
+        );
         assert_eq!(rule.target_shelf_for_file(Path::new("novel.epub")), None);
     }
 
@@ -672,6 +682,9 @@ mod tests {
         assert_eq!(migrated_rules[0].path, PathBuf::from("/tmp/legacy_books"));
         assert!(migrated_rules[0].enabled);
         assert!(is_watch_enabled(&catalog));
-        assert_eq!(watch_path(&catalog), Some(PathBuf::from("/tmp/legacy_books")));
+        assert_eq!(
+            watch_path(&catalog),
+            Some(PathBuf::from("/tmp/legacy_books"))
+        );
     }
 }

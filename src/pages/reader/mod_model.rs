@@ -1,7 +1,9 @@
 //! ReaderModel struct definition.
 
 use super::types::*;
-use crate::db::{Annotation, AnnotationStyle, DictEntry, HighlightColor, ReadingBookmark, SavedWord};
+use crate::db::{
+    Annotation, AnnotationStyle, DictEntry, HighlightColor, ReadingBookmark, SavedWord,
+};
 use crate::service::LibraryService;
 use kalam_reader::ReaderPalette;
 use std::path::PathBuf;
@@ -34,9 +36,7 @@ pub struct ReaderModel {
     pub(crate) dual_page: bool,
     /// Roadmap 2.9: the reader's keys. Shared with the key controller, so
     /// a change in settings reaches the handler without rebuilding it.
-    pub(crate) keybinds: std::rc::Rc<
-        std::cell::RefCell<super::keybinds::KeyBindings>,
-    >,
+    pub(crate) keybinds: std::rc::Rc<std::cell::RefCell<super::keybinds::KeyBindings>>,
     /// The buttons that show those keys, so a change can repaint them.
     pub(crate) keybind_buttons: Vec<(super::keybinds::ReaderAction, gtk::Button)>,
     /// Roadmap 2.7's spread toggle, kept so the shell can grey it while
@@ -46,8 +46,7 @@ pub struct ReaderModel {
     /// The window-global jump-back shortcut (roadmaps 2.6/2.9), swapped in
     /// place whenever the key is rebound. Keyboard-only on purpose: the
     /// on-screen undo button read as clutter and went away.
-    pub(crate) jump_back_shortcut:
-        std::rc::Rc<std::cell::RefCell<Option<gtk::ShortcutController>>>,
+    pub(crate) jump_back_shortcut: std::rc::Rc<std::cell::RefCell<Option<gtk::ShortcutController>>>,
     /// Roadmap 2.9: hide the pointer when it sits still.
     pub(crate) autohide_cursor: bool,
     /// Roadmap 2.9: CSS px per wheel notch, and the label showing it.
@@ -217,9 +216,7 @@ impl ReaderModel {
     /// The current match's index into the raw result list, if the
     /// scoped position still lands on one.
     pub(crate) fn current_search_result_index(&self) -> Option<usize> {
-        self.scoped_search_indices()
-            .get(self.search_index)
-            .copied()
+        self.scoped_search_indices().get(self.search_index).copied()
     }
 
     pub(crate) fn search_no_matches(&self) -> bool {

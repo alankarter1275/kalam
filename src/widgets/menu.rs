@@ -56,12 +56,7 @@ impl MenuPopover {
     }
 
     /// Add an action row with the §17 count badge on its right edge.
-    pub fn add_item_with_count(
-        &self,
-        label: &str,
-        count: usize,
-        on_select: impl Fn() + 'static,
-    ) {
+    pub fn add_item_with_count(&self, label: &str, count: usize, on_select: impl Fn() + 'static) {
         self.add_action_item(
             label,
             Some(count_badge(count).upcast::<gtk::Widget>()),
@@ -72,12 +67,7 @@ impl MenuPopover {
 
     /// Add an action row with a muted shortcut hint on its right
     /// edge (the editor's Tools menu: Ctrl+Shift+F, F7).
-    pub fn add_item_with_hint(
-        &self,
-        label: &str,
-        hint: &str,
-        on_select: impl Fn() + 'static,
-    ) {
+    pub fn add_item_with_hint(&self, label: &str, hint: &str, on_select: impl Fn() + 'static) {
         let hint_label = gtk::Label::new(Some(hint));
         hint_label.add_css_class("kalam-ui-menu-hint");
         hint_label.set_halign(gtk::Align::End);
@@ -98,12 +88,7 @@ impl MenuPopover {
 
     /// Add a checklist row. Unlike an action item it stays open, because a
     /// checklist is normally adjusted more than once per opening.
-    pub fn add_check_item(
-        &self,
-        label: &str,
-        checked: bool,
-        on_toggle: impl Fn(bool) + 'static,
-    ) {
+    pub fn add_check_item(&self, label: &str, checked: bool, on_toggle: impl Fn(bool) + 'static) {
         let checked_state = Rc::new(Cell::new(checked));
 
         let tick = gtk::Label::new(Some("✓"));
@@ -228,10 +213,7 @@ pub fn menu_button(icon_name: &str, label: &str, menu: MenuPopover) -> gtk::Menu
     button.set_icon_name(icon_name);
     button.set_always_show_arrow(false);
     button.set_tooltip_text(Some(label));
-    button.set_size_request(
-        crate::style::size::CONTROL,
-        crate::style::size::CONTROL,
-    );
+    button.set_size_request(crate::style::size::CONTROL, crate::style::size::CONTROL);
     button.set_popover(Some(&menu.popover));
     button
 }
@@ -251,10 +233,7 @@ fn item_content(
     leading: Option<gtk::Widget>,
     trailing: Option<gtk::Widget>,
 ) -> gtk::Box {
-    let content = gtk::Box::new(
-        gtk::Orientation::Horizontal,
-        crate::style::spacing::XS,
-    );
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, crate::style::spacing::XS);
     content.add_css_class("kalam-ui-menu-item-content");
     content.set_hexpand(true);
     content.set_valign(gtk::Align::Center);

@@ -11,9 +11,9 @@
 use super::image::{PdfImageSettings, PdfPagePicture};
 use super::PdfReaderMsg;
 use gtk::gdk;
-use gtk::glib::BoxedAnyObject;
 use gtk::glib::types::StaticType;
 use gtk::glib::value::ToValue;
+use gtk::glib::BoxedAnyObject;
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -34,7 +34,11 @@ const NUMBER_HEIGHT: i32 = 22;
 const MAX_CACHED_THUMBNAILS: usize = 120;
 
 fn sanitized_columns(columns: usize) -> usize {
-    if columns == 2 { 2 } else { 3 }
+    if columns == 2 {
+        2
+    } else {
+        3
+    }
 }
 
 fn sanitized_aspect(aspect: f64) -> f64 {
@@ -93,12 +97,8 @@ pub fn heading_anchor_position(
     aspect_height_for_width: f64,
     scroll_value: f64,
 ) -> Option<usize> {
-    let first = first_visible_position(
-        entry_count,
-        columns,
-        aspect_height_for_width,
-        scroll_value,
-    )?;
+    let first =
+        first_visible_position(entry_count, columns, aspect_height_for_width, scroll_value)?;
     Some((first + sanitized_columns(columns) / 2).min(entry_count - 1))
 }
 
@@ -137,10 +137,8 @@ pub fn opening_scroll_target_for_position(
         + (((max_scroll - GRID_TOP_MARGIN as f64).max(0.0) / pitch).floor() * pitch);
     let current_row = position / columns;
     let cell_height = thumbnail_cell_size(columns, aspect_height_for_width).1 as f64;
-    let current_bottom = GRID_TOP_MARGIN as f64
-        + current_row as f64 * pitch
-        + (CELL_GAP / 2) as f64
-        + cell_height;
+    let current_bottom =
+        GRID_TOP_MARGIN as f64 + current_row as f64 * pitch + (CELL_GAP / 2) as f64 + cell_height;
     if aligned_max + viewport_height.max(0.0) >= current_bottom {
         aligned_max
     } else {
@@ -300,8 +298,10 @@ fn paint_cell(cell: &PageThumbCell, paint: &PageCellPaint, description: &str) {
     cell.badge.set_halign(gtk::Align::Start);
     cell.badge.set_margin_start(5);
     cell.badge.set_margin_end(0);
-    cell.rotated_badge.set_visible(paint.rotated && !paint.dragging);
-    cell.button.set_opacity(if paint.dragging { 0.35 } else { 1.0 });
+    cell.rotated_badge
+        .set_visible(paint.rotated && !paint.dragging);
+    cell.button
+        .set_opacity(if paint.dragging { 0.35 } else { 1.0 });
     if let Some(side) = paint.drop_side {
         cell.drop_bar.set_halign(side);
         cell.drop_bar.set_visible(true);
@@ -667,39 +667,37 @@ impl PdfPagesGrid {
                 }
                 button.add_controller(drag_source);
 
-                let drop_target = gtk::DropTarget::new(
-                    String::static_type(),
-                    gdk::DragAction::MOVE,
-                );
+                let drop_target =
+                    gtk::DropTarget::new(String::static_type(), gdk::DragAction::MOVE);
                 {
                     let hover_state = setup_state.clone();
                     let hover_item = list_item.clone();
                     let hover_button = button.clone();
                     let hover: Rc<dyn Fn(f64) -> gdk::DragAction> =
                         Rc::new(move |x: f64| -> gdk::DragAction {
-                        let mut state = hover_state.borrow_mut();
-                        if !state.edit_mode {
-                            return gdk::DragAction::empty();
-                        }
-                        let Some(cell_idx) = state.cell_index(&hover_item) else {
-                            return gdk::DragAction::empty();
-                        };
-                        let Some(key) = state.cells[cell_idx].bound_key.clone() else {
-                            return gdk::DragAction::empty();
-                        };
-                        let Some(position) =
-                            state.entries.iter().position(|entry| entry.key == key)
-                        else {
-                            return gdk::DragAction::empty();
-                        };
-                        let slot = if x >= f64::from(hover_button.width().max(1)) / 2.0 {
-                            position + 1
-                        } else {
-                            position
-                        };
-                        state.drop_index = Some(slot);
-                        refresh_cells(&state);
-                        gdk::DragAction::MOVE
+                            let mut state = hover_state.borrow_mut();
+                            if !state.edit_mode {
+                                return gdk::DragAction::empty();
+                            }
+                            let Some(cell_idx) = state.cell_index(&hover_item) else {
+                                return gdk::DragAction::empty();
+                            };
+                            let Some(key) = state.cells[cell_idx].bound_key.clone() else {
+                                return gdk::DragAction::empty();
+                            };
+                            let Some(position) =
+                                state.entries.iter().position(|entry| entry.key == key)
+                            else {
+                                return gdk::DragAction::empty();
+                            };
+                            let slot = if x >= f64::from(hover_button.width().max(1)) / 2.0 {
+                                position + 1
+                            } else {
+                                position
+                            };
+                            state.drop_index = Some(slot);
+                            refresh_cells(&state);
+                            gdk::DragAction::MOVE
                         });
                     let enter = hover.clone();
                     drop_target.connect_enter(move |_, x, _| enter(x));
@@ -729,8 +727,7 @@ impl PdfPagesGrid {
                         let Some(cell_idx) = state.cell_index(&drop_item) else {
                             return false;
                         };
-                        let Some(target_key) = state.cells[cell_idx].bound_key.clone()
-                        else {
+                        let Some(target_key) = state.cells[cell_idx].bound_key.clone() else {
                             return false;
                         };
                         let Some(position) = state
@@ -740,20 +737,16 @@ impl PdfPagesGrid {
                         else {
                             return false;
                         };
-                        let target_index =
-                            if x >= f64::from(drop_button.width().max(1)) / 2.0 {
-                                position + 1
-                            } else {
-                                position
-                            };
+                        let target_index = if x >= f64::from(drop_button.width().max(1)) / 2.0 {
+                            position + 1
+                        } else {
+                            position
+                        };
                         state.dragging_keys.clear();
                         state.drop_index = None;
                         refresh_cells(&state);
                         drop(state);
-                        let _ = drop_sender.send(PdfReaderMsg::PageEditMove {
-                            key,
-                            target_index,
-                        });
+                        let _ = drop_sender.send(PdfReaderMsg::PageEditMove { key, target_index });
                         true
                     });
                 }
@@ -1044,10 +1037,7 @@ impl PdfPagesGrid {
                 state.texture_order.retain(|key| valid.contains(key));
                 state.failed.retain(|key| valid.contains(key));
                 state.dragging_keys.retain(|key| valid.contains(key));
-                if state
-                    .drop_index
-                    .is_some_and(|index| index > entries.len())
-                {
+                if state.drop_index.is_some_and(|index| index > entries.len()) {
                     state.drop_index = None;
                 }
                 state.entries = entries;
@@ -1140,11 +1130,7 @@ impl PdfPagesGrid {
         }
     }
 
-    pub fn opening_scroll_target(
-        &self,
-        max_scroll: f64,
-        viewport_height: f64,
-    ) -> Option<f64> {
+    pub fn opening_scroll_target(&self, max_scroll: f64, viewport_height: f64) -> Option<f64> {
         let position = self.current_position()?;
         let state = self.state.borrow();
         Some(opening_scroll_target_for_position(

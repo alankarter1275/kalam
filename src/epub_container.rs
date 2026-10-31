@@ -141,8 +141,8 @@ impl std::fmt::Debug for EpubContainer {
 
 impl EpubContainer {
     pub fn open(epub_path: &Path) -> Result<Self> {
-        let file = fs::File::open(epub_path)
-            .with_context(|| format!("open {}", epub_path.display()))?;
+        let file =
+            fs::File::open(epub_path).with_context(|| format!("open {}", epub_path.display()))?;
         let mut archive = ZipArchive::new(file).context("open EPUB")?;
         let opf_path = crate::epub::find_opf_path_pub(&mut archive)?;
 
@@ -359,8 +359,7 @@ fn parse_opf(opf_xml: &str, opf_path: &str) -> ParsedOpf {
     for node in doc.descendants().filter(|n| n.is_element()) {
         match node.tag_name().name() {
             "item" => {
-                let (Some(id), Some(href)) = (node.attribute("id"), node.attribute("href"))
-                else {
+                let (Some(id), Some(href)) = (node.attribute("id"), node.attribute("href")) else {
                     continue;
                 };
                 manifest_order.push(id.to_string());
@@ -447,7 +446,10 @@ pub(crate) fn classify(path: &str, media_type: &str) -> FileKind {
     let lower_path = path.to_ascii_lowercase();
     let ext = lower_path.rsplit('.').next().unwrap_or("");
     let mt = media_type.to_ascii_lowercase();
-    if mt.contains("xhtml") || mt == "text/html" || matches!(ext, "xhtml" | "html" | "htm") && !mt.contains("xml") {
+    if mt.contains("xhtml")
+        || mt == "text/html"
+        || matches!(ext, "xhtml" | "html" | "htm") && !mt.contains("xml")
+    {
         return FileKind::Html;
     }
     if mt == "text/css" || ext == "css" {
@@ -469,12 +471,7 @@ pub(crate) fn classify(path: &str, media_type: &str) -> FileKind {
 }
 
 pub(crate) fn guess_media_type(path: &str) -> &'static str {
-    match path
-        .to_ascii_lowercase()
-        .rsplit('.')
-        .next()
-        .unwrap_or("")
-    {
+    match path.to_ascii_lowercase().rsplit('.').next().unwrap_or("") {
         "xhtml" | "html" | "htm" => "application/xhtml+xml",
         "css" => "text/css",
         "xml" | "opf" => "application/oebps-package+xml",
@@ -526,8 +523,7 @@ pub fn rewrite_epub(
             out.start_file("mimetype", stored)?;
             out.write_all(b"application/epub+zip")?;
         }
-        let deflated =
-            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
         let mut written: std::collections::HashSet<String> = std::collections::HashSet::new();
         for i in 0..archive.len() {
@@ -651,17 +647,28 @@ mod tests {
         let path = dir.join("book.epub");
 
         let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-        let deflated =
-            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
         let mut zip = ZipWriter::new(fs::File::create(&path).expect("create epub"));
         let entries: &[(&str, &[u8], bool)] = &[
             ("mimetype", b"application/epub+zip", true),
             ("META-INF/container.xml", CONTAINER.as_bytes(), false),
             ("OEBPS/content.opf", OPF.as_bytes(), false),
-            ("OEBPS/nav.xhtml", b"<html><body><nav/></body></html>", false),
+            (
+                "OEBPS/nav.xhtml",
+                b"<html><body><nav/></body></html>",
+                false,
+            ),
             ("OEBPS/toc.ncx", b"<ncx/>", false),
-            ("OEBPS/text/ch1.xhtml", b"<html><body><p>One</p></body></html>", false),
-            ("OEBPS/text/ch2.xhtml", b"<html><body><p>Two</p></body></html>", false),
+            (
+                "OEBPS/text/ch1.xhtml",
+                b"<html><body><p>One</p></body></html>",
+                false,
+            ),
+            (
+                "OEBPS/text/ch2.xhtml",
+                b"<html><body><p>Two</p></body></html>",
+                false,
+            ),
             ("OEBPS/style/main.css", b"p { margin: 0; }", false),
             ("OEBPS/images/cover.jpg", b"\xff\xd8\xff\xd9", false),
             ("OEBPS/fonts/book.woff2", b"wOF2", false),
@@ -714,11 +721,10 @@ mod tests {
 
         assert_eq!(book.nav_path.as_deref(), Some("OEBPS/nav.xhtml"));
         assert_eq!(book.ncx_path.as_deref(), Some("OEBPS/toc.ncx"));
-        assert!(
-            book.file("OEBPS/images/cover.jpg")
-                .map(|f| f.is_cover_image)
-                .unwrap_or(false)
-        );
+        assert!(book
+            .file("OEBPS/images/cover.jpg")
+            .map(|f| f.is_cover_image)
+            .unwrap_or(false));
         let _ = fs::remove_dir_all(&dir);
     }
 

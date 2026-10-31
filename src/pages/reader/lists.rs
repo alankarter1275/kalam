@@ -56,7 +56,10 @@ impl ReaderModel {
 
     /// The book's table of contents as the engine reported it at open.
     pub(crate) fn toc_entries(&self) -> Vec<kalam_reader::TocEntry> {
-        self.view.as_ref().map(|view| view.toc()).unwrap_or_default()
+        self.view
+            .as_ref()
+            .map(|view| view.toc())
+            .unwrap_or_default()
     }
 
     /// The chapter the location text names (decision 17): the last TOC
@@ -93,8 +96,7 @@ impl ReaderModel {
         self.bookmarks
             .iter()
             .find(|b| {
-                b.chapter_index == self.chapter as i64
-                    && (b.fraction - self.fraction).abs() < 0.03
+                b.chapter_index == self.chapter as i64 && (b.fraction - self.fraction).abs() < 0.03
             })
             .map(|b| b.id)
     }
@@ -220,7 +222,11 @@ impl ReaderModel {
                         anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("orange")
                     }
                     HighlightFilter::Underline => {
-                        anno.kind == "highlight" && (anno.color.eq_ignore_ascii_case("underline") || anno.style == "underline" || HighlightColor::from_str_lossy(&anno.color) == HighlightColor::Underline)
+                        anno.kind == "highlight"
+                            && (anno.color.eq_ignore_ascii_case("underline")
+                                || anno.style == "underline"
+                                || HighlightColor::from_str_lossy(&anno.color)
+                                    == HighlightColor::Underline)
                     }
                     HighlightFilter::Quotes => anno.kind == "quote",
                 };
@@ -972,7 +978,9 @@ fn append_notes_items(
                     .append(&bookmark_row(model, mark, sender, false));
             }
             NotesItem::Word(word) => {
-                model.notes_list.append(&saved_word_row(model, word, sender));
+                model
+                    .notes_list
+                    .append(&saved_word_row(model, word, sender));
             }
         }
     }
@@ -1024,10 +1032,11 @@ fn rebuild_notes_words(model: &ReaderModel, sender: &ComponentSender<ReaderModel
         return;
     }
     for word in words.into_iter().take(150) {
-        model.notes_list.append(&saved_word_row(model, word, sender));
+        model
+            .notes_list
+            .append(&saved_word_row(model, word, sender));
     }
 }
-
 
 fn saved_word_meta(model: &ReaderModel, word: &SavedWord) -> String {
     match word.chapter_index {
@@ -1054,7 +1063,10 @@ fn annotations_markdown(annos: &[Annotation], title: &str) -> String {
                 "- **{kind}** ({c}, ch. {chapter}): {}\n",
                 a.text_excerpt
             )),
-            None => out.push_str(&format!("- **{kind}** (ch. {chapter}): {}\n", a.text_excerpt)),
+            None => out.push_str(&format!(
+                "- **{kind}** (ch. {chapter}): {}\n",
+                a.text_excerpt
+            )),
         }
         if !a.note.trim().is_empty() {
             out.push_str(&format!("  - note: {}\n", a.note.trim()));
@@ -1085,7 +1097,11 @@ pub(crate) fn export_highlights_markdown(
 mod tests {
     use super::*;
 
-    fn entry(label: &str, spine: Option<usize>, children: Vec<kalam_reader::TocEntry>) -> kalam_reader::TocEntry {
+    fn entry(
+        label: &str,
+        spine: Option<usize>,
+        children: Vec<kalam_reader::TocEntry>,
+    ) -> kalam_reader::TocEntry {
         kalam_reader::TocEntry {
             label: label.to_string(),
             href: None,
@@ -1102,10 +1118,21 @@ mod tests {
         // listed top-level entries only, so a Part -> Chapter book showed
         // two rows and both of them were the parts.
         let entries = vec![
-            entry("Part One", None, vec![entry("One", Some(0), vec![]), entry("Two", Some(1), vec![])]),
+            entry(
+                "Part One",
+                None,
+                vec![entry("One", Some(0), vec![]), entry("Two", Some(1), vec![])],
+            ),
             entry("Part Two", None, vec![entry("Three", Some(2), vec![])]),
         ];
-        let rows = toc_rows(&entries, &["fallback 0".into(), "fallback 1".into(), "fallback 2".into()]);
+        let rows = toc_rows(
+            &entries,
+            &[
+                "fallback 0".into(),
+                "fallback 1".into(),
+                "fallback 2".into(),
+            ],
+        );
         let seen: Vec<(&str, Option<usize>, usize)> = rows
             .iter()
             .map(|row| (row.label.as_str(), row.spine_index, row.depth))
@@ -1146,7 +1173,11 @@ mod tests {
         let entries = vec![entry(
             "One",
             Some(0),
-            vec![entry("One A", Some(1), vec![entry("One A i", Some(2), vec![])])],
+            vec![entry(
+                "One A",
+                Some(1),
+                vec![entry("One A i", Some(2), vec![])],
+            )],
         )];
         let rows = toc_rows(&entries, &[]);
         let depths: Vec<usize> = rows.iter().map(|row| row.depth).collect();

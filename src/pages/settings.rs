@@ -123,13 +123,7 @@ const PANE_GROUPS: &[(&str, &[SettingsTab])] = &[
         "Sources",
         &[SettingsTab::Metadata, SettingsTab::Integrations],
     ),
-    (
-        "App",
-        &[
-            SettingsTab::Shortcuts,
-            SettingsTab::About,
-        ],
-    ),
+    ("App", &[SettingsTab::Shortcuts, SettingsTab::About]),
 ];
 
 #[derive(Debug)]
@@ -1198,7 +1192,13 @@ fn palette_box(
         catalog,
         cards,
     ));
-    row.append(&palette_card(palette.dark(), "Dark", resolved, catalog, cards));
+    row.append(&palette_card(
+        palette.dark(),
+        "Dark",
+        resolved,
+        catalog,
+        cards,
+    ));
     block.append(&row);
     block
 }
@@ -1526,7 +1526,8 @@ fn build_appearance(host: &gtk::Box, catalog: &Arc<Catalog>, active_theme_id: &s
 // with, and the preview card answers as they move.
 // ---------------------------------------------------------------------------
 
-pub(crate) const PREVIEW_TEXT: &str = "The train slowed as it crossed the river, and for a moment the whole \
+pub(crate) const PREVIEW_TEXT: &str =
+    "The train slowed as it crossed the river, and for a moment the whole \
 valley seemed to hold its breath. Mara marked her page with one finger and watched the water \
 move below, dark and unhurried, carrying the last of the evening light toward the sea.";
 
@@ -1542,9 +1543,7 @@ fn build_reading(host: &gtk::Box, catalog: &Arc<Catalog>, snap: &SettingsSnapsho
             .unwrap_or_else(|| kalam_reader::BODY_FONT.to_string()),
     ));
     let font_px = Rc::new(Cell::new(snap.reader_font_px as i32));
-    let line_tenths = Rc::new(Cell::new(
-        (snap.reader_line_height * 10.0).round() as i32,
-    ));
+    let line_tenths = Rc::new(Cell::new((snap.reader_line_height * 10.0).round() as i32));
     let column_px = Rc::new(Cell::new(snap.reader_column_px as i32));
     let justify = Rc::new(Cell::new(snap.reader_justify));
 
@@ -2081,10 +2080,7 @@ fn build_about(host: &gtk::Box, catalog: &Arc<Catalog>) {
     name.set_margin_top(16);
     host.append(&name);
 
-    let version = gtk::Label::new(Some(&format!(
-        "Version {}",
-        env!("CARGO_PKG_VERSION")
-    )));
+    let version = gtk::Label::new(Some(&format!("Version {}", env!("CARGO_PKG_VERSION"))));
     version.add_css_class("kalam-ui-meta");
     version.set_halign(gtk::Align::Start);
     version.set_margin_top(8);
@@ -2158,12 +2154,7 @@ fn show_licences_dialog(anchor: &gtk::Box) {
     };
     shell.footer().append(&close);
 
-    match present_dialog(
-        anchor,
-        "Dictionary credits",
-        DialogExit::OwnButtons,
-        &shell,
-    ) {
+    match present_dialog(anchor, "Dictionary credits", DialogExit::OwnButtons, &shell) {
         Some(dialog) => *slot.borrow_mut() = Some(dialog),
         None => crate::notify::error(
             "Could not open the dialog",
@@ -2241,10 +2232,7 @@ fn build_libraries_pane(
                 )
             };
             if survey.damaged > 0 {
-                text += &format!(
-                    " {} backup copies cannot be read.",
-                    survey.damaged
-                );
+                text += &format!(" {} backup copies cannot be read.", survey.damaged);
             }
             (text, survey.missing() > 0)
         }
@@ -2262,12 +2250,7 @@ fn build_libraries_pane(
         })
     };
     write.set_sensitive(can_write);
-    pane_row_with(
-        &rows,
-        "Books with a backup copy",
-        Some(&caption),
-        &write,
-    );
+    pane_row_with(&rows, "Books with a backup copy", Some(&caption), &write);
 
     // Backup and cache.
     let rows = pane_section(host, "Backup and cache");
@@ -2280,9 +2263,7 @@ fn build_libraries_pane(
                 .modal(true)
                 .initial_name(format!("kalam-backup-{}.db", today_stamp()))
                 .build();
-            let window = anchor
-                .root()
-                .and_then(|r| r.downcast::<gtk::Window>().ok());
+            let window = anchor.root().and_then(|r| r.downcast::<gtk::Window>().ok());
             let catalog = catalog.clone();
             dialog.save(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
                 let Ok(file) = res else { return };
@@ -2339,10 +2320,7 @@ fn library_row(
     }
 
     let caption = match state.and_then(|s| s.books) {
-        Some(n) => format!(
-            "{path_text} · {n} book{}",
-            if n == 1 { "" } else { "s" }
-        ),
+        Some(n) => format!("{path_text} · {n} book{}", if n == 1 { "" } else { "s" }),
         None => path_text.clone(),
     };
     let row = pane_row(rows, &lib.name, Some(&caption));
@@ -2387,10 +2365,7 @@ fn open_library_button(index: usize, name: &str, anchor: &gtk::Box) -> gtk::Butt
                     return;
                 }
                 if let Err(err) = crate::libraries::save_registry(&reg) {
-                    crate::notify::error(
-                        "Could not save the library list",
-                        &err.to_string(),
-                    );
+                    crate::notify::error("Could not save the library list", &err.to_string());
                     return;
                 }
                 // Only restart once the choice is safely on disk;
@@ -2399,9 +2374,7 @@ fn open_library_button(index: usize, name: &str, anchor: &gtk::Box) -> gtk::Butt
                 let err = crate::libraries::restart_now();
                 crate::notify::error(
                     "Could not restart",
-                    &format!(
-                        "“{confirm_name}” will open next time you start Kalam. ({err})"
-                    ),
+                    &format!("“{confirm_name}” will open next time you start Kalam. ({err})"),
                 );
             },
         );
@@ -2437,9 +2410,7 @@ fn forget_library_button(
                 );
                 s.input(SettingsMsg::ReloadFs);
             }
-            Err(err) => {
-                crate::notify::error("Could not save the library list", &err.to_string())
-            }
+            Err(err) => crate::notify::error("Could not save the library list", &err.to_string()),
         }
     })
 }
@@ -2462,9 +2433,7 @@ fn locate_library_button(
             .title("Locate the library folder")
             .modal(true)
             .build();
-        let window = anchor
-            .root()
-            .and_then(|r| r.downcast::<gtk::Window>().ok());
+        let window = anchor.root().and_then(|r| r.downcast::<gtk::Window>().ok());
         let name = name.clone();
         let s = s.clone();
         dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
@@ -2507,9 +2476,7 @@ fn add_library_flow(anchor: &gtk::Box, sender: &ComponentSender<SettingsPageMode
         .title("Choose a folder for the library")
         .modal(true)
         .build();
-    let window = anchor
-        .root()
-        .and_then(|r| r.downcast::<gtk::Window>().ok());
+    let window = anchor.root().and_then(|r| r.downcast::<gtk::Window>().ok());
     let s = sender.clone();
     dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
         let Ok(folder) = res else { return };
@@ -2549,11 +2516,7 @@ fn add_library_flow(anchor: &gtk::Box, sender: &ComponentSender<SettingsPageMode
 fn cache_row(rows: &gtk::Box) {
     let size = crate::paths::reader_cache_size();
     let size_text = crate::epub_metadata::human_size(size);
-    let (row, caption) = pane_row_inner(
-        rows,
-        "Reader cache",
-        Some((&size_text, false)),
-    );
+    let (row, caption) = pane_row_inner(rows, "Reader cache", Some((&size_text, false)));
 
     let clear = boxed_ghost_button("Clear", {
         let caption = caption.clone();
@@ -2594,11 +2557,7 @@ fn build_data_pane(host: &gtk::Box, catalog: &Arc<Catalog>) {
         ("Library folder", data_dir(), true),
         ("Catalog database", catalog_db(), false),
         ("Dictionaries", dictionaries_dir(), true),
-        (
-            "App settings",
-            crate::libraries::global_prefs_path(),
-            false,
-        ),
+        ("App settings", crate::libraries::global_prefs_path(), false),
     ];
     for (label, path, is_dir) in locations {
         let show = {
@@ -2630,15 +2589,10 @@ fn build_data_pane(host: &gtk::Box, catalog: &Arc<Catalog>) {
                 |_| {},
                 |res| match res {
                     Ok((count, path)) => crate::notify::success(
-                        &format!(
-                            "{count} item{} exported",
-                            if count == 1 { "" } else { "s" }
-                        ),
+                        &format!("{count} item{} exported", if count == 1 { "" } else { "s" }),
                         &path.display().to_string(),
                     ),
-                    Err(err) => {
-                        crate::notify::error("Could not export reading data", &err)
-                    }
+                    Err(err) => crate::notify::error("Could not export reading data", &err),
                 },
             );
         })
@@ -2693,17 +2647,9 @@ fn show_location(path: &std::path::Path, is_dir: bool) {
         }
     };
     if is_dir {
-        launcher.launch(
-            None::<&gtk::Window>,
-            None::<&gtk::gio::Cancellable>,
-            done,
-        );
+        launcher.launch(None::<&gtk::Window>, None::<&gtk::gio::Cancellable>, done);
     } else {
-        launcher.open_containing_folder(
-            None::<&gtk::Window>,
-            None::<&gtk::gio::Cancellable>,
-            done,
-        );
+        launcher.open_containing_folder(None::<&gtk::Window>, None::<&gtk::gio::Cancellable>, done);
     }
 }
 
@@ -2716,14 +2662,10 @@ fn build_book_files_pane(
 ) {
     let rows = pane_section_bare(host);
 
-    let clean = row_switch(
-        "Clean EPUBs on import",
-        snap.clean_on_import,
-        {
-            let catalog = catalog.clone();
-            move |on| crate::epub_sanitizer::set_clean_on_import(&catalog, on)
-        },
-    );
+    let clean = row_switch("Clean EPUBs on import", snap.clean_on_import, {
+        let catalog = catalog.clone();
+        move |on| crate::epub_sanitizer::set_clean_on_import(&catalog, on)
+    });
     pane_row_with(
         &rows,
         "Clean EPUBs on import",
@@ -2731,14 +2673,10 @@ fn build_book_files_pane(
         &clean,
     );
 
-    let write = row_switch(
-        "Write edits into the EPUB",
-        snap.writeback_enabled,
-        {
-            let catalog = catalog.clone();
-            move |on| crate::epub_metadata::set_write_enabled(&catalog, on)
-        },
-    );
+    let write = row_switch("Write edits into the EPUB", snap.writeback_enabled, {
+        let catalog = catalog.clone();
+        move |on| crate::epub_metadata::set_write_enabled(&catalog, on)
+    });
     pane_row_with(
         &rows,
         "Write edits into the EPUB",
@@ -2957,19 +2895,15 @@ fn build_watch_sections(
         });
         pane_row_with(&rows, "Shelves from subfolders", None, &subfolders);
 
-        let cleanup = row_switch(
-            "Delete the original after import",
-            rule.cleanup_original,
-            {
-                let store = store.clone();
-                let rule_id = rule.id.clone();
-                move |on| {
-                    store.update_rule(&rule_id, false, |rule| {
-                        rule.cleanup_original = on;
-                    });
-                }
-            },
-        );
+        let cleanup = row_switch("Delete the original after import", rule.cleanup_original, {
+            let store = store.clone();
+            let rule_id = rule.id.clone();
+            move |on| {
+                store.update_rule(&rule_id, false, |rule| {
+                    rule.cleanup_original = on;
+                });
+            }
+        });
         pane_row_with(&rows, "Delete the original after import", None, &cleanup);
 
         // The board has no pause control, but removing the folder was
@@ -3044,7 +2978,15 @@ fn watch_shelf_dropdown(
         }
     };
 
-    dropdown(&label, options, selected, Some("New shelf…"), on_change, on_footer).widget()
+    dropdown(
+        &label,
+        options,
+        selected,
+        Some("New shelf…"),
+        on_change,
+        on_footer,
+    )
+    .widget()
 }
 
 fn new_shelf_dialog(
@@ -3056,7 +2998,10 @@ fn new_shelf_dialog(
 ) {
     let shell = dialog_shell(
         DialogSize::Form,
-        Some(&format!("It will be used for {} from this folder.", kind.label())),
+        Some(&format!(
+            "It will be used for {} from this folder.",
+            kind.label()
+        )),
     );
     let field = text_field("Shelf name", "e.g. New arrivals", "");
     shell.body().append(&field.widget());
@@ -3193,7 +3138,9 @@ fn build_dictionaries_pane(
         actions.set_halign(gtk::Align::Center);
         let import = {
             let sender = sender.clone();
-            primary_button("Import dictionary", move || sender.input(SettingsMsg::ImportDict))
+            primary_button("Import dictionary", move || {
+                sender.input(SettingsMsg::ImportDict)
+            })
         };
         actions.append(&import);
         let restore = {
@@ -3282,7 +3229,11 @@ fn build_dictionaries_pane(
         let meta = gtk::Label::new(Some(&format!(
             "{} entr{}",
             dictionary.entry_count,
-            if dictionary.entry_count == 1 { "y" } else { "ies" }
+            if dictionary.entry_count == 1 {
+                "y"
+            } else {
+                "ies"
+            }
         )));
         meta.add_css_class("kalam-ui-meta");
         meta.set_halign(gtk::Align::Start);
@@ -3363,11 +3314,7 @@ fn build_dictionaries_pane(
                     return false;
                 };
                 let slot = if after { index + 1 } else { index };
-                let final_index = if slot > source_index {
-                    slot - 1
-                } else {
-                    slot
-                };
+                let final_index = if slot > source_index { slot - 1 } else { slot };
                 let delta = final_index as i64 - source_index as i64;
                 if delta != 0 {
                     sender.input(SettingsMsg::MoveDict(source_id, delta));
@@ -3397,7 +3344,9 @@ fn build_dictionaries_pane(
     actions.set_margin_top(12);
     let import = {
         let sender = sender.clone();
-        primary_button("Import dictionary", move || sender.input(SettingsMsg::ImportDict))
+        primary_button("Import dictionary", move || {
+            sender.input(SettingsMsg::ImportDict)
+        })
     };
     actions.append(&import);
     let rescan = {
@@ -3537,10 +3486,9 @@ fn build_credential_source(
     entry.set_placeholder_text(Some(placeholder));
     entry.set_text(value);
     entry.set_hexpand(true);
-    entry.update_property(&[gtk::accessible::Property::Label(format!(
-        "{source_label} {credential_label}"
-    )
-    .as_str())]);
+    entry.update_property(&[gtk::accessible::Property::Label(
+        format!("{source_label} {credential_label}").as_str(),
+    )]);
     credential_box.append(&entry);
     let error = gtk::Label::new(Some(rejected_text));
     error.add_css_class("kalam-settings-error-line");

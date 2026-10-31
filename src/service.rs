@@ -52,16 +52,16 @@
 
 use crate::db::{
     Annotation, AuthorProfile, Catalog, ComicSeriesMetadataPatch, ComicSeriesUpdateOutcome,
-    Dictionary, DictLookup, EventKind, LibrarySession, LibraryStats, QuoteRef, ReadingBookmark,
+    DictLookup, Dictionary, EventKind, LibrarySession, LibraryStats, QuoteRef, ReadingBookmark,
     ReadingEvent, ReadingListEntry, SavedWord, SessionRow, Shelf, SortKey,
 };
 use crate::models::{
     Book, BookFormat, ComicCredit, COMIC_SERIES_FIELD_COVER, COMIC_SERIES_FIELD_CREDITS,
     COMIC_SERIES_FIELD_DESCRIPTION, COMIC_SERIES_FIELD_END_DATE, COMIC_SERIES_FIELD_GENRES,
     COMIC_SERIES_FIELD_KNOWN_CHAPTERS, COMIC_SERIES_FIELD_KNOWN_VOLUMES,
-    COMIC_SERIES_FIELD_MEDIA_TYPE, COMIC_SERIES_FIELD_ORIGINAL_TITLE,
-    COMIC_SERIES_FIELD_PUBLISHED, COMIC_SERIES_FIELD_PUBLISHER,
-    COMIC_SERIES_FIELD_SERIALIZATION, COMIC_SERIES_FIELD_STATUS, COMIC_SERIES_FIELD_TITLE,
+    COMIC_SERIES_FIELD_MEDIA_TYPE, COMIC_SERIES_FIELD_ORIGINAL_TITLE, COMIC_SERIES_FIELD_PUBLISHED,
+    COMIC_SERIES_FIELD_PUBLISHER, COMIC_SERIES_FIELD_SERIALIZATION, COMIC_SERIES_FIELD_STATUS,
+    COMIC_SERIES_FIELD_TITLE,
 };
 use crate::watch_folder::WatchFolderRule;
 use std::sync::Arc;
@@ -794,11 +794,11 @@ impl LibraryService {
         // progress bar and the journey card queried it separately.
         let progress = self.catalog.get_reading_progress(book_id).ok().flatten();
         let stats = self.book_stats(book_id, 7, 3);
-        let (annotations, annotations_error) =
-            match self.catalog.get_annotations_for_book(book_id) {
-                Ok(rows) => (rows, None),
-                Err(err) => (Vec::new(), Some(err.to_string())),
-            };
+        let (annotations, annotations_error) = match self.catalog.get_annotations_for_book(book_id)
+        {
+            Ok(rows) => (rows, None),
+            Err(err) => (Vec::new(), Some(err.to_string())),
+        };
         let bookmarks = take(
             self.catalog.list_reading_bookmarks(book_id),
             "bookmarks",
@@ -809,14 +809,10 @@ impl LibraryService {
             "saved words",
             &mut detail.errors,
         );
-        let shelves: Vec<Shelf> = take(
-            self.catalog.list_shelves(),
-            "shelves",
-            &mut detail.errors,
-        )
-        .into_iter()
-        .filter(|s| s.kind == crate::db::ShelfKind::Manual)
-        .collect();
+        let shelves: Vec<Shelf> = take(self.catalog.list_shelves(), "shelves", &mut detail.errors)
+            .into_iter()
+            .filter(|s| s.kind == crate::db::ShelfKind::Manual)
+            .collect();
         let shelf_ids: Vec<i64> = take(
             self.catalog.shelves_for_book(book_id),
             "shelf membership",
@@ -900,10 +896,8 @@ impl LibraryService {
         // One ordered row per volume: provider order first, owned books
         // matched into their slots, unmatched owned books appended in
         // series order (they are truth the provider never mentioned).
-        let mut rows: Vec<(String, Option<Book>)> = works
-            .iter()
-            .map(|w| (w.title.clone(), None))
-            .collect();
+        let mut rows: Vec<(String, Option<Book>)> =
+            works.iter().map(|w| (w.title.clone(), None)).collect();
         let mut extras: Vec<(String, Option<Book>)> = Vec::new();
         for owned_book in owned {
             let wanted = normalise(&owned_book.title);
@@ -955,14 +949,7 @@ impl LibraryService {
         let first_author = if first_author.trim().is_empty() {
             owned
                 .first()
-                .map(|b| {
-                    b.authors
-                        .split(',')
-                        .next()
-                        .unwrap_or("")
-                        .trim()
-                        .to_string()
-                })
+                .map(|b| b.authors.split(',').next().unwrap_or("").trim().to_string())
                 .unwrap_or_default()
         } else {
             first_author.trim().to_string()
@@ -1034,10 +1021,7 @@ impl LibraryService {
 
         // Unindexed owned books keep the reading order `books_in_series`
         // returned, after everything whose position is actually known.
-        let mut next_unindexed = entries
-            .iter()
-            .map(|e| e.position)
-            .fold(0.0f32, f32::max);
+        let mut next_unindexed = entries.iter().map(|e| e.position).fold(0.0f32, f32::max);
         next_unindexed = extras
             .iter()
             .filter(|b| b.series_index > 0.0)
@@ -1162,7 +1146,10 @@ impl LibraryService {
             // fonts folder) — worker-only work, which is where this runs.
             typefaces: kalam_reader::available_font_families(Some(crate::paths::fonts_dir())),
             reader_font_family: self.catalog.get_pref("reader.font_family"),
-            reader_font_px: self.catalog.get_pref_i64("reader.font_px", 17).clamp(13, 24),
+            reader_font_px: self
+                .catalog
+                .get_pref_i64("reader.font_px", 17)
+                .clamp(13, 24),
             reader_line_height: self
                 .catalog
                 .get_pref("reader.line_height")
@@ -1209,10 +1196,7 @@ impl LibraryService {
 
         let ids: Vec<i64> = owned_books.iter().map(|book| book.id).collect();
         let finished = self.catalog.finished_book_ids(&ids).unwrap_or_default();
-        let annotations = self
-            .catalog
-            .annotations_for_books(&ids)
-            .unwrap_or_default();
+        let annotations = self.catalog.annotations_for_books(&ids).unwrap_or_default();
         let bookmarks = self
             .catalog
             .reading_bookmarks_for_books(&ids)
@@ -1491,10 +1475,7 @@ impl LibraryService {
         let mut errors = Errors::new();
         let mut books = take(self.catalog.list_books(sort, query), "books", &mut errors);
         self.catalog.collapse_comic_chapters(&mut books);
-        AllBooksSnapshot {
-            books,
-            errors,
-        }
+        AllBooksSnapshot { books, errors }
     }
 
     /// Deep content search across full book text in the library.
@@ -1539,9 +1520,7 @@ impl LibraryService {
 
     /// Rebuild the library full-text search index from scratch.
     pub fn reindex_all_books(&self) -> Result<usize, String> {
-        self.catalog
-            .reindex_all_books()
-            .map_err(|e| e.to_string())
+        self.catalog.reindex_all_books().map_err(|e| e.to_string())
     }
 
     /// Shelves page: every shelf, ordered as stored.
@@ -1580,10 +1559,7 @@ impl LibraryService {
                 None => false,
             });
         }
-        ReadingListSnapshot {
-            entries,
-            errors,
-        }
+        ReadingListSnapshot { entries, errors }
     }
 
     /// The "Add to reading list" picker's rows: every book in the library
@@ -1684,10 +1660,7 @@ impl LibraryService {
         );
         // One card per comic series, never per chapter.
         self.catalog.collapse_comic_chapters(&mut books);
-        TagBooksSnapshot {
-            books,
-            errors,
-        }
+        TagBooksSnapshot { books, errors }
     }
 }
 
@@ -1723,7 +1696,9 @@ fn aggregate_author_index(
             }
         };
         claim(profile.normalized_name.trim().to_string());
-        claim(crate::author::normalize_author_name(&profile.canonical_name));
+        claim(crate::author::normalize_author_name(
+            &profile.canonical_name,
+        ));
         claim(crate::author::normalize_author_name(&profile.sort_name));
         for alias in &profile.aliases {
             claim(crate::author::normalize_author_name(alias));
@@ -1764,9 +1739,19 @@ fn aggregate_author_index(
             if finished.contains(&book.id) || book.progress >= 100 {
                 acc.read.insert(book.id);
             }
-            if let Some(series) = book.series.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-                acc.series
-                    .insert(series.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" "));
+            if let Some(series) = book
+                .series
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                acc.series.insert(
+                    series
+                        .to_lowercase()
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
             }
         }
     }
@@ -1779,10 +1764,12 @@ fn aggregate_author_index(
                 .map(|p| p.canonical_name.trim().to_string())
                 .filter(|n| !n.is_empty())
                 .unwrap_or_else(|| {
-                    let mut candidates: Vec<(String, usize)> =
-                        acc.candidates.iter().map(|(n, c)| (n.clone(), *c)).collect();
-                    candidates
-                        .sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+                    let mut candidates: Vec<(String, usize)> = acc
+                        .candidates
+                        .iter()
+                        .map(|(n, c)| (n.clone(), *c))
+                        .collect();
+                    candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
                     candidates
                         .into_iter()
                         .next()
@@ -1798,9 +1785,7 @@ fn aggregate_author_index(
             let mut seen = std::collections::HashSet::new();
             let mut push_alias = |alias: &str| {
                 let alias = alias.trim();
-                if !alias.is_empty()
-                    && seen.insert(crate::author::normalize_author_name(alias))
-                {
+                if !alias.is_empty() && seen.insert(crate::author::normalize_author_name(alias)) {
                     aliases.push(alias.to_string());
                 }
             };
@@ -1826,9 +1811,7 @@ fn aggregate_author_index(
                 bio: profile.map(|p| p.bio.clone()).unwrap_or_default(),
                 birth_year: profile.and_then(|p| published_year(&p.birth_date)),
                 death_year: profile.and_then(|p| published_year(&p.death_date)),
-                top_subjects: profile
-                    .map(|p| p.top_subjects.clone())
-                    .unwrap_or_default(),
+                top_subjects: profile.map(|p| p.top_subjects.clone()).unwrap_or_default(),
                 photo_path: profile.and_then(|p| p.photo_path.clone()),
                 aliases,
             }
@@ -1847,10 +1830,7 @@ fn aggregate_author_index(
 /// return its file name. Content-hashed, so picking the same image
 /// twice is one file and a changed image never reads back stale
 /// through the cover cache.
-fn store_author_portrait(
-    name: &str,
-    bytes: &[u8],
-) -> std::result::Result<(String, bool), String> {
+fn store_author_portrait(name: &str, bytes: &[u8]) -> std::result::Result<(String, bool), String> {
     use std::hash::{Hash, Hasher};
 
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -1875,7 +1855,8 @@ fn store_author_portrait(
     }
     let file_name = format!("custom-{stem}-{:016x}.{ext}", hasher.finish());
     let dir = crate::paths::authors_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create the authors folder: {e}"))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Could not create the authors folder: {e}"))?;
     let path = dir.join(&file_name);
     if path.is_file() {
         return Ok((file_name, false));
@@ -2037,7 +2018,11 @@ fn author_groups(
         group.entries.sort_by(|a, b| {
             if is_series {
                 let pos = |e: &AuthorEntrySnapshot| {
-                    if e.position > 0.0 { e.position } else { f32::MAX }
+                    if e.position > 0.0 {
+                        e.position
+                    } else {
+                        f32::MAX
+                    }
                 };
                 pos(a)
                     .partial_cmp(&pos(b))
@@ -2045,11 +2030,7 @@ fn author_groups(
             } else {
                 std::cmp::Ordering::Equal
             }
-            .then_with(|| {
-                a.year
-                    .unwrap_or(i64::MAX)
-                    .cmp(&b.year.unwrap_or(i64::MAX))
-            })
+            .then_with(|| a.year.unwrap_or(i64::MAX).cmp(&b.year.unwrap_or(i64::MAX)))
             .then_with(|| a.title.cmp(&b.title))
         });
     }
@@ -2202,16 +2183,13 @@ pub fn apply_comic_series_candidate(
                         match crate::db::write_comic_series_cover(&folder, series_id, &bytes) {
                             Ok(relative) => written_cover = Some(relative),
                             Err(err) => {
-                                cover_error = Some(format!(
-                                    "The fetched cover could not be saved: {err}"
-                                ));
+                                cover_error =
+                                    Some(format!("The fetched cover could not be saved: {err}"));
                             }
                         }
                     }
                     Err(err) => {
-                        cover_error = Some(format!(
-                            "The fetched cover could not be saved: {err}"
-                        ));
+                        cover_error = Some(format!("The fetched cover could not be saved: {err}"));
                     }
                 },
                 Err(err) => {
@@ -2221,11 +2199,8 @@ pub fn apply_comic_series_candidate(
         }
     }
 
-    let patch = comic_series_patch_from_candidate(
-        candidate,
-        selected_fields,
-        written_cover.clone(),
-    )?;
+    let patch =
+        comic_series_patch_from_candidate(candidate, selected_fields, written_cover.clone())?;
     let mut update = match catalog.apply_comic_series_metadata(series_id, &patch) {
         Ok(update) => update,
         Err(err) => {
@@ -2267,9 +2242,7 @@ pub fn apply_comic_series_candidate(
         if written_cover.as_deref() != Some(old.as_str()) {
             if let Err(err) = crate::db::remove_comic_series_cover(old) {
                 if cover_error.is_none() {
-                    cover_error = Some(format!(
-                        "The old series cover could not be removed: {err}"
-                    ));
+                    cover_error = Some(format!("The old series cover could not be removed: {err}"));
                 }
             }
         }
@@ -2465,10 +2438,7 @@ impl LibraryService {
         let theme = crate::theme::current(&self.catalog);
         let dir = crate::paths::source_scheme_dir();
         if std::fs::create_dir_all(&dir).is_ok() {
-            let _ = std::fs::write(
-                dir.join("kalam.xml"),
-                editor_style_scheme_xml(&theme),
-            );
+            let _ = std::fs::write(dir.join("kalam.xml"), editor_style_scheme_xml(&theme));
         }
     }
 
@@ -2495,12 +2465,11 @@ impl LibraryService {
                     .to_string(),
             );
         }
-        let container = crate::epub_container::EpubContainer::open(&book.file_path).map_err(
-            |_| {
+        let container =
+            crate::epub_container::EpubContainer::open(&book.file_path).map_err(|_| {
                 "This EPUB can't be opened. The file is damaged. Kalam has not changed it."
                     .to_string()
-            },
-        )?;
+            })?;
         Ok((book, container))
     }
 
@@ -2538,7 +2507,9 @@ impl LibraryService {
         .map_err(|e| e.to_string())?;
 
         if let Ok(new_hash) = crate::db::hash_file(&book.file_path) {
-            let _ = self.catalog.rehash_book(book.id, &book.file_hash, &new_hash);
+            let _ = self
+                .catalog
+                .rehash_book(book.id, &book.file_hash, &new_hash);
         }
         let _ = std::fs::remove_dir_all(crate::paths::reader_cache_dir(&book.uuid));
         Ok(())
@@ -2590,13 +2561,8 @@ impl LibraryService {
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        crate::epub_container::rewrite_epub(
-            &book.file_path,
-            &dest,
-            replacements,
-            removals,
-        )
-        .map_err(|e| e.to_string())?;
+        crate::epub_container::rewrite_epub(&book.file_path, &dest, replacements, removals)
+            .map_err(|e| e.to_string())?;
         Ok(dest)
     }
 
@@ -2608,11 +2574,7 @@ impl LibraryService {
     }
 
     /// Write an exported editor file to a user-chosen path.
-    pub fn write_editor_export(
-        &self,
-        path: &std::path::Path,
-        bytes: &[u8],
-    ) -> Result<(), String> {
+    pub fn write_editor_export(&self, path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
         std::fs::write(path, bytes).map_err(|e| e.to_string())
     }
 
@@ -2639,11 +2601,8 @@ impl LibraryService {
                 Ok(out)
             }
             Some(image::ImageFormat::Gif) => {
-                img.write_to(
-                    &mut std::io::Cursor::new(&mut out),
-                    image::ImageFormat::Gif,
-                )
-                .map_err(|e| e.to_string())?;
+                img.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Gif)
+                    .map_err(|e| e.to_string())?;
                 Ok(out)
             }
             _ => Ok(bytes.to_vec()),
@@ -2685,11 +2644,7 @@ impl LibraryService {
     /// re-encodes JPEGs at a gentler quality; formats never
     /// change, so a swapped-in file never lies about its
     /// extension or the manifest's media type.
-    pub fn compress_book_image(
-        &self,
-        bytes: &[u8],
-        smaller: bool,
-    ) -> Result<Vec<u8>, String> {
+    pub fn compress_book_image(&self, bytes: &[u8], smaller: bool) -> Result<Vec<u8>, String> {
         let lossless = self.compress_image_lossless(bytes)?;
         if !smaller {
             return Ok(lossless);
@@ -2702,12 +2657,14 @@ impl LibraryService {
         }
         let img = reader.decode().map_err(|e| e.to_string())?;
         let mut out: Vec<u8> = Vec::new();
-        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
-            std::io::Cursor::new(&mut out),
-            80,
-        );
+        let encoder =
+            image::codecs::jpeg::JpegEncoder::new_with_quality(std::io::Cursor::new(&mut out), 80);
         img.write_with_encoder(encoder).map_err(|e| e.to_string())?;
-        Ok(if out.len() < lossless.len() { out } else { lossless })
+        Ok(if out.len() < lossless.len() {
+            out
+        } else {
+            lossless
+        })
     }
 
     /// Materialise an embedded font and learn its family name,
@@ -2726,13 +2683,7 @@ impl LibraryService {
             .faces()
             .next()
             .and_then(|face| face.families.first().map(|(name, _)| name.clone()))
-            .unwrap_or_else(|| {
-                inner_path
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or("Font")
-                    .to_string()
-            });
+            .unwrap_or_else(|| inner_path.rsplit('/').next().unwrap_or("Font").to_string());
         Ok((dest, family))
     }
 
@@ -2769,8 +2720,14 @@ impl LibraryService {
         embedded: Vec<Vec<u8>>,
     ) -> Vec<(String, Option<std::path::PathBuf>)> {
         const GENERIC: [&str; 8] = [
-            "serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui",
-            "ui-serif", "ui-sans-serif",
+            "serif",
+            "sans-serif",
+            "monospace",
+            "cursive",
+            "fantasy",
+            "system-ui",
+            "ui-serif",
+            "ui-sans-serif",
         ];
         let have: Vec<String> = embedded
             .iter()
@@ -2781,10 +2738,7 @@ impl LibraryService {
         let mut out = Vec::new();
         for family in used {
             let key = family.to_ascii_lowercase();
-            if GENERIC.contains(&key.as_str())
-                || have.contains(&key)
-                || seen.contains(&key)
-            {
+            if GENERIC.contains(&key.as_str()) || have.contains(&key) || seen.contains(&key) {
                 continue;
             }
             seen.push(key);
@@ -2859,10 +2813,9 @@ impl LibraryService {
                 response.status(),
                 response.header("location").map(str::to_string),
             ),
-            Err(ureq::Error::Status(code, response)) => verdict(
-                code,
-                response.header("location").map(str::to_string),
-            ),
+            Err(ureq::Error::Status(code, response)) => {
+                verdict(code, response.header("location").map(str::to_string))
+            }
             Err(_) => "Could not reach".to_string(),
         }
     }
@@ -2984,7 +2937,9 @@ impl LibraryService {
             return Err(e.to_string());
         }
         if let Ok(new_hash) = crate::db::hash_file(&book.file_path) {
-            let _ = self.catalog.rehash_book(book.id, &book.file_hash, &new_hash);
+            let _ = self
+                .catalog
+                .rehash_book(book.id, &book.file_hash, &new_hash);
         }
         let _ = std::fs::remove_dir_all(crate::paths::reader_cache_dir(&book.uuid));
         Ok(())
@@ -2994,8 +2949,8 @@ impl LibraryService {
     /// 132): snapshot first, then rewrite without the file and
     /// without its manifest (and spine, if any) entries.
     pub fn remove_editor_file(&self, book: &Book, path: &str) -> Result<(), String> {
-        let container =
-            crate::epub_container::EpubContainer::open(&book.file_path).map_err(|e| e.to_string())?;
+        let container = crate::epub_container::EpubContainer::open(&book.file_path)
+            .map_err(|e| e.to_string())?;
         self.take_editor_snapshot(book, "Before fix", 1)?;
 
         let backup = crate::epub_metadata::backup_path(&book.file_path);
@@ -3017,11 +2972,18 @@ impl LibraryService {
             }
         }
         let removals: std::collections::HashSet<String> = [path.to_string()].into_iter().collect();
-        crate::epub_container::rewrite_epub(&book.file_path, &book.file_path, &replacements, &removals)
-            .map_err(|e| e.to_string())?;
+        crate::epub_container::rewrite_epub(
+            &book.file_path,
+            &book.file_path,
+            &replacements,
+            &removals,
+        )
+        .map_err(|e| e.to_string())?;
 
         if let Ok(new_hash) = crate::db::hash_file(&book.file_path) {
-            let _ = self.catalog.rehash_book(book.id, &book.file_hash, &new_hash);
+            let _ = self
+                .catalog
+                .rehash_book(book.id, &book.file_hash, &new_hash);
         }
         let _ = std::fs::remove_dir_all(crate::paths::reader_cache_dir(&book.uuid));
         Ok(())
@@ -3031,7 +2993,10 @@ impl LibraryService {
 /// `OEBPS/content.opf` + `OEBPS/images/a.jpg` → `images/a.jpg`;
 /// files outside the OPF folder climb with `../`.
 fn opf_relative_href(opf_path: &str, file_path: &str) -> String {
-    let dir = opf_path.rfind('/').map(|i| &opf_path[..i + 1]).unwrap_or("");
+    let dir = opf_path
+        .rfind('/')
+        .map(|i| &opf_path[..i + 1])
+        .unwrap_or("");
     if let Some(rest) = file_path.strip_prefix(dir) {
         return rest.to_string();
     }
@@ -3059,7 +3024,9 @@ fn strip_manifest_item(opf: &str, href: &str) -> (String, Option<String>) {
             search_from = at + 5; // <itemref — not a manifest item
             continue;
         }
-        let Some(end_rel) = opf[at..].find('>') else { break };
+        let Some(end_rel) = opf[at..].find('>') else {
+            break;
+        };
         let tag = &opf[at..at + end_rel + 1];
         let matches = tag_attr(tag, "href")
             .map(|h| crate::epub::percent_decode(&h) == href)
@@ -3081,7 +3048,9 @@ fn strip_spine_itemref(opf: &str, id: &str) -> String {
     let mut search_from = 0usize;
     while let Some(rel) = opf[search_from..].find("<itemref") {
         let at = search_from + rel;
-        let Some(end_rel) = opf[at..].find('>') else { break };
+        let Some(end_rel) = opf[at..].find('>') else {
+            break;
+        };
         let tag = &opf[at..at + end_rel + 1];
         if tag_attr(tag, "idref").as_deref() == Some(id) {
             let mut out = String::with_capacity(opf.len());
@@ -3576,7 +3545,10 @@ mod tests {
         assert_eq!(titles, ["Alpha One", "Alpha Missing", "Alpha Two"]);
         assert_eq!(snap.entries[2].position, 2.5);
         assert!(snap.entries[0].finished_at.is_some());
-        assert!(snap.entries[1].book.is_none(), "the unowned work stays a gap");
+        assert!(
+            snap.entries[1].book.is_none(),
+            "the unowned work stays a gap"
+        );
         assert_eq!(snap.entries[2].chapter_index, Some(8));
         assert_eq!(snap.entries[2].year, Some(2001));
         assert!(!snap.view_list);
@@ -3619,8 +3591,10 @@ mod tests {
         let series_id = cat
             .get_or_create_comic_series("Horimiya", Some("HERO"), None)
             .unwrap();
-        cat.add_comic_chapter(series_id, c1, 1.0, None, "Page 1").unwrap();
-        cat.add_comic_chapter(series_id, c2, 2.0, None, "Page 2").unwrap();
+        cat.add_comic_chapter(series_id, c1, 1.0, None, "Page 1")
+            .unwrap();
+        cat.add_comic_chapter(series_id, c2, 2.0, None, "Page 2")
+            .unwrap();
         // Unregistered pair: heuristic peers via the series column.
         let h1 = seed(&cat, "Naruto - c001", &[]);
         let h2 = seed(&cat, "Naruto - c002", &[]);
@@ -3742,7 +3716,19 @@ mod tests {
         let svc = LibraryService::new(Arc::new(cat));
         let id = seed(svc.catalog(), "Dune", &[]);
         svc.catalog()
-            .insert_annotation(id, "highlight", 0, "/1", 0, "/1", 9, "", "solid", "the spice", "")
+            .insert_annotation(
+                id,
+                "highlight",
+                0,
+                "/1",
+                0,
+                "/1",
+                9,
+                "",
+                "solid",
+                "the spice",
+                "",
+            )
             .expect("insert annotation");
         svc.catalog()
             .insert_saved_word("melange", "a spice", None, Some(id), None, None)
@@ -4112,7 +4098,10 @@ mod tests {
         assert_eq!(res.books[0].title, "Mistborn");
 
         // Combined filter
-        let res = svc.all_books(SortKey::Title, "tag:fantasy author:Sanderson status:unread rating:>=5");
+        let res = svc.all_books(
+            SortKey::Title,
+            "tag:fantasy author:Sanderson status:unread rating:>=5",
+        );
         assert_eq!(res.books.len(), 1);
         assert_eq!(res.books[0].title, "Mistborn");
     }
@@ -4148,30 +4137,58 @@ mod tests {
         let reg = svc
             .catalog()
             .insert_book(
-                "reg-1", "Dune", "Frank Herbert", None, "", BookFormat::Epub,
-                "dune.epub", "h-dune", None, &[],
+                "reg-1",
+                "Dune",
+                "Frank Herbert",
+                None,
+                "",
+                BookFormat::Epub,
+                "dune.epub",
+                "h-dune",
+                None,
+                &[],
             )
             .unwrap();
         let c1 = svc
             .catalog()
             .insert_book(
-                "c-1", "Horimiya - c001", "HERO", None, "", BookFormat::Cbz,
-                "horimiya_01.cbz", "h-c1", None, &[],
+                "c-1",
+                "Horimiya - c001",
+                "HERO",
+                None,
+                "",
+                BookFormat::Cbz,
+                "horimiya_01.cbz",
+                "h-c1",
+                None,
+                &[],
             )
             .unwrap();
         let c2 = svc
             .catalog()
             .insert_book(
-                "c-2", "Horimiya - c002", "HERO", None, "", BookFormat::Cbz,
-                "horimiya_02.cbz", "h-c2", None, &[],
+                "c-2",
+                "Horimiya - c002",
+                "HERO",
+                None,
+                "",
+                BookFormat::Cbz,
+                "horimiya_02.cbz",
+                "h-c2",
+                None,
+                &[],
             )
             .unwrap();
         let s_id = svc
             .catalog()
             .get_or_create_comic_series("Horimiya", Some("HERO"), None)
             .unwrap();
-        svc.catalog().add_comic_chapter(s_id, c1, 1.0, None, "Page 1").unwrap();
-        svc.catalog().add_comic_chapter(s_id, c2, 2.0, None, "Page 2").unwrap();
+        svc.catalog()
+            .add_comic_chapter(s_id, c1, 1.0, None, "Page 1")
+            .unwrap();
+        svc.catalog()
+            .add_comic_chapter(s_id, c2, 2.0, None, "Page 2")
+            .unwrap();
 
         let shelf_id = svc
             .catalog()
@@ -4344,12 +4361,14 @@ mod tests {
             COMIC_SERIES_FIELD_GENRES.to_string(),
             COMIC_SERIES_FIELD_KNOWN_CHAPTERS.to_string(),
         ];
-        let patch =
-            comic_series_patch_from_candidate(&candidate, &selected, None).unwrap();
+        let patch = comic_series_patch_from_candidate(&candidate, &selected, None).unwrap();
         assert_eq!(patch.title.as_deref(), Some("The Paper Meridian"));
         assert_eq!(patch.published.as_deref(), Some("2021"));
         assert_eq!(patch.known_chapters, Some(42));
-        assert_eq!(patch.genres.as_deref(), Some(&["Adventure".to_string()][..]));
+        assert_eq!(
+            patch.genres.as_deref(),
+            Some(&["Adventure".to_string()][..])
+        );
         assert_eq!(patch.credits.as_ref().unwrap()[0].role, "Story & Art");
         // Unreviewed fields carry nothing, even though the candidate
         // knows them; identity still travels for the source link.

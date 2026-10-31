@@ -25,11 +25,7 @@ glib::wrapper! {
 }
 
 impl ComicPagePicture {
-    pub fn new(
-        texture: &gdk::Texture,
-        settings: ComicImageSettings,
-        crop: CropRect,
-    ) -> Self {
+    pub fn new(texture: &gdk::Texture, settings: ComicImageSettings, crop: CropRect) -> Self {
         let picture: Self = glib::Object::builder()
             .property("accessible-role", gtk::AccessibleRole::Img)
             .build();
@@ -90,11 +86,7 @@ mod imp {
             gtk::SizeRequestMode::HeightForWidth
         }
 
-        fn measure(
-            &self,
-            orientation: gtk::Orientation,
-            for_size: i32,
-        ) -> (i32, i32, i32, i32) {
+        fn measure(&self, orientation: gtk::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
             let Some((source_w, source_h)) = self.cropped_size() else {
                 return (0, 0, -1, -1);
             };
@@ -166,8 +158,8 @@ mod imp {
                 // pixel. Our transform rows are already the output
                 // channels, so hand GSK the transpose of that
                 // row-major matrix.
-                let matrix = gtk::graphene::Matrix::from_float(transform.row_major_floats())
-                    .transpose();
+                let matrix =
+                    gtk::graphene::Matrix::from_float(transform.row_major_floats()).transpose();
                 let offset = gtk::graphene::Vec4::new(
                     transform.offset[0],
                     transform.offset[1],

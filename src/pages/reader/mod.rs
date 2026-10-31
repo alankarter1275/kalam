@@ -3,8 +3,8 @@
 pub(crate) mod book_settings;
 mod chapter;
 mod chrome;
-pub(crate) mod engine;
 mod dictionary_popover;
+pub(crate) mod engine;
 mod keybinds;
 mod lists;
 mod mod_model;
@@ -17,9 +17,9 @@ pub use mod_model::ReaderModel;
 pub use types::ReaderOut;
 
 use chrome::{
-    connect_hover_open, overlay_child_box, rebuild_cover_host, reader_sidebar_tab_content,
-    sync_reader_controls, sync_reader_stacks, sync_ribbon, sync_sidebar_tabs,
-    update_chrome_labels, update_sidebar_header,
+    connect_hover_open, overlay_child_box, reader_sidebar_tab_content, rebuild_cover_host,
+    sync_reader_controls, sync_reader_stacks, sync_ribbon, sync_sidebar_tabs, update_chrome_labels,
+    update_sidebar_header,
 };
 use lists::{rebuild_notes_list, rebuild_toc};
 use panels::build_notes_panel;
@@ -42,7 +42,6 @@ fn report_errors(errors: &[String]) {
         crate::notify::error("Could not open this book properly", err);
     }
 }
-
 
 /// Install (or replace) the window-global shortcut for jump-back from the
 /// current binding (roadmaps 2.6 and 2.9). There is deliberately no
@@ -668,9 +667,7 @@ impl Component for ReaderModel {
             Some(v) => {
                 let toc = v.toc();
                 (0..chapter_count)
-                    .map(|i| {
-                        toc_title(&toc, i).unwrap_or_else(|| format!("Chapter {}", i + 1))
-                    })
+                    .map(|i| toc_title(&toc, i).unwrap_or_else(|| format!("Chapter {}", i + 1)))
                     .collect()
             }
             None => Vec::new(),
@@ -716,10 +713,16 @@ impl Component for ReaderModel {
         // global prefs, written whenever the chip or the annotation
         // popover leaves them somewhere new.
         let last_highlight_color = crate::db::HighlightColor::from_str_lossy(
-            catalog.get_pref("reader.last_highlight_color").as_deref().unwrap_or("yellow"),
+            catalog
+                .get_pref("reader.last_highlight_color")
+                .as_deref()
+                .unwrap_or("yellow"),
         );
         let last_highlight_style = crate::db::AnnotationStyle::from_str_lossy(
-            catalog.get_pref("reader.last_highlight_style").as_deref().unwrap_or("solid"),
+            catalog
+                .get_pref("reader.last_highlight_style")
+                .as_deref()
+                .unwrap_or("solid"),
         );
         if let Some(v) = &view {
             let wm_words = catalog
@@ -727,10 +730,7 @@ impl Component for ReaderModel {
                 .unwrap_or_default();
             v.set_word_memory(wm_words.into_iter().map(|w| w.word));
         }
-        let font_families = view
-            .as_ref()
-            .map(|v| v.font_families())
-            .unwrap_or_default();
+        let font_families = view.as_ref().map(|v| v.font_families()).unwrap_or_default();
 
         let toc_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
         toc_list.set_hexpand(true);
@@ -758,9 +758,8 @@ impl Component for ReaderModel {
 
         // Filled by install_jump_back_shortcut below, and swapped whenever
         // the key is rebound in Settings.
-        let jump_back_shortcut: std::rc::Rc<
-            std::cell::RefCell<Option<gtk::ShortcutController>>,
-        > = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let jump_back_shortcut: std::rc::Rc<std::cell::RefCell<Option<gtk::ShortcutController>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(None));
 
         let ReaderSettingsControls {
             root: settings_panel,
@@ -995,7 +994,10 @@ impl Component for ReaderModel {
             // plain label now that there is no HTML surface to draw it on.
             let message = match &open_failure {
                 Some(err) => format!("Could not open book\n\n{err}\n\nPress Esc to go back."),
-                None => "Missing book\n\nThis library row has no file to open.\n\nPress Esc to go back.".to_string(),
+                None => {
+                    "Missing book\n\nThis library row has no file to open.\n\nPress Esc to go back."
+                        .to_string()
+                }
             };
             let label = gtk::Label::new(Some(&message));
             label.set_wrap(true);
@@ -1080,9 +1082,8 @@ impl Component for ReaderModel {
                 &["kalam-inline-icon"],
             )));
             bubble_button.set_tooltip_text(Some("Minimize to Bubble"));
-            bubble_button.update_property(&[gtk::accessible::Property::Label(
-                "Minimize to Bubble",
-            )]);
+            bubble_button
+                .update_property(&[gtk::accessible::Property::Label("Minimize to Bubble")]);
             bubble_button.set_size_request(44, 44);
 
             let tx = sender.input_sender().clone();
@@ -1137,7 +1138,9 @@ impl Component for ReaderModel {
             let left_box = model.left_sidebar_box.clone();
             let right_box = model.right_sidebar_box.clone();
             click.connect_pressed(move |gesture, _, x, y| {
-                let Some(widget) = gesture.widget() else { return };
+                let Some(widget) = gesture.widget() else {
+                    return;
+                };
                 // `is_visible()` would be the wrong question here: a
                 // GtkRevealer conceals its child without clearing the
                 // child's (or its parents') visible flags, so a shut
@@ -1158,14 +1161,12 @@ impl Component for ReaderModel {
                     .flatten()
                     .any(|panel| {
                         panel.is_mapped()
-                            && widget
-                                .compute_point(panel, &point)
-                                .is_some_and(|p| {
-                                    p.x() >= 0.0
-                                        && p.y() >= 0.0
-                                        && p.x() <= panel.width() as f32
-                                        && p.y() <= panel.height() as f32
-                                })
+                            && widget.compute_point(panel, &point).is_some_and(|p| {
+                                p.x() >= 0.0
+                                    && p.y() >= 0.0
+                                    && p.x() <= panel.width() as f32
+                                    && p.y() <= panel.height() as f32
+                            })
                     });
                 if !on_panel {
                     let _ = tx.send(ReaderMsg::CloseSidebars);
@@ -1332,12 +1333,7 @@ impl Component for ReaderModel {
         // wherever the focus happens to sit right after a jump, so it rides
         // the window-global route above rather than the focus-dependent
         // capture path. Rebinding in Settings swaps it through the slot.
-        install_jump_back_shortcut(
-            &root,
-            &model.jump_back_shortcut,
-            &model.keybinds,
-            &sender,
-        );
+        install_jump_back_shortcut(&root, &model.jump_back_shortcut, &model.keybinds, &sender);
 
         // The search bar's Chapter / Book switch (decision 34), the
         // shared small segmented control (§22). Chapter stands
@@ -1632,7 +1628,11 @@ impl Component for ReaderModel {
                 self.dismiss_chip_surfaces();
                 engine::dismiss(self.dict_popover.take());
                 self.save_progress();
-                sender.output(ReaderOut::MinimizeToBubble { book_id: self.book_id }).ok();
+                sender
+                    .output(ReaderOut::MinimizeToBubble {
+                        book_id: self.book_id,
+                    })
+                    .ok();
             }
             ReaderMsg::TocSelect(idx) | ReaderMsg::JumpToChapter(idx) => {
                 if idx < self.chapter_count {
@@ -2061,8 +2061,11 @@ impl Component for ReaderModel {
                 let style = self.last_highlight_style;
                 if let Some(id) = self.create_highlight(color, style) {
                     refresh_notes = true;
-                    if let Some(anno) =
-                        self.all_book_annotations.iter().find(|a| a.id == id).cloned()
+                    if let Some(anno) = self
+                        .all_book_annotations
+                        .iter()
+                        .find(|a| a.id == id)
+                        .cloned()
                     {
                         let rect = self.dict_anchor_rect();
                         self.open_annotation_popover(&anno, rect, true, &sender);
@@ -2100,18 +2103,27 @@ impl Component for ReaderModel {
                     Err(e) => crate::notify::error("Could not update highlight", &e.to_string()),
                 }
             }
-            ReaderMsg::AnnotationEditClosed { id, color, style, note } => {
+            ReaderMsg::AnnotationEditClosed {
+                id,
+                color,
+                style,
+                note,
+            } => {
                 // Autosave on close (decision 29). The popover that
                 // sent this is already down; clear only its own slot,
                 // so a chip raised after it is never taken down here.
                 engine::dismiss(self.annotation_popover.take());
                 let color_val = crate::db::HighlightColor::from_str_lossy(&color);
                 let style_val = crate::db::AnnotationStyle::from_str_lossy(&style);
-                let unchanged = self.all_book_annotations.iter().find(|a| a.id == id).is_some_and(|a| {
-                    a.color.eq_ignore_ascii_case(color_val.as_str())
-                        && a.style.eq_ignore_ascii_case(style_val.as_str())
-                        && a.note == note
-                });
+                let unchanged = self
+                    .all_book_annotations
+                    .iter()
+                    .find(|a| a.id == id)
+                    .is_some_and(|a| {
+                        a.color.eq_ignore_ascii_case(color_val.as_str())
+                            && a.style.eq_ignore_ascii_case(style_val.as_str())
+                            && a.note == note
+                    });
                 if !unchanged {
                     let res = self.service.catalog().update_annotation_details(
                         id,
@@ -2140,7 +2152,12 @@ impl Component for ReaderModel {
                 self.dismiss_chip_surfaces();
                 engine::dismiss(self.dict_popover.take());
                 engine::dismiss(self.word_preview_popover.take());
-                let anno_opt = self.service.catalog().get_annotation_by_id(id).ok().flatten();
+                let anno_opt = self
+                    .service
+                    .catalog()
+                    .get_annotation_by_id(id)
+                    .ok()
+                    .flatten();
                 if let Some(anno) = anno_opt {
                     let rect = gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
                     self.open_annotation_popover(&anno, rect, false, &sender);
@@ -2361,7 +2378,9 @@ impl Component for ReaderModel {
                                 annotation.color = color_name.to_string();
                             }
                         }
-                        self.with_view(|v| v.recolor_highlight(id, engine::engine_color(color_name)));
+                        self.with_view(|v| {
+                            v.recolor_highlight(id, engine::engine_color(color_name))
+                        });
                         refresh_notes = true;
                     }
                     Err(err) => {
@@ -2459,27 +2478,24 @@ impl Component for ReaderModel {
                 if let Some(mark) = self.deleted_marks.pop() {
                     let catalog = self.service.catalog();
                     match mark {
-                        DeletedMark::Annotation(row) => {
-                            match catalog.restore_annotation(&row) {
-                                Ok(()) => {
-                                    self.reload_annotations();
-                                    if let Some(view) = &self.view {
-                                        if let Some(h) = engine::highlight_of(&row) {
-                                            view.show_highlight(row.id, &h);
-                                        }
+                        DeletedMark::Annotation(row) => match catalog.restore_annotation(&row) {
+                            Ok(()) => {
+                                self.reload_annotations();
+                                if let Some(view) = &self.view {
+                                    if let Some(h) = engine::highlight_of(&row) {
+                                        view.show_highlight(row.id, &h);
                                     }
-                                    refresh_notes = true;
                                 }
-                                Err(err) => {
-                                    self.deleted_marks
-                                        .push(DeletedMark::Annotation(row));
-                                    crate::notify::error(
-                                        "Could not bring the highlight back",
-                                        &err.to_string(),
-                                    );
-                                }
+                                refresh_notes = true;
                             }
-                        }
+                            Err(err) => {
+                                self.deleted_marks.push(DeletedMark::Annotation(row));
+                                crate::notify::error(
+                                    "Could not bring the highlight back",
+                                    &err.to_string(),
+                                );
+                            }
+                        },
                         DeletedMark::Bookmark(row) => {
                             match catalog.restore_reading_bookmark(&row) {
                                 Ok(()) => {
@@ -2508,8 +2524,7 @@ impl Component for ReaderModel {
                             self.reload_saved_words();
                             refresh_notes = true;
                             if !failed.is_empty() {
-                                self.deleted_marks
-                                    .push(DeletedMark::SavedWords(failed));
+                                self.deleted_marks.push(DeletedMark::SavedWords(failed));
                                 if let Some(err) = first_error {
                                     crate::notify::error(
                                         "Could not bring the word back",
@@ -2558,7 +2573,9 @@ impl Component for ReaderModel {
                 // stays up either way.
                 if let Some(word) = self.dict_lookup_word.clone() {
                     let catalog = self.service.catalog();
-                    let saved = catalog.saved_word_exists(&word, self.book_id).unwrap_or(false);
+                    let saved = catalog
+                        .saved_word_exists(&word, self.book_id)
+                        .unwrap_or(false);
                     if saved {
                         // Every row this stroke forgets, kept for
                         // Ctrl+Z (decisions 30, 31).
@@ -2580,10 +2597,9 @@ impl Component for ReaderModel {
                                 self.reload_saved_words();
                                 refresh_notes = true;
                             }
-                            Err(e) => crate::notify::error(
-                                "Could not forget the word",
-                                &e.to_string(),
-                            ),
+                            Err(e) => {
+                                crate::notify::error("Could not forget the word", &e.to_string())
+                            }
                         }
                     } else if let Some(def) = self.dict_lookup_def.clone() {
                         match catalog.insert_saved_word(
@@ -2599,10 +2615,9 @@ impl Component for ReaderModel {
                                 self.reload_saved_words();
                                 refresh_notes = true;
                             }
-                            Err(e) => crate::notify::error(
-                                "Could not save the word",
-                                &e.to_string(),
-                            ),
+                            Err(e) => {
+                                crate::notify::error("Could not save the word", &e.to_string())
+                            }
                         }
                     }
                 }
@@ -2647,10 +2662,7 @@ impl Component for ReaderModel {
                             self.fraction,
                             &label,
                         ) {
-                            crate::notify::error(
-                                "Could not save the bookmark",
-                                &e.to_string(),
-                            );
+                            crate::notify::error("Could not save the bookmark", &e.to_string());
                         }
                     }
                     self.reload_bookmarks();
@@ -2763,11 +2775,7 @@ impl Component for ReaderModel {
             }
             ReaderMsg::ExportAnnotations => {
                 let catalog = self.service.catalog();
-                match lists::export_highlights_markdown(
-                    catalog,
-                    self.book_id,
-                    &self.book_title,
-                ) {
+                match lists::export_highlights_markdown(catalog, self.book_id, &self.book_title) {
                     Ok((n, path)) => crate::notify::success(
                         &format!("Exported {n} highlights & notes"),
                         &path.display().to_string(),
@@ -2787,11 +2795,19 @@ impl Component for ReaderModel {
                 // exit the book. Each press takes exactly one layer.
                 if self.dict_popover.as_ref().is_some_and(|p| p.is_visible()) {
                     sender.input(ReaderMsg::ClearDict);
-                } else if self.annotation_popover.as_ref().is_some_and(|p| p.is_visible()) {
+                } else if self
+                    .annotation_popover
+                    .as_ref()
+                    .is_some_and(|p| p.is_visible())
+                {
                     engine::dismiss(self.annotation_popover.take());
                 } else if self.selection_chip.as_ref().is_some_and(|p| p.is_visible()) {
                     engine::dismiss(self.selection_chip.take());
-                } else if self.view.as_ref().is_some_and(|v| v.selected_text().is_some()) {
+                } else if self
+                    .view
+                    .as_ref()
+                    .is_some_and(|v| v.selected_text().is_some())
+                {
                     self.with_view(|v| v.clear_selection());
                 } else if self.search_active {
                     sender.input(ReaderMsg::CloseSearch);
@@ -2810,7 +2826,11 @@ impl Component for ReaderModel {
                 // the book — reassigning it must not become a way out.
                 if self.dict_popover.as_ref().is_some_and(|p| p.is_visible()) {
                     sender.input(ReaderMsg::ClearDict);
-                } else if self.annotation_popover.as_ref().is_some_and(|p| p.is_visible()) {
+                } else if self
+                    .annotation_popover
+                    .as_ref()
+                    .is_some_and(|p| p.is_visible())
+                {
                     engine::dismiss(self.annotation_popover.take());
                 } else if self.selection_chip.as_ref().is_some_and(|p| p.is_visible()) {
                     engine::dismiss(self.selection_chip.take());
@@ -3179,7 +3199,13 @@ impl ReaderModel {
         }
     }
 
-    fn show_image_lightbox(&mut self, widgets: &mut <Self as relm4::Component>::Widgets, w: u32, h: u32, rgba: &[u8]) {
+    fn show_image_lightbox(
+        &mut self,
+        widgets: &mut <Self as relm4::Component>::Widgets,
+        w: u32,
+        h: u32,
+        rgba: &[u8],
+    ) {
         let bytes = glib::Bytes::from_owned(rgba.to_vec());
         let pixbuf = gdk_pixbuf::Pixbuf::from_bytes(
             &bytes,
@@ -3198,7 +3224,9 @@ impl ReaderModel {
     }
 
     fn update_lightbox_image(&self, widgets: &mut <Self as relm4::Component>::Widgets) {
-        let Some(pixbuf) = &self.lightbox_pixbuf else { return };
+        let Some(pixbuf) = &self.lightbox_pixbuf else {
+            return;
+        };
         let mut result = pixbuf.clone();
         let angle = ((self.lightbox_rotation % 360.0) + 360.0) % 360.0;
         if (angle - 90.0).abs() < 1.0 {
@@ -3210,7 +3238,9 @@ impl ReaderModel {
                 result = rotated;
             }
         } else if (angle - 270.0).abs() < 1.0 {
-            if let Some(rotated) = pixbuf.rotate_simple(gdk_pixbuf::PixbufRotation::Counterclockwise) {
+            if let Some(rotated) =
+                pixbuf.rotate_simple(gdk_pixbuf::PixbufRotation::Counterclockwise)
+            {
                 result = rotated;
             }
         }
@@ -3221,7 +3251,9 @@ impl ReaderModel {
         let scaled_h = ((orig_h as f64) * self.lightbox_zoom).round() as i32;
 
         if scaled_w > 0 && scaled_h > 0 && (scaled_w != orig_w || scaled_h != orig_h) {
-            if let Some(scaled) = result.scale_simple(scaled_w, scaled_h, gdk_pixbuf::InterpType::Bilinear) {
+            if let Some(scaled) =
+                result.scale_simple(scaled_w, scaled_h, gdk_pixbuf::InterpType::Bilinear)
+            {
                 result = scaled;
             }
         }
@@ -3244,4 +3276,3 @@ pub(crate) fn toc_title(entries: &[kalam_reader::TocEntry], spine: usize) -> Opt
     }
     None
 }
-

@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum SavedQuotesOut {
-    OpenBook { book_id: i64 },
+    OpenBook {
+        book_id: i64,
+    },
     JumpTo {
         book_id: i64,
         // The page reports the chapter the quote came from; scrolling the
@@ -24,10 +26,16 @@ pub enum SavedQuotesMsg {
     Export,
     ExportAllData,
     Refresh,
-    SaveNote { id: i64, note: String },
+    SaveNote {
+        id: i64,
+        note: String,
+    },
     /// A background quotes query finished. Carries the generation it was
     /// started with so a superseded reply cannot overwrite a newer one.
-    Loaded { gen: u64, snap: QuotesSnapshot },
+    Loaded {
+        gen: u64,
+        snap: QuotesSnapshot,
+    },
     /// An export task finished; `status` is the line for the status label.
     /// The write itself runs on a task (ARCH.md: the UI thread never
     /// touches the disk), so the label updates when the file is real.
@@ -187,26 +195,24 @@ impl Component for SavedQuotesModel {
                     "Exporting quotes",
                     move |_| std::fs::write(&out_path, exported).map_err(|e| e.to_string()),
                     |_| {},
-                    move |res| {
-                        match res {
-                            Ok(()) => {
-                                crate::notify::success(
-                                    &format!(
-                                        "{count} quote{} exported",
-                                        if count == 1 { "" } else { "s" }
-                                    ),
-                                    &out_path_done.display().to_string(),
-                                );
-                                let _ = s.send(SavedQuotesMsg::ExportDone(format!(
-                                    "Exported to {}",
-                                    out_path_done.display()
-                                )));
-                            }
-                            Err(err) => {
-                                crate::notify::error("Could not export quotes", &err);
-                                let status = format!("Export failed: {err}");
-                                let _ = s.send(SavedQuotesMsg::ExportDone(status));
-                            }
+                    move |res| match res {
+                        Ok(()) => {
+                            crate::notify::success(
+                                &format!(
+                                    "{count} quote{} exported",
+                                    if count == 1 { "" } else { "s" }
+                                ),
+                                &out_path_done.display().to_string(),
+                            );
+                            let _ = s.send(SavedQuotesMsg::ExportDone(format!(
+                                "Exported to {}",
+                                out_path_done.display()
+                            )));
+                        }
+                        Err(err) => {
+                            crate::notify::error("Could not export quotes", &err);
+                            let status = format!("Export failed: {err}");
+                            let _ = s.send(SavedQuotesMsg::ExportDone(status));
                         }
                     },
                 );
@@ -224,29 +230,24 @@ impl Component for SavedQuotesModel {
                     "Exporting reading data",
                     move |_| catalog.export_reading_data_markdown(&out_path),
                     |_| {},
-                    move |res| {
-                        match res {
-                            Ok(count) => {
-                                crate::notify::success(
-                                    &format!(
-                                        "{count} item{} exported",
-                                        if count == 1 { "" } else { "s" }
-                                    ),
-                                    &out_path_done.display().to_string(),
-                                );
-                                let _ = s.send(SavedQuotesMsg::ExportDone(format!(
-                                    "Exported all data to {}",
-                                    out_path_done.display()
-                                )));
-                            }
-                            Err(err) => {
-                                crate::notify::error(
-                                    "Could not export reading data",
-                                    &err.to_string(),
-                                );
-                                let status = format!("Export failed: {err}");
-                                let _ = s.send(SavedQuotesMsg::ExportDone(status));
-                            }
+                    move |res| match res {
+                        Ok(count) => {
+                            crate::notify::success(
+                                &format!(
+                                    "{count} item{} exported",
+                                    if count == 1 { "" } else { "s" }
+                                ),
+                                &out_path_done.display().to_string(),
+                            );
+                            let _ = s.send(SavedQuotesMsg::ExportDone(format!(
+                                "Exported all data to {}",
+                                out_path_done.display()
+                            )));
+                        }
+                        Err(err) => {
+                            crate::notify::error("Could not export reading data", &err.to_string());
+                            let status = format!("Export failed: {err}");
+                            let _ = s.send(SavedQuotesMsg::ExportDone(status));
                         }
                     },
                 );
@@ -521,5 +522,3 @@ fn chrono_like_now() -> String {
         .unwrap_or(0);
     format!("{secs}")
 }
-
-

@@ -219,10 +219,7 @@ impl CropRect {
     }
 
     pub fn is_full(self) -> bool {
-        self.x <= 0.0005
-            && self.y <= 0.0005
-            && self.width >= 0.9995
-            && self.height >= 0.9995
+        self.x <= 0.0005 && self.y <= 0.0005 && self.width >= 0.9995 && self.height >= 0.9995
     }
 
     pub fn pixel_size(self, image_width: i32, image_height: i32) -> (i32, i32) {
@@ -387,7 +384,10 @@ pub enum ComicsReaderOut {
 #[allow(dead_code)] // menu/context actions for the comics reader UI
 pub enum ReaderContext {
     Local(i64), // book_id
-    Remote { source_id: String, chapter_id: String },
+    Remote {
+        source_id: String,
+        chapter_id: String,
+    },
 }
 
 pub struct ComicsReaderInit {

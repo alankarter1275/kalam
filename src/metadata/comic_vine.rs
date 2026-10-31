@@ -11,9 +11,7 @@
 //! Every request needs the reader's personal API key (Comic Vine →
 //! API), passed as the `api_key` query parameter the API requires.
 
-use super::{
-    agent, Candidate, CandidateCredit, CoverRef, FetchError, MetadataSource, SourceId,
-};
+use super::{agent, Candidate, CandidateCredit, CoverRef, FetchError, MetadataSource, SourceId};
 use serde::Deserialize;
 
 const API_BASE: &str = "https://comicvine.gamespot.com/api";
@@ -182,20 +180,12 @@ impl MetadataSource for ComicVine {
             .unwrap_or_default())
     }
 
-    fn fetch_candidate_details(
-        &self,
-        candidate: &Candidate,
-    ) -> Result<Candidate, FetchError> {
+    fn fetch_candidate_details(&self, candidate: &Candidate) -> Result<Candidate, FetchError> {
         let id = candidate
             .external_id
             .as_deref()
             .and_then(extract_volume_id)
-            .or_else(|| {
-                candidate
-                    .detail_key
-                    .as_deref()
-                    .and_then(extract_volume_id)
-            });
+            .or_else(|| candidate.detail_key.as_deref().and_then(extract_volume_id));
         let Some(id) = id else {
             return Ok(candidate.clone());
         };
@@ -205,10 +195,7 @@ impl MetadataSource for ComicVine {
         }
     }
 
-    fn fetch_by_external_id(
-        &self,
-        external_id: &str,
-    ) -> Result<Option<Candidate>, FetchError> {
+    fn fetch_by_external_id(&self, external_id: &str) -> Result<Option<Candidate>, FetchError> {
         self.fetch_volume(external_id)
     }
 }
@@ -219,8 +206,7 @@ fn extract_volume_id(raw: &str) -> Option<String> {
     let key = raw.trim().trim_end_matches('/');
     let tail = key.rsplit('/').next().unwrap_or(key);
     let digits = tail.strip_prefix("4050-").unwrap_or(tail);
-    (!digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()))
-        .then(|| digits.to_string())
+    (!digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())).then(|| digits.to_string())
 }
 
 fn envelope_status(body: &str) -> Option<i64> {
@@ -715,8 +701,7 @@ mod tests {
         assert_eq!(extract_volume_id("796").as_deref(), Some("796"));
         assert_eq!(extract_volume_id("4050-796").as_deref(), Some("796"));
         assert_eq!(
-            extract_volume_id("https://comicvine.gamespot.com/api/volume/4050-796/")
-                .as_deref(),
+            extract_volume_id("https://comicvine.gamespot.com/api/volume/4050-796/").as_deref(),
             Some("796")
         );
         assert_eq!(extract_volume_id("batman"), None);
@@ -724,7 +709,10 @@ mod tests {
 
     #[test]
     fn envelope_status_reads_the_wrapper() {
-        assert_eq!(envelope_status(r#"{"error":"OK","status_code":1}"#), Some(1));
+        assert_eq!(
+            envelope_status(r#"{"error":"OK","status_code":1}"#),
+            Some(1)
+        );
         assert_eq!(
             envelope_status(r#"{"error":"Invalid API Key","status_code":100}"#),
             Some(100)

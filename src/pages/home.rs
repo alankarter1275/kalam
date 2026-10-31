@@ -1,7 +1,7 @@
 use crate::db::Catalog;
-use crate::service::HomeSnapshot;
 use crate::models::BookFormat;
 use crate::pages::all_books::{import_summary, spawn_import, ImportTally};
+use crate::service::HomeSnapshot;
 use crate::service::LibraryService;
 use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W, COVER_H, COVER_W};
 use gtk::prelude::*;
@@ -434,7 +434,10 @@ fn apply_snapshot(
                     move || {
                         if is_comic {
                             if let Some(ref sname) = sname {
-                                s.output(HomeOut::ComicSeries { series_name: sname.clone() }).ok();
+                                s.output(HomeOut::ComicSeries {
+                                    series_name: sname.clone(),
+                                })
+                                .ok();
                                 return;
                             }
                         }
@@ -533,7 +536,10 @@ fn apply_snapshot(
                     move || {
                         if is_comic {
                             if let Some(ref sname) = sname {
-                                s.output(HomeOut::ComicSeries { series_name: sname.clone() }).ok();
+                                s.output(HomeOut::ComicSeries {
+                                    series_name: sname.clone(),
+                                })
+                                .ok();
                                 return;
                             }
                         }
@@ -546,7 +552,10 @@ fn apply_snapshot(
                     move || {
                         if is_comic {
                             if let Some(ref sname) = sname {
-                                s.output(HomeOut::ComicSeries { series_name: sname.clone() }).ok();
+                                s.output(HomeOut::ComicSeries {
+                                    series_name: sname.clone(),
+                                })
+                                .ok();
                                 return;
                             }
                         }

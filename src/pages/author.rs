@@ -29,7 +29,9 @@ use crate::shelf_rules::{Rule, RuleField, RuleOp, RuleSet};
 use crate::widgets::book_row::{cache_decoded_cover, cover_widget};
 use crate::widgets::{
     chip::{filter_chip, ChipSize},
-    cover_state::{book_cover, missing_cover, missing_cover_with_disabled_fetch, CoverAvailability},
+    cover_state::{
+        book_cover, missing_cover, missing_cover_with_disabled_fetch, CoverAvailability,
+    },
     dialog::{dialog_shell, present_dialog, text_field, DialogSize},
     in_app_dialog::{DialogExit, InAppDialog},
     menu::{menu_button, menu_popover, MenuWidth},
@@ -56,13 +58,27 @@ const PORTRAIT: i32 = 64;
 
 #[derive(Debug)]
 pub enum AuthorPageOut {
-    OpenBook { book_id: i64 },
+    OpenBook {
+        book_id: i64,
+    },
     /// A comic series card — chapters are only ever seen on the series page.
-    ComicSeries { series_name: String },
-    OpenSeries { series: String, first_author: String },
-    OpenShelf { shelf_id: i64 },
-    OpenReaderAt { book_id: i64, chapter: usize },
-    ShowInLibrary { query: String },
+    ComicSeries {
+        series_name: String,
+    },
+    OpenSeries {
+        series: String,
+        first_author: String,
+    },
+    OpenShelf {
+        shelf_id: i64,
+    },
+    OpenReaderAt {
+        book_id: i64,
+        chapter: usize,
+    },
+    ShowInLibrary {
+        query: String,
+    },
 }
 
 #[derive(Debug)]
@@ -744,8 +760,7 @@ impl AuthorPageModel {
                             stable.set((w, tries + 1));
                             return gtk::glib::ControlFlow::Continue;
                         }
-                        more_for_tick
-                            .set_visible(label_for_tick.layout().is_ellipsized());
+                        more_for_tick.set_visible(label_for_tick.layout().is_ellipsized());
                         gtk::glib::ControlFlow::Break
                     });
                     let expanded = Rc::new(Cell::new(false));
@@ -790,9 +805,7 @@ impl AuthorPageModel {
                     s.input(AuthorPageMsg::FindMetadata);
                 });
                 find.set_sensitive(!self.fetching);
-                find.set_tooltip_text(Some(
-                    "Fetch this author's bibliography from Open Library",
-                ));
+                find.set_tooltip_text(Some("Fetch this author's bibliography from Open Library"));
                 pills.append(&find);
                 left.append(&pills);
             }
@@ -940,9 +953,7 @@ impl AuthorPageModel {
                 .groups
                 .iter()
                 .enumerate()
-                .filter(|(_, group)| {
-                    group.entries.iter().any(|e| e.book.is_some()) == in_library
-                })
+                .filter(|(_, group)| group.entries.iter().any(|e| e.book.is_some()) == in_library)
                 .map(|(index, _)| index)
                 .collect();
             if indices.is_empty() {
@@ -1008,8 +1019,11 @@ impl AuthorPageModel {
         if highlights.is_empty() {
             return;
         }
-        let books: HashMap<i64, &Book> =
-            snap.owned_books.iter().map(|book| (book.id, book)).collect();
+        let books: HashMap<i64, &Book> = snap
+            .owned_books
+            .iter()
+            .map(|book| (book.id, book))
+            .collect();
 
         let heading_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         heading_row.set_margin_top(48);
@@ -1046,13 +1060,25 @@ impl AuthorPageModel {
 
         let adjustment = scroller.hadjustment();
         let adj_prev = adjustment.clone();
-        let prev = icon_button("go-previous-symbolic", "Scroll highlights back", 36, true, move || {
-            scroll_highlights(&adj_prev, -1.0);
-        });
+        let prev = icon_button(
+            "go-previous-symbolic",
+            "Scroll highlights back",
+            36,
+            true,
+            move || {
+                scroll_highlights(&adj_prev, -1.0);
+            },
+        );
         let adj_next = adjustment.clone();
-        let next = icon_button("go-next-symbolic", "Scroll highlights forward", 36, true, move || {
-            scroll_highlights(&adj_next, 1.0);
-        });
+        let next = icon_button(
+            "go-next-symbolic",
+            "Scroll highlights forward",
+            36,
+            true,
+            move || {
+                scroll_highlights(&adj_next, 1.0);
+            },
+        );
         let sync_arrows = {
             let prev = prev.clone();
             let next = next.clone();
@@ -1268,12 +1294,7 @@ impl AuthorPageModel {
                         geometry.1 + revealer.height() - bounds.y() as i32,
                     );
                     let colour = outline.color();
-                    let colour = (
-                        colour.red(),
-                        colour.green(),
-                        colour.blue(),
-                        colour.alpha(),
-                    );
+                    let colour = (colour.red(), colour.green(), colour.blue(), colour.alpha());
                     let restroke = outline_colour.replace(colour) != colour;
                     if outlined.replace(Some(rect)) != Some(rect) {
                         outline.set_margin_start(rect.0);
@@ -1381,11 +1402,8 @@ fn facts_panel(snap: &AuthorPageSnapshot, name: &str) -> gtk::Box {
     };
     panel.append(&fact_row("Works", &works_value, None));
 
-    let series_groups: Vec<&AuthorGroupSnapshot> = snap
-        .groups
-        .iter()
-        .filter(|g| g.series.is_some())
-        .collect();
+    let series_groups: Vec<&AuthorGroupSnapshot> =
+        snap.groups.iter().filter(|g| g.series.is_some()).collect();
     if bib && !series_groups.is_empty() {
         let in_library = series_groups
             .iter()
@@ -1669,11 +1687,8 @@ fn panel_entry_column(
             column.append(&progress_host);
         }
         None => {
-            let missing = missing_cover_with_disabled_fetch(
-                &entry.title,
-                PANEL_COVER_W,
-                PANEL_COVER_H,
-            );
+            let missing =
+                missing_cover_with_disabled_fetch(&entry.title, PANEL_COVER_W, PANEL_COVER_H);
             missing.add_css_class("kalam-authorpage-panel-missing");
             column.append(&missing);
 
@@ -1809,7 +1824,10 @@ fn export_highlights(model: &AuthorPageModel) {
     let Some(snap) = &model.snapshot else { return };
     let highlights = highlights_of(snap);
     if highlights.is_empty() {
-        crate::notify::info("No highlights to export", "This author has no highlights yet.");
+        crate::notify::info(
+            "No highlights to export",
+            "This author has no highlights yet.",
+        );
         return;
     }
     let name = display_name(model);
@@ -1922,18 +1940,24 @@ fn request_snapshot(
 fn warm_author_covers(snap: &AuthorPageSnapshot) -> Vec<crate::preload::DecodedCover> {
     let mut covers = Vec::new();
     let mut seen: HashSet<(std::path::PathBuf, i32, i32)> = HashSet::new();
-    let mut want = |path: Option<&Path>, w: i32, h: i32, covers: &mut Vec<crate::preload::DecodedCover>| {
-        let Some(path) = path else { return };
-        if !seen.insert((path.to_path_buf(), w, h)) {
-            return;
-        }
-        if let Some(d) = crate::preload::decode_for_cache(path, w, h) {
-            covers.push(d);
-        }
-    };
+    let mut want =
+        |path: Option<&Path>, w: i32, h: i32, covers: &mut Vec<crate::preload::DecodedCover>| {
+            let Some(path) = path else { return };
+            if !seen.insert((path.to_path_buf(), w, h)) {
+                return;
+            }
+            if let Some(d) = crate::preload::decode_for_cache(path, w, h) {
+                covers.push(d);
+            }
+        };
 
     if let Some(profile) = &snap.profile {
-        want(profile.photo_path.as_deref(), PORTRAIT, PORTRAIT, &mut covers);
+        want(
+            profile.photo_path.as_deref(),
+            PORTRAIT,
+            PORTRAIT,
+            &mut covers,
+        );
     }
     // The cards' fans: the first three covers of every group.
     for group in &snap.groups {
@@ -1947,7 +1971,12 @@ fn warm_author_covers(snap: &AuthorPageSnapshot) -> Vec<crate::preload::DecodedC
     let books: HashMap<i64, &Book> = snap.owned_books.iter().map(|b| (b.id, b)).collect();
     for anno in highlights_of(snap) {
         if let Some(book) = books.get(&anno.book_id) {
-            want(book.cover_path.as_deref(), HL_COVER_W, HL_COVER_H, &mut covers);
+            want(
+                book.cover_path.as_deref(),
+                HL_COVER_W,
+                HL_COVER_H,
+                &mut covers,
+            );
         }
     }
     covers
@@ -2118,11 +2147,8 @@ fn present_edit_author_dialog(
                     if bytes.len() > 20 * 1024 * 1024 {
                         return Err("That image is larger than 20 MB.".to_string());
                     }
-                    let pixels =
-                        crate::preload::decode_rgba_bytes(&bytes, PORTRAIT, PORTRAIT)
-                            .ok_or_else(|| {
-                                "That file is not an image Kalam can read.".to_string()
-                            })?;
+                    let pixels = crate::preload::decode_rgba_bytes(&bytes, PORTRAIT, PORTRAIT)
+                        .ok_or_else(|| "That file is not an image Kalam can read.".to_string())?;
                     Ok((bytes, pixels))
                 },
                 |_| {},
@@ -2195,9 +2221,7 @@ fn present_edit_author_dialog(
                             status.set_text("Initials are shown until a portrait is set.");
                         }
                     }
-                    remove.set_sensitive(
-                        profile.as_ref().is_some_and(|p| p.photo_file.is_some()),
-                    );
+                    remove.set_sensitive(profile.as_ref().is_some_and(|p| p.photo_file.is_some()));
                 }
                 AuthorPortraitEdit::Remove => {
                     host.append(&author_initials_disc(&author, PORTRAIT));
@@ -2279,9 +2303,10 @@ fn present_edit_author_dialog(
 
     // The sort name follows the name until the reader types in it
     // themselves (or already locked one by hand on an earlier edit).
-    let sort_dirty = Rc::new(Cell::new(profile.as_ref().is_some_and(|p| {
-        p.manual_fields.iter().any(|f| f == AUTHOR_FIELD_SORT_NAME)
-    })));
+    let sort_dirty =
+        Rc::new(Cell::new(profile.as_ref().is_some_and(|p| {
+            p.manual_fields.iter().any(|f| f == AUTHOR_FIELD_SORT_NAME)
+        })));
     let updating_sort = Rc::new(Cell::new(false));
     {
         let dirty = sort_dirty.clone();
@@ -2310,14 +2335,20 @@ fn present_edit_author_dialog(
     let birth_field = text_field(
         &locked_label("Born", profile.as_ref(), AUTHOR_FIELD_BIRTH_DATE),
         "e.g. 21 October 1929",
-        profile.as_ref().map(|p| p.birth_date.as_str()).unwrap_or(""),
+        profile
+            .as_ref()
+            .map(|p| p.birth_date.as_str())
+            .unwrap_or(""),
     );
     birth_field.widget().set_hexpand(true);
     dates_row.append(&birth_field.widget());
     let death_field = text_field(
         &locked_label("Died", profile.as_ref(), AUTHOR_FIELD_DEATH_DATE),
         "e.g. 22 January 2018",
-        profile.as_ref().map(|p| p.death_date.as_str()).unwrap_or(""),
+        profile
+            .as_ref()
+            .map(|p| p.death_date.as_str())
+            .unwrap_or(""),
     );
     death_field.widget().set_hexpand(true);
     dates_row.append(&death_field.widget());
@@ -2446,9 +2477,7 @@ fn present_edit_author_dialog(
                     if let Some(dialog) = slot.borrow().clone() {
                         dialog.close();
                     }
-                    let _ = s.send(AuthorPageMsg::IdentityChanged {
-                        name: outcome.name,
-                    });
+                    let _ = s.send(AuthorPageMsg::IdentityChanged { name: outcome.name });
                 }
                 Err(err) => {
                     footer.set_sensitive(true);
@@ -2579,9 +2608,7 @@ fn present_merge_author_dialog(
                     if let Some(dialog) = slot.borrow().clone() {
                         dialog.close();
                     }
-                    let _ = s.send(AuthorPageMsg::IdentityChanged {
-                        name: outcome.name,
-                    });
+                    let _ = s.send(AuthorPageMsg::IdentityChanged { name: outcome.name });
                 }
                 Err(err) => {
                     footer.set_sensitive(true);
@@ -2789,7 +2816,12 @@ fn present_merge_author_dialog(
         );
     }
 
-    match present_dialog(anchor, "Merge into another author", DialogExit::UnsavedInput, &shell) {
+    match present_dialog(
+        anchor,
+        "Merge into another author",
+        DialogExit::UnsavedInput,
+        &shell,
+    ) {
         Some(dialog) => *slot.borrow_mut() = Some(dialog),
         None => crate::notify::error(
             "Could not open the dialog",
@@ -2896,11 +2928,7 @@ fn present_create_shelf_dialog(
         move |index| {
             let is_smart = index == 0;
             smart_for_seg.set(is_smart);
-            explanation_for_seg.set_text(if is_smart {
-                &smart_text
-            } else {
-                &manual_text
-            });
+            explanation_for_seg.set_text(if is_smart { &smart_text } else { &manual_text });
         },
     );
     let type_widget = type_switch.widget();
@@ -2911,70 +2939,74 @@ fn present_create_shelf_dialog(
 
     let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
     let slot_for_cancel = slot.clone();
-    shell.footer().append(&boxed_ghost_button("Cancel", move || {
-        if let Some(dialog) = slot_for_cancel.borrow().clone() {
-            dialog.close();
-        }
-    }));
+    shell
+        .footer()
+        .append(&boxed_ghost_button("Cancel", move || {
+            if let Some(dialog) = slot_for_cancel.borrow().clone() {
+                dialog.close();
+            }
+        }));
 
     let slot_for_create = slot.clone();
     let s = sender.input_sender().clone();
-    shell.footer().append(&primary_button("Create shelf", move || {
-        let follow = follow_switch.is_active();
-        let name = if follow {
-            author.clone()
-        } else {
-            name_field.value().trim().to_string()
-        };
-        if name.is_empty() {
-            crate::notify::error("Name the shelf", "The shelf needs a name first.");
-            return;
-        }
-        let catalog = service.catalog();
-        match catalog.shelf_name_taken(&name, None) {
-            Ok(true) => {
-                crate::notify::error(
-                    "That shelf name is taken",
-                    "Pick a different name for this shelf.",
-                );
+    shell
+        .footer()
+        .append(&primary_button("Create shelf", move || {
+            let follow = follow_switch.is_active();
+            let name = if follow {
+                author.clone()
+            } else {
+                name_field.value().trim().to_string()
+            };
+            if name.is_empty() {
+                crate::notify::error("Name the shelf", "The shelf needs a name first.");
                 return;
             }
-            Ok(false) => {}
-            Err(err) => {
-                crate::notify::error("Could not check the shelf name", &err.to_string());
-                return;
+            let catalog = service.catalog();
+            match catalog.shelf_name_taken(&name, None) {
+                Ok(true) => {
+                    crate::notify::error(
+                        "That shelf name is taken",
+                        "Pick a different name for this shelf.",
+                    );
+                    return;
+                }
+                Ok(false) => {}
+                Err(err) => {
+                    crate::notify::error("Could not check the shelf name", &err.to_string());
+                    return;
+                }
             }
-        }
-        let created = if smart.get() {
-            catalog.create_shelf(&name, ShelfKind::Smart, "", &ruleset.to_json())
-        } else {
-            catalog.create_shelf(&name, ShelfKind::Manual, "", "")
-        };
-        let shelf_id = match created {
-            Ok(id) => id,
-            Err(err) => {
-                crate::notify::error("Could not create the shelf", &err.to_string());
-                return;
+            let created = if smart.get() {
+                catalog.create_shelf(&name, ShelfKind::Smart, "", &ruleset.to_json())
+            } else {
+                catalog.create_shelf(&name, ShelfKind::Manual, "", "")
+            };
+            let shelf_id = match created {
+                Ok(id) => id,
+                Err(err) => {
+                    crate::notify::error("Could not create the shelf", &err.to_string());
+                    return;
+                }
+            };
+            if !smart.get() {
+                for book_id in &owned_ids {
+                    let _ = catalog.add_book_to_shelf(shelf_id, *book_id);
+                }
             }
-        };
-        if !smart.get() {
-            for book_id in &owned_ids {
-                let _ = catalog.add_book_to_shelf(shelf_id, *book_id);
+            catalog.set_pref(
+                &format!(
+                    "{AUTHOR_SHELF_PREF_PREFIX}{}",
+                    crate::author::normalize_author_name(&requested_name)
+                ),
+                &format!("{shelf_id}{}", if follow { ":linked" } else { "" }),
+            );
+            crate::notify::success("Shelf created", &name);
+            if let Some(dialog) = slot_for_create.borrow().clone() {
+                dialog.close();
             }
-        }
-        catalog.set_pref(
-            &format!(
-                "{AUTHOR_SHELF_PREF_PREFIX}{}",
-                crate::author::normalize_author_name(&requested_name)
-            ),
-            &format!("{shelf_id}{}", if follow { ":linked" } else { "" }),
-        );
-        crate::notify::success("Shelf created", &name);
-        if let Some(dialog) = slot_for_create.borrow().clone() {
-            dialog.close();
-        }
-        let _ = s.send(AuthorPageMsg::Refresh);
-    }));
+            let _ = s.send(AuthorPageMsg::Refresh);
+        }));
 
     match present_dialog(anchor, "Create shelf", DialogExit::OwnButtons, &shell) {
         Some(dialog) => *slot.borrow_mut() = Some(dialog),
@@ -3084,11 +3116,7 @@ fn present_author_annotations_dialog(
         Some("bookmarks"),
     );
     stack.add_named(
-        &author_words_page(
-            service,
-            Rc::new(RefCell::new(snap.words.clone())),
-            titles,
-        ),
+        &author_words_page(service, Rc::new(RefCell::new(snap.words.clone())), titles),
         Some("words"),
     );
 

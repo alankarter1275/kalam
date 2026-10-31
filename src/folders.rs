@@ -50,13 +50,7 @@ pub fn rename_book_folder_if_needed(uuid: &str, authors: &str, title: &str) -> b
 /// `current` is where the book's files live now (the caller resolves it
 /// through `paths::book_dir`, which knows about renamed folders); `lib` is
 /// the library root the new name is built under.
-fn rename_folder(
-    lib: &Path,
-    current: &Path,
-    uuid: &str,
-    authors: &str,
-    title: &str,
-) -> bool {
+fn rename_folder(lib: &Path, current: &Path, uuid: &str, authors: &str, title: &str) -> bool {
     if !current.is_dir() {
         // No files on disk (a missing book, or a unit test that never
         // created them). Nothing to rename.
@@ -150,10 +144,8 @@ mod tests {
     /// A scratch library directory under the system temp dir. Each test
     /// gets its own, so parallel tests cannot see each other's folders.
     fn scratch_library(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "kalam-folder-test-{tag}-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("kalam-folder-test-{tag}-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("scratch dir");
         dir
     }
@@ -185,11 +177,8 @@ mod tests {
             "Nausicaä",
             "3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6",
         );
-        let with_empty = crate::paths::book_folder_name(
-            "",
-            "Nausicaä",
-            "3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6",
-        );
+        let with_empty =
+            crate::paths::book_folder_name("", "Nausicaä", "3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6");
         assert!(with_unknown.starts_with("Nausicaä "), "got {with_unknown}");
         assert!(with_empty.starts_with("Nausicaä "), "got {with_empty}");
     }
@@ -202,21 +191,25 @@ mod tests {
             "3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6",
         );
         assert!(!name.contains('/'), "slash must go: {name}");
-        assert!(!name.contains('\u{7f}'), "control character must go: {name}");
+        assert!(
+            !name.contains('\u{7f}'),
+            "control character must go: {name}"
+        );
         assert!(!name.contains('\t'), "tab becomes a single space: {name}");
         // 255 bytes is the usual file-system name limit; stay well under.
-        assert!(name.len() < 160, "name too long at {} bytes: {name}", name.len());
+        assert!(
+            name.len() < 160,
+            "name too long at {} bytes: {name}",
+            name.len()
+        );
         // The short id is never sacrificed to truncation.
         assert!(name.ends_with(" 3f2ab91c"), "got {name}");
     }
 
     #[test]
     fn folder_name_falls_back_to_untitled() {
-        let name = crate::paths::book_folder_name(
-            "Author",
-            "",
-            "3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6",
-        );
+        let name =
+            crate::paths::book_folder_name("Author", "", "3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6");
         assert!(name.starts_with("Author - Untitled "), "got {name}");
     }
 
@@ -269,8 +262,16 @@ mod tests {
         assert!(rename_scratch(&lib, uuid_a, "Author", "Same Title"));
         // The second must not clobber the first: it takes the full uuid.
         assert!(rename_scratch(&lib, uuid_b, "Author", "Same Title"));
-        let short = lib.join(crate::paths::book_folder_name("Author", "Same Title", uuid_b));
-        let full = lib.join(crate::paths::book_folder_name_full("Author", "Same Title", uuid_b));
+        let short = lib.join(crate::paths::book_folder_name(
+            "Author",
+            "Same Title",
+            uuid_b,
+        ));
+        let full = lib.join(crate::paths::book_folder_name_full(
+            "Author",
+            "Same Title",
+            uuid_b,
+        ));
         assert!(short.is_dir(), "first book keeps the short name");
         assert!(full.is_dir(), "second book falls back to the full uuid");
         assert!(full.to_string_lossy().ends_with(uuid_b));
@@ -306,8 +307,14 @@ mod tests {
             "Second Title"
         ));
         let after_second = crate::paths::book_folder_name("Author", "Second Title", uuid);
-        assert!(lib.join(&after_second).is_dir(), "renamed to {after_second}");
-        assert!(!lib.join(&after_first).exists(), "old readable name is gone");
+        assert!(
+            lib.join(&after_second).is_dir(),
+            "renamed to {after_second}"
+        );
+        assert!(
+            !lib.join(&after_first).exists(),
+            "old readable name is gone"
+        );
 
         let _ = std::fs::remove_dir_all(&lib);
     }

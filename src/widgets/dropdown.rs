@@ -132,9 +132,7 @@ pub fn dropdown(
     on_footer: impl Fn() + 'static,
 ) -> Dropdown {
     let options = Rc::new(options);
-    let selected_cell = Rc::new(Cell::new(
-        selected.min(options.len().saturating_sub(1)),
-    ));
+    let selected_cell = Rc::new(Cell::new(selected.min(options.len().saturating_sub(1))));
 
     // The field: value text left, chevron right (section 43).
     let value = gtk::Label::new(None);

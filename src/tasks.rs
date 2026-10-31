@@ -272,7 +272,7 @@ fn finish(id: u64) {
         })
     });
     let Some((label, cancelled, failed, hidden, detail, items)) = done else {
-        return
+        return;
     };
     if hidden {
         return; // Housekeeping never enters the jobs history.
@@ -340,8 +340,7 @@ fn spawn_with<T, W, P, D>(
     work: W,
     on_progress: P,
     on_done: D,
-)
-where
+) where
     T: Send + 'static,
     W: FnOnce(Reporter) -> T + Send + 'static,
     P: Fn(Update) + 'static,
@@ -734,7 +733,10 @@ mod tests {
         assert!(cancel(90_021));
         // Still registered — cancellation only sets a flag; the task leaves the
         // registry when it actually finishes — so this must still succeed.
-        assert!(cancel(90_021), "the task is still running, so so is the flag");
+        assert!(
+            cancel(90_021),
+            "the task is still running, so so is the flag"
+        );
         unregister(90_021);
         assert_eq!(running_count(), before);
     }
@@ -871,7 +873,10 @@ mod tests {
         });
 
         assert_eq!(value.get(), 42, "the result never reached on_done");
-        assert!(done.get(), "on_done never ran, so the future did not finish");
+        assert!(
+            done.get(),
+            "on_done never ran, so the future did not finish"
+        );
         assert!(
             progress.get(),
             "the progress report never reached the main thread"
@@ -906,7 +911,12 @@ mod tests {
 
         let ctx = gtk::glib::MainContext::default();
         ctx.block_on(async move {
-            spawn_internal("internal chore", |_| 1u32, |_| {}, move |_| done_cb.set(true));
+            spawn_internal(
+                "internal chore",
+                |_| 1u32,
+                |_| {},
+                move |_| done_cb.set(true),
+            );
             for _ in 0..500 {
                 if done_poll.get() {
                     break;

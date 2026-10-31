@@ -26,7 +26,9 @@ fn value_from_x(x: f64, width: i32) -> u8 {
         return 0;
     }
     let scaled = (x.max(0.0) / width as f64) * CONTENT_WIDTH as f64;
-    let star = (scaled / STAR_PITCH).floor().clamp(0.0, (STAR_COUNT - 1) as f64) as usize;
+    let star = (scaled / STAR_PITCH)
+        .floor()
+        .clamp(0.0, (STAR_COUNT - 1) as f64) as usize;
     let offset = scaled - star as f64 * STAR_PITCH;
     if offset < STAR_SIZE / 2.0 {
         (star * 2 + 1) as u8

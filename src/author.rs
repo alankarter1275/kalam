@@ -224,7 +224,10 @@ pub fn fetch_and_cache_author(
             if let Some(profile) = existing {
                 return Ok(profile);
             }
-            return Err(format!("Could not find online info for {}.", requested_display));
+            return Err(format!(
+                "Could not find online info for {}.",
+                requested_display
+            ));
         }
         Err(err) => {
             if let Some(profile) = existing {
@@ -425,10 +428,11 @@ fn fetch_author_profile(
         .map(|entry| {
             let key = entry.key.trim();
             let title = entry.title.trim();
-            let prev = existing_works_by_key
-                .get(key)
-                .cloned()
-                .or_else(|| existing_works_by_title.get(&normalize_title(title)).cloned());
+            let prev = existing_works_by_key.get(key).cloned().or_else(|| {
+                existing_works_by_title
+                    .get(&normalize_title(title))
+                    .cloned()
+            });
 
             AuthorWork {
                 title: title.to_string(),
@@ -442,12 +446,25 @@ fn fetch_author_profile(
                     .filter(|subject| subject.len() <= 32)
                     .take(4)
                     .collect(),
-                cover_id: entry.covers.into_iter().next().or_else(|| prev.as_ref().and_then(|p| p.cover_id)),
+                cover_id: entry
+                    .covers
+                    .into_iter()
+                    .next()
+                    .or_else(|| prev.as_ref().and_then(|p| p.cover_id)),
                 cover_file: prev.as_ref().and_then(|p| p.cover_file.clone()),
                 work_key: entry.key,
-                series_key: prev.as_ref().map(|p| p.series_key.clone()).unwrap_or_default(),
-                series_name: prev.as_ref().map(|p| p.series_name.clone()).unwrap_or_default(),
-                series_position: prev.as_ref().map(|p| p.series_position.clone()).unwrap_or_default(),
+                series_key: prev
+                    .as_ref()
+                    .map(|p| p.series_key.clone())
+                    .unwrap_or_default(),
+                series_name: prev
+                    .as_ref()
+                    .map(|p| p.series_name.clone())
+                    .unwrap_or_default(),
+                series_position: prev
+                    .as_ref()
+                    .map(|p| p.series_position.clone())
+                    .unwrap_or_default(),
                 rating_average: prev.as_ref().and_then(|p| p.rating_average),
                 rating_count: prev.as_ref().map(|p| p.rating_count).unwrap_or(0),
             }
@@ -544,7 +561,8 @@ fn enrich_author_work(
                         if !series_key.is_empty() {
                             work.series_key = series_key.clone();
                             work.series_position = collapse_ws(&series.position);
-                            let name = load_series_name(catalog, series_names, &series_key, rate_limited);
+                            let name =
+                                load_series_name(catalog, series_names, &series_key, rate_limited);
                             if !name.is_empty() {
                                 work.series_name = name;
                             }
@@ -552,7 +570,10 @@ fn enrich_author_work(
                     }
                 }
                 Err(err) => {
-                    if err.contains("429") || err.contains("Limited") || err.contains("Too Many Requests") {
+                    if err.contains("429")
+                        || err.contains("Limited")
+                        || err.contains("Too Many Requests")
+                    {
                         *rate_limited = true;
                     }
                 }
@@ -568,7 +589,10 @@ fn enrich_author_work(
                     }
                 }
                 Err(err) => {
-                    if err.contains("429") || err.contains("Limited") || err.contains("Too Many Requests") {
+                    if err.contains("429")
+                        || err.contains("Limited")
+                        || err.contains("Too Many Requests")
+                    {
                         *rate_limited = true;
                     }
                 }
@@ -624,7 +648,10 @@ fn fetch_work_cover(
         Ok(_) => return Ok(None),
         Err(err) => {
             let err_str = err.to_string();
-            if err_str.contains("429") || err_str.contains("Limited") || err_str.contains("Too Many Requests") {
+            if err_str.contains("429")
+                || err_str.contains("Limited")
+                || err_str.contains("Too Many Requests")
+            {
                 *rate_limited = true;
             }
             return Ok(None);

@@ -168,11 +168,9 @@ fn place_chapter(
     // Repoint the row. When this fails, the file is already placed and the
     // row still says `book.cbz` — resolution finds the old (missing)
     // location this run, and the next pass adopts the moved file above.
-    if let Err(err) = catalog.set_book_file_names(
-        book.id,
-        Some(&new_file_rel),
-        new_cover_rel.as_deref(),
-    ) {
+    if let Err(err) =
+        catalog.set_book_file_names(book.id, Some(&new_file_rel), new_cover_rel.as_deref())
+    {
         log::warn!(
             "comic chapter {}: moved to {} but the row could not be updated ({err}); \
              the next pass will adopt it",
@@ -187,9 +185,7 @@ fn place_chapter(
 /// The folder a legacy chapter's files live in: the parent of the
 /// (not yet repointed) file path.
 fn old_dir_of(book: &crate::models::Book) -> &Path {
-    book.file_path
-        .parent()
-        .unwrap_or_else(|| Path::new(""))
+    book.file_path.parent().unwrap_or_else(|| Path::new(""))
 }
 
 /// Move a book's cover and sidecar out of `old_dir` into the series
@@ -285,7 +281,9 @@ fn sweep_old_folder(
     }
 
     if has_sidecar {
-        let new_sidecar = series_dir.join(".kalam").join(format!("{}.json", book.uuid));
+        let new_sidecar = series_dir
+            .join(".kalam")
+            .join(format!("{}.json", book.uuid));
         if std::fs::create_dir_all(series_dir.join(".kalam")).is_ok() {
             let _ = std::fs::rename(old_dir.join("kalam.json"), &new_sidecar);
         }
@@ -303,11 +301,7 @@ fn sweep_old_folder(
 /// 2026-10-02: every chapter file had moved into its series folder, every
 /// cover had stayed behind. Cheap when there is nothing to do: one
 /// directory existence check per chapter.
-fn adopt_leftovers(
-    catalog: &Catalog,
-    chapter_number: f32,
-    book: &crate::models::Book,
-) -> bool {
+fn adopt_leftovers(catalog: &Catalog, chapter_number: f32, book: &crate::models::Book) -> bool {
     // Only a row that still names its cover the legacy way — a bare name,
     // or none at all — can have leftovers to adopt.
     let cover_is_legacy = book
@@ -338,7 +332,11 @@ fn adopt_leftovers(
         );
         return false;
     }
-    log::info!("comic chapter {}: adopted leftover cover from {}", book.uuid, old_dir.display());
+    log::info!(
+        "comic chapter {}: adopted leftover cover from {}",
+        book.uuid,
+        old_dir.display()
+    );
     true
 }
 
@@ -451,11 +449,14 @@ mod tests {
         // already carries the series folder.
         assert!(place_chapter(&cat, s_id, 3.0, &placed));
         let after = cat.get_book(id).unwrap().unwrap();
-        assert_eq!(after.file_name, before, "a placed chapter must not move again");
+        assert_eq!(
+            after.file_name, before,
+            "a placed chapter must not move again"
+        );
 
-        let _ = std::fs::remove_dir_all(crate::paths::library_dir().join(
-            cat.series_folder_name_for(s_id).unwrap(),
-        ));
+        let _ = std::fs::remove_dir_all(
+            crate::paths::library_dir().join(cat.series_folder_name_for(s_id).unwrap()),
+        );
     }
 
     #[test]
@@ -478,7 +479,9 @@ mod tests {
                 &[],
             )
             .unwrap();
-        let s_id = cat.get_or_create_comic_series(&series, Some("Hero"), None).unwrap();
+        let s_id = cat
+            .get_or_create_comic_series(&series, Some("Hero"), None)
+            .unwrap();
         cat.add_comic_chapter(s_id, id, 7.0, None, &series).unwrap();
 
         let book = cat.get_book(id).unwrap().unwrap();
@@ -520,7 +523,9 @@ mod tests {
                 &[],
             )
             .unwrap();
-        let s_id = cat.get_or_create_comic_series(&series, Some("Hero"), None).unwrap();
+        let s_id = cat
+            .get_or_create_comic_series(&series, Some("Hero"), None)
+            .unwrap();
         cat.add_comic_chapter(s_id, id, 4.0, None, &series).unwrap();
 
         let book = cat.get_book(id).unwrap().unwrap();
@@ -552,7 +557,12 @@ mod tests {
         let series = unique_series("Placement Six");
         let uuid = format!("{}-0006", uuid::Uuid::new_v4());
         let (id, s_id) = seed_legacy_chapter(&cat, &series, &uuid, 10.0);
-        assert!(place_chapter(&cat, s_id, 10.0, &cat.get_book(id).unwrap().unwrap()));
+        assert!(place_chapter(
+            &cat,
+            s_id,
+            10.0,
+            &cat.get_book(id).unwrap().unwrap()
+        ));
 
         // Recreate the stranded state faithfully: the series' covers/
         // holds nothing (the cover never made it there in the field), the
@@ -567,7 +577,8 @@ mod tests {
         let legacy = crate::paths::book_dir(&uuid);
         std::fs::create_dir_all(&legacy).unwrap();
         std::fs::write(legacy.join("cover.jpg"), b"stranded cover").unwrap();
-        cat.set_book_file_names(id, None, Some("cover.jpg")).unwrap();
+        cat.set_book_file_names(id, None, Some("cover.jpg"))
+            .unwrap();
 
         let placed = cat.get_book(id).unwrap().unwrap();
         assert!(adopt_leftovers(&cat, 10.0, &placed), "adoption must run");
@@ -596,9 +607,12 @@ mod tests {
         let cat = Catalog::open_in_memory().unwrap();
         let series_a = unique_series("Placement Seven A");
         let series_b = unique_series("Placement Seven B");
-        let (a1, s_a) = seed_legacy_chapter(&cat, &series_a, "aaaa1111-1111-1111-1111-111111111111", 1.0);
-        let (a2, _) = seed_legacy_chapter(&cat, &series_a, "aaaa2222-2222-2222-2222-222222222222", 2.0);
-        let (b1, s_b) = seed_legacy_chapter(&cat, &series_b, "bbbb3333-3333-3333-3333-333333333333", 1.0);
+        let (a1, s_a) =
+            seed_legacy_chapter(&cat, &series_a, "aaaa1111-1111-1111-1111-111111111111", 1.0);
+        let (a2, _) =
+            seed_legacy_chapter(&cat, &series_a, "aaaa2222-2222-2222-2222-222222222222", 2.0);
+        let (b1, s_b) =
+            seed_legacy_chapter(&cat, &series_b, "bbbb3333-3333-3333-3333-333333333333", 1.0);
         // Place everything, covers included. The stem comes from the
         // chapter number, same as the real pass.
         for (id, s_id, ch) in [(a1, s_a, 1.0), (a2, s_a, 2.0), (b1, s_b, 1.0)] {
@@ -613,18 +627,27 @@ mod tests {
 
         cat.delete_book(a1).unwrap();
         assert!(cat.get_book(a1).unwrap().is_none());
-        assert!(cat.get_book(a2).unwrap().is_none(), "the sibling chapter must go too");
-        assert!(cat.get_comic_series(s_a).unwrap().is_none(), "the series row must go");
+        assert!(
+            cat.get_book(a2).unwrap().is_none(),
+            "the sibling chapter must go too"
+        );
+        assert!(
+            cat.get_comic_series(s_a).unwrap().is_none(),
+            "the series row must go"
+        );
         assert!(
             !crate::paths::library_dir().join(&folder_a).exists(),
             "the series folder must be gone"
         );
-        assert!(cat.get_book(b1).unwrap().is_some(), "other series untouched");
+        assert!(
+            cat.get_book(b1).unwrap().is_some(),
+            "other series untouched"
+        );
         assert!(cat.get_comic_series(s_b).unwrap().is_some());
 
-        let _ = std::fs::remove_dir_all(crate::paths::library_dir().join(
-            cat.series_folder_name_for(s_b).unwrap(),
-        ));
+        let _ = std::fs::remove_dir_all(
+            crate::paths::library_dir().join(cat.series_folder_name_for(s_b).unwrap()),
+        );
     }
 
     #[test]
@@ -645,7 +668,11 @@ mod tests {
         let series_dir = crate::paths::library_dir().join(&folder);
         assert!(series_dir.join("0005.cbz").is_file());
         let suffixed = series_dir.join(format!("0005 {}.cbz", short_id(uuid_b)));
-        assert!(suffixed.is_file(), "second chapter at {}", suffixed.display());
+        assert!(
+            suffixed.is_file(),
+            "second chapter at {}",
+            suffixed.display()
+        );
 
         // Both rows resolve to their own file.
         for id in [id_a, id_b] {

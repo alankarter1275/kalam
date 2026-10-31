@@ -480,9 +480,7 @@ fn assert_constant_in_page_rows(
         "{label}: seeded {few_rows} vs {many_rows} rows — the seed is broken, \
          so this test cannot fail and is not a test (§19)"
     );
-    println!(
-        "{label:<44} {few_stmts} statements @{few_rows} rows, {many_stmts} @{many_rows}"
-    );
+    println!("{label:<44} {few_stmts} statements @{few_rows} rows, {many_stmts} @{many_rows}");
     assert_eq!(
         few_stmts, many_stmts,
         "{label}: {few_stmts} SQL statements for {few_rows} rows but {many_stmts} for \
@@ -507,10 +505,7 @@ fn reading_list_snapshot_does_not_scale_with_entries() {
         svc.catalog()
             .count_queries(|| out.set(svc.reading_list().entries.len()))
     };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, &ra);
     let b = rows(&many, &rb);
     assert_constant_in_page_rows("service.reading_list()", ra.get(), rb.get(), a, b);
@@ -528,25 +523,14 @@ fn shelf_detail_snapshot_does_not_scale_with_shelf_books() {
         }
         shelf
     });
-    let rows =
-        |svc: &LibraryService, shelf: i64, out: &std::cell::Cell<usize>| {
-            svc.catalog().count_queries(|| {
-                out.set(svc.shelf_detail(shelf, SortKey::Title, "").books.len())
-            })
-        };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let rows = |svc: &LibraryService, shelf: i64, out: &std::cell::Cell<usize>| {
+        svc.catalog()
+            .count_queries(|| out.set(svc.shelf_detail(shelf, SortKey::Title, "").books.len()))
+    };
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, sa, &ra);
     let b = rows(&many, sb, &rb);
-    assert_constant_in_page_rows(
-        "service.shelf_detail()",
-        ra.get(),
-        rb.get(),
-        a,
-        b,
-    );
+    assert_constant_in_page_rows("service.shelf_detail()", ra.get(), rb.get(), a, b);
 }
 
 #[test]
@@ -573,10 +557,7 @@ fn quotes_snapshot_does_not_scale_with_saved_quotes() {
         svc.catalog()
             .count_queries(|| out.set(svc.quotes("").quotes.len()))
     };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, &ra);
     let b = rows(&many, &rb);
     assert_constant_in_page_rows("service.quotes()", ra.get(), rb.get(), a, b);
@@ -586,18 +567,22 @@ fn quotes_snapshot_does_not_scale_with_saved_quotes() {
 fn words_snapshot_does_not_scale_with_saved_words() {
     let (few, many, (), ()) = few_and_many_page(|cat, ids| {
         for (i, _id) in ids.iter().enumerate() {
-            cat.insert_saved_word(&format!("budget{i:02}"), "a definition", None, None, None, None)
-                .expect("seed word");
+            cat.insert_saved_word(
+                &format!("budget{i:02}"),
+                "a definition",
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("seed word");
         }
     });
     let rows = |svc: &LibraryService, out: &std::cell::Cell<usize>| {
         svc.catalog()
             .count_queries(|| out.set(svc.words("", None).words.len()))
     };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, &ra);
     let b = rows(&many, &rb);
     assert_constant_in_page_rows("service.words()", ra.get(), rb.get(), a, b);
@@ -615,10 +600,7 @@ fn history_snapshot_does_not_scale_with_events() {
         svc.catalog()
             .count_queries(|| out.set(svc.history(None, "", 100).events.len()))
     };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, &ra);
     let b = rows(&many, &rb);
     assert_constant_in_page_rows("service.history()", ra.get(), rb.get(), a, b);
@@ -638,19 +620,10 @@ fn lookup_history_snapshot_does_not_scale_with_lookups() {
         svc.catalog()
             .count_queries(|| out.set(svc.lookup_history("", 100).lookups.len()))
     };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, &ra);
     let b = rows(&many, &rb);
-    assert_constant_in_page_rows(
-        "service.lookup_history()",
-        ra.get(),
-        rb.get(),
-        a,
-        b,
-    );
+    assert_constant_in_page_rows("service.lookup_history()", ra.get(), rb.get(), a, b);
 }
 
 // ---------------------------------------------------------------------------
@@ -688,10 +661,7 @@ fn home_snapshot_does_not_scale_with_reading_list_size() {
         svc.catalog()
             .count_queries(|| out.set(svc.home().reading_list.len()))
     };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, &ra);
     let b = rows(&many, &rb);
     assert_constant_in_page_rows("service.home()", ra.get(), rb.get(), a, b);
@@ -713,10 +683,7 @@ fn dashboard_snapshot_does_not_scale_with_events() {
             let _ = svc.dashboard(10);
         })
     };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, &ra);
     let b = rows(&many, &rb);
     assert_constant_in_page_rows("service.dashboard(10)", ra.get(), rb.get(), a, b);
@@ -727,31 +694,19 @@ fn book_stats_snapshot_does_not_scale_with_sessions() {
     let (few, many, (), ()) = few_and_many_page(|cat, ids| {
         let book = ids[0];
         for _ in 0..ids.len() {
-            let session = cat
-                .start_reading_session(book, 0)
-                .expect("start session");
+            let session = cat.start_reading_session(book, 0).expect("start session");
             cat.end_reading_session(session, 120, 5)
                 .expect("end session");
         }
     });
     let rows = |svc: &LibraryService, book: i64, out: &std::cell::Cell<usize>| {
-        svc.catalog().count_queries(|| {
-            out.set(svc.book_stats(book, 7, 3).session_count as usize)
-        })
+        svc.catalog()
+            .count_queries(|| out.set(svc.book_stats(book, 7, 3).session_count as usize))
     };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, 1, &ra);
     let b = rows(&many, 1, &rb);
-    assert_constant_in_page_rows(
-        "service.book_stats()",
-        ra.get(),
-        rb.get(),
-        a,
-        b,
-    );
+    assert_constant_in_page_rows("service.book_stats()", ra.get(), rb.get(), a, b);
 }
 
 #[test]
@@ -779,19 +734,10 @@ fn book_page_snapshot_does_not_scale_with_annotations() {
         svc.catalog()
             .count_queries(|| out.set(svc.book_page(book).annotations.len()))
     };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, 1, &ra);
     let b = rows(&many, 1, &rb);
-    assert_constant_in_page_rows(
-        "service.book_page()",
-        ra.get(),
-        rb.get(),
-        a,
-        b,
-    );
+    assert_constant_in_page_rows("service.book_page()", ra.get(), rb.get(), a, b);
 }
 
 #[test]
@@ -811,10 +757,7 @@ fn settings_snapshot_does_not_scale_with_shelves() {
         svc.catalog()
             .count_queries(|| out.set(svc.settings().shelves.len()))
     };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, &ra);
     let b = rows(&many, &rb);
     assert_constant_in_page_rows("service.settings()", ra.get(), rb.get(), a, b);
@@ -843,23 +786,13 @@ fn author_page_snapshot_does_not_scale_with_owned_books() {
         }
     });
     let rows = |svc: &LibraryService, out: &std::cell::Cell<usize>| {
-        svc.catalog().count_queries(|| {
-            out.set(svc.author_page("Budget Author").owned_books.len())
-        })
+        svc.catalog()
+            .count_queries(|| out.set(svc.author_page("Budget Author").owned_books.len()))
     };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, &ra);
     let b = rows(&many, &rb);
-    assert_constant_in_page_rows(
-        "service.author_page()",
-        ra.get(),
-        rb.get(),
-        a,
-        b,
-    );
+    assert_constant_in_page_rows("service.author_page()", ra.get(), rb.get(), a, b);
 }
 
 // --- step 4, increment 3: the comic axis — the pickers, test-budgeted -----
@@ -948,19 +881,10 @@ fn reading_list_picker_does_not_scale_with_series() {
         svc.catalog()
             .count_queries(|| out.set(svc.reading_list_picker("").len()))
     };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, &ra);
     let b = rows(&many, &rb);
-    assert_constant_in_page_rows(
-        "service.reading_list_picker()",
-        ra.get(),
-        rb.get(),
-        a,
-        b,
-    );
+    assert_constant_in_page_rows("service.reading_list_picker()", ra.get(), rb.get(), a, b);
 }
 
 #[test]
@@ -971,7 +895,8 @@ fn shelf_picker_does_not_scale_with_series() {
             .create_shelf("Picker Budget", crate::db::ShelfKind::Manual, "", "")
             .expect("seed shelf");
         for id in chapters {
-            cat.add_book_to_shelf(shelf_id, id).expect("seed shelf book");
+            cat.add_book_to_shelf(shelf_id, id)
+                .expect("seed shelf book");
         }
         shelf_id
     });
@@ -979,10 +904,7 @@ fn shelf_picker_does_not_scale_with_series() {
         svc.catalog()
             .count_queries(|| out.set(svc.shelf_picker(shelf, "").len()))
     };
-    let (ra, rb) = (
-        std::cell::Cell::new(0usize),
-        std::cell::Cell::new(0usize),
-    );
+    let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, shelf_a, &ra);
     let b = rows(&many, shelf_b, &rb);
     assert_constant_in_page_rows("service.shelf_picker()", ra.get(), rb.get(), a, b);

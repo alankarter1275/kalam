@@ -153,7 +153,10 @@ mod tests {
 
     #[test]
     fn normalise_removes_punctuation_and_case() {
-        assert_eq!(normalise("The Fellowship of the Ring!"), "thefellowshipofthering");
+        assert_eq!(
+            normalise("The Fellowship of the Ring!"),
+            "thefellowshipofthering"
+        );
         assert_eq!(normalise("Harry Potter (Book 1)"), "harrypotterbook1");
     }
 

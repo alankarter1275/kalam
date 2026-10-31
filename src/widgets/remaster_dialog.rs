@@ -40,7 +40,10 @@ pub fn present(
     let body = gtk::Box::new(gtk::Orientation::Vertical, 14);
 
     let intro = gtk::Label::new(Some(&match page_count {
-        Some(n) => format!("“{}” — {} pages. Untouched pages are copied through unchanged.", book.title, n),
+        Some(n) => format!(
+            "“{}” — {} pages. Untouched pages are copied through unchanged.",
+            book.title, n
+        ),
         None => format!("“{}”.", book.title),
     }));
     intro.set_halign(gtk::Align::Start);
@@ -50,12 +53,14 @@ pub fn present(
     body.append(&intro);
 
     // --- Scale ---------------------------------------------------------
-    let scale_drop = gtk::DropDown::from_strings(&["1.5× — gentle", "2× — recommended", "3× — heavy"]);
+    let scale_drop =
+        gtk::DropDown::from_strings(&["1.5× — gentle", "2× — recommended", "3× — heavy"]);
     scale_drop.set_selected(1);
     body.append(&row("How much to enlarge", &scale_drop));
 
     // --- Which pages ---------------------------------------------------
-    let pages_drop = gtk::DropDown::from_strings(&["All pages", "Only small pages", "A page range"]);
+    let pages_drop =
+        gtk::DropDown::from_strings(&["All pages", "Only small pages", "A page range"]);
 
     let width_spin = gtk::SpinButton::with_range(100.0, 8000.0, 50.0);
     width_spin.set_value(1400.0);
@@ -95,7 +100,8 @@ pub fn present(
     body.append(&row("Where the result goes", &output_drop));
 
     // --- Format --------------------------------------------------------
-    let format_drop = gtk::DropDown::from_strings(&["JPEG — smaller files", "PNG — lossless, larger"]);
+    let format_drop =
+        gtk::DropDown::from_strings(&["JPEG — smaller files", "PNG — lossless, larger"]);
 
     let quality_spin = gtk::SpinButton::with_range(60.0, 100.0, 1.0);
     quality_spin.set_value(90.0);
@@ -202,7 +208,11 @@ fn start_remaster(
 ) {
     let book = book.clone();
     let catalog = catalog.clone();
-    let opts = crate::comics::RemasterOptions { scale, pages, format };
+    let opts = crate::comics::RemasterOptions {
+        scale,
+        pages,
+        format,
+    };
     let ext = book
         .file_path
         .extension()
@@ -221,11 +231,12 @@ fn start_remaster(
             let tmp = dir.join(format!(".kalam-remaster-tmp.{ext}"));
 
             let outcome = (|| -> Result<Option<String>, String> {
-                let report = crate::comics::remaster_comic_archive(&path, &tmp, &opts, |done, total| {
-                    reporter.step(done, total, format!("Page {done} of {total}"));
-                    !reporter.cancelled()
-                })
-                .map_err(|e| e.to_string())?;
+                let report =
+                    crate::comics::remaster_comic_archive(&path, &tmp, &opts, |done, total| {
+                        reporter.step(done, total, format!("Page {done} of {total}"));
+                        !reporter.cancelled()
+                    })
+                    .map_err(|e| e.to_string())?;
 
                 if replace {
                     // Backup first, then swap. If the swap fails, the
@@ -236,7 +247,9 @@ fn start_remaster(
                         .map_err(|e| format!("could not back up the original: {e}"))?;
                     if let Err(e) = std::fs::rename(&tmp, &path) {
                         let _ = std::fs::rename(&bak, &path);
-                        return Err(format!("could not move the remastered file into place: {e}"));
+                        return Err(format!(
+                            "could not move the remastered file into place: {e}"
+                        ));
                     }
                     // The file's bytes changed, so the stored hash is stale.
                     // Left alone that would break duplicate detection on

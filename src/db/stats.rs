@@ -113,7 +113,10 @@ impl Catalog {
             .lock()
             .map(|c| c.total_changes() as i64)
             .unwrap_or(0);
-        total - self.activity_rows.load(std::sync::atomic::Ordering::Relaxed)
+        total
+            - self
+                .activity_rows
+                .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn library_stats(&self) -> Result<LibraryStats> {
@@ -162,8 +165,7 @@ impl Catalog {
                   ) = 0
              )",
         );
-        let reading = one(
-            "SELECT (
+        let reading = one("SELECT (
                 SELECT COUNT(*) FROM books 
                 WHERE id NOT IN (SELECT book_id FROM comic_chapters) 
                   AND progress > 0 AND progress < 100 AND IFNULL(finished_at,'') = ''
@@ -179,8 +181,7 @@ impl Catalog {
                     JOIN books b ON b.id = cc.book_id 
                     WHERE cc.series_id = s.id AND b.progress < 100 AND IFNULL(b.finished_at,'') = ''
                 )
-             )",
-        );
+             )");
         let unread = total_books.saturating_sub(finished).saturating_sub(reading);
 
         let mut s = LibraryStats {

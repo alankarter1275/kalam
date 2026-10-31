@@ -245,7 +245,8 @@ fn parse_block(
             j += 1;
         }
         let body = &text[body_start..(j - 1).min(text.len())];
-        let first = prelude_start + (text[prelude_start..i].len() - text[prelude_start..i].trim_start().len());
+        let first = prelude_start
+            + (text[prelude_start..i].len() - text[prelude_start..i].trim_start().len());
         let line = base_line + line_of(text, first);
 
         if prelude.starts_with('@') {
@@ -287,7 +288,9 @@ pub fn parse_declarations(body: &str) -> Vec<CssDecl> {
     let mut out = Vec::new();
     for part in split_top(body, ';') {
         let part = part.trim();
-        let Some(colon) = part.find(':') else { continue };
+        let Some(colon) = part.find(':') else {
+            continue;
+        };
         let property = part[..colon].trim().to_ascii_lowercase();
         let mut value = part[colon + 1..].trim().to_string();
         let important = value.to_ascii_lowercase().ends_with("!important");
@@ -549,7 +552,10 @@ fn compound_parts(compound: &str) -> Vec<Part> {
                 parts.push(Part::Class);
             }
             b'[' => {
-                let end = compound[i..].find(']').map(|n| i + n).unwrap_or(bytes.len() - 1);
+                let end = compound[i..]
+                    .find(']')
+                    .map(|n| i + n)
+                    .unwrap_or(bytes.len() - 1);
                 parts.push(Part::Attr);
                 i = end + 1;
             }
@@ -632,7 +638,10 @@ fn compound_matches(compound: &str, elem: &Elem) -> bool {
                 i = j;
             }
             b'[' => {
-                let end = compound[i..].find(']').map(|n| i + n).unwrap_or(bytes.len() - 1);
+                let end = compound[i..]
+                    .find(']')
+                    .map(|n| i + n)
+                    .unwrap_or(bytes.len() - 1);
                 if !attr_matches(&compound[i + 1..end], elem) {
                     return false;
                 }
@@ -723,7 +732,11 @@ fn attr_matches(inside: &str, elem: &Elem) -> bool {
 }
 
 fn line_of(text: &str, byte: usize) -> usize {
-    text[..byte.min(text.len())].bytes().filter(|b| *b == b'\n').count() + 1
+    text[..byte.min(text.len())]
+        .bytes()
+        .filter(|b| *b == b'\n')
+        .count()
+        + 1
 }
 
 #[cfg(test)]
@@ -753,7 +766,8 @@ mod tests {
     #[test]
     fn matches_descendant_child_and_attrs() {
         let mut p = elem("p", None, &["note"]);
-        p.attrs.push(("epub:type".to_string(), "footnote".to_string()));
+        p.attrs
+            .push(("epub:type".to_string(), "footnote".to_string()));
         let chain = vec![elem("body", None, &[]), elem("section", Some("s1"), &[]), p];
         assert!(selector_matches("p.note", &chain).is_some());
         assert!(selector_matches("body p", &chain).is_some());

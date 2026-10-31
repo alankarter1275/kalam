@@ -1,11 +1,14 @@
-use crate::sources::{RemoteBookCard, SearchPage, SourceManager, Source};
+use crate::sources::{RemoteBookCard, SearchPage, Source, SourceManager};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum BrowseOut {
-    OpenRemoteBook { source_id: String, remote_id: String },
+    OpenRemoteBook {
+        source_id: String,
+        remote_id: String,
+    },
 }
 
 #[derive(Debug)]
@@ -87,8 +90,12 @@ impl BrowseModel {
                 move |_| source.search(&q, page_num, &filters),
                 |_| {},
                 move |res| match res {
-                    Ok(page) => { let _ = s.send(BrowseMsg::SearchSuccess(page)); }
-                    Err(e)   => { let _ = s.send(BrowseMsg::SearchFailed(e.to_string())); }
+                    Ok(page) => {
+                        let _ = s.send(BrowseMsg::SearchSuccess(page));
+                    }
+                    Err(e) => {
+                        let _ = s.send(BrowseMsg::SearchFailed(e.to_string()));
+                    }
                 },
             );
         } else {
@@ -169,7 +176,7 @@ impl Component for BrowseModel {
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 16,
-                    
+
                     #[name = "grid_box"]
                     gtk::FlowBox {
                         set_selection_mode: gtk::SelectionMode::None,
@@ -180,7 +187,7 @@ impl Component for BrowseModel {
                         set_row_spacing: 12,
                         set_column_spacing: 12,
                     },
-                    
+
                     gtk::Button {
                         set_label: "Load More",
                         add_css_class: "suggested-action",
@@ -207,9 +214,14 @@ impl Component for BrowseModel {
         let source_names: Vec<String> = sources.iter().map(|s| s.name().to_string()).collect();
 
         let str_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
-        widgets.source_combo.set_model(Some(&gtk::StringList::new(&str_refs)));
+        widgets
+            .source_combo
+            .set_model(Some(&gtk::StringList::new(&str_refs)));
 
-        let selected_idx = source_ids.iter().position(|id| id == &model.source_id).unwrap_or(0);
+        let selected_idx = source_ids
+            .iter()
+            .position(|id| id == &model.source_id)
+            .unwrap_or(0);
         widgets.source_combo.set_selected(selected_idx as u32);
 
         let s_source = sender.clone();
@@ -274,7 +286,7 @@ impl Component for BrowseModel {
             BrowseMsg::SearchSuccess(page) => {
                 self.is_loading = false;
                 self.has_more = page.has_more;
-                
+
                 if self.page == 1 {
                     self.results = page.results.clone();
                     // Clear previous grid children
@@ -305,8 +317,7 @@ impl Component for BrowseModel {
                     card.append(&pic);
 
                     // Kick off cover fetch in background
-                    if let (Some(url), Some(source)) =
-                        (&res.cover_url, self.active_source.clone())
+                    if let (Some(url), Some(source)) = (&res.cover_url, self.active_source.clone())
                     {
                         let url = url.clone();
                         let remote_id = res.remote_id.clone();
@@ -327,10 +338,7 @@ impl Component for BrowseModel {
                             |_| {},
                             move |res| {
                                 if let Ok(pixels) = res {
-                                    let _ = s.send(BrowseMsg::CoverLoaded {
-                                        remote_id,
-                                        pixels,
-                                    });
+                                    let _ = s.send(BrowseMsg::CoverLoaded { remote_id, pixels });
                                 }
                             },
                         );
@@ -379,15 +387,14 @@ impl Component for BrowseModel {
                                     // The wrap the worker-side decode bought us:
                                     // a pointer copy into a texture, not a decode.
                                     let bytes = gtk::glib::Bytes::from_owned(pixels.rgba);
-                                    let texture: gtk::gdk::Texture =
-                                        gtk::gdk::MemoryTexture::new(
-                                            pixels.width,
-                                            pixels.height,
-                                            gtk::gdk::MemoryFormat::R8g8b8a8,
-                                            &bytes,
-                                            pixels.width as usize * 4,
-                                        )
-                                        .upcast();
+                                    let texture: gtk::gdk::Texture = gtk::gdk::MemoryTexture::new(
+                                        pixels.width,
+                                        pixels.height,
+                                        gtk::gdk::MemoryFormat::R8g8b8a8,
+                                        &bytes,
+                                        pixels.width as usize * 4,
+                                    )
+                                    .upcast();
                                     pic.set_paintable(Some(&texture));
                                 }
                             }
@@ -414,7 +421,6 @@ impl Component for BrowseModel {
         self.update_view(widgets, sender);
     }
 }
-
 
 fn render_dynamic_filters(
     container: &gtk::Box,
@@ -471,7 +477,11 @@ fn render_dynamic_filters(
                 let s = sender.clone();
                 let fid = filter_id.clone();
                 chk.connect_toggled(move |c| {
-                    let val = if c.is_active() { "T".to_string() } else { "".to_string() };
+                    let val = if c.is_active() {
+                        "T".to_string()
+                    } else {
+                        "".to_string()
+                    };
                     s.input(BrowseMsg::FilterChanged(fid.clone(), val));
                 });
                 box_item.append(&chk);

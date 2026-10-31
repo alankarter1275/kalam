@@ -1,16 +1,19 @@
-use std::sync::{Arc, Mutex, OnceLock};
-use std::collections::HashMap;
-use anyhow::Result;
-use crate::sources::SourceManager;
 use crate::db::Catalog;
 use crate::epub_writer::{generate_epub, WebChapter};
+use crate::sources::SourceManager;
 use crate::tasks::Reporter;
+use anyhow::Result;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 pub static DOWNLOAD_MANAGER: OnceLock<Arc<DownloadManager>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 pub enum JobStatus {
     Pending,
-    Downloading { chapter_idx: usize, total: usize },
+    Downloading {
+        chapter_idx: usize,
+        total: usize,
+    },
     Packaging,
     Done,
     /// The task's cancellation flag was set and the worker stopped between
@@ -141,7 +144,9 @@ impl DownloadManager {
         jobs: Arc<Mutex<HashMap<String, DownloadJob>>>,
         reporter: &Reporter,
     ) -> Result<()> {
-        let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
+        let source = source_mgr
+            .get(&source_id)
+            .ok_or_else(|| anyhow::anyhow!("Source not found"))?;
         let details = source.get_details(&remote_id)?;
         let remote_chapters = source.get_chapters(&remote_id)?;
 
@@ -164,12 +169,17 @@ impl DownloadManager {
             }
             locked(&jobs, |map| {
                 if let Some(j) = map.get_mut(&id) {
-                    j.status = JobStatus::Downloading { chapter_idx: i + 1, total };
+                    j.status = JobStatus::Downloading {
+                        chapter_idx: i + 1,
+                        total,
+                    };
                 }
             });
 
             // In a real app we'd add rate limiting and retries here
-            if let Ok(crate::sources::traits::ChapterContent::Html(html)) = source.get_chapter_content(&rc.chapter_id) {
+            if let Ok(crate::sources::traits::ChapterContent::Html(html)) =
+                source.get_chapter_content(&rc.chapter_id)
+            {
                 web_chapters.push(WebChapter {
                     title: rc.title.clone(),
                     html_content: html,
@@ -196,7 +206,13 @@ impl DownloadManager {
         let out_path = out_dir.join(&file_name);
 
         // Generate EPUB
-        generate_epub(&out_path, &details.title, &details.author, cover_bytes.as_deref(), web_chapters)?;
+        generate_epub(
+            &out_path,
+            &details.title,
+            &details.author,
+            cover_bytes.as_deref(),
+            web_chapters,
+        )?;
 
         // Import into Kalam Library
         let _import_res = crate::epub::import_epub(&catalog, &out_path)?;
@@ -269,10 +285,7 @@ mod tests {
             map.get_mut("a").unwrap().status = JobStatus::Cancelled;
         });
         let status = locked(&jobs, |map| map["a"].status.clone());
-        assert!(
-            matches!(status, JobStatus::Cancelled),
-            "got {status:?}"
-        );
+        assert!(matches!(status, JobStatus::Cancelled), "got {status:?}");
         assert!(!jobs.is_poisoned(), "an ordinary write must not poison");
     }
 }

@@ -22,12 +22,23 @@ pub enum TagsOut {
 #[derive(Debug)]
 pub enum TagsMsg {
     SearchChanged(String),
-    RenameTag { old_name: String, new_name: String },
-    MergeTag { source_tag: String, target_tag: String },
-    DeleteTag { tag_name: String },
+    RenameTag {
+        old_name: String,
+        new_name: String,
+    },
+    MergeTag {
+        source_tag: String,
+        target_tag: String,
+    },
+    DeleteTag {
+        tag_name: String,
+    },
     /// A background tag-cloud query finished. Carries the generation it was
     /// started with so a superseded reply cannot overwrite a newer one.
-    Loaded { gen: u64, snap: TagsSnapshot },
+    Loaded {
+        gen: u64,
+        snap: TagsSnapshot,
+    },
 }
 
 pub struct TagsModel {
@@ -125,15 +136,24 @@ impl Component for TagsModel {
                 if let Err(err) = self.catalog.rename_tag(&old_name, &new_name) {
                     crate::notify::error("Could not rename tag", &err.to_string());
                 } else {
-                    crate::notify::success("Tag renamed", &format!("Renamed #{old_name} to #{new_name}"));
+                    crate::notify::success(
+                        "Tag renamed",
+                        &format!("Renamed #{old_name} to #{new_name}"),
+                    );
                 }
                 self.reload(&sender);
             }
-            TagsMsg::MergeTag { source_tag, target_tag } => {
+            TagsMsg::MergeTag {
+                source_tag,
+                target_tag,
+            } => {
                 if let Err(err) = self.catalog.merge_tags(&source_tag, &target_tag) {
                     crate::notify::error("Could not merge tags", &err.to_string());
                 } else {
-                    crate::notify::success("Tags merged", &format!("Merged #{source_tag} into #{target_tag}"));
+                    crate::notify::success(
+                        "Tags merged",
+                        &format!("Merged #{source_tag} into #{target_tag}"),
+                    );
                 }
                 self.reload(&sender);
             }
@@ -310,7 +330,10 @@ fn rebuild(cloud: &gtk::FlowBox, tags: &[(String, i64)], sender: &ComponentSende
                 save.connect_clicked(move |_| {
                     let new_name = entry.text().trim().to_string();
                     if !new_name.is_empty() && new_name != old {
-                        s.input(TagsMsg::RenameTag { old_name: old.clone(), new_name });
+                        s.input(TagsMsg::RenameTag {
+                            old_name: old.clone(),
+                            new_name,
+                        });
                     }
                     d.close();
                 });
@@ -327,7 +350,9 @@ fn rebuild(cloud: &gtk::FlowBox, tags: &[(String, i64)], sender: &ComponentSende
         merge_btn.connect_clicked(move |anchor| {
             popover_clone.popdown();
             let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
-            let label = gtk::Label::new(Some(&format!("Move all books from “{name_clone}” into another tag:")));
+            let label = gtk::Label::new(Some(&format!(
+                "Move all books from “{name_clone}” into another tag:"
+            )));
             label.set_halign(gtk::Align::Start);
             content.append(&label);
 
@@ -366,7 +391,10 @@ fn rebuild(cloud: &gtk::FlowBox, tags: &[(String, i64)], sender: &ComponentSende
                 merge.connect_clicked(move |_| {
                     let target_tag = entry.text().trim().to_string();
                     if !target_tag.is_empty() && target_tag != src {
-                        s.input(TagsMsg::MergeTag { source_tag: src.clone(), target_tag });
+                        s.input(TagsMsg::MergeTag {
+                            source_tag: src.clone(),
+                            target_tag,
+                        });
                     }
                     d.close();
                 });
@@ -436,10 +464,16 @@ fn rebuild(cloud: &gtk::FlowBox, tags: &[(String, i64)], sender: &ComponentSende
 
 #[derive(Debug)]
 pub enum TagBooksOut {
-    OpenBook { book_id: i64 },
-    OpenBookDialog { book_id: i64 },
+    OpenBook {
+        book_id: i64,
+    },
+    OpenBookDialog {
+        book_id: i64,
+    },
     /// A comic series card — chapters are only ever seen on the series page.
-    ComicSeries { series_name: String },
+    ComicSeries {
+        series_name: String,
+    },
 }
 
 #[derive(Debug)]
@@ -447,7 +481,10 @@ pub enum TagBooksMsg {
     SortChanged(SortKey),
     /// A background tag-books query finished. Carries the generation it was
     /// started with so a superseded reply cannot overwrite a newer one.
-    Loaded { gen: u64, snap: TagBooksSnapshot },
+    Loaded {
+        gen: u64,
+        snap: TagBooksSnapshot,
+    },
 }
 
 pub struct TagBooksModel {

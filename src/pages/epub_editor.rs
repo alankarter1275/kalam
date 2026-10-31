@@ -90,12 +90,22 @@ enum AfterSave {
 #[derive(Debug)]
 pub enum EpubEditorMsg {
     Loaded(Box<Result<(Book, EpubContainer), String>>),
-    OpenFile { path: String, pin: bool },
-    CloseTab { path: String },
-    ActivateTab { path: String },
+    OpenFile {
+        path: String,
+        pin: bool,
+    },
+    CloseTab {
+        path: String,
+    },
+    ActivateTab {
+        path: String,
+    },
     ToggleSection(TreeSection),
     BufferChanged,
-    CursorMoved { line: i32, col: i32 },
+    CursorMoved {
+        line: i32,
+        col: i32,
+    },
     Format(InlineTag),
     /// Retag the current block (None = back to a paragraph).
     FormatHeading(Option<usize>),
@@ -113,7 +123,9 @@ pub enum EpubEditorMsg {
     Saved(Result<(), String>),
     BackPressed,
     DiscardAndLeave,
-    DiscardCloseTab { path: String },
+    DiscardCloseTab {
+        path: String,
+    },
     DialogSaveAndContinue,
     SetViewMode(ViewMode),
     SetRightTab(RightTab),
@@ -928,8 +940,16 @@ impl Component for EpubEditorModel {
         toolbar.set_size_request(-1, 48);
         let toolbar_format = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         for (icon, tip, tag) in [
-            ("format-text-bold-symbolic", "Bold (strong)", InlineTag::Bold),
-            ("format-text-italic-symbolic", "Italic (em)", InlineTag::Italic),
+            (
+                "format-text-bold-symbolic",
+                "Bold (strong)",
+                InlineTag::Bold,
+            ),
+            (
+                "format-text-italic-symbolic",
+                "Italic (em)",
+                InlineTag::Italic,
+            ),
         ] {
             let btn = gtk::Button::new();
             btn.add_css_class("kalam-ed-tool-btn");
@@ -1027,9 +1047,7 @@ impl Component for EpubEditorModel {
         let view_btn = gtk::Button::with_label("View");
         view_btn.add_css_class("kalam-ed-ghost");
         view_btn.set_valign(gtk::Align::Center);
-        view_btn.set_tooltip_text(Some(
-            "Editor view — font size, text wrapping, line breaks",
-        ));
+        view_btn.set_tooltip_text(Some("Editor view — font size, text wrapping, line breaks"));
         view_btn.set_focus_on_click(false);
         {
             let s = sender.clone();
@@ -1652,285 +1670,271 @@ impl Component for EpubEditorModel {
         ComponentParts { model, widgets }
     }
 
-    fn update(
-        &mut self,
-        message: Self::Input,
-        sender: ComponentSender<Self>,
-        _root: &Self::Root,
-    ) {
+    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match message {
             EpubEditorMsg::Loaded(load) => match *load {
                 Ok((book, container)) => {
-                self.title_label.set_label(&book.title);
-                self.collapsed = self
-                    .service
-                    .catalog()
-                    .get_pref(&format!("editor.collapsed.{}", book.id))
-                    .map(|value| {
-                        value
-                            .split(',')
-                            .filter(|s| !s.is_empty())
-                            .map(str::to_string)
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                self.book = Some(book);
-                self.container = Some(container);
-                self.body_stack.set_visible_child_name("workspace");
-                self.rebuild_tree(&sender);
-                // Open the first text file, pinned, so the workspace
-                // never greets anyone with an empty editor.
-                let first = self
-                    .container
-                    .as_ref()
-                    .and_then(|c| {
+                    self.title_label.set_label(&book.title);
+                    self.collapsed = self
+                        .service
+                        .catalog()
+                        .get_pref(&format!("editor.collapsed.{}", book.id))
+                        .map(|value| {
+                            value
+                                .split(',')
+                                .filter(|s| !s.is_empty())
+                                .map(str::to_string)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    self.book = Some(book);
+                    self.container = Some(container);
+                    self.body_stack.set_visible_child_name("workspace");
+                    self.rebuild_tree(&sender);
+                    // Open the first text file, pinned, so the workspace
+                    // never greets anyone with an empty editor.
+                    let first = self.container.as_ref().and_then(|c| {
                         c.section_files(TreeSection::Text)
                             .first()
                             .map(|f| f.path.clone())
                     });
-                if let Some(path) = first {
-                    self.open_file(&path, true, &sender);
-                }
-                self.run_check(&sender);
-                self.request_preview_write(&sender);
-                self.sync_chrome(&sender);
-                // CI staging: photograph each right-panel tab.
-                match std::env::var("KALAM_DIALOG").as_deref() {
-                    Ok("editor-find") => {
-                        self.toggle_find(&sender);
-                        self.find_entry.set_text("the");
+                    if let Some(path) = first {
+                        self.open_file(&path, true, &sender);
                     }
-                    Ok("editor-palette") => {
-                        self.toggle_palette(&sender);
-                        self.palette_entry.set_text("ref");
-                    }
-                    Ok("editor-problems") => {
-                        sender.input(EpubEditorMsg::SetRightTab(RightTab::Problems));
-                    }
-                    Ok("editor-contents") => {
-                        self.open_contents(&sender);
-                    }
-                    Ok("editor-split") => {
-                        self.present_split_dialog(1, &sender);
-                    }
-                    Ok("editor-reorder") => {
-                        self.present_reorder_dialog(&sender);
-                    }
-                    Ok("editor-char") => {
-                        if self.capture_insert_anchor() {
-                            self.present_insert_char_dialog(&sender);
+                    self.run_check(&sender);
+                    self.request_preview_write(&sender);
+                    self.sync_chrome(&sender);
+                    // CI staging: photograph each right-panel tab.
+                    match std::env::var("KALAM_DIALOG").as_deref() {
+                        Ok("editor-find") => {
+                            self.toggle_find(&sender);
+                            self.find_entry.set_text("the");
                         }
-                    }
-                    Ok("editor-spell") => {
-                        // Deterministic typos for the camera, and a
-                        // stand-in dictionary that knows the rest
-                        // of the chapter (CI installs none).
-                        if let Some(buffer) = self.active_buffer() {
-                            let mut at = buffer.iter_at_offset(0);
-                            buffer.insert(&mut at, "Teh quikc ckecking speling. ");
-                            let text = buffer_text(&buffer);
-                            let stripped = strip_map(&text);
-                            let mut dict: HashSet<String> =
-                                crate::epub_structure::spell_words(&stripped.text)
-                                    .into_iter()
-                                    .map(|(_, _, w)| fold_word(&w))
-                                    .collect();
-                            for typo in ["teh", "quikc", "ckecking", "speling"] {
-                                dict.remove(typo);
-                            }
-                            for good in ["the", "quick", "checking", "spelling"] {
-                                dict.insert(good.to_string());
-                            }
-                            self.spell_dict = Some(Rc::new(dict));
+                        Ok("editor-palette") => {
+                            self.toggle_palette(&sender);
+                            self.palette_entry.set_text("ref");
                         }
-                        self.start_spell_check(&sender);
-                    }
-                    Ok("editor-dict") => {
-                        self.present_personal_dict_dialog(&sender);
-                    }
-                    Ok("editor-history") => {
-                        // A board-shaped stand-in: CI books have
-                        // never been saved from the editor, so the
-                        // real history is empty.
-                        let now = crate::db::chrono_like_now();
-                        let today = now.get(..11).unwrap_or("2026-10-27T");
-                        let mk = |id, label: &str, created_at: String, files_changed| {
-                            crate::db::EditorVersion {
-                                snapshot_id: id,
-                                label: label.to_string(),
-                                created_at,
-                                files_changed,
-                                missing: false,
+                        Ok("editor-problems") => {
+                            sender.input(EpubEditorMsg::SetRightTab(RightTab::Problems));
+                        }
+                        Ok("editor-contents") => {
+                            self.open_contents(&sender);
+                        }
+                        Ok("editor-split") => {
+                            self.present_split_dialog(1, &sender);
+                        }
+                        Ok("editor-reorder") => {
+                            self.present_reorder_dialog(&sender);
+                        }
+                        Ok("editor-char") => {
+                            if self.capture_insert_anchor() {
+                                self.present_insert_char_dialog(&sender);
                             }
-                        };
-                        self.present_history_dialog(
-                            vec![
-                                mk(
-                                    Some(3),
-                                    "Before save",
-                                    format!("{today}14:32:00Z"),
-                                    Some(3),
-                                ),
-                                mk(
-                                    Some(2),
-                                    "Before Replace all",
-                                    format!("{today}14:10:00Z"),
-                                    Some(5),
-                                ),
-                                mk(
-                                    None,
-                                    "Original file",
-                                    "2026-09-12T09:15:00Z".to_string(),
-                                    None,
-                                ),
-                            ],
-                            &sender,
-                        );
-                    }
-                    Ok("editor-compare") => {
-                        // Compare the open chapter against a
-                        // lightly rewritten twin of itself.
-                        let now = crate::db::chrono_like_now();
-                        let today = now.get(..11).unwrap_or("2026-10-27T");
-                        if let Some(path) = self.active_path.clone() {
-                            let kind = self
-                                .container
-                                .as_ref()
-                                .and_then(|c| c.file(&path))
-                                .map(|f| f.kind);
-                            if let (Some(kind), Some(text)) =
-                                (kind, self.file_text(&path))
-                            {
-                                // Mutate whatever the fixture
-                                // offers: reword its longest line
-                                // on the old side and drop the
-                                // doctype there, so the frame shows
-                                // a paired row and an added row.
-                                let mut lines: Vec<&str> =
-                                    text.split('\n').collect();
-                                let mut old_text = text.clone();
-                                if let Some(longest) = (0..lines.len())
-                                    .max_by_key(|&at| lines[at].len())
-                                {
-                                    let edited = lines[longest]
-                                        .replacen(' ', " (earlier) ", 1);
-                                    lines[longest] =
-                                        Box::leak(edited.into_boxed_str());
-                                    if let Some(doctype) = lines
-                                        .iter()
-                                        .position(|l| l.contains("DOCTYPE"))
-                                    {
-                                        lines.remove(doctype);
-                                    }
-                                    old_text = lines.join("\n");
+                        }
+                        Ok("editor-spell") => {
+                            // Deterministic typos for the camera, and a
+                            // stand-in dictionary that knows the rest
+                            // of the chapter (CI installs none).
+                            if let Some(buffer) = self.active_buffer() {
+                                let mut at = buffer.iter_at_offset(0);
+                                buffer.insert(&mut at, "Teh quikc ckecking speling. ");
+                                let text = buffer_text(&buffer);
+                                let stripped = strip_map(&text);
+                                let mut dict: HashSet<String> =
+                                    crate::epub_structure::spell_words(&stripped.text)
+                                        .into_iter()
+                                        .map(|(_, _, w)| fold_word(&w))
+                                        .collect();
+                                for typo in ["teh", "quikc", "ckecking", "speling"] {
+                                    dict.remove(typo);
                                 }
-                                self.compare = Some(CompareState {
-                                    version_id: Some(3),
-                                    label: "Before save".to_string(),
-                                    created_at: format!("{today}14:32:00Z"),
-                                    entries: vec![CompareEntry {
-                                        path,
-                                        kind,
-                                        old_text,
-                                        new_text: text,
-                                    }],
-                                    at: 0,
-                                });
-                                self.body_stack.set_visible_child_name("compare");
-                                self.render_compare();
+                                for good in ["the", "quick", "checking", "spelling"] {
+                                    dict.insert(good.to_string());
+                                }
+                                self.spell_dict = Some(Rc::new(dict));
+                            }
+                            self.start_spell_check(&sender);
+                        }
+                        Ok("editor-dict") => {
+                            self.present_personal_dict_dialog(&sender);
+                        }
+                        Ok("editor-history") => {
+                            // A board-shaped stand-in: CI books have
+                            // never been saved from the editor, so the
+                            // real history is empty.
+                            let now = crate::db::chrono_like_now();
+                            let today = now.get(..11).unwrap_or("2026-10-27T");
+                            let mk = |id, label: &str, created_at: String, files_changed| {
+                                crate::db::EditorVersion {
+                                    snapshot_id: id,
+                                    label: label.to_string(),
+                                    created_at,
+                                    files_changed,
+                                    missing: false,
+                                }
+                            };
+                            self.present_history_dialog(
+                                vec![
+                                    mk(
+                                        Some(3),
+                                        "Before save",
+                                        format!("{today}14:32:00Z"),
+                                        Some(3),
+                                    ),
+                                    mk(
+                                        Some(2),
+                                        "Before Replace all",
+                                        format!("{today}14:10:00Z"),
+                                        Some(5),
+                                    ),
+                                    mk(
+                                        None,
+                                        "Original file",
+                                        "2026-09-12T09:15:00Z".to_string(),
+                                        None,
+                                    ),
+                                ],
+                                &sender,
+                            );
+                        }
+                        Ok("editor-compare") => {
+                            // Compare the open chapter against a
+                            // lightly rewritten twin of itself.
+                            let now = crate::db::chrono_like_now();
+                            let today = now.get(..11).unwrap_or("2026-10-27T");
+                            if let Some(path) = self.active_path.clone() {
+                                let kind = self
+                                    .container
+                                    .as_ref()
+                                    .and_then(|c| c.file(&path))
+                                    .map(|f| f.kind);
+                                if let (Some(kind), Some(text)) = (kind, self.file_text(&path)) {
+                                    // Mutate whatever the fixture
+                                    // offers: reword its longest line
+                                    // on the old side and drop the
+                                    // doctype there, so the frame shows
+                                    // a paired row and an added row.
+                                    let mut lines: Vec<&str> = text.split('\n').collect();
+                                    let mut old_text = text.clone();
+                                    if let Some(longest) =
+                                        (0..lines.len()).max_by_key(|&at| lines[at].len())
+                                    {
+                                        let edited = lines[longest].replacen(' ', " (earlier) ", 1);
+                                        lines[longest] = Box::leak(edited.into_boxed_str());
+                                        if let Some(doctype) =
+                                            lines.iter().position(|l| l.contains("DOCTYPE"))
+                                        {
+                                            lines.remove(doctype);
+                                        }
+                                        old_text = lines.join("\n");
+                                    }
+                                    self.compare = Some(CompareState {
+                                        version_id: Some(3),
+                                        label: "Before save".to_string(),
+                                        created_at: format!("{today}14:32:00Z"),
+                                        entries: vec![CompareEntry {
+                                            path,
+                                            kind,
+                                            old_text,
+                                            new_text: text,
+                                        }],
+                                        at: 0,
+                                    });
+                                    self.body_stack.set_visible_child_name("compare");
+                                    self.render_compare();
+                                }
                             }
                         }
-                    }
-                    Ok("editor-image") | Ok("editor-font") => {
-                        let want = if std::env::var("KALAM_DIALOG").as_deref()
-                            == Ok("editor-font")
-                        {
-                            FileKind::Font
-                        } else {
-                            FileKind::Image
-                        };
-                        let target = self.container.as_ref().and_then(|c| {
-                            c.files
-                                .iter()
-                                .find(|f| f.kind == want)
-                                .map(|f| f.path.clone())
-                        });
-                        if let Some(path) = target {
-                            self.open_file(&path, true, &sender);
+                        Ok("editor-image") | Ok("editor-font") => {
+                            let want =
+                                if std::env::var("KALAM_DIALOG").as_deref() == Ok("editor-font") {
+                                    FileKind::Font
+                                } else {
+                                    FileKind::Image
+                                };
+                            let target = self.container.as_ref().and_then(|c| {
+                                c.files
+                                    .iter()
+                                    .find(|f| f.kind == want)
+                                    .map(|f| f.path.clone())
+                            });
+                            if let Some(path) = target {
+                                self.open_file(&path, true, &sender);
+                            }
                         }
-                    }
-                    Ok("editor-cover") => {
-                        self.present_replace_cover_dialog(&sender);
-                    }
-                    Ok("editor-reports") => {
-                        // The board's frame stands on Images.
-                        self.present_reports_dialog_at(2, &sender);
-                    }
-                    Ok("editor-tagmapper") => {
-                        self.present_tag_mapper_dialog(&sender);
-                    }
-                    Ok("editor-filterstyle") => {
-                        self.present_filter_style_dialog(&sender);
-                    }
-                    Ok("editor-upgrade") => {
-                        self.present_upgrade_dialog(&sender);
-                    }
-                    Ok("editor-subset") => {
-                        // The seeded book embeds the repo's own
-                        // DM Mono, so the sizes are the engine's
-                        // real work.
-                        self.start_subset_fonts(None, &sender);
-                    }
-                    Ok("editor-embed") => {
-                        // The seeded CSS names DejaVu Sans (on
-                        // every CI box) and Missing Demo Font.
-                        self.start_embed_fonts(&sender);
-                    }
-                    Ok("editor-compress") => {
-                        self.start_compress_images(&sender);
-                    }
-                    Ok("editor-links") => {
-                        // The pre-run state: staging must never
-                        // touch the network.
-                        self.present_check_links_dialog(&sender);
-                    }
-                    Ok("editor-editing") => {
-                        // Export the first image for outside
-                        // editing; the dialog opens on the reply.
-                        let image = self.container.as_ref().and_then(|c| {
-                            c.files
-                                .iter()
-                                .find(|f| f.kind == FileKind::Image)
-                                .map(|f| f.path.clone())
-                        });
-                        if let Some(path) = image.or_else(|| self.active_path.clone()) {
-                            self.start_export_for_editing(&path, &sender);
+                        Ok("editor-cover") => {
+                            self.present_replace_cover_dialog(&sender);
                         }
-                    }
-                    Ok("editor-outline") | Ok("editor-livecss") => {
-                        if let Some(buffer) = self.active_buffer() {
-                            let mid = buffer.iter_at_offset(buffer.char_count() / 2);
-                            buffer.place_cursor(&mid);
+                        Ok("editor-reports") => {
+                            // The board's frame stands on Images.
+                            self.present_reports_dialog_at(2, &sender);
                         }
-                        sender.input(EpubEditorMsg::SetRightTab(
-                            if std::env::var("KALAM_DIALOG").as_deref() == Ok("editor-livecss") {
-                                RightTab::LiveCss
-                            } else {
-                                RightTab::Outline
-                            },
-                        ));
+                        Ok("editor-tagmapper") => {
+                            self.present_tag_mapper_dialog(&sender);
+                        }
+                        Ok("editor-filterstyle") => {
+                            self.present_filter_style_dialog(&sender);
+                        }
+                        Ok("editor-upgrade") => {
+                            self.present_upgrade_dialog(&sender);
+                        }
+                        Ok("editor-subset") => {
+                            // The seeded book embeds the repo's own
+                            // DM Mono, so the sizes are the engine's
+                            // real work.
+                            self.start_subset_fonts(None, &sender);
+                        }
+                        Ok("editor-embed") => {
+                            // The seeded CSS names DejaVu Sans (on
+                            // every CI box) and Missing Demo Font.
+                            self.start_embed_fonts(&sender);
+                        }
+                        Ok("editor-compress") => {
+                            self.start_compress_images(&sender);
+                        }
+                        Ok("editor-links") => {
+                            // The pre-run state: staging must never
+                            // touch the network.
+                            self.present_check_links_dialog(&sender);
+                        }
+                        Ok("editor-editing") => {
+                            // Export the first image for outside
+                            // editing; the dialog opens on the reply.
+                            let image = self.container.as_ref().and_then(|c| {
+                                c.files
+                                    .iter()
+                                    .find(|f| f.kind == FileKind::Image)
+                                    .map(|f| f.path.clone())
+                            });
+                            if let Some(path) = image.or_else(|| self.active_path.clone()) {
+                                self.start_export_for_editing(&path, &sender);
+                            }
+                        }
+                        Ok("editor-outline") | Ok("editor-livecss") => {
+                            if let Some(buffer) = self.active_buffer() {
+                                let mid = buffer.iter_at_offset(buffer.char_count() / 2);
+                                buffer.place_cursor(&mid);
+                            }
+                            sender.input(EpubEditorMsg::SetRightTab(
+                                if std::env::var("KALAM_DIALOG").as_deref() == Ok("editor-livecss")
+                                {
+                                    RightTab::LiveCss
+                                } else {
+                                    RightTab::Outline
+                                },
+                            ));
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
-            }
                 Err(message) => {
-                self.title_label.set_label("Editor");
-                self.error_label.set_label(&message);
-                self.body_stack.set_visible_child_name("state");
-                self.status_bar.set_visible(false);
-                self.save_btn.set_visible(false);
+                    self.title_label.set_label("Editor");
+                    self.error_label.set_label(&message);
+                    self.body_stack.set_visible_child_name("state");
+                    self.status_bar.set_visible(false);
+                    self.save_btn.set_visible(false);
                 }
-            }
+            },
             EpubEditorMsg::OpenFile { path, pin } => {
                 self.open_file(&path, pin, &sender);
             }
@@ -2004,10 +2008,9 @@ impl Component for EpubEditorModel {
                 } else {
                     self.tree_open = !self.tree_open;
                 }
-                self.service.catalog().set_pref(
-                    "editor.tree_open",
-                    if self.tree_open { "1" } else { "0" },
-                );
+                self.service
+                    .catalog()
+                    .set_pref("editor.tree_open", if self.tree_open { "1" } else { "0" });
                 self.apply_view_mode();
             }
             EpubEditorMsg::OpenViewMenu => self.toggle_view_menu(&sender),
@@ -2029,10 +2032,9 @@ impl Component for EpubEditorModel {
             }
             EpubEditorMsg::ToggleSourceLineBreaks(on) => {
                 self.source_line_breaks = on;
-                self.service.catalog().set_pref(
-                    "editor.source_line_breaks",
-                    if on { "1" } else { "0" },
-                );
+                self.service
+                    .catalog()
+                    .set_pref("editor.source_line_breaks", if on { "1" } else { "0" });
                 self.apply_source_settings();
             }
             EpubEditorMsg::SavePressed => {
@@ -2064,8 +2066,7 @@ impl Component for EpubEditorModel {
                         buffer.set_modified(false);
                     }
                 }
-                let pending_saved: Vec<(String, String)> =
-                    self.pending.drain().collect();
+                let pending_saved: Vec<(String, String)> = self.pending.drain().collect();
                 self.added_paths.clear();
                 self.removed_paths.clear();
                 if let Some(container) = &mut self.container {
@@ -2097,15 +2098,9 @@ impl Component for EpubEditorModel {
                 if !self.has_unsaved() {
                     let _ = sender.output(EpubEditorOut::Leave);
                 } else {
-                    let n = self
-                        .dirty_paths()
-                        .union(&self.removed_paths)
-                        .count();
+                    let n = self.dirty_paths().union(&self.removed_paths).count();
                     self.present_unsaved_dialog(
-                        &format!(
-                            "Save changes to {n} file{}?",
-                            if n == 1 { "" } else { "s" }
-                        ),
+                        &format!("Save changes to {n} file{}?", if n == 1 { "" } else { "s" }),
                         UnsavedAction::Leave,
                         &sender,
                     );
@@ -2232,7 +2227,11 @@ impl Component for EpubEditorModel {
             EpubEditorMsg::ActionFailed(message) => {
                 crate::notify::error("That didn't work", &message);
             }
-            EpubEditorMsg::PreviewGoToWord { chapter, fraction, word } => {
+            EpubEditorMsg::PreviewGoToWord {
+                chapter,
+                fraction,
+                word,
+            } => {
                 if self.contents_active() {
                     self.toc_retarget(chapter, fraction, &word, &sender);
                 } else {
@@ -2348,8 +2347,7 @@ impl Component for EpubEditorModel {
                 let count = crate::epub_structure::toc_count(&self.toc);
                 if count > 0 {
                     let cur = self.toc_selected.unwrap_or(0) as i32;
-                    self.toc_selected =
-                        Some((cur + delta).clamp(0, count as i32 - 1) as usize);
+                    self.toc_selected = Some((cur + delta).clamp(0, count as i32 - 1) as usize);
                     self.rebuild_contents(&sender);
                     self.mark_toc_target();
                 }
@@ -2379,24 +2377,14 @@ impl Component for EpubEditorModel {
                     self.toc_delete(&sender);
                 }
             }
-            EpubEditorMsg::TocDrop { from, to, after } => {
-                self.toc_drop(from, to, after, &sender)
-            }
+            EpubEditorMsg::TocDrop { from, to, after } => self.toc_drop(from, to, after, &sender),
             // ── E4: structure tools + tree menu ──
             EpubEditorMsg::ApplyStructure(plan) => self.apply_structure(*plan, &sender),
-            EpubEditorMsg::OpenSplitDialog(preset) => {
-                self.present_split_dialog(preset, &sender)
-            }
-            EpubEditorMsg::RunSplit { mode, max_kb } => {
-                self.run_split(mode, max_kb, &sender)
-            }
+            EpubEditorMsg::OpenSplitDialog(preset) => self.present_split_dialog(preset, &sender),
+            EpubEditorMsg::RunSplit { mode, max_kb } => self.run_split(mode, max_kb, &sender),
             EpubEditorMsg::MergeSelected => self.run_merge(&sender),
             EpubEditorMsg::RenameActive => {
-                if let Some(path) = self
-                    .active_path
-                    .clone()
-                    .filter(|p| p != CONTENTS_TAB)
-                {
+                if let Some(path) = self.active_path.clone().filter(|p| p != CONTENTS_TAB) {
                     self.present_rename_dialog(&path, &sender);
                 }
             }
@@ -2404,18 +2392,10 @@ impl Component for EpubEditorModel {
             EpubEditorMsg::RunRename { from, to } => self.run_rename(from, to, &sender),
             EpubEditorMsg::OpenReorder => self.present_reorder_dialog(&sender),
             EpubEditorMsg::RunReorder(order) => self.run_reorder(order, &sender),
-            EpubEditorMsg::OpenSemantics(path) => {
-                self.present_semantics_dialog(&path, &sender)
-            }
-            EpubEditorMsg::RunSemantics { path, value } => {
-                self.run_semantics(path, value, &sender)
-            }
-            EpubEditorMsg::OpenLinkCss(path) => {
-                self.present_link_css_dialog(&path, &sender)
-            }
-            EpubEditorMsg::RunLinkCss { path, css } => {
-                self.run_link_css(path, css, &sender)
-            }
+            EpubEditorMsg::OpenSemantics(path) => self.present_semantics_dialog(&path, &sender),
+            EpubEditorMsg::RunSemantics { path, value } => self.run_semantics(path, value, &sender),
+            EpubEditorMsg::OpenLinkCss(path) => self.present_link_css_dialog(&path, &sender),
+            EpubEditorMsg::RunLinkCss { path, css } => self.run_link_css(path, css, &sender),
             EpubEditorMsg::PalettePickSemantics => {
                 if let Some(path) = self.active_path.clone().filter(|p| {
                     self.container
@@ -2467,14 +2447,10 @@ impl Component for EpubEditorModel {
                     },
                 );
             }
-            EpubEditorMsg::TreeDeleteConfirmed(path) => {
-                self.run_tree_delete(path, &sender)
-            }
+            EpubEditorMsg::TreeDeleteConfirmed(path) => self.run_tree_delete(path, &sender),
             EpubEditorMsg::MarkCover(path) => self.run_mark_cover(path, &sender),
             EpubEditorMsg::TreeAddFiles => self.pick_add_files(&sender),
-            EpubEditorMsg::FilesLoaded(imported) => {
-                self.run_files_loaded(imported, &sender)
-            }
+            EpubEditorMsg::FilesLoaded(imported) => self.run_files_loaded(imported, &sender),
             EpubEditorMsg::TreeExport(path) => self.pick_export_file(&path, &sender),
             EpubEditorMsg::TreeReplace(path) => self.pick_replace_file(&path, &sender),
             EpubEditorMsg::ReplaceLoaded(path, bytes, label) => {
@@ -2566,9 +2542,7 @@ impl Component for EpubEditorModel {
                 self.spell_advance(&sender);
             }
             EpubEditorMsg::SpellChange => self.spell_change(&sender),
-            EpubEditorMsg::OpenPersonalDict => {
-                self.present_personal_dict_dialog(&sender)
-            }
+            EpubEditorMsg::OpenPersonalDict => self.present_personal_dict_dialog(&sender),
             EpubEditorMsg::PersonalAdd(word) => {
                 let mut words = self.personal_words();
                 let word = fold_word(word.trim());
@@ -2619,11 +2593,7 @@ impl Component for EpubEditorModel {
                 let s = sender.input_sender().clone();
                 crate::tasks::spawn_internal(
                     "Restoring an earlier version",
-                    move |_reporter| {
-                        service
-                            .restore_editor_version(&book, id)
-                            .map(|_| label)
-                    },
+                    move |_reporter| service.restore_editor_version(&book, id).map(|_| label),
                     |_| {},
                     move |result| match result {
                         Ok(label) => {
@@ -2676,11 +2646,7 @@ impl Component for EpubEditorModel {
                 Ok((old_container, id, label, created_at)) => {
                     let entries = self.build_compare_entries(&old_container);
                     if entries.is_empty() {
-                        self.show_pill(
-                            "Nothing differs from this version",
-                            false,
-                            &sender,
-                        );
+                        self.show_pill("Nothing differs from this version", false, &sender);
                     } else {
                         self.compare = Some(CompareState {
                             version_id: id,
@@ -2713,7 +2679,8 @@ impl Component for EpubEditorModel {
                 let moved = match &mut self.compare {
                     Some(state) if !state.entries.is_empty() => {
                         let next = (state.at as i32 + delta)
-                            .clamp(0, state.entries.len() as i32 - 1) as usize;
+                            .clamp(0, state.entries.len() as i32 - 1)
+                            as usize;
                         let changed = next != state.at;
                         state.at = next;
                         changed
@@ -2792,44 +2759,28 @@ impl Component for EpubEditorModel {
                     plan.byte_changes.push((path, bytes));
                     self.finish_structure(plan, &sender);
                 } else {
-                    self.show_pill(
-                        "Already as small as lossless gets",
-                        false,
-                        &sender,
-                    );
+                    self.show_pill("Already as small as lossless gets", false, &sender);
                 }
             }
             EpubEditorMsg::FontPreviewReady(path, disk, family) => {
                 self.font_preview_ready(&path, &disk, &family)
             }
-            EpubEditorMsg::OpenReplaceCover => {
-                self.present_replace_cover_dialog(&sender)
-            }
+            EpubEditorMsg::OpenReplaceCover => self.present_replace_cover_dialog(&sender),
             EpubEditorMsg::RunReplaceCover(name, bytes) => {
                 let cover_ext = self
                     .container
                     .as_ref()
                     .and_then(|c| c.files.iter().find(|f| f.is_cover_image))
-                    .and_then(|f| {
-                        f.path
-                            .rsplit('.')
-                            .next()
-                            .map(|ext| ext.to_string())
-                    });
+                    .and_then(|f| f.path.rsplit('.').next().map(|ext| ext.to_string()));
                 let service = self.service.clone();
                 let s = sender.input_sender().clone();
                 crate::tasks::spawn_internal(
                     "Preparing the new cover",
-                    move |_reporter| {
-                        service.prepare_cover_image(&bytes, cover_ext.as_deref())
-                    },
+                    move |_reporter| service.prepare_cover_image(&bytes, cover_ext.as_deref()),
                     |_| {},
                     move |result| match result {
                         Ok(prepared) => {
-                            let _ = s.send(EpubEditorMsg::CoverPrepared(
-                                name.clone(),
-                                prepared,
-                            ));
+                            let _ = s.send(EpubEditorMsg::CoverPrepared(name.clone(), prepared));
                         }
                         Err(message) => {
                             let _ = s.send(EpubEditorMsg::ActionFailed(message));
@@ -2853,17 +2804,10 @@ impl Component for EpubEditorModel {
                         changes.len(),
                         if changes.len() == 1 { "file" } else { "files" }
                     );
-                    self.start_apply(
-                        "Before tag mapper".to_string(),
-                        summary,
-                        changes,
-                        &sender,
-                    );
+                    self.start_apply("Before tag mapper".to_string(), summary, changes, &sender);
                 }
             }
-            EpubEditorMsg::OpenFilterStyle => {
-                self.present_filter_style_dialog(&sender)
-            }
+            EpubEditorMsg::OpenFilterStyle => self.present_filter_style_dialog(&sender),
             EpubEditorMsg::RunFilterStyle(filter) => {
                 let (changes, declarations) = self.filter_style_changes(&filter);
                 if changes.is_empty() {
@@ -2887,12 +2831,8 @@ impl Component for EpubEditorModel {
                     );
                 }
             }
-            EpubEditorMsg::OpenUpgradeInternals => {
-                self.present_upgrade_dialog(&sender)
-            }
-            EpubEditorMsg::RunUpgradeInternals => {
-                self.run_upgrade_internals(&sender)
-            }
+            EpubEditorMsg::OpenUpgradeInternals => self.present_upgrade_dialog(&sender),
+            EpubEditorMsg::RunUpgradeInternals => self.run_upgrade_internals(&sender),
             EpubEditorMsg::OpenSubsetFonts(preselect) => {
                 self.start_subset_fonts(preselect, &sender)
             }
@@ -2902,9 +2842,7 @@ impl Component for EpubEditorModel {
             EpubEditorMsg::RunSubsetFonts(chosen) => {
                 let before: usize = chosen
                     .iter()
-                    .map(|(path, _)| {
-                        self.file_bytes(path).map(|b| b.len()).unwrap_or(0)
-                    })
+                    .map(|(path, _)| self.file_bytes(path).map(|b| b.len()).unwrap_or(0))
                     .sum();
                 let after: usize = chosen.iter().map(|(_, b)| b.len()).sum();
                 let mut plan = StructurePlan::new(
@@ -2952,12 +2890,8 @@ impl Component for EpubEditorModel {
                     },
                 );
             }
-            EpubEditorMsg::EmbedLoaded(loaded) => {
-                self.run_embed_loaded(loaded, &sender)
-            }
-            EpubEditorMsg::OpenCompressImages => {
-                self.start_compress_images(&sender)
-            }
+            EpubEditorMsg::EmbedLoaded(loaded) => self.run_embed_loaded(loaded, &sender),
+            EpubEditorMsg::OpenCompressImages => self.start_compress_images(&sender),
             EpubEditorMsg::CompressPreviewReady(pair) => {
                 let (lossless, smaller) = *pair;
                 self.present_compress_dialog(lossless, smaller, &sender);
@@ -2965,9 +2899,7 @@ impl Component for EpubEditorModel {
             EpubEditorMsg::RunCompressImages(wins) => {
                 let before: usize = wins
                     .iter()
-                    .map(|(path, _)| {
-                        self.file_bytes(path).map(|b| b.len()).unwrap_or(0)
-                    })
+                    .map(|(path, _)| self.file_bytes(path).map(|b| b.len()).unwrap_or(0))
                     .sum();
                 let after: usize = wins.iter().map(|(_, b)| b.len()).sum();
                 let mut plan = StructurePlan::new(
@@ -2983,9 +2915,7 @@ impl Component for EpubEditorModel {
                 plan.byte_changes = wins;
                 self.finish_structure(plan, &sender);
             }
-            EpubEditorMsg::OpenCheckLinks => {
-                self.present_check_links_dialog(&sender)
-            }
+            EpubEditorMsg::OpenCheckLinks => self.present_check_links_dialog(&sender),
             EpubEditorMsg::ExternalReady(path) => {
                 let file = gtk::gio::File::for_path(&path);
                 let _ = gtk::gio::AppInfo::launch_default_for_uri(
@@ -3095,12 +3025,7 @@ impl EpubEditorModel {
 
         // A fresh temporary tab replaces the standing one (decision 126).
         if !pin {
-            if let Some(temp) = self
-                .tabs
-                .iter()
-                .find(|t| !t.pinned)
-                .map(|t| t.path.clone())
-            {
+            if let Some(temp) = self.tabs.iter().find(|t| !t.pinned).map(|t| t.path.clone()) {
                 // Never silently throw away typed changes: an edited
                 // temporary tab was pinned by its first change.
                 self.close_tab_quietly(&temp);
@@ -3146,8 +3071,7 @@ impl EpubEditorModel {
                     .unwrap_or_default();
                 let buffer = sourceview5::Buffer::new(None::<&gtk::TextTagTable>);
                 if let Some(id) = file.kind.language_id() {
-                    if let Some(language) = sourceview5::LanguageManager::default().language(id)
-                    {
+                    if let Some(language) = sourceview5::LanguageManager::default().language(id) {
                         buffer.set_language(Some(&language));
                     }
                 }
@@ -3241,10 +3165,8 @@ impl EpubEditorModel {
                 let where_host = gtk::Box::new(gtk::Orientation::Vertical, 2);
                 where_host.set_visible(false);
                 for (used_path, line) in &used {
-                    let row = gtk::Button::with_label(&format!(
-                        "{} · line {line}",
-                        file_name(used_path)
-                    ));
+                    let row =
+                        gtk::Button::with_label(&format!("{} · line {line}", file_name(used_path)));
                     row.add_css_class("kalam-ed-ghost");
                     row.set_halign(gtk::Align::Start);
                     let s = sender.input_sender().clone();
@@ -3305,17 +3227,11 @@ impl EpubEditorModel {
                 let probe = crate::widgets::paint::color_probe("kalam-ed-specimen");
                 host.append(&probe);
                 let used = self.referencing_files(&file.path);
-                let size = human_size(
-                    container
-                        .bytes(&file.path)
-                        .map(|b| b.len())
-                        .unwrap_or(0),
-                );
+                let size = human_size(container.bytes(&file.path).map(|b| b.len()).unwrap_or(0));
                 let meta = match used.first() {
-                    Some((used_path, line)) => format!(
-                        "Used by {}, line {line} · {size}",
-                        file_name(used_path)
-                    ),
+                    Some((used_path, line)) => {
+                        format!("Used by {}, line {line} · {size}", file_name(used_path))
+                    }
                     None => format!("Not used in any file · {size}"),
                 };
                 host.append(&meta_label(&meta));
@@ -3324,9 +3240,7 @@ impl EpubEditorModel {
                     let s = sender.input_sender().clone();
                     let p = file.path.clone();
                     actions.append(&boxed_ghost_button("Subset font", move || {
-                        let _ = s.send(EpubEditorMsg::OpenSubsetFonts(Some(
-                            p.clone(),
-                        )));
+                        let _ = s.send(EpubEditorMsg::OpenSubsetFonts(Some(p.clone())));
                     }));
                 }
                 {
@@ -3343,8 +3257,7 @@ impl EpubEditorModel {
                 self.font_areas
                     .borrow_mut()
                     .push((file.path.clone(), area, probe));
-                if let (Some(book), Some(bytes)) =
-                    (self.book.clone(), self.file_bytes(&file.path))
+                if let (Some(book), Some(bytes)) = (self.book.clone(), self.file_bytes(&file.path))
                 {
                     let inner = file.path.clone();
                     let reply_path = file.path.clone();
@@ -3352,9 +3265,7 @@ impl EpubEditorModel {
                     let s = sender.input_sender().clone();
                     crate::tasks::spawn_internal(
                         "Preparing the font specimen",
-                        move |_reporter| {
-                            service.editor_font_preview(&book, &inner, &bytes)
-                        },
+                        move |_reporter| service.editor_font_preview(&book, &inner, &bytes),
                         |_| {},
                         move |result| {
                             if let Ok((disk, family)) = result {
@@ -3372,7 +3283,10 @@ impl EpubEditorModel {
             FileKind::Binary => {
                 let host = gtk::Box::new(gtk::Orientation::Vertical, 12);
                 host.set_margin_all(20);
-                host.append(&meta_label(&file_summary(file, container.bytes(&file.path))));
+                host.append(&meta_label(&file_summary(
+                    file,
+                    container.bytes(&file.path),
+                )));
                 (scroll_host(&host).upcast(), None, None)
             }
         }
@@ -3505,9 +3419,7 @@ impl EpubEditorModel {
     fn is_navigation_file(&self, path: &str) -> bool {
         self.container
             .as_ref()
-            .map(|c| {
-                c.nav_path.as_deref() == Some(path) || c.ncx_path.as_deref() == Some(path)
-            })
+            .map(|c| c.nav_path.as_deref() == Some(path) || c.ncx_path.as_deref() == Some(path))
             .unwrap_or(false)
     }
 
@@ -3640,10 +3552,8 @@ impl EpubEditorModel {
 
     fn sync_contents_status(&self) {
         let n = crate::epub_structure::toc_count(&self.toc);
-        self.status_pos.set_label(&format!(
-            "{n} entr{}",
-            if n == 1 { "y" } else { "ies" }
-        ));
+        self.status_pos
+            .set_label(&format!("{n} entr{}", if n == 1 { "y" } else { "ies" }));
         let kind = match &self.container {
             Some(c) if c.nav_path.is_some() && c.ncx_path.is_some() => "Nav + NCX",
             Some(c) if c.nav_path.is_some() => "Nav",
@@ -3752,10 +3662,7 @@ impl EpubEditorModel {
                 row.add_controller(source);
             }
             {
-                let target = gtk::DropTarget::new(
-                    i64::static_type(),
-                    gtk::gdk::DragAction::MOVE,
-                );
+                let target = gtk::DropTarget::new(i64::static_type(), gtk::gdk::DragAction::MOVE);
                 let row_motion = row.clone();
                 target.connect_enter(move |_, _, y| {
                     set_toc_drop(&row_motion, y);
@@ -4020,18 +3927,13 @@ impl EpubEditorModel {
         } else {
             if let Some(nav) = &nav_path {
                 let current = self.file_text(nav);
-                let text =
-                    crate::epub_structure::render_nav(current.as_deref(), &self.toc, nav);
+                let text = crate::epub_structure::render_nav(current.as_deref(), &self.toc, nav);
                 self.set_text_quiet(nav, &text);
             }
             if let Some(ncx) = &ncx_path {
                 let current = self.file_text(ncx);
-                let text = crate::epub_structure::render_ncx(
-                    current.as_deref(),
-                    &self.toc,
-                    ncx,
-                    &title,
-                );
+                let text =
+                    crate::epub_structure::render_ncx(current.as_deref(), &self.toc, ncx, &title);
                 self.set_text_quiet(ncx, &text);
             }
         }
@@ -4095,8 +3997,7 @@ impl EpubEditorModel {
             Some(text) => text.to_string(),
             None => self.file_text(&opf_path)?,
         };
-        let (old_items, old_spine, _) =
-            crate::epub_structure::parse_opf_data(&current, &opf_path);
+        let (old_items, old_spine, _) = crate::epub_structure::parse_opf_data(&current, &opf_path);
         let old_id_path: HashMap<String, String> = old_items
             .iter()
             .map(|i| (i.id.clone(), i.href.clone()))
@@ -4115,8 +4016,7 @@ impl EpubEditorModel {
                 None => mint_opf_id(&file.path, &mut used),
             };
             used.insert(id.clone());
-            let mut properties: Vec<String> =
-                old.map(|o| o.properties.clone()).unwrap_or_default();
+            let mut properties: Vec<String> = old.map(|o| o.properties.clone()).unwrap_or_default();
             sync_opf_prop(&mut properties, "nav", file.is_nav);
             sync_opf_prop(&mut properties, "cover-image", file.is_cover_image);
             let media_type = if file.media_type.is_empty() {
@@ -4140,12 +4040,9 @@ impl EpubEditorModel {
         let spine: Vec<(String, bool)> = spined
             .iter()
             .filter_map(|f| {
-                id_by_path.get(&f.path).map(|id| {
-                    (
-                        id.clone(),
-                        old_linear.get(&f.path).copied().unwrap_or(true),
-                    )
-                })
+                id_by_path
+                    .get(&f.path)
+                    .map(|id| (id.clone(), old_linear.get(&f.path).copied().unwrap_or(true)))
             })
             .collect();
         let toc_id = ncx_path.and_then(|p| id_by_path.get(p)).cloned();
@@ -4191,8 +4088,7 @@ impl EpubEditorModel {
                 .or_else(|| results.first());
             if let Some(hit) = hit {
                 let end = kalam_reader::LayeredLocator {
-                    char_offset: hit.locator.char_offset
-                        + entry.text.trim().chars().count() as u32,
+                    char_offset: hit.locator.char_offset + entry.text.trim().chars().count() as u32,
                     ..hit.locator.clone()
                 };
                 view.set_search_matches([(hit.locator.clone(), end, true)]);
@@ -4272,8 +4168,7 @@ impl EpubEditorModel {
         let Some(view) = self.preview_view.as_ref() else {
             return;
         };
-        let Some(captured) = view.capture_highlight(kalam_reader::HighlightColor::Yellow)
-        else {
+        let Some(captured) = view.capture_highlight(kalam_reader::HighlightColor::Yellow) else {
             return;
         };
         let start = captured.start;
@@ -4449,7 +4344,10 @@ impl EpubEditorModel {
         if let Some((mut start, mut end)) = buffer.selection_bounds() {
             let selected = buffer.text(&start, &end, false).to_string();
             // Selection includes the tags: unwrap.
-            if selected.starts_with(open) && selected.ends_with(close) && selected.len() >= open.len() + close.len() {
+            if selected.starts_with(open)
+                && selected.ends_with(close)
+                && selected.len() >= open.len() + close.len()
+            {
                 let inner = selected[open.len()..selected.len() - close.len()].to_string();
                 buffer.delete(&mut start, &mut end);
                 let mut at = start;
@@ -4475,8 +4373,7 @@ impl EpubEditorModel {
                 let mut at = start;
                 buffer.insert(&mut at, open);
                 let new_start = buffer.iter_at_offset(at.offset());
-                let new_end =
-                    buffer.iter_at_offset(end.offset() + open.chars().count() as i32);
+                let new_end = buffer.iter_at_offset(end.offset() + open.chars().count() as i32);
                 buffer.select_range(&new_start, &new_end);
             }
         } else {
@@ -4550,8 +4447,7 @@ impl EpubEditorModel {
             let mut at = start;
             buffer.insert(&mut at, &open);
             let new_start = buffer.iter_at_offset(at.offset());
-            let new_end =
-                buffer.iter_at_offset(end.offset() + open.chars().count() as i32);
+            let new_end = buffer.iter_at_offset(end.offset() + open.chars().count() as i32);
             buffer.select_range(&new_start, &new_end);
         } else {
             let mut at = buffer.iter_at_offset(buffer.cursor_position());
@@ -4578,8 +4474,7 @@ impl EpubEditorModel {
 
     fn present_insert_char_dialog(&self, sender: &ComponentSender<Self>) {
         let shell = dialog_shell(DialogSize::Form, None);
-        let picked: Rc<RefCell<Option<(char, &'static str)>>> =
-            Rc::new(RefCell::new(None));
+        let picked: Rc<RefCell<Option<(char, &'static str)>>> = Rc::new(RefCell::new(None));
         let search = gtk::Entry::new();
         search.add_css_class("kalam-ed-entry");
         search.set_placeholder_text(Some("Search by name"));
@@ -4694,9 +4589,7 @@ impl EpubEditorModel {
                 0,
             ));
             if let Some(text) = self.file_text(&path) {
-                for (_level, heading, _off, id) in
-                    crate::epub_structure::headings_with_ids(&text)
-                {
+                for (_level, heading, _off, id) in crate::epub_structure::headings_with_ids(&text) {
                     if let Some(id) = id {
                         targets.push((
                             heading,
@@ -4830,9 +4723,11 @@ impl EpubEditorModel {
 
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         let slot_ok = slot.clone();
         let s = sender.input_sender().clone();
         shell.footer().append(&primary_button("Insert", move || {
@@ -4874,10 +4769,7 @@ impl EpubEditorModel {
         let picked: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
         let picked_btn: Rc<RefCell<Option<gtk::Button>>> = Rc::new(RefCell::new(None));
 
-        let shell = dialog_shell(
-            DialogSize::Form,
-            Some("Choose from the book or add one"),
-        );
+        let shell = dialog_shell(DialogSize::Form, Some("Choose from the book or add one"));
         let grid = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let mut row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let mut in_row = 0;
@@ -4959,46 +4851,52 @@ impl EpubEditorModel {
             let s = s_add.clone();
             let slot = slot_add.clone();
             let alt = alt_add.clone();
-            dialog.open(window.as_ref(), gtk::gio::Cancellable::NONE, move |result| {
-                let Ok(file) = result else {
-                    return;
-                };
-                let Some(path) = file.path() else {
-                    return;
-                };
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "image".to_string());
-                let alt_text = alt.text().to_string();
-                close_slot(&slot);
-                let s2 = s.clone();
-                crate::tasks::spawn_internal(
-                    "Reading image",
-                    move |_reporter| service.read_editor_import(&path),
-                    |_| {},
-                    move |result| match result {
-                        Ok(bytes) => {
-                            let _ = s2.send(EpubEditorMsg::InsertImageLoaded(
-                                name.clone(),
-                                bytes,
-                                alt_text.clone(),
-                            ));
-                        }
-                        Err(message) => {
-                            let _ = s2.send(EpubEditorMsg::ActionFailed(message));
-                        }
-                    },
-                );
-            });
+            dialog.open(
+                window.as_ref(),
+                gtk::gio::Cancellable::NONE,
+                move |result| {
+                    let Ok(file) = result else {
+                        return;
+                    };
+                    let Some(path) = file.path() else {
+                        return;
+                    };
+                    let name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "image".to_string());
+                    let alt_text = alt.text().to_string();
+                    close_slot(&slot);
+                    let s2 = s.clone();
+                    crate::tasks::spawn_internal(
+                        "Reading image",
+                        move |_reporter| service.read_editor_import(&path),
+                        |_| {},
+                        move |result| match result {
+                            Ok(bytes) => {
+                                let _ = s2.send(EpubEditorMsg::InsertImageLoaded(
+                                    name.clone(),
+                                    bytes,
+                                    alt_text.clone(),
+                                ));
+                            }
+                            Err(message) => {
+                                let _ = s2.send(EpubEditorMsg::ActionFailed(message));
+                            }
+                        },
+                    );
+                },
+            );
         });
         add_btn.set_hexpand(true);
         add_btn.set_halign(gtk::Align::Start);
         shell.footer().append(&add_btn);
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         let slot_ok = slot.clone();
         let s = sender.input_sender().clone();
         let dir = crate::epub_structure::parent_dir(&anchor_path);
@@ -5041,10 +4939,7 @@ impl EpubEditorModel {
             return;
         };
         let bare = file_name(&name).to_string();
-        let mut plan = StructurePlan::new(
-            format!("Inserted {bare}"),
-            "Before insert image",
-        );
+        let mut plan = StructurePlan::new(format!("Inserted {bare}"), "Before insert image");
         let image_path = if let Some(existing) = container
             .files
             .iter()
@@ -5059,9 +4954,7 @@ impl EpubEditorModel {
                 .iter()
                 .find(|f| f.kind == FileKind::Image)
                 .map(|f| crate::epub_structure::parent_dir(&f.path))
-                .unwrap_or_else(|| {
-                    crate::epub_structure::parent_dir(&container.opf_path)
-                });
+                .unwrap_or_else(|| crate::epub_structure::parent_dir(&container.opf_path));
             let path = format!("{dir}{bare}");
             let media = crate::epub_container::guess_media_type(&bare);
             plan.new_files.push((
@@ -5186,9 +5079,11 @@ impl EpubEditorModel {
 
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         let slot_ok = slot.clone();
         let s = sender.input_sender().clone();
         shell.footer().append(&primary_button("Insert", move || {
@@ -5344,8 +5239,7 @@ impl EpubEditorModel {
             }
             let (src_start, src_end) = stripped.source_span(start, end);
             // A word split by markup is not ours to rewrite.
-            if src_chars[src_start..src_end.min(src_chars.len())].contains(&'<')
-            {
+            if src_chars[src_start..src_end.min(src_chars.len())].contains(&'<') {
                 continue;
             }
             let mut s_from = start;
@@ -5435,9 +5329,11 @@ impl EpubEditorModel {
         add.add_css_class("kalam-ed-accent-text");
         shell.footer().append(&add);
         let s = sender.input_sender().clone();
-        shell.footer().append(&boxed_ghost_button("Ignore", move || {
-            let _ = s.send(EpubEditorMsg::SpellIgnore);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Ignore", move || {
+                let _ = s.send(EpubEditorMsg::SpellIgnore);
+            }));
         let s = sender.input_sender().clone();
         shell.footer().append(&primary_button("Change", move || {
             let _ = s.send(EpubEditorMsg::SpellChange);
@@ -5459,11 +5355,9 @@ impl EpubEditorModel {
     }
 
     fn spell_render(&mut self, sender: &ComponentSender<Self>) {
-        let (Some(session), Some(ui), Some(dict)) = (
-            &mut self.spell,
-            &self.spell_ui,
-            self.spell_dict.clone(),
-        ) else {
+        let (Some(session), Some(ui), Some(dict)) =
+            (&mut self.spell, &self.spell_ui, self.spell_dict.clone())
+        else {
             return;
         };
         let Some(hit) = session.hits.get(session.at).cloned() else {
@@ -5501,7 +5395,13 @@ impl EpubEditorModel {
         clear_box(&ui.suggestions);
         let mut options = crate::epub_structure::suggestions(&hit.word, &dict);
         // Match the book's capitalisation of the first letter.
-        if hit.word.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+        if hit
+            .word
+            .chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false)
+        {
             for option in &mut options {
                 let mut cs = option.chars();
                 if let Some(first) = cs.next() {
@@ -5624,8 +5524,7 @@ impl EpubEditorModel {
         else {
             return;
         };
-        let delta =
-            replacement.chars().count() as i64 - (hit.src_end - hit.src_start) as i64;
+        let delta = replacement.chars().count() as i64 - (hit.src_end - hit.src_start) as i64;
         buffer.begin_user_action();
         let mut start = buffer.iter_at_offset(hit.src_start as i32);
         let mut end = buffer.iter_at_offset(hit.src_end as i32);
@@ -5643,12 +5542,8 @@ impl EpubEditorModel {
     }
 
     fn present_personal_dict_dialog(&mut self, sender: &ComponentSender<Self>) {
-        let words: Rc<RefCell<Vec<String>>> =
-            Rc::new(RefCell::new(self.personal_words()));
-        let shell = dialog_shell(
-            DialogSize::Form,
-            Some("Words you added in Spell check"),
-        );
+        let words: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(self.personal_words()));
+        let shell = dialog_shell(DialogSize::Form, Some("Words you added in Spell check"));
         let add_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let entry = gtk::Entry::new();
         entry.add_css_class("kalam-ed-entry");
@@ -5774,9 +5669,7 @@ impl EpubEditorModel {
             .unwrap_or_default();
         let shell = dialog_shell(
             DialogSize::List,
-            Some(&format!(
-                "{title} · a snapshot is kept before each save"
-            )),
+            Some(&format!("{title} · a snapshot is kept before each save")),
         );
         let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
         let scroll = gtk::ScrolledWindow::new();
@@ -5877,10 +5770,7 @@ impl EpubEditorModel {
                             other.remove_css_class("selected");
                         }
                     }
-                    let usable = versions
-                        .get(index)
-                        .map(|v| !v.missing)
-                        .unwrap_or(false);
+                    let usable = versions.get(index).map(|v| !v.missing).unwrap_or(false);
                     compare_btn.set_sensitive(usable);
                     restore_btn.set_sensitive(usable);
                 });
@@ -5936,8 +5826,7 @@ impl EpubEditorModel {
 
     fn pretty_date(iso: &str) -> String {
         const MONTHS: [&str; 12] = [
-            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
-            "Nov", "Dec",
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
         ];
         let year = iso.get(0..4).unwrap_or_default();
         let month: usize = iso.get(5..7).and_then(|m| m.parse().ok()).unwrap_or(0);
@@ -5952,10 +5841,7 @@ impl EpubEditorModel {
 
     /// Every text file whose current words differ from the
     /// opened version, current book order first.
-    fn build_compare_entries(
-        &self,
-        old: &EpubContainer,
-    ) -> Vec<CompareEntry> {
+    fn build_compare_entries(&self, old: &EpubContainer) -> Vec<CompareEntry> {
         let mut paths: Vec<String> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
         if let Some(current) = &self.container {
@@ -6009,8 +5895,7 @@ impl EpubEditorModel {
         let Some(entry) = state.entries.get(state.at) else {
             return;
         };
-        let (rows, hunks) =
-            crate::text_diff::align(&entry.old_text, &entry.new_text);
+        let (rows, hunks) = crate::text_diff::align(&entry.old_text, &entry.new_text);
         let old_lines = crate::text_diff::lines_of(&entry.old_text);
         let new_lines = crate::text_diff::lines_of(&entry.new_text);
         let mut old_src = String::new();
@@ -6036,9 +5921,7 @@ impl EpubEditorModel {
 
         let widgets = &self.compare_widgets;
         if let Some(id) = entry.kind.language_id() {
-            if let Some(language) =
-                sourceview5::LanguageManager::default().language(id)
-            {
+            if let Some(language) = sourceview5::LanguageManager::default().language(id) {
                 widgets.old_buffer.set_language(Some(&language));
                 widgets.new_buffer.set_language(Some(&language));
             }
@@ -6113,11 +5996,7 @@ impl EpubEditorModel {
     /// The paragraph-background tag for one side of the diff,
     /// created once per buffer from the token colour its probe
     /// label resolves (the `widgets/paint.rs` pattern).
-    fn diff_tag(
-        buffer: &sourceview5::Buffer,
-        name: &str,
-        probe: &gtk::Label,
-    ) -> gtk::TextTag {
+    fn diff_tag(buffer: &sourceview5::Buffer, name: &str, probe: &gtk::Label) -> gtk::TextTag {
         if let Some(tag) = buffer.tag_table().lookup(name) {
             return tag;
         }
@@ -6140,11 +6019,7 @@ impl EpubEditorModel {
 
     // ── E5: Export for editing (decision 140) ──
 
-    fn start_export_for_editing(
-        &self,
-        path: &str,
-        sender: &ComponentSender<Self>,
-    ) {
+    fn start_export_for_editing(&self, path: &str, sender: &ComponentSender<Self>) {
         let Some(bytes) = self.file_bytes(path) else {
             return;
         };
@@ -6158,10 +6033,7 @@ impl EpubEditorModel {
             |_| {},
             move |result| match result {
                 Ok(dest) => {
-                    let _ = s.send(EpubEditorMsg::EditingExported(
-                        reply_path.clone(),
-                        dest,
-                    ));
+                    let _ = s.send(EpubEditorMsg::EditingExported(reply_path.clone(), dest));
                 }
                 Err(message) => {
                     let _ = s.send(EpubEditorMsg::ActionFailed(message));
@@ -6180,10 +6052,7 @@ impl EpubEditorModel {
         sender: &ComponentSender<Self>,
     ) {
         let name = file_name(path).to_string();
-        let shell = dialog_shell(
-            DialogSize::Form,
-            Some("A copy is in ~/Kalam/Editing/"),
-        );
+        let shell = dialog_shell(DialogSize::Form, Some("A copy is in ~/Kalam/Editing/"));
         let file_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         let file_text = gtk::Box::new(gtk::Orientation::Vertical, 2);
         file_text.set_hexpand(true);
@@ -6214,35 +6083,35 @@ impl EpubEditorModel {
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         {
             let dest = dest.clone();
-            shell.footer().append(&boxed_ghost_button(
-                "Show in folder",
-                move || {
+            shell
+                .footer()
+                .append(&boxed_ghost_button("Show in folder", move || {
                     crate::pages::book::open_in_file_manager(&dest);
-                },
-            ));
+                }));
         }
         {
             let dest = dest.clone();
-            shell.footer().append(&boxed_ghost_button("Open in app", move || {
-                let file = gtk::gio::File::for_path(&dest);
-                let _ = gtk::gio::AppInfo::launch_default_for_uri(
-                    file.uri().as_str(),
-                    None::<&gtk::gio::AppLaunchContext>,
-                );
-            }));
+            shell
+                .footer()
+                .append(&boxed_ghost_button("Open in app", move || {
+                    let file = gtk::gio::File::for_path(&dest);
+                    let _ = gtk::gio::AppInfo::launch_default_for_uri(
+                        file.uri().as_str(),
+                        None::<&gtk::gio::AppLaunchContext>,
+                    );
+                }));
         }
         {
             let slot = slot.clone();
             let s = sender.input_sender().clone();
             let path = path.to_string();
             let dest = dest.clone();
-            shell.footer().append(&primary_button("Import changes", move || {
-                close_slot(&slot);
-                let _ = s.send(EpubEditorMsg::EditingImport(
-                    path.clone(),
-                    dest.clone(),
-                ));
-            }));
+            shell
+                .footer()
+                .append(&primary_button("Import changes", move || {
+                    close_slot(&slot);
+                    let _ = s.send(EpubEditorMsg::EditingImport(path.clone(), dest.clone()));
+                }));
         }
 
         // Watch the Editing folder (many apps save by rename,
@@ -6252,14 +6121,11 @@ impl EpubEditorModel {
         // dialog is gone.
         let changed_at: Rc<std::cell::Cell<Option<std::time::Instant>>> =
             Rc::new(std::cell::Cell::new(None));
-        let monitor: Rc<RefCell<Option<gtk::gio::FileMonitor>>> =
-            Rc::new(RefCell::new(None));
+        let monitor: Rc<RefCell<Option<gtk::gio::FileMonitor>>> = Rc::new(RefCell::new(None));
         if let Some(dir) = dest.parent().map(std::path::Path::to_path_buf) {
             let gio_dir = gtk::gio::File::for_path(&dir);
             let flags = gtk::gio::FileMonitorFlags::SEND_MOVED;
-            if let Ok(found) =
-                gio_dir.monitor_directory(flags, gtk::gio::Cancellable::NONE)
-            {
+            if let Ok(found) = gio_dir.monitor_directory(flags, gtk::gio::Cancellable::NONE) {
                 let watch = dest.clone();
                 let changed_at = changed_at.clone();
                 let status = status.clone();
@@ -6292,23 +6158,24 @@ impl EpubEditorModel {
             let status = status.clone();
             let changed_at = changed_at.clone();
             let monitor = monitor.clone();
-            let _tick = gtk::glib::timeout_add_local(std::time::Duration::from_secs(20), move || {
-                if status.root().is_none() {
-                    *monitor.borrow_mut() = None;
-                    return gtk::glib::ControlFlow::Break;
-                }
-                if let Some(when) = changed_at.get() {
-                    let mins = when.elapsed().as_secs() / 60;
-                    status.set_label(&if mins == 0 {
-                        "Changed just now".to_string()
-                    } else if mins == 1 {
-                        "Changed 1 min ago".to_string()
-                    } else {
-                        format!("Changed {mins} min ago")
-                    });
-                }
-                gtk::glib::ControlFlow::Continue
-            });
+            let _tick =
+                gtk::glib::timeout_add_local(std::time::Duration::from_secs(20), move || {
+                    if status.root().is_none() {
+                        *monitor.borrow_mut() = None;
+                        return gtk::glib::ControlFlow::Break;
+                    }
+                    if let Some(when) = changed_at.get() {
+                        let mins = when.elapsed().as_secs() / 60;
+                        status.set_label(&if mins == 0 {
+                            "Changed just now".to_string()
+                        } else if mins == 1 {
+                            "Changed 1 min ago".to_string()
+                        } else {
+                            format!("Changed {mins} min ago")
+                        });
+                    }
+                    gtk::glib::ControlFlow::Continue
+                });
         }
 
         if let Some(dialog) = present_dialog(
@@ -6354,8 +6221,7 @@ impl EpubEditorModel {
         let mut y = 4.0f64;
         for (text, size) in lines {
             let layout = pango::Layout::new(&context);
-            let description =
-                pango::FontDescription::from_string(&format!("{family} {size}"));
+            let description = pango::FontDescription::from_string(&format!("{family} {size}"));
             layout.set_font_description(Some(&description));
             layout.set_text(text);
             let height = layout.pixel_size().1 as f64;
@@ -6396,11 +6262,8 @@ impl EpubEditorModel {
             if let Some(bytes) = self.file_bytes(path) {
                 let glib_bytes = gtk::glib::Bytes::from(&bytes[..]);
                 if let Ok(texture) = gtk::gdk::Texture::from_bytes(&glib_bytes) {
-                    current_text = format!(
-                        "Current cover, {} x {}",
-                        texture.width(),
-                        texture.height()
-                    );
+                    current_text =
+                        format!("Current cover, {} x {}", texture.width(), texture.height());
                     let picture = gtk::Picture::for_paintable(&texture);
                     picture.set_content_fit(gtk::ContentFit::Contain);
                     picture.set_size_request(96, 144);
@@ -6424,8 +6287,7 @@ impl EpubEditorModel {
         row.append(&side);
         shell.body().append(&row);
 
-        let chosen: ChosenBytes =
-            Rc::new(RefCell::new(None));
+        let chosen: ChosenBytes = Rc::new(RefCell::new(None));
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
 
         let replace_btn = {
@@ -6487,22 +6349,20 @@ impl EpubEditorModel {
                             move |result| match result {
                                 Ok(bytes) => {
                                     let dims = gtk::glib::Bytes::from(&bytes[..]);
-                                    let text =
-                                        match gtk::gdk::Texture::from_bytes(&dims) {
-                                            Ok(texture) => format!(
-                                                "New cover: {name}, {} x {}",
-                                                texture.width(),
-                                                texture.height()
-                                            ),
-                                            Err(_) => format!("New cover: {name}"),
-                                        };
+                                    let text = match gtk::gdk::Texture::from_bytes(&dims) {
+                                        Ok(texture) => format!(
+                                            "New cover: {name}, {} x {}",
+                                            texture.width(),
+                                            texture.height()
+                                        ),
+                                        Err(_) => format!("New cover: {name}"),
+                                    };
                                     chosen_label.set_label(&text);
                                     *chosen.borrow_mut() = Some((name, bytes));
                                     replace_btn.set_sensitive(true);
                                 }
                                 Err(message) => {
-                                    let _ = s_failed
-                                        .send(EpubEditorMsg::ActionFailed(message));
+                                    let _ = s_failed.send(EpubEditorMsg::ActionFailed(message));
                                 }
                             },
                         );
@@ -6514,9 +6374,11 @@ impl EpubEditorModel {
         side.append(&chosen_label);
 
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         shell.footer().append(&replace_btn);
 
         if let Some(dialog) = present_dialog(
@@ -6531,19 +6393,11 @@ impl EpubEditorModel {
 
     /// Swap the cover bytes in, or — coverless book — land a new
     /// cover file beside the images and crown it.
-    fn run_replace_cover(
-        &mut self,
-        name: String,
-        bytes: Vec<u8>,
-        sender: &ComponentSender<Self>,
-    ) {
+    fn run_replace_cover(&mut self, name: String, bytes: Vec<u8>, sender: &ComponentSender<Self>) {
         let Some(container) = &self.container else {
             return;
         };
-        let mut plan = StructurePlan::new(
-            "Replaced the cover".to_string(),
-            "Before replace cover",
-        );
+        let mut plan = StructurePlan::new("Replaced the cover".to_string(), "Before replace cover");
         let current = container
             .files
             .iter()
@@ -6557,9 +6411,7 @@ impl EpubEditorModel {
                     .iter()
                     .find(|f| f.kind == FileKind::Image)
                     .map(|f| crate::epub_structure::parent_dir(&f.path))
-                    .unwrap_or_else(|| {
-                        crate::epub_structure::parent_dir(&container.opf_path)
-                    });
+                    .unwrap_or_else(|| crate::epub_structure::parent_dir(&container.opf_path));
                 let ext = name
                     .rsplit('.')
                     .next()
@@ -6596,11 +6448,7 @@ impl EpubEditorModel {
         self.present_reports_dialog_at(0, sender);
     }
 
-    fn present_reports_dialog_at(
-        &mut self,
-        start: usize,
-        sender: &ComponentSender<Self>,
-    ) {
+    fn present_reports_dialog_at(&mut self, start: usize, sender: &ComponentSender<Self>) {
         let tables: Vec<(&'static str, ReportTable)> = vec![
             ("Files", self.report_files()),
             ("Words", self.report_words()),
@@ -6631,8 +6479,7 @@ impl EpubEditorModel {
             let state = Rc::new(RefCell::new(table));
             let host = gtk::Box::new(gtk::Orientation::Vertical, 0);
             let header_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-            let header_btns: Rc<RefCell<Vec<gtk::Button>>> =
-                Rc::new(RefCell::new(Vec::new()));
+            let header_btns: Rc<RefCell<Vec<gtk::Button>>> = Rc::new(RefCell::new(Vec::new()));
             {
                 let table = state.borrow();
                 for (col, header) in table.headers.iter().enumerate() {
@@ -6653,10 +6500,7 @@ impl EpubEditorModel {
             let rows_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
             host.append(&rows_host);
             let scroll = gtk::ScrolledWindow::new();
-            scroll.set_policy(
-                gtk::PolicyType::Never,
-                gtk::PolicyType::Automatic,
-            );
+            scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
             scroll.set_vexpand(true);
             scroll.set_child(Some(&host));
             stack.add_named(&scroll, Some(&page_name));
@@ -6673,11 +6517,7 @@ impl EpubEditorModel {
                     for (col, btn) in header_btns.borrow().iter().enumerate() {
                         let mut label = table.headers[col].to_string();
                         if table.sort_col == Some(col) {
-                            label.push_str(if table.sort_desc {
-                                " ↓"
-                            } else {
-                                " ↑"
-                            });
+                            label.push_str(if table.sort_desc { " ↓" } else { " ↑" });
                         }
                         btn.set_label(&label);
                     }
@@ -6689,21 +6529,23 @@ impl EpubEditorModel {
                         rows_host.append(&label);
                         return;
                     }
-                    let mut order: Vec<usize> =
-                        (0..table.rows.len()).collect();
+                    let mut order: Vec<usize> = (0..table.rows.len()).collect();
                     if let Some(col) = table.sort_col {
                         let numeric = table.numeric[col];
                         let desc = table.sort_desc;
                         order.sort_by(|&a, &b| {
                             let ord = if numeric {
-                                table.rows[a].keys[col]
-                                    .cmp(&table.rows[b].keys[col])
+                                table.rows[a].keys[col].cmp(&table.rows[b].keys[col])
                             } else {
                                 table.rows[a].cells[col]
                                     .to_lowercase()
                                     .cmp(&table.rows[b].cells[col].to_lowercase())
                             };
-                            if desc { ord.reverse() } else { ord }
+                            if desc {
+                                ord.reverse()
+                            } else {
+                                ord
+                            }
                         });
                     }
                     for at in order {
@@ -6741,9 +6583,7 @@ impl EpubEditorModel {
                                     label.set_halign(gtk::Align::Start);
                                     label.set_xalign(0.0);
                                     label.set_valign(gtk::Align::Center);
-                                    label.set_ellipsize(
-                                        gtk::pango::EllipsizeMode::End,
-                                    );
+                                    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
                                     if width > 0 {
                                         label.set_size_request(width, -1);
                                     } else {
@@ -6836,23 +6676,15 @@ impl EpubEditorModel {
         let mut rows = Vec::new();
         if let Some(container) = &self.container {
             for file in &container.files {
-                if file.kind != FileKind::Html
-                    || self.removed_paths.contains(&file.path)
-                {
+                if file.kind != FileKind::Html || self.removed_paths.contains(&file.path) {
                     continue;
                 }
                 let Some(text) = self.file_text(&file.path) else {
                     continue;
                 };
-                let count = crate::epub_structure::spell_words(
-                    &strip_map(&text).text,
-                )
-                .len();
+                let count = crate::epub_structure::spell_words(&strip_map(&text).text).len();
                 rows.push(ReportRow {
-                    cells: vec![
-                        file_name(&file.path).to_string(),
-                        grouped(count),
-                    ],
+                    cells: vec![file_name(&file.path).to_string(), grouped(count)],
                     keys: vec![0, count as i64],
                     open: Some(file.path.clone()),
                 });
@@ -6872,9 +6704,7 @@ impl EpubEditorModel {
         let mut rows = Vec::new();
         if let Some(container) = &self.container {
             for file in &container.files {
-                if file.kind != FileKind::Image
-                    || self.removed_paths.contains(&file.path)
-                {
+                if file.kind != FileKind::Image || self.removed_paths.contains(&file.path) {
                     continue;
                 }
                 let size = self.file_bytes(&file.path).map(|b| b.len()).unwrap_or(0);
@@ -6909,8 +6739,7 @@ impl EpubEditorModel {
         if let Some(container) = &self.container {
             let mut seen: HashSet<(String, String)> = HashSet::new();
             for file in &container.files {
-                if !file.kind.is_text() || self.removed_paths.contains(&file.path)
-                {
+                if !file.kind.is_text() || self.removed_paths.contains(&file.path) {
                     continue;
                 }
                 let Some(text) = self.file_text(&file.path) else {
@@ -6924,17 +6753,13 @@ impl EpubEditorModel {
                         continue;
                     }
                     let shown = if found.href.chars().count() > 64 {
-                        let cut: String =
-                            found.href.chars().take(63).collect();
+                        let cut: String = found.href.chars().take(63).collect();
                         format!("{cut}…")
                     } else {
                         found.href.clone()
                     };
                     rows.push(ReportRow {
-                        cells: vec![
-                            shown,
-                            file_name(&file.path).to_string(),
-                        ],
+                        cells: vec![shown, file_name(&file.path).to_string()],
                         keys: vec![0, 0],
                         open: Some(file.path.clone()),
                     });
@@ -6955,9 +6780,7 @@ impl EpubEditorModel {
         let mut rows = Vec::new();
         if let Some(container) = &self.container {
             for file in &container.files {
-                if file.kind != FileKind::Css
-                    || self.removed_paths.contains(&file.path)
-                {
+                if file.kind != FileKind::Css || self.removed_paths.contains(&file.path) {
                     continue;
                 }
                 let rules = self
@@ -6990,9 +6813,7 @@ impl EpubEditorModel {
         let mut rows = Vec::new();
         if let Some(container) = &self.container {
             for file in &container.files {
-                if file.kind != FileKind::Font
-                    || self.removed_paths.contains(&file.path)
-                {
+                if file.kind != FileKind::Font || self.removed_paths.contains(&file.path) {
                     continue;
                 }
                 let size = self.file_bytes(&file.path).map(|b| b.len()).unwrap_or(0);
@@ -7002,11 +6823,7 @@ impl EpubEditorModel {
                     .map(|(p, _)| file_name(p).to_string())
                     .unwrap_or_else(|| "Not used".to_string());
                 rows.push(ReportRow {
-                    cells: vec![
-                        file_name(&file.path).to_string(),
-                        human_size(size),
-                        used_by,
-                    ],
+                    cells: vec![file_name(&file.path).to_string(), human_size(size), used_by],
                     keys: vec![0, size as i64, 0],
                     open: Some(file.path.clone()),
                 });
@@ -7037,9 +6854,27 @@ impl EpubEditorModel {
                 .map(|(on, from, to)| (on, crate::epub_tools::TagRule { from, to }))
                 .collect(),
             None => vec![
-                (true, crate::epub_tools::TagRule { from: "b".into(), to: "strong".into() }),
-                (true, crate::epub_tools::TagRule { from: "i".into(), to: "em".into() }),
-                (false, crate::epub_tools::TagRule { from: "div.poem".into(), to: "blockquote".into() }),
+                (
+                    true,
+                    crate::epub_tools::TagRule {
+                        from: "b".into(),
+                        to: "strong".into(),
+                    },
+                ),
+                (
+                    true,
+                    crate::epub_tools::TagRule {
+                        from: "i".into(),
+                        to: "em".into(),
+                    },
+                ),
+                (
+                    false,
+                    crate::epub_tools::TagRule {
+                        from: "div.poem".into(),
+                        to: "blockquote".into(),
+                    },
+                ),
             ],
         }
     }
@@ -7054,9 +6889,7 @@ impl EpubEditorModel {
         let mut elements = 0usize;
         if let Some(container) = &self.container {
             for file in &container.files {
-                if file.kind != FileKind::Html
-                    || self.removed_paths.contains(&file.path)
-                {
+                if file.kind != FileKind::Html || self.removed_paths.contains(&file.path) {
                     continue;
                 }
                 let Some(text) = self.file_text(&file.path) else {
@@ -7081,20 +6914,14 @@ impl EpubEditorModel {
             .map(|c| {
                 c.files
                     .iter()
-                    .filter(|f| {
-                        f.kind == FileKind::Html
-                            && !self.removed_paths.contains(&f.path)
-                    })
+                    .filter(|f| f.kind == FileKind::Html && !self.removed_paths.contains(&f.path))
                     .filter_map(|f| self.file_text(&f.path))
                     .collect()
             })
             .unwrap_or_default();
         let rules: Rc<RefCell<Vec<(bool, crate::epub_tools::TagRule)>>> =
             Rc::new(RefCell::new(self.tag_rules()));
-        let shell = dialog_shell(
-            DialogSize::List,
-            Some("Change tags across the book"),
-        );
+        let shell = dialog_shell(DialogSize::List, Some("Change tags across the book"));
         let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
@@ -7177,8 +7004,7 @@ impl EpubEditorModel {
             let recount = recount.clone();
             // The rows call back into rebuild when one is removed:
             // an Rc slot filled right below breaks the cycle.
-            let self_slot: SelfSlot =
-                Rc::new(RefCell::new(None));
+            let self_slot: SelfSlot = Rc::new(RefCell::new(None));
             let rebuild = {
                 let self_slot = self_slot.clone();
                 Rc::new(move || {
@@ -7202,10 +7028,7 @@ impl EpubEditorModel {
                         let inner = gtk::Box::new(gtk::Orientation::Horizontal, 10);
                         let circle = tick_circle(*on);
                         inner.append(&circle);
-                        let label = gtk::Label::new(Some(&format!(
-                            "{} → {}",
-                            rule.from, rule.to
-                        )));
+                        let label = gtk::Label::new(Some(&format!("{} → {}", rule.from, rule.to)));
                         label.add_css_class("kalam-ed-mono");
                         label.set_halign(gtk::Align::Start);
                         label.set_valign(gtk::Align::Center);
@@ -7283,10 +7106,7 @@ impl EpubEditorModel {
                     if all.iter().any(|(_, r)| r.from == from) {
                         return;
                     }
-                    all.push((
-                        true,
-                        crate::epub_tools::TagRule { from, to },
-                    ));
+                    all.push((true, crate::epub_tools::TagRule { from, to }));
                 }
                 from_entry.set_text("");
                 to_entry.set_text("");
@@ -7302,9 +7122,11 @@ impl EpubEditorModel {
 
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         {
             let slot = slot.clone();
             let rules = rules.clone();
@@ -7333,10 +7155,7 @@ impl EpubEditorModel {
     /// Whole-file replacements for Filter style information:
     /// declarations dropped from stylesheets, the same from
     /// inline `style` attributes, one undo step per file.
-    fn filter_style_changes(
-        &self,
-        filter: &[String],
-    ) -> (Vec<(String, String)>, usize) {
+    fn filter_style_changes(&self, filter: &[String]) -> (Vec<(String, String)>, usize) {
         let props: Vec<&str> = filter.iter().map(String::as_str).collect();
         let mut changes = Vec::new();
         let mut declarations = 0usize;
@@ -7369,10 +7188,22 @@ impl EpubEditorModel {
         // (row label, the properties it takes with it)
         const GROUPS: [(&str, &[&str]); 6] = [
             ("Colours", &["color", "background", "background-color"]),
-            ("Fonts", &["font", "font-family", "font-size", "font-weight", "font-style"]),
+            (
+                "Fonts",
+                &[
+                    "font",
+                    "font-family",
+                    "font-size",
+                    "font-weight",
+                    "font-style",
+                ],
+            ),
             ("Margins", &["margin-"]),
             ("Padding", &["padding-"]),
-            ("Text alignment", &["text-align", "text-indent", "line-height"]),
+            (
+                "Text alignment",
+                &["text-align", "text-indent", "line-height"],
+            ),
             ("Borders", &["border-"]),
         ];
         let texts: Vec<(FileKind, String)> = self
@@ -7389,8 +7220,9 @@ impl EpubEditorModel {
                     .collect()
             })
             .unwrap_or_default();
-        let chosen: Rc<std::cell::Cell<[bool; 6]>> =
-            Rc::new(std::cell::Cell::new([true, false, false, false, false, false]));
+        let chosen: Rc<std::cell::Cell<[bool; 6]>> = Rc::new(std::cell::Cell::new([
+            true, false, false, false, false, false,
+        ]));
         let shell = dialog_shell(
             DialogSize::Form,
             Some("Remove chosen CSS wherever it appears"),
@@ -7412,9 +7244,7 @@ impl EpubEditorModel {
                 let (mut decls, mut files) = (0usize, 0usize);
                 for (kind, text) in &texts {
                     let (_, n) = match kind {
-                        FileKind::Css => {
-                            crate::epub_tools::filter_stylesheet(text, &filter)
-                        }
+                        FileKind::Css => crate::epub_tools::filter_stylesheet(text, &filter),
                         _ => crate::epub_tools::filter_inline_styles(text, &filter),
                     };
                     if n > 0 {
@@ -7427,7 +7257,11 @@ impl EpubEditorModel {
                 } else {
                     format!(
                         "Removes {decls} {} in {files} {}",
-                        if decls == 1 { "declaration" } else { "declarations" },
+                        if decls == 1 {
+                            "declaration"
+                        } else {
+                            "declarations"
+                        },
                         if files == 1 { "file" } else { "files" }
                     )
                 });
@@ -7452,7 +7286,11 @@ impl EpubEditorModel {
             inner.append(&label);
             let shown: Vec<String> = props
                 .iter()
-                .map(|p| p.strip_suffix('-').map(|s| format!("{s}-*")).unwrap_or_else(|| p.to_string()))
+                .map(|p| {
+                    p.strip_suffix('-')
+                        .map(|s| format!("{s}-*"))
+                        .unwrap_or_else(|| p.to_string())
+                })
                 .collect();
             let meta = gtk::Label::new(Some(&shown.join(", ")));
             meta.add_css_class("kalam-ui-meta");
@@ -7476,9 +7314,11 @@ impl EpubEditorModel {
 
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         {
             let slot = slot.clone();
             let chosen = chosen.clone();
@@ -7488,9 +7328,7 @@ impl EpubEditorModel {
                     .iter()
                     .zip(chosen.get().iter())
                     .filter(|(_, on)| **on)
-                    .flat_map(|((_, props), _)| {
-                        props.iter().map(|p| p.to_string())
-                    })
+                    .flat_map(|((_, props), _)| props.iter().map(|p| p.to_string()))
                     .collect();
                 close_slot(&slot);
                 let _ = s.send(EpubEditorMsg::RunFilterStyle(filter));
@@ -7514,9 +7352,7 @@ impl EpubEditorModel {
         let Some(container) = &self.container else {
             return Vec::new();
         };
-        let opf = self
-            .file_text(&container.opf_path)
-            .unwrap_or_default();
+        let opf = self.file_text(&container.opf_path).unwrap_or_default();
         let version = crate::epub_structure::opf_package_version(&opf);
         let modern = version
             .as_deref()
@@ -7565,9 +7401,7 @@ impl EpubEditorModel {
         let pending = facts.iter().any(|(_, _, todo)| *todo);
         let shell = dialog_shell(DialogSize::Form, Some(&book.title));
         if !pending {
-            let label = gtk::Label::new(Some(
-                "This book's internals are up to date.",
-            ));
+            let label = gtk::Label::new(Some("This book's internals are up to date."));
             label.add_css_class("kalam-ui-meta");
             label.set_halign(gtk::Align::Start);
             shell.body().append(&label);
@@ -7595,9 +7429,11 @@ impl EpubEditorModel {
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         if pending {
             let slot_cancel = slot.clone();
-            shell.footer().append(&boxed_ghost_button("Cancel", move || {
-                close_slot(&slot_cancel);
-            }));
+            shell
+                .footer()
+                .append(&boxed_ghost_button("Cancel", move || {
+                    close_slot(&slot_cancel);
+                }));
             let slot2 = slot.clone();
             let s = sender.input_sender().clone();
             shell.footer().append(&primary_button("Upgrade", move || {
@@ -7632,8 +7468,7 @@ impl EpubEditorModel {
             "Upgraded the book's internals".to_string(),
             "Before upgrade internals",
         );
-        let upgraded =
-            crate::epub_structure::upgrade_opf(&opf, &crate::db::chrono_like_now());
+        let upgraded = crate::epub_structure::upgrade_opf(&opf, &crate::db::chrono_like_now());
         if upgraded != opf {
             plan.text_changes.push((opf_path.clone(), upgraded));
         }
@@ -7649,21 +7484,12 @@ impl EpubEditorModel {
                 let mut spined: Vec<&EpubFile> = container
                     .files
                     .iter()
-                    .filter(|f| {
-                        f.kind == FileKind::Html
-                            && f.spine_index.is_some()
-                            && !f.is_nav
-                    })
+                    .filter(|f| f.kind == FileKind::Html && f.spine_index.is_some() && !f.is_nav)
                     .collect();
                 spined.sort_by_key(|f| f.spine_index);
                 let files: Vec<(String, String)> = spined
                     .iter()
-                    .map(|f| {
-                        (
-                            f.path.clone(),
-                            self.file_text(&f.path).unwrap_or_default(),
-                        )
-                    })
+                    .map(|f| (f.path.clone(), self.file_text(&f.path).unwrap_or_default()))
                     .collect();
                 entries = crate::epub_structure::generate_from_headings(&files);
             }
@@ -7675,8 +7501,7 @@ impl EpubEditorModel {
                     n += 1;
                     nav_path = format!("{dir}nav{n}.xhtml");
                 }
-                let nav_text =
-                    crate::epub_structure::render_nav(None, &entries, &nav_path);
+                let nav_text = crate::epub_structure::render_nav(None, &entries, &nav_path);
                 plan.new_files.push((
                     EpubFile {
                         path: nav_path.clone(),
@@ -7707,13 +7532,10 @@ impl EpubEditorModel {
     /// printable ASCII range so a subset font can still set a
     /// line the author writes tomorrow.
     fn book_chars(&self) -> HashSet<char> {
-        let mut chars: HashSet<char> =
-            (0x20u8..=0x7e).map(|b| b as char).collect();
+        let mut chars: HashSet<char> = (0x20u8..=0x7e).map(|b| b as char).collect();
         if let Some(container) = &self.container {
             for file in &container.files {
-                if file.kind != FileKind::Html
-                    || self.removed_paths.contains(&file.path)
-                {
+                if file.kind != FileKind::Html || self.removed_paths.contains(&file.path) {
                     continue;
                 }
                 if let Some(text) = self.file_text(&file.path) {
@@ -7724,24 +7546,15 @@ impl EpubEditorModel {
         chars
     }
 
-    fn start_subset_fonts(
-        &mut self,
-        preselect: Option<String>,
-        sender: &ComponentSender<Self>,
-    ) {
+    fn start_subset_fonts(&mut self, preselect: Option<String>, sender: &ComponentSender<Self>) {
         let fonts: Vec<(String, Vec<u8>)> = self
             .container
             .as_ref()
             .map(|c| {
                 c.files
                     .iter()
-                    .filter(|f| {
-                        f.kind == FileKind::Font
-                            && !self.removed_paths.contains(&f.path)
-                    })
-                    .filter_map(|f| {
-                        self.file_bytes(&f.path).map(|b| (f.path.clone(), b))
-                    })
+                    .filter(|f| f.kind == FileKind::Font && !self.removed_paths.contains(&f.path))
+                    .filter_map(|f| self.file_bytes(&f.path).map(|b| (f.path.clone(), b)))
                     .collect()
             })
             .unwrap_or_default();
@@ -7874,7 +7687,10 @@ impl EpubEditorModel {
                     ),
                     true,
                 ),
-                Ok(_) => (format!("{} · no saving", human_size(preview.original)), false),
+                Ok(_) => (
+                    format!("{} · no saving", human_size(preview.original)),
+                    false,
+                ),
                 Err(message) => {
                     let why = if message.contains("WOFF2") {
                         "WOFF2 — cannot subset yet"
@@ -7927,9 +7743,11 @@ impl EpubEditorModel {
         recount();
 
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         shell.footer().append(&subset_btn);
         if let Some(dialog) = present_dialog(
             &self.root_overlay,
@@ -7972,13 +7790,11 @@ impl EpubEditorModel {
                                         // rest is sizes and weights.
                                         for part in decl.value.split(',') {
                                             let part = part.trim();
-                                            if let Some(start) =
-                                                part.find(['"', '\''])
-                                            {
+                                            if let Some(start) = part.find(['"', '\'']) {
                                                 let rest = &part[start + 1..];
-                                                if let Some(end) =
-                                                    rest.find(part[start..].chars().next().unwrap_or('"'))
-                                                {
+                                                if let Some(end) = rest.find(
+                                                    part[start..].chars().next().unwrap_or('"'),
+                                                ) {
                                                     let name = rest[..end].trim().to_string();
                                                     if !name.is_empty() {
                                                         used.push(name);
@@ -8024,12 +7840,9 @@ impl EpubEditorModel {
         let ticked: Rc<RefCell<Vec<bool>>> = Rc::new(RefCell::new(
             candidates.iter().map(|(_, p)| p.is_some()).collect(),
         ));
-        let candidates: Rc<Vec<(String, Option<std::path::PathBuf>)>> =
-            Rc::new(candidates);
+        let candidates: Rc<Vec<(String, Option<std::path::PathBuf>)>> = Rc::new(candidates);
         if candidates.is_empty() {
-            let label = gtk::Label::new(Some(
-                "Every font your CSS names is already in the book.",
-            ));
+            let label = gtk::Label::new(Some("Every font your CSS names is already in the book."));
             label.add_css_class("kalam-ui-meta");
             label.set_halign(gtk::Align::Start);
             shell.body().append(&label);
@@ -8079,9 +7892,7 @@ impl EpubEditorModel {
         }
         shell.body().append(&list);
         if !candidates.is_empty() {
-            let licence = gtk::Label::new(Some(
-                "Check that the font licence allows embedding.",
-            ));
+            let licence = gtk::Label::new(Some("Check that the font licence allows embedding."));
             licence.add_css_class("kalam-ui-meta");
             licence.set_halign(gtk::Align::Start);
             shell.body().append(&licence);
@@ -8095,9 +7906,11 @@ impl EpubEditorModel {
             }));
         } else {
             let slot_cancel = slot.clone();
-            shell.footer().append(&boxed_ghost_button("Cancel", move || {
-                close_slot(&slot_cancel);
-            }));
+            shell
+                .footer()
+                .append(&boxed_ghost_button("Cancel", move || {
+                    close_slot(&slot_cancel);
+                }));
             let slot2 = slot.clone();
             let ticked = ticked.clone();
             let candidates = candidates.clone();
@@ -8166,8 +7979,7 @@ impl EpubEditorModel {
         };
         let mut plan = StructurePlan::new(summary, "Before embed fonts");
         let mut faces = String::new();
-        let mut taken: Vec<String> =
-            container.files.iter().map(|f| f.path.clone()).collect();
+        let mut taken: Vec<String> = container.files.iter().map(|f| f.path.clone()).collect();
         for (family, name, bytes) in loaded {
             let mut path = format!("{dir}{}", file_name(&name));
             let mut n = 1;
@@ -8204,11 +8016,11 @@ impl EpubEditorModel {
             ));
         }
         let css_text = self.file_text(&css_path).unwrap_or_default();
-        let new_css = match css_text
-            .lines()
-            .next()
-            .filter(|line| line.trim_start().to_ascii_lowercase().starts_with("@charset"))
-        {
+        let new_css = match css_text.lines().next().filter(|line| {
+            line.trim_start()
+                .to_ascii_lowercase()
+                .starts_with("@charset")
+        }) {
             Some(first) => {
                 let at = first.len() + 1;
                 format!(
@@ -8233,13 +8045,8 @@ impl EpubEditorModel {
             .map(|c| {
                 c.files
                     .iter()
-                    .filter(|f| {
-                        f.kind == FileKind::Image
-                            && !self.removed_paths.contains(&f.path)
-                    })
-                    .filter_map(|f| {
-                        self.file_bytes(&f.path).map(|b| (f.path.clone(), b))
-                    })
+                    .filter(|f| f.kind == FileKind::Image && !self.removed_paths.contains(&f.path))
+                    .filter_map(|f| self.file_bytes(&f.path).map(|b| (f.path.clone(), b)))
                     .collect()
             })
             .unwrap_or_default();
@@ -8270,8 +8077,7 @@ impl EpubEditorModel {
             },
             |_| {},
             move |pair| {
-                let _ =
-                    s.send(EpubEditorMsg::CompressPreviewReady(Box::new(pair)));
+                let _ = s.send(EpubEditorMsg::CompressPreviewReady(Box::new(pair)));
             },
         );
     }
@@ -8316,8 +8122,7 @@ impl EpubEditorModel {
         };
         let lossless_saving = saving(&lossless);
         let smaller_saving = saving(&smaller);
-        let wins: Rc<(ByteChanges, ByteChanges)> =
-            Rc::new((lossless, smaller));
+        let wins: Rc<(ByteChanges, ByteChanges)> = Rc::new((lossless, smaller));
         let mode = Rc::new(std::cell::Cell::new(false)); // false = Lossless
 
         let body_label = gtk::Label::new(None);
@@ -8332,7 +8137,11 @@ impl EpubEditorModel {
             let mode = mode.clone();
             let s = sender.input_sender().clone();
             primary_button("Compress", move || {
-                let chosen = if mode.get() { wins.1.clone() } else { wins.0.clone() };
+                let chosen = if mode.get() {
+                    wins.1.clone()
+                } else {
+                    wins.0.clone()
+                };
                 close_slot(&slot);
                 let _ = s.send(EpubEditorMsg::RunCompressImages(chosen));
             })
@@ -8365,8 +8174,7 @@ impl EpubEditorModel {
                     )
                 } else {
                     (
-                        "Every image is already as small as lossless gets."
-                            .to_string(),
+                        "Every image is already as small as lossless gets.".to_string(),
                         false,
                     )
                 };
@@ -8406,9 +8214,11 @@ impl EpubEditorModel {
         refresh_body();
 
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         shell.footer().append(&compress_btn);
         if let Some(dialog) = present_dialog(
             &self.root_overlay,
@@ -8442,27 +8252,20 @@ impl EpubEditorModel {
                         continue;
                     }
                     let url = url.split('#').next().unwrap_or(url).to_string();
-                    if url.is_empty()
-                        || links.iter().any(|(seen, _, _)| *seen == url)
-                    {
+                    if url.is_empty() || links.iter().any(|(seen, _, _)| *seen == url) {
                         continue;
                     }
                     links.push((url, file.path.clone(), found.line));
                 }
             }
         }
-        let shell = dialog_shell(
-            DialogSize::List,
-            Some("Kalam asks the web about each link"),
-        );
+        let shell = dialog_shell(DialogSize::List, Some("Kalam asks the web about each link"));
         let total = links.len();
         let mut status_labels: Vec<gtk::Label> = Vec::new();
         let mut source_labels: Vec<gtk::Label> = Vec::new();
         let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
         if links.is_empty() {
-            let label = gtk::Label::new(Some(
-                "This book links nowhere outside itself.",
-            ));
+            let label = gtk::Label::new(Some("This book links nowhere outside itself."));
             label.add_css_class("kalam-ui-meta");
             label.set_halign(gtk::Align::Start);
             list.append(&label);
@@ -8481,10 +8284,7 @@ impl EpubEditorModel {
             url_label.set_halign(gtk::Align::Start);
             url_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
             texts.append(&url_label);
-            let source = gtk::Label::new(Some(&format!(
-                "{} · line {line}",
-                file_name(file)
-            )));
+            let source = gtk::Label::new(Some(&format!("{} · line {line}", file_name(file))));
             source.add_css_class("kalam-ui-meta");
             source.set_halign(gtk::Align::Start);
             source.set_visible(false);
@@ -8534,8 +8334,7 @@ impl EpubEditorModel {
         }
         {
             let service = self.service.clone();
-            let urls: Vec<String> =
-                links.into_iter().map(|(url, _, _)| url).collect();
+            let urls: Vec<String> = links.into_iter().map(|(url, _, _)| url).collect();
             let labels = Rc::new(status_labels);
             let sources = Rc::new(source_labels);
             let started = Rc::new(std::cell::Cell::new(false));
@@ -8580,9 +8379,7 @@ impl EpubEditorModel {
                         done
                     },
                     move |update| {
-                        if let Some((index, verdict)) =
-                            update.detail.split_once('|')
-                        {
+                        if let Some((index, verdict)) = update.detail.split_once('|') {
                             if let Ok(index) = index.parse::<usize>() {
                                 if let Some(label) = labels2.get(index) {
                                     label.set_label(verdict);
@@ -8594,20 +8391,13 @@ impl EpubEditorModel {
                                 }
                             }
                         }
-                        progress3.set_fraction(
-                            update.done as f64 / update.total.max(1) as f64,
-                        );
-                        checked3.set_label(&format!(
-                            "{} of {} checked",
-                            update.done, update.total
-                        ));
+                        progress3.set_fraction(update.done as f64 / update.total.max(1) as f64);
+                        checked3.set_label(&format!("{} of {} checked", update.done, update.total));
                     },
                     move |done: usize| {
                         stop3.set_visible(false);
                         if done < total {
-                            checked4.set_label(&format!(
-                                "Stopped — {done} of {total} checked"
-                            ));
+                            checked4.set_label(&format!("Stopped — {done} of {total} checked"));
                         } else {
                             checked4.set_label(&format!("{total} of {total} checked"));
                         }
@@ -8715,10 +8505,8 @@ impl EpubEditorModel {
         let n = self.problems.len();
         self.status_problems.set_visible(n > 0);
         if n > 0 {
-            self.status_problems.set_label(&format!(
-                "{n} problem{}",
-                if n == 1 { "" } else { "s" }
-            ));
+            self.status_problems
+                .set_label(&format!("{n} problem{}", if n == 1 { "" } else { "s" }));
         }
     }
 
@@ -8751,18 +8539,17 @@ impl EpubEditorModel {
             }));
         let slot_problems = slot.clone();
         let s = sender.input_sender().clone();
-        shell.footer().append(&primary_button("Show problems", move || {
-            close_slot(&slot_problems);
-            let _ = s.send(EpubEditorMsg::SetRightTab(RightTab::Problems));
-        }));
+        shell
+            .footer()
+            .append(&primary_button("Show problems", move || {
+                close_slot(&slot_problems);
+                let _ = s.send(EpubEditorMsg::SetRightTab(RightTab::Problems));
+            }));
 
         let title = format!("{} error{} found", n, if n == 1 { "" } else { "s" });
-        if let Some(dialog) = present_dialog(
-            &self.root_overlay,
-            &title,
-            DialogExit::OwnButtons,
-            &shell,
-        ) {
+        if let Some(dialog) =
+            present_dialog(&self.root_overlay, &title, DialogExit::OwnButtons, &shell)
+        {
             *slot.borrow_mut() = Some(dialog);
         }
     }
@@ -8802,9 +8589,7 @@ impl EpubEditorModel {
                         let _ = s.send(EpubEditorMsg::DiscardAndLeave);
                     }
                     UnsavedAction::CloseTab(path) => {
-                        let _ = s.send(EpubEditorMsg::DiscardCloseTab {
-                            path: path.clone(),
-                        });
+                        let _ = s.send(EpubEditorMsg::DiscardCloseTab { path: path.clone() });
                     }
                 }
             }));
@@ -8999,10 +8784,7 @@ impl EpubEditorModel {
             let gesture = gtk::GestureClick::new();
             gesture.set_button(1);
             gesture.connect_pressed(move |gesture, _n, x, _y| {
-                let width = gesture
-                    .widget()
-                    .map(|w| w.width())
-                    .unwrap_or(0) as f64;
+                let width = gesture.widget().map(|w| w.width()).unwrap_or(0) as f64;
                 if width > 0.0 && x > width - 26.0 {
                     let _ = s.send(EpubEditorMsg::CloseTab { path: path.clone() });
                     gesture.set_state(gtk::EventSequenceState::Claimed);
@@ -9201,11 +8983,9 @@ impl EpubEditorModel {
                                 0,
                             ));
                         } else {
-                            entries.extend(headings.into_iter().map(
-                                |(level, text, offset)| {
-                                    (level, text, file.path.clone(), offset)
-                                },
-                            ));
+                            entries.extend(headings.into_iter().map(|(level, text, offset)| {
+                                (level, text, file.path.clone(), offset)
+                            }));
                         }
                     }
                 }
@@ -9260,8 +9040,11 @@ impl EpubEditorModel {
                 ..kalam_reader::KalamPrefs::default()
             },
             PreviewMode::Kalam => {
-                let effective = book_settings::BookReadingSettings::load_book(catalog, self.book_id)
-                    .unwrap_or_else(|| book_settings::BookReadingSettings::load_globals(catalog));
+                let effective =
+                    book_settings::BookReadingSettings::load_book(catalog, self.book_id)
+                        .unwrap_or_else(|| {
+                            book_settings::BookReadingSettings::load_globals(catalog)
+                        });
                 let theme = effective
                     .theme
                     .as_deref()
@@ -9325,7 +9108,11 @@ impl EpubEditorModel {
             replacements.insert(tab.path.clone(), text.into_bytes());
         }
         for (path, text) in &self.pending {
-            let kind = self.container.as_ref().and_then(|c| c.file(path)).map(|f| f.kind);
+            let kind = self
+                .container
+                .as_ref()
+                .and_then(|c| c.file(path))
+                .map(|f| f.kind);
             if matches!(kind, Some(FileKind::Html | FileKind::Xml))
                 && crate::epub_container::xml_problem(text).is_some()
             {
@@ -9402,8 +9189,7 @@ impl EpubEditorModel {
             });
         }
 
-        let scrollbar =
-            gtk::Scrollbar::new(gtk::Orientation::Vertical, Some(view.vadjustment()));
+        let scrollbar = gtk::Scrollbar::new(gtk::Orientation::Vertical, Some(view.vadjustment()));
         scrollbar.set_halign(gtk::Align::End);
         scrollbar.set_valign(gtk::Align::Fill);
         scrollbar.add_css_class("kalam-reader-strip-bar");
@@ -9531,7 +9317,11 @@ impl EpubEditorModel {
             .text
             .find(&needle)
             .map(|at| map.text[..at].chars().count() + prefix.chars().count())
-            .or_else(|| map.text.find(&exact).map(|at| map.text[..at].chars().count()));
+            .or_else(|| {
+                map.text
+                    .find(&exact)
+                    .map(|at| map.text[..at].chars().count())
+            });
         if let Some(at) = found {
             self.jump_to_span(&path, &map, at, at + exact.chars().count(), sender);
         }
@@ -9598,10 +9388,7 @@ impl EpubEditorModel {
                 .find(&href)
                 .or_else(|| if href != name { text.find(name) } else { None });
             if let Some(offset) = at {
-                out.push((
-                    file.path.clone(),
-                    text[..offset].matches('\n').count() + 1,
-                ));
+                out.push((file.path.clone(), text[..offset].matches('\n').count() + 1));
             }
         }
         out
@@ -9731,13 +9518,9 @@ impl EpubEditorModel {
         }
         {
             let s = sender.input_sender().clone();
-            menu.add_check_item(
-                "Show line breaks",
-                self.source_line_breaks,
-                move |on| {
-                    let _ = s.send(EpubEditorMsg::ToggleSourceLineBreaks(on));
-                },
-            );
+            menu.add_check_item("Show line breaks", self.source_line_breaks, move |on| {
+                let _ = s.send(EpubEditorMsg::ToggleSourceLineBreaks(on));
+            });
         }
         popover.set_parent(&self.view_btn);
         popover.popup();
@@ -9794,9 +9577,12 @@ impl EpubEditorModel {
         };
         // The last heading of this file at or before the cursor;
         // before the first one, the file's first heading.
-        let mut current = self.outline_headings.iter().rposition(|(_, _, path, offset)| {
-            path.as_str() == active_path && *offset <= cursor as i32
-        });
+        let mut current = self
+            .outline_headings
+            .iter()
+            .rposition(|(_, _, path, offset)| {
+                path.as_str() == active_path && *offset <= cursor as i32
+            });
         if current.is_none() {
             current = self
                 .outline_headings
@@ -10017,7 +9803,10 @@ impl EpubEditorModel {
                 };
                 let label = gtk::Label::new(Some(&text));
                 label.add_css_class("kalam-ed-css-decl");
-                if winner.get(&decl.property).is_some_and(|(_, wmi, wdi)| (*wmi, *wdi) != (mi, di)) {
+                if winner
+                    .get(&decl.property)
+                    .is_some_and(|(_, wmi, wdi)| (*wmi, *wdi) != (mi, di))
+                {
                     label.add_css_class("overridden");
                 }
                 label.set_halign(gtk::Align::Start);
@@ -10083,11 +9872,7 @@ impl EpubEditorModel {
                 text: self.file_text(&file.path),
             })
             .collect();
-        crate::epub_check::check_book(
-            &files,
-            &container.opf_path,
-            container.ncx_path.as_deref(),
-        )
+        crate::epub_check::check_book(&files, &container.opf_path, container.ncx_path.as_deref())
     }
 
     /// Run Check book now. Pure text work on buffers already in
@@ -10289,8 +10074,7 @@ impl EpubEditorModel {
             let _ = s.send(EpubEditorMsg::OpenPersonalDict);
         });
         menu.add_separator();
-        let insert =
-            crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
+        let insert = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
         {
             let s = sender.input_sender().clone();
             insert.add_item("Character…", move || {
@@ -10310,8 +10094,7 @@ impl EpubEditorModel {
             });
         }
         menu.add_submenu("Insert", insert);
-        let structure =
-            crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
+        let structure = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Tools);
         {
             let s = sender.input_sender().clone();
             structure.add_item("Split file…", move || {
@@ -10451,15 +10234,19 @@ impl EpubEditorModel {
 
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         let slot_run = slot.clone();
         let s = sender.input_sender().clone();
-        shell.footer().append(&primary_button(kind.label(), move || {
-            close_slot(&slot_run);
-            let _ = s.send(EpubEditorMsg::RunInstantTool(kind, whole.get()));
-        }));
+        shell
+            .footer()
+            .append(&primary_button(kind.label(), move || {
+                close_slot(&slot_run);
+                let _ = s.send(EpubEditorMsg::RunInstantTool(kind, whole.get()));
+            }));
 
         if let Some(dialog) = present_dialog(
             &self.root_overlay,
@@ -10487,7 +10274,11 @@ impl EpubEditorModel {
                 .map(|f| f.path.clone())
                 .collect()
         } else {
-            vec![self.active_tab().filter(|t| kind.applies_to(t.kind))?.path.clone()]
+            vec![self
+                .active_tab()
+                .filter(|t| kind.applies_to(t.kind))?
+                .path
+                .clone()]
         };
 
         let mut changes: Vec<(String, String)> = Vec::new();
@@ -10495,7 +10286,9 @@ impl EpubEditorModel {
         match kind {
             InstantTool::Smarten => {
                 for path in targets {
-                    let Some(text) = self.file_text(&path) else { continue };
+                    let Some(text) = self.file_text(&path) else {
+                        continue;
+                    };
                     let (new, n) = crate::epub_tools::smarten_html(&text);
                     if n > 0 && new != text {
                         total += n;
@@ -10505,7 +10298,9 @@ impl EpubEditorModel {
             }
             InstantTool::Reformat => {
                 for path in targets {
-                    let Some(text) = self.file_text(&path) else { continue };
+                    let Some(text) = self.file_text(&path) else {
+                        continue;
+                    };
                     let Some(fkind) = container.file(&path).map(|f| f.kind) else {
                         continue;
                     };
@@ -10526,7 +10321,9 @@ impl EpubEditorModel {
                     }
                 }
                 for path in targets {
-                    let Some(text) = self.file_text(&path) else { continue };
+                    let Some(text) = self.file_text(&path) else {
+                        continue;
+                    };
                     let (new, n) = crate::epub_tools::remove_unused_css(&text, &chains);
                     if n > 0 && new != text {
                         total += n;
@@ -10545,7 +10342,9 @@ impl EpubEditorModel {
                     if fixes.is_empty() {
                         continue;
                     }
-                    let Some(text) = self.file_text(&path) else { continue };
+                    let Some(text) = self.file_text(&path) else {
+                        continue;
+                    };
                     fixes.sort_by_key(|f| std::cmp::Reverse(f.start));
                     let mut new = text;
                     let mut applied = 0usize;
@@ -10572,25 +10371,47 @@ impl EpubEditorModel {
                 InstantTool::Smarten => format!("{total} punctuation marks smartened in {name}"),
                 InstantTool::Reformat => format!("Reformatted {name}"),
                 InstantTool::RemoveUnusedCss => {
-                    format!("{total} {} removed from {name}", if total == 1 { "rule" } else { "rules" })
+                    format!(
+                        "{total} {} removed from {name}",
+                        if total == 1 { "rule" } else { "rules" }
+                    )
                 }
                 InstantTool::FixHtml => {
-                    format!("{total} {} applied in {name}", if total == 1 { "fix" } else { "fixes" })
+                    format!(
+                        "{total} {} applied in {name}",
+                        if total == 1 { "fix" } else { "fixes" }
+                    )
                 }
             }
         } else {
             match kind {
                 InstantTool::Smarten => {
-                    format!("{total} punctuation marks smartened in {} {}", changes.len(), files_word(changes.len()))
+                    format!(
+                        "{total} punctuation marks smartened in {} {}",
+                        changes.len(),
+                        files_word(changes.len())
+                    )
                 }
                 InstantTool::Reformat => {
-                    format!("Reformatted {} {}", changes.len(), files_word(changes.len()))
+                    format!(
+                        "Reformatted {} {}",
+                        changes.len(),
+                        files_word(changes.len())
+                    )
                 }
                 InstantTool::RemoveUnusedCss => {
-                    format!("{total} rules removed from {} {}", changes.len(), files_word(changes.len()))
+                    format!(
+                        "{total} rules removed from {} {}",
+                        changes.len(),
+                        files_word(changes.len())
+                    )
                 }
                 InstantTool::FixHtml => {
-                    format!("{total} fixes applied in {} {}", changes.len(), files_word(changes.len()))
+                    format!(
+                        "{total} fixes applied in {} {}",
+                        changes.len(),
+                        files_word(changes.len())
+                    )
                 }
             }
         };
@@ -10648,11 +10469,7 @@ impl EpubEditorModel {
         let s = sender.input_sender().clone();
         crate::tasks::spawn_internal(
             "Taking snapshot",
-            move |_reporter| {
-                service
-                    .editor_snapshot(&book, &label, files)
-                    .map(|()| plan)
-            },
+            move |_reporter| service.editor_snapshot(&book, &label, files).map(|()| plan),
             |_| {},
             move |result| match result {
                 Ok(plan) => {
@@ -10684,9 +10501,7 @@ impl EpubEditorModel {
                     (
                         t.path.clone(),
                         t.pinned,
-                        t.buffer
-                            .as_ref()
-                            .map(|b| (buffer_text(b), b.is_modified())),
+                        t.buffer.as_ref().map(|b| (buffer_text(b), b.is_modified())),
                     )
                 })
                 .collect(),
@@ -10926,11 +10741,7 @@ impl EpubEditorModel {
     /// Finish a plan: append the OPF rewrite that matches its
     /// simulated end state, then snapshot+apply. Returns false
     /// (with a pill) when the OPF cannot be rebuilt.
-    fn finish_structure(
-        &mut self,
-        mut plan: StructurePlan,
-        sender: &ComponentSender<Self>,
-    ) {
+    fn finish_structure(&mut self, mut plan: StructurePlan, sender: &ComponentSender<Self>) {
         let files = self.simulated_files(&plan);
         let ncx = self
             .container
@@ -10955,8 +10766,7 @@ impl EpubEditorModel {
             .find(|(p, _)| p == &opf_path_now)
             .map(|(_, t)| t.clone());
         plan.text_changes.retain(|(p, _)| p != &opf_path_now);
-        let Some(mut opf_text) =
-            self.opf_text_for_files(&files, ncx.as_deref(), base.as_deref())
+        let Some(mut opf_text) = self.opf_text_for_files(&files, ncx.as_deref(), base.as_deref())
         else {
             self.show_pill("Could not read the book's package file", false, sender);
             return;
@@ -10967,8 +10777,7 @@ impl EpubEditorModel {
                 .as_ref()
                 .map(|c| c.opf_path.clone())
                 .unwrap_or_default();
-            let (items, _, _) =
-                crate::epub_structure::parse_opf_data(&opf_text, &opf_path);
+            let (items, _, _) = crate::epub_structure::parse_opf_data(&opf_text, &opf_path);
             if let Some(id) = items
                 .iter()
                 .find(|i| &i.href == cover)
@@ -11078,9 +10887,11 @@ impl EpubEditorModel {
 
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         let slot_ok = slot.clone();
         let s = sender.input_sender().clone();
         let mode_ok = mode.clone();
@@ -11112,9 +10923,7 @@ impl EpubEditorModel {
             return;
         };
         let split_mode = match mode {
-            0 => crate::epub_structure::SplitMode::AtChar(
-                self.cursor_char_offset().unwrap_or(0),
-            ),
+            0 => crate::epub_structure::SplitMode::AtChar(self.cursor_char_offset().unwrap_or(0)),
             1 => crate::epub_structure::SplitMode::AtHeadings,
             _ => crate::epub_structure::SplitMode::BySize(max_kb * 1024),
         };
@@ -11169,16 +10978,11 @@ impl EpubEditorModel {
             .and_then(|c| c.file(&orig))
             .and_then(|f| f.spine_index);
         let mut plan = StructurePlan::new(
-            format!(
-                "Split {} into {} files",
-                file_name(&orig),
-                pieces.len()
-            ),
+            format!("Split {} into {} files", file_name(&orig), pieces.len()),
             "Before split",
         );
         for (i, piece) in pieces.iter().enumerate() {
-            let fixed =
-                crate::epub_structure::rewrite_links(piece, &names[i], &orig, &map);
+            let fixed = crate::epub_structure::rewrite_links(piece, &names[i], &orig, &map);
             if i == 0 {
                 plan.text_changes.push((orig.clone(), fixed));
             } else {
@@ -11203,10 +11007,7 @@ impl EpubEditorModel {
                 }
                 if let Some(current) = self.file_text(&file.path) {
                     let fixed = crate::epub_structure::rewrite_links(
-                        &current,
-                        &file.path,
-                        &file.path,
-                        &map,
+                        &current, &file.path, &file.path, &map,
                     );
                     if fixed != current {
                         plan.text_changes.push((file.path.clone(), fixed));
@@ -11264,10 +11065,7 @@ impl EpubEditorModel {
             return;
         }
         let survivor = targets[0].clone();
-        let texts: Vec<String> = targets
-            .iter()
-            .filter_map(|p| self.file_text(p))
-            .collect();
+        let texts: Vec<String> = targets.iter().filter_map(|p| self.file_text(p)).collect();
         if texts.len() != targets.len() {
             return;
         }
@@ -11285,8 +11083,7 @@ impl EpubEditorModel {
                 None
             }
         };
-        merged =
-            crate::epub_structure::rewrite_links(&merged, &survivor, &survivor, &map);
+        merged = crate::epub_structure::rewrite_links(&merged, &survivor, &survivor, &map);
         let mut plan = StructurePlan::new(
             format!(
                 "Merged {} files into {}",
@@ -11304,10 +11101,7 @@ impl EpubEditorModel {
                 }
                 if let Some(current) = self.file_text(&file.path) {
                     let fixed = crate::epub_structure::rewrite_links(
-                        &current,
-                        &file.path,
-                        &file.path,
-                        &map,
+                        &current, &file.path, &file.path, &map,
                     );
                     if fixed != current {
                         plan.text_changes.push((file.path.clone(), fixed));
@@ -11315,12 +11109,7 @@ impl EpubEditorModel {
                 }
             }
         }
-        plan.spine_order = Some(
-            order
-                .into_iter()
-                .filter(|p| !removed.contains(p))
-                .collect(),
-        );
+        plan.spine_order = Some(order.into_iter().filter(|p| !removed.contains(p)).collect());
         self.finish_structure(plan, sender);
     }
 
@@ -11347,9 +11136,11 @@ impl EpubEditorModel {
 
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         let slot_ok = slot.clone();
         let from = path.to_string();
         let entry_ok = entry.clone();
@@ -11392,7 +11183,11 @@ impl EpubEditorModel {
             return;
         }
         if from == container.opf_path || from == "META-INF/container.xml" || from == "mimetype" {
-            self.show_pill("That file keeps its name — the package points at it", false, sender);
+            self.show_pill(
+                "That file keeps its name — the package points at it",
+                false,
+                sender,
+            );
             return;
         }
         let old_for_map = from.clone();
@@ -11405,11 +11200,7 @@ impl EpubEditorModel {
             }
         };
         let mut plan = StructurePlan::new(
-            format!(
-                "Renamed {} to {}",
-                file_name(&from),
-                file_name(&to)
-            ),
+            format!("Renamed {} to {}", file_name(&from), file_name(&to)),
             "Before rename",
         );
         plan.renames.push((from.clone(), to.clone()));
@@ -11420,10 +11211,7 @@ impl EpubEditorModel {
                 }
                 if let Some(current) = self.file_text(&file.path) {
                     let fixed = crate::epub_structure::rewrite_links(
-                        &current,
-                        &file.path,
-                        &file.path,
-                        &map,
+                        &current, &file.path, &file.path, &map,
                     );
                     if fixed != current {
                         plan.text_changes.push((file.path.clone(), fixed));
@@ -11435,9 +11223,7 @@ impl EpubEditorModel {
         let kind = container.file(&from).map(|f| f.kind);
         if kind.map(|k| k.is_text()).unwrap_or(false) {
             if let Some(current) = self.file_text(&from) {
-                let fixed = crate::epub_structure::rewrite_links(
-                    &current, &to, &from, &map,
-                );
+                let fixed = crate::epub_structure::rewrite_links(&current, &to, &from, &map);
                 if fixed != current {
                     plan.text_changes.push((to.clone(), fixed));
                 }
@@ -11454,10 +11240,7 @@ impl EpubEditorModel {
             return;
         }
         let order = Rc::new(RefCell::new(order));
-        let shell = dialog_shell(
-            DialogSize::List,
-            Some("Drag files into reading order"),
-        );
+        let shell = dialog_shell(DialogSize::List, Some("Drag files into reading order"));
         let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
         build_reorder_rows(&list, &order);
         let scroll = gtk::ScrolledWindow::new();
@@ -11468,16 +11251,20 @@ impl EpubEditorModel {
 
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         let slot_ok = slot.clone();
         let s = sender.input_sender().clone();
         let order_ok = order.clone();
-        shell.footer().append(&primary_button("Save order", move || {
-            close_slot(&slot_ok);
-            let _ = s.send(EpubEditorMsg::RunReorder(order_ok.borrow().clone()));
-        }));
+        shell
+            .footer()
+            .append(&primary_button("Save order", move || {
+                close_slot(&slot_ok);
+                let _ = s.send(EpubEditorMsg::RunReorder(order_ok.borrow().clone()));
+            }));
         if let Some(dialog) = present_dialog(
             &self.root_overlay,
             "Reorder files",
@@ -11493,10 +11280,8 @@ impl EpubEditorModel {
             self.show_pill("The reading order is unchanged", false, sender);
             return;
         }
-        let mut plan = StructurePlan::new(
-            "Reordered the reading order".to_string(),
-            "Before reorder",
-        );
+        let mut plan =
+            StructurePlan::new("Reordered the reading order".to_string(), "Before reorder");
         plan.spine_order = Some(order);
         self.finish_structure(plan, sender);
     }
@@ -11518,13 +11303,14 @@ impl EpubEditorModel {
         let shell = dialog_shell(DialogSize::Form, Some(file_name(path)));
         let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
         let mut ticks: Vec<(Option<String>, gtk::Label)> = Vec::new();
-        let add = |label: &str, value: Option<&str>, ticks: &mut Vec<(Option<String>, gtk::Label)>| {
-            let (row, tick) = option_row(label, "");
-            row.set_size_request(-1, 40);
-            ticks.push((value.map(str::to_string), tick.clone()));
-            list.append(&row);
-            (row, tick)
-        };
+        let add =
+            |label: &str, value: Option<&str>, ticks: &mut Vec<(Option<String>, gtk::Label)>| {
+                let (row, tick) = option_row(label, "");
+                row.set_size_request(-1, 40);
+                ticks.push((value.map(str::to_string), tick.clone()));
+                list.append(&row);
+                (row, tick)
+            };
         let mut rows: Vec<(Option<String>, gtk::Button)> = Vec::new();
         let (row, _) = add("No semantics", None, &mut ticks);
         rows.push((None, row));
@@ -11559,9 +11345,11 @@ impl EpubEditorModel {
 
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         let slot_ok = slot.clone();
         let s = sender.input_sender().clone();
         let path_ok = path.to_string();
@@ -11612,10 +11400,9 @@ impl EpubEditorModel {
         let Some(text) = self.file_text(path) else {
             return;
         };
-        let linked: HashSet<String> =
-            crate::epub_structure::linked_stylesheets(&text, path)
-                .into_iter()
-                .collect();
+        let linked: HashSet<String> = crate::epub_structure::linked_stylesheets(&text, path)
+            .into_iter()
+            .collect();
         let css_files: Vec<String> = container
             .files
             .iter()
@@ -11658,9 +11445,11 @@ impl EpubEditorModel {
 
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         let slot_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_slot(&slot_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_slot(&slot_cancel);
+            }));
         let slot_ok = slot.clone();
         let s = sender.input_sender().clone();
         let path_ok = path.to_string();
@@ -11687,12 +11476,7 @@ impl EpubEditorModel {
         }
     }
 
-    fn run_link_css(
-        &mut self,
-        path: String,
-        css: Vec<String>,
-        sender: &ComponentSender<Self>,
-    ) {
+    fn run_link_css(&mut self, path: String, css: Vec<String>, sender: &ComponentSender<Self>) {
         let Some(text) = self.file_text(&path) else {
             return;
         };
@@ -11722,9 +11506,8 @@ impl EpubEditorModel {
         let Some(file) = container.file(path).cloned() else {
             return;
         };
-        let protected = path == container.opf_path
-            || path == "META-INF/container.xml"
-            || path == "mimetype";
+        let protected =
+            path == container.opf_path || path == "META-INF/container.xml" || path == "mimetype";
         let menu = crate::widgets::menu::menu_popover(crate::widgets::menu::MenuWidth::Wide);
         if !protected {
             let s = sender.input_sender().clone();
@@ -11811,10 +11594,7 @@ impl EpubEditorModel {
             .and_then(|c| c.file(&path))
             .map(|f| f.spine_index.is_some())
             .unwrap_or(false);
-        let mut plan = StructurePlan::new(
-            format!("Deleted {}", file_name(&path)),
-            "Before delete",
-        );
+        let mut plan = StructurePlan::new(format!("Deleted {}", file_name(&path)), "Before delete");
         plan.removed_files.push(path.clone());
         if in_spine {
             plan.spine_order = Some(
@@ -11935,10 +11715,7 @@ impl EpubEditorModel {
             .as_ref()
             .and_then(|c| c.file(&path))
             .map(|f| f.kind);
-        let mut plan = StructurePlan::new(
-            format!("Replaced {}", file_name(&path)),
-            snapshot_label,
-        );
+        let mut plan = StructurePlan::new(format!("Replaced {}", file_name(&path)), snapshot_label);
         match String::from_utf8(bytes.clone()) {
             Ok(text) if kind.map(|k| k.is_text()).unwrap_or(false) => {
                 plan.text_changes.push((path, text));
@@ -11969,8 +11746,8 @@ impl EpubEditorModel {
         let filter = gtk::FileFilter::new();
         filter.set_name(Some("Book files"));
         for suffix in [
-            "xhtml", "html", "htm", "css", "xml", "ncx", "opf", "txt", "svg", "png",
-            "jpg", "jpeg", "gif", "webp", "ttf", "otf", "woff", "woff2",
+            "xhtml", "html", "htm", "css", "xml", "ncx", "opf", "txt", "svg", "png", "jpg", "jpeg",
+            "gif", "webp", "ttf", "otf", "woff", "woff2",
         ] {
             filter.add_suffix(suffix);
         }
@@ -12039,33 +11816,37 @@ impl EpubEditorModel {
         let service = self.service.clone();
         let s = sender.input_sender().clone();
         let target = target.to_string();
-        dialog.open(window.as_ref(), gtk::gio::Cancellable::NONE, move |result| {
-            let Ok(file) = result else {
-                return;
-            };
-            let Some(path) = file.path() else {
-                return;
-            };
-            let s2 = s.clone();
-            let target = target.clone();
-            crate::tasks::spawn_internal(
-                "Reading file",
-                move |_reporter| service.read_editor_import(&path),
-                |_| {},
-                move |result| match result {
-                    Ok(bytes) => {
-                        let _ = s2.send(EpubEditorMsg::ReplaceLoaded(
-                            target.clone(),
-                            bytes,
-                            "Before replace file",
-                        ));
-                    }
-                    Err(message) => {
-                        let _ = s2.send(EpubEditorMsg::ActionFailed(message));
-                    }
-                },
-            );
-        });
+        dialog.open(
+            window.as_ref(),
+            gtk::gio::Cancellable::NONE,
+            move |result| {
+                let Ok(file) = result else {
+                    return;
+                };
+                let Some(path) = file.path() else {
+                    return;
+                };
+                let s2 = s.clone();
+                let target = target.clone();
+                crate::tasks::spawn_internal(
+                    "Reading file",
+                    move |_reporter| service.read_editor_import(&path),
+                    |_| {},
+                    move |result| match result {
+                        Ok(bytes) => {
+                            let _ = s2.send(EpubEditorMsg::ReplaceLoaded(
+                                target.clone(),
+                                bytes,
+                                "Before replace file",
+                            ));
+                        }
+                        Err(message) => {
+                            let _ = s2.send(EpubEditorMsg::ActionFailed(message));
+                        }
+                    },
+                );
+            },
+        );
     }
 
     fn pick_export_file(&self, path: &str, sender: &ComponentSender<Self>) {
@@ -12080,30 +11861,33 @@ impl EpubEditorModel {
         let window = self.host_window();
         let service = self.service.clone();
         let s = sender.input_sender().clone();
-        dialog.save(window.as_ref(), gtk::gio::Cancellable::NONE, move |result| {
-            let Ok(file) = result else {
-                return;
-            };
-            let Some(dest) = file.path() else {
-                return;
-            };
-            let s2 = s.clone();
-            crate::tasks::spawn_internal(
-                "Exporting file",
-                move |_reporter| service.write_editor_export(&dest, &bytes),
-                |_| {},
-                move |result| {
-                    if let Err(message) = result {
-                        let _ = s2.send(EpubEditorMsg::ActionFailed(message));
-                    }
-                },
-            );
-        });
+        dialog.save(
+            window.as_ref(),
+            gtk::gio::Cancellable::NONE,
+            move |result| {
+                let Ok(file) = result else {
+                    return;
+                };
+                let Some(dest) = file.path() else {
+                    return;
+                };
+                let s2 = s.clone();
+                crate::tasks::spawn_internal(
+                    "Exporting file",
+                    move |_reporter| service.write_editor_export(&dest, &bytes),
+                    |_| {},
+                    move |result| {
+                        if let Err(message) = result {
+                            let _ = s2.send(EpubEditorMsg::ActionFailed(message));
+                        }
+                    },
+                );
+            },
+        );
     }
 
     fn open_external(&self, path: &str, sender: &ComponentSender<Self>) {
-        let (Some(book), Some(bytes)) = (self.book.clone(), self.file_bytes(path))
-        else {
+        let (Some(book), Some(bytes)) = (self.book.clone(), self.file_bytes(path)) else {
             return;
         };
         let inner = path.to_string();
@@ -12132,7 +11916,9 @@ impl EpubEditorModel {
         changes: Vec<(String, String)>,
         sender: &ComponentSender<Self>,
     ) {
-        let mut undo = ToolUndo { entries: Vec::new() };
+        let mut undo = ToolUndo {
+            entries: Vec::new(),
+        };
         for (path, new_text) in &changes {
             if let Some(buffer) = self
                 .tabs
@@ -12152,7 +11938,8 @@ impl EpubEditorModel {
                 undo.entries.push(ToolUndoEntry::Buffer(path.clone()));
             } else {
                 let before = self.pending.insert(path.clone(), new_text.clone());
-                undo.entries.push(ToolUndoEntry::Pending(path.clone(), before));
+                undo.entries
+                    .push(ToolUndoEntry::Pending(path.clone(), before));
             }
         }
         self.tool_undo = Some(undo);
@@ -12316,7 +12103,9 @@ impl EpubEditorModel {
         let mut total = 0usize;
         let mut files_with = 0usize;
         for path in self.find_files() {
-            let Some(text) = self.file_text(&path) else { continue };
+            let Some(text) = self.file_text(&path) else {
+                continue;
+            };
             let spans = searcher.find_all(&text);
             if spans.is_empty() {
                 continue;
@@ -12324,11 +12113,8 @@ impl EpubEditorModel {
             files_with += 1;
             total += spans.len();
             if self.find_scope != FindScope::ThisFile {
-                let heading = gtk::Label::new(Some(&format!(
-                    "{} — {}",
-                    file_name(&path),
-                    spans.len()
-                )));
+                let heading =
+                    gtk::Label::new(Some(&format!("{} — {}", file_name(&path), spans.len())));
                 heading.add_css_class("kalam-editorpicker-group");
                 heading.set_halign(gtk::Align::Start);
                 heading.set_margin_top(10);
@@ -12348,7 +12134,12 @@ impl EpubEditorModel {
                 let after_full = &text[b1..line_end];
                 let before_chars: Vec<char> = before_full.chars().collect();
                 let before = if before_chars.len() > 40 {
-                    format!("…{}", before_chars[before_chars.len() - 40..].iter().collect::<String>())
+                    format!(
+                        "…{}",
+                        before_chars[before_chars.len() - 40..]
+                            .iter()
+                            .collect::<String>()
+                    )
                 } else {
                     before_full.to_string()
                 };
@@ -12449,18 +12240,16 @@ impl EpubEditorModel {
         let Some(hit) = self.find_hits.get(current) else {
             return;
         };
-        let (path, start, end, matched) = (
-            hit.path.clone(),
-            hit.start,
-            hit.end,
-            hit.matched.clone(),
-        );
+        let (path, start, end, matched) =
+            (hit.path.clone(), hit.start, hit.end, hit.matched.clone());
         if !self.tabs.iter().any(|t| t.path == path) {
             // Open it first; the next press replaces.
             self.jump_to_hit(current, sender);
             return;
         }
-        let Ok(searcher) = self.searcher() else { return };
+        let Ok(searcher) = self.searcher() else {
+            return;
+        };
         let Some(buffer) = self
             .tabs
             .iter()
@@ -12494,12 +12283,16 @@ impl EpubEditorModel {
     }
 
     fn replace_all(&mut self, sender: &ComponentSender<Self>) {
-        let Ok(searcher) = self.searcher() else { return };
+        let Ok(searcher) = self.searcher() else {
+            return;
+        };
         let replacement = self.replace_entry.text().to_string();
         let mut changes: Vec<(String, String)> = Vec::new();
         let mut total = 0usize;
         for path in self.find_files() {
-            let Some(text) = self.file_text(&path) else { continue };
+            let Some(text) = self.file_text(&path) else {
+                continue;
+            };
             let (new, n) = searcher.replace_all(&text, &replacement);
             if n > 0 {
                 total += n;
@@ -12512,7 +12305,11 @@ impl EpubEditorModel {
         }
         let summary = format!(
             "{total} {} in {} {}",
-            if total == 1 { "replacement" } else { "replacements" },
+            if total == 1 {
+                "replacement"
+            } else {
+                "replacements"
+            },
             changes.len(),
             if changes.len() == 1 { "file" } else { "files" }
         );
@@ -12529,7 +12326,9 @@ impl EpubEditorModel {
 
     fn store_saved_searches(&self, saved: &[(String, String)]) {
         if let Ok(raw) = serde_json::to_string(saved) {
-            self.service.catalog().set_pref("editor.saved_searches", &raw);
+            self.service
+                .catalog()
+                .set_pref("editor.saved_searches", &raw);
         }
     }
 
@@ -12576,7 +12375,10 @@ impl EpubEditorModel {
     }
 
     fn palette_commands(&self) -> Vec<PaletteItem> {
-        let item = |label: &str, detail: &str, shortcut: Option<&'static str>, action: PaletteAction| PaletteItem {
+        let item = |label: &str,
+                    detail: &str,
+                    shortcut: Option<&'static str>,
+                    action: PaletteAction| PaletteItem {
             label: label.to_string(),
             detail: detail.to_string(),
             shortcut,
@@ -12585,44 +12387,184 @@ impl EpubEditorModel {
         let mut items = vec![
             item("Save", "", Some("Ctrl+S"), PaletteAction::Save),
             item("Check book", "", None, PaletteAction::CheckBook),
-            item("Find & replace", "", Some("Ctrl+F"), PaletteAction::FindReplace),
+            item(
+                "Find & replace",
+                "",
+                Some("Ctrl+F"),
+                PaletteAction::FindReplace,
+            ),
             item("Edit contents", "", None, PaletteAction::EditContents),
             item("Spell check", "", Some("F7"), PaletteAction::SpellCheck),
-            item("Personal dictionary…", "", None, PaletteAction::PersonalDict),
+            item(
+                "Personal dictionary…",
+                "",
+                None,
+                PaletteAction::PersonalDict,
+            ),
             item("History…", "", None, PaletteAction::History),
             item("Replace cover…", "", None, PaletteAction::ReplaceCover),
             item("Reports…", "", None, PaletteAction::Reports),
-            item("Split at cursor", "Structure", None, PaletteAction::SplitCursor),
-            item("Split at every heading…", "Structure", None, PaletteAction::SplitDialog(1)),
-            item("Split chapter by size…", "Structure", None, PaletteAction::SplitDialog(2)),
-            item("Merge files", "Structure", None, PaletteAction::MergeSelected),
-            item("Rename file…", "Structure", Some("F2"), PaletteAction::RenameActive),
+            item(
+                "Split at cursor",
+                "Structure",
+                None,
+                PaletteAction::SplitCursor,
+            ),
+            item(
+                "Split at every heading…",
+                "Structure",
+                None,
+                PaletteAction::SplitDialog(1),
+            ),
+            item(
+                "Split chapter by size…",
+                "Structure",
+                None,
+                PaletteAction::SplitDialog(2),
+            ),
+            item(
+                "Merge files",
+                "Structure",
+                None,
+                PaletteAction::MergeSelected,
+            ),
+            item(
+                "Rename file…",
+                "Structure",
+                Some("F2"),
+                PaletteAction::RenameActive,
+            ),
             item("Reorder files…", "Structure", None, PaletteAction::Reorder),
-            item("Set semantics…", "Structure", None, PaletteAction::Semantics),
-            item("Link stylesheets…", "Structure", None, PaletteAction::LinkCss),
+            item(
+                "Set semantics…",
+                "Structure",
+                None,
+                PaletteAction::Semantics,
+            ),
+            item(
+                "Link stylesheets…",
+                "Structure",
+                None,
+                PaletteAction::LinkCss,
+            ),
             item("Add files…", "Structure", None, PaletteAction::AddFiles),
-            item("Insert character…", "Insert", None, PaletteAction::InsertChar),
+            item(
+                "Insert character…",
+                "Insert",
+                None,
+                PaletteAction::InsertChar,
+            ),
             item("Insert link…", "Insert", None, PaletteAction::InsertLink),
             item("Insert image…", "Insert", None, PaletteAction::InsertImage),
-            item("Insert contents page…", "Insert", None, PaletteAction::InsertInlineContents),
-            item("Filter style information…", "Clean up", None, PaletteAction::FilterStyle),
+            item(
+                "Insert contents page…",
+                "Insert",
+                None,
+                PaletteAction::InsertInlineContents,
+            ),
+            item(
+                "Filter style information…",
+                "Clean up",
+                None,
+                PaletteAction::FilterStyle,
+            ),
             item("Tag mapper…", "Clean up", None, PaletteAction::TagMapper),
-            item("Upgrade book internals…", "Clean up", None, PaletteAction::UpgradeInternals),
-            item("Subset fonts…", "Fonts and images", None, PaletteAction::SubsetFonts),
-            item("Embed fonts…", "Fonts and images", None, PaletteAction::EmbedFonts),
-            item("Compress images…", "Fonts and images", None, PaletteAction::CompressImages),
-            item("Check external links…", "Fonts and images", None, PaletteAction::CheckLinks),
-            item("Smarten punctuation", "Clean up", None, PaletteAction::Tool(InstantTool::Smarten)),
-            item("Reformat code", "Clean up", None, PaletteAction::Tool(InstantTool::Reformat)),
-            item("Remove unused CSS", "Clean up", None, PaletteAction::Tool(InstantTool::RemoveUnusedCss)),
-            item("Fix HTML", "Clean up", None, PaletteAction::Tool(InstantTool::FixHtml)),
-            item("Code view", "View", None, PaletteAction::View(ViewMode::Code)),
-            item("Split view", "View", None, PaletteAction::View(ViewMode::Split)),
-            item("Preview view", "View", None, PaletteAction::View(ViewMode::Preview)),
-            item("Preview tab", "Right panel", None, PaletteAction::Tab(RightTab::Preview)),
-            item("Outline tab", "Right panel", None, PaletteAction::Tab(RightTab::Outline)),
-            item("Problems tab", "Right panel", None, PaletteAction::Tab(RightTab::Problems)),
-            item("Live CSS tab", "Right panel", None, PaletteAction::Tab(RightTab::LiveCss)),
+            item(
+                "Upgrade book internals…",
+                "Clean up",
+                None,
+                PaletteAction::UpgradeInternals,
+            ),
+            item(
+                "Subset fonts…",
+                "Fonts and images",
+                None,
+                PaletteAction::SubsetFonts,
+            ),
+            item(
+                "Embed fonts…",
+                "Fonts and images",
+                None,
+                PaletteAction::EmbedFonts,
+            ),
+            item(
+                "Compress images…",
+                "Fonts and images",
+                None,
+                PaletteAction::CompressImages,
+            ),
+            item(
+                "Check external links…",
+                "Fonts and images",
+                None,
+                PaletteAction::CheckLinks,
+            ),
+            item(
+                "Smarten punctuation",
+                "Clean up",
+                None,
+                PaletteAction::Tool(InstantTool::Smarten),
+            ),
+            item(
+                "Reformat code",
+                "Clean up",
+                None,
+                PaletteAction::Tool(InstantTool::Reformat),
+            ),
+            item(
+                "Remove unused CSS",
+                "Clean up",
+                None,
+                PaletteAction::Tool(InstantTool::RemoveUnusedCss),
+            ),
+            item(
+                "Fix HTML",
+                "Clean up",
+                None,
+                PaletteAction::Tool(InstantTool::FixHtml),
+            ),
+            item(
+                "Code view",
+                "View",
+                None,
+                PaletteAction::View(ViewMode::Code),
+            ),
+            item(
+                "Split view",
+                "View",
+                None,
+                PaletteAction::View(ViewMode::Split),
+            ),
+            item(
+                "Preview view",
+                "View",
+                None,
+                PaletteAction::View(ViewMode::Preview),
+            ),
+            item(
+                "Preview tab",
+                "Right panel",
+                None,
+                PaletteAction::Tab(RightTab::Preview),
+            ),
+            item(
+                "Outline tab",
+                "Right panel",
+                None,
+                PaletteAction::Tab(RightTab::Outline),
+            ),
+            item(
+                "Problems tab",
+                "Right panel",
+                None,
+                PaletteAction::Tab(RightTab::Problems),
+            ),
+            item(
+                "Live CSS tab",
+                "Right panel",
+                None,
+                PaletteAction::Tab(RightTab::LiveCss),
+            ),
         ];
         if let Some(container) = &self.container {
             let mut files: Vec<&EpubFile> = container.files.iter().collect();
@@ -12720,22 +12662,16 @@ impl EpubEditorModel {
             PaletteAction::TagMapper => self.present_tag_mapper_dialog(sender),
             PaletteAction::FilterStyle => self.present_filter_style_dialog(sender),
             PaletteAction::UpgradeInternals => self.present_upgrade_dialog(sender),
-            PaletteAction::SubsetFonts => {
-                self.start_subset_fonts(None, sender)
-            }
+            PaletteAction::SubsetFonts => self.start_subset_fonts(None, sender),
             PaletteAction::EmbedFonts => self.start_embed_fonts(sender),
             PaletteAction::CompressImages => self.start_compress_images(sender),
             PaletteAction::CheckLinks => self.present_check_links_dialog(sender),
             PaletteAction::SplitCursor => self.run_split(0, 250, sender),
-            PaletteAction::SplitDialog(preset) => {
-                self.present_split_dialog(preset, sender)
-            }
+            PaletteAction::SplitDialog(preset) => self.present_split_dialog(preset, sender),
             PaletteAction::MergeSelected => self.run_merge(sender),
             PaletteAction::RenameActive => sender.input(EpubEditorMsg::RenameActive),
             PaletteAction::Reorder => self.present_reorder_dialog(sender),
-            PaletteAction::Semantics => {
-                sender.input(EpubEditorMsg::PalettePickSemantics)
-            }
+            PaletteAction::Semantics => sender.input(EpubEditorMsg::PalettePickSemantics),
             PaletteAction::LinkCss => sender.input(EpubEditorMsg::PalettePickLinkCss),
             PaletteAction::AddFiles => sender.input(EpubEditorMsg::TreeAddFiles),
             PaletteAction::InsertChar => sender.input(EpubEditorMsg::OpenInsertChar),
@@ -12999,7 +12935,10 @@ fn tick_circle(on: bool) -> gtk::Box {
 fn valid_tag_rule(from: &str, to: &str) -> bool {
     let name_ok = |s: &str, class: bool| {
         !s.is_empty()
-            && s.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false)
+            && s.chars()
+                .next()
+                .map(|c| c.is_ascii_alphabetic())
+                .unwrap_or(false)
             && s.chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '-' || (class && c == '_'))
     };
@@ -13026,9 +12965,7 @@ fn set_tick_circle(circle: &gtk::Box, on: bool) {
 /// scrollers sharing one vertical adjustment so the columns
 /// cannot drift apart. Buffers are filled per comparison by
 /// `render_compare`.
-fn build_compare_page(
-    sender: &ComponentSender<EpubEditorModel>,
-) -> (gtk::Box, CompareWidgets) {
+fn build_compare_page(sender: &ComponentSender<EpubEditorModel>) -> (gtk::Box, CompareWidgets) {
     let page = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
     let header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
@@ -13201,7 +13138,10 @@ fn set_toc_drop(row: &gtk::Button, y: f64) {
 /// A fresh manifest id for a file the OPF never had: the file
 /// stem, sanitised to an XML name, numbered until unique.
 fn mint_opf_id(path: &str, used: &mut HashSet<String>) -> String {
-    let stem = file_name(path).rsplit_once('.').map(|(s, _)| s).unwrap_or(path);
+    let stem = file_name(path)
+        .rsplit_once('.')
+        .map(|(s, _)| s)
+        .unwrap_or(path);
     let mut base: String = stem
         .chars()
         .map(|c| {
@@ -13447,7 +13387,9 @@ fn strip_map(html: &str) -> StripMap {
             // Comment / CDATA / doctype / PI: skip wholesale.
             if chars[i..].starts_with(&['<', '!', '-', '-']) {
                 let mut j = i + 4;
-                while j + 2 < chars.len() && !(chars[j] == '-' && chars[j + 1] == '-' && chars[j + 2] == '>') {
+                while j + 2 < chars.len()
+                    && !(chars[j] == '-' && chars[j + 1] == '-' && chars[j + 2] == '>')
+                {
                     j += 1;
                 }
                 i = (j + 3).min(chars.len());
@@ -13462,7 +13404,10 @@ fn strip_map(html: &str) -> StripMap {
             while j < chars.len() && (chars[j].is_ascii_alphanumeric() || chars[j] == ':') {
                 j += 1;
             }
-            let name: String = chars[name_start..j].iter().collect::<String>().to_ascii_lowercase();
+            let name: String = chars[name_start..j]
+                .iter()
+                .collect::<String>()
+                .to_ascii_lowercase();
             // To the closing >, respecting quoted attributes.
             let mut quote = '\0';
             let mut k = j;
@@ -13487,7 +13432,12 @@ fn strip_map(html: &str) -> StripMap {
                 } else if !self_closed {
                     skip_depth += 1;
                 }
-            } else if skip_depth == 0 && matches!(name.as_str(), "br" | "p" | "div" | "li" | "tr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
+            } else if skip_depth == 0
+                && matches!(
+                    name.as_str(),
+                    "br" | "p" | "div" | "li" | "tr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+                )
+            {
                 push(' ', i, &mut text, &mut map);
             }
             i = (k + 1).min(chars.len());
@@ -13567,17 +13517,25 @@ fn element_chain_at(html: &str, char_offset: usize) -> Vec<crate::epub_css::Elem
             continue;
         }
         if before[i..].starts_with("<!--") {
-            i = before[i + 4..].find("-->").map(|n| i + 4 + n + 3).unwrap_or(bytes.len());
+            i = before[i + 4..]
+                .find("-->")
+                .map(|n| i + 4 + n + 3)
+                .unwrap_or(bytes.len());
             continue;
         }
         if before[i..].starts_with("<!") || before[i..].starts_with("<?") {
-            i = before[i..].find('>').map(|n| i + n + 1).unwrap_or(bytes.len());
+            i = before[i..]
+                .find('>')
+                .map(|n| i + n + 1)
+                .unwrap_or(bytes.len());
             continue;
         }
         let closing = i + 1 < bytes.len() && bytes[i + 1] == b'/';
         let name_start = if closing { i + 2 } else { i + 1 };
         let mut j = name_start;
-        while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || matches!(bytes[j], b':' | b'-')) {
+        while j < bytes.len()
+            && (bytes[j].is_ascii_alphanumeric() || matches!(bytes[j], b':' | b'-'))
+        {
             j += 1;
         }
         if j == name_start {
@@ -13612,8 +13570,19 @@ fn element_chain_at(html: &str, char_offset: usize) -> Vec<crate::epub_css::Elem
             let self_closed = tag_inner.trim_end().ends_with('/')
                 || matches!(
                     name.as_str(),
-                    "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" | "link"
-                        | "meta" | "source" | "track" | "wbr"
+                    "area"
+                        | "base"
+                        | "br"
+                        | "col"
+                        | "embed"
+                        | "hr"
+                        | "img"
+                        | "input"
+                        | "link"
+                        | "meta"
+                        | "source"
+                        | "track"
+                        | "wbr"
                 );
             if !complete {
                 // The cursor is inside this very tag: it is the
@@ -13641,13 +13610,19 @@ fn style_blocks(html: &str) -> Vec<(String, usize)> {
     let mut from = 0usize;
     while let Some(rel) = lower[from..].find("<style") {
         let at = from + rel;
-        let Some(gt) = html[at..].find('>') else { break };
+        let Some(gt) = html[at..].find('>') else {
+            break;
+        };
         let content_start = at + gt + 1;
         let Some(close) = lower[content_start..].find("</style") else {
             break;
         };
         let content_end = content_start + close;
-        let line = html[..content_start].bytes().filter(|b| *b == b'\n').count() + 1;
+        let line = html[..content_start]
+            .bytes()
+            .filter(|b| *b == b'\n')
+            .count()
+            + 1;
         out.push((html[content_start..content_end].to_string(), line));
         from = content_end;
     }
@@ -13757,7 +13732,10 @@ fn scan_block_ranges(html: &str, wanted: &[&str]) -> Vec<BlockRange> {
             continue;
         }
         if html[i..].starts_with("<!") || html[i..].starts_with("<?") {
-            i = html[i..].find('>').map(|n| i + n + 1).unwrap_or(bytes.len());
+            i = html[i..]
+                .find('>')
+                .map(|n| i + n + 1)
+                .unwrap_or(bytes.len());
             continue;
         }
         let closing = i + 1 < bytes.len() && bytes[i + 1] == b'/';
@@ -13818,8 +13796,19 @@ fn scan_block_ranges(html: &str, wanted: &[&str]) -> Vec<BlockRange> {
             let self_closed = inner.trim_end().ends_with('/')
                 || matches!(
                     name.as_str(),
-                    "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input"
-                        | "link" | "meta" | "source" | "track" | "wbr"
+                    "area"
+                        | "base"
+                        | "br"
+                        | "col"
+                        | "embed"
+                        | "hr"
+                        | "img"
+                        | "input"
+                        | "link"
+                        | "meta"
+                        | "source"
+                        | "track"
+                        | "wbr"
                 );
             if !self_closed {
                 stack.push(Open {
@@ -13949,10 +13938,10 @@ fn heading_transform(
         // count them through the replacement, never by slicing
         // the old text at a shifted byte offset.
         let span_start_char = byte_to_char(html, span_start);
-        let sel_start_char = span_start_char
-            + replacement[..sel_start - span_start].chars().count() as i32;
-        let sel_end_char = span_start_char
-            + replacement[..sel_end - span_start].chars().count() as i32;
+        let sel_start_char =
+            span_start_char + replacement[..sel_start - span_start].chars().count() as i32;
+        let sel_end_char =
+            span_start_char + replacement[..sel_end - span_start].chars().count() as i32;
         return (
             span_start_char,
             byte_to_char(html, span_end),
@@ -14068,7 +14057,11 @@ fn list_transform(selected: &str, kind: ListKind) -> String {
     if items.is_empty() {
         items.push(String::new());
     }
-    let tag = if kind == ListKind::Numbered { "ol" } else { "ul" };
+    let tag = if kind == ListKind::Numbered {
+        "ol"
+    } else {
+        "ul"
+    };
     let mut out = format!("{indent}<{tag}>");
     for item in &items {
         out.push_str(&format!("\n{indent}<li>{}</li>", item.trim()));
@@ -14093,36 +14086,35 @@ fn list_transform_at(
         html,
         &["ul", "ol", "li", "p", "h1", "h2", "h3", "h4", "h5", "h6"],
     );
-    let (from, to) =
-        if let Some(list) = smallest_containing(&blocks, &["ul", "ol"], start, end) {
-            (list.start, list.end)
-        } else if start == end {
-            match smallest_containing(
-                &blocks,
-                &["li", "p", "h1", "h2", "h3", "h4", "h5", "h6"],
-                start,
-                end,
-            ) {
-                Some(block) => (block.start, block.end),
-                None => {
-                    let line_start = html[..start].rfind('\n').map(|n| n + 1).unwrap_or(0);
-                    let line_end = html[start..]
-                        .find('\n')
-                        .map(|n| start + n)
-                        .unwrap_or(html.len());
-                    (line_start, line_end)
-                }
-            }
-        } else if let Some(block) = smallest_containing(
+    let (from, to) = if let Some(list) = smallest_containing(&blocks, &["ul", "ol"], start, end) {
+        (list.start, list.end)
+    } else if start == end {
+        match smallest_containing(
             &blocks,
-            &["p", "h1", "h2", "h3", "h4", "h5", "h6"],
+            &["li", "p", "h1", "h2", "h3", "h4", "h5", "h6"],
             start,
             end,
         ) {
-            (block.start, block.end)
-        } else {
-            (start, end)
-        };
+            Some(block) => (block.start, block.end),
+            None => {
+                let line_start = html[..start].rfind('\n').map(|n| n + 1).unwrap_or(0);
+                let line_end = html[start..]
+                    .find('\n')
+                    .map(|n| start + n)
+                    .unwrap_or(html.len());
+                (line_start, line_end)
+            }
+        }
+    } else if let Some(block) = smallest_containing(
+        &blocks,
+        &["p", "h1", "h2", "h3", "h4", "h5", "h6"],
+        start,
+        end,
+    ) {
+        (block.start, block.end)
+    } else {
+        (start, end)
+    };
     let replacement = list_transform(&html[from..to], kind);
     let from_char = byte_to_char(html, from);
     let sel_end_char = from_char + replacement.chars().count() as i32;
@@ -14310,20 +14302,14 @@ mod tests {
         let html = "<p>One</p>\n<p>Two</p>";
         let (_, _, replacement, _, _) =
             list_transform_at(html, 0, html.chars().count(), ListKind::Bulleted);
-        assert_eq!(
-            replacement,
-            "<ul>\n<li>One</li>\n<li>Two</li>\n</ul>"
-        );
+        assert_eq!(replacement, "<ul>\n<li>One</li>\n<li>Two</li>\n</ul>");
     }
 
     #[test]
     fn list_converts_and_removes_from_inside() {
         let html = "<ul><li>One</li><li>Two</li></ul>";
         let (_, _, numbered, _, _) = list_transform_at(html, 9, 9, ListKind::Numbered);
-        assert_eq!(
-            numbered,
-            "<ol>\n<li>One</li>\n<li>Two</li>\n</ol>"
-        );
+        assert_eq!(numbered, "<ol>\n<li>One</li>\n<li>Two</li>\n</ol>");
         let (_, _, removed, _, _) = list_transform_at(html, 9, 9, ListKind::Remove);
         assert_eq!(removed, "<p>One</p>\n<p>Two</p>");
     }
@@ -14339,10 +14325,7 @@ mod tests {
             .collect();
         assert_eq!(
             headings,
-            vec![
-                (1, "Real".to_string()),
-                (2, "Chapter One".to_string()),
-            ]
+            vec![(1, "Real".to_string()), (2, "Chapter One".to_string()),]
         );
     }
 

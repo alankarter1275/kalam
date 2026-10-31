@@ -157,10 +157,7 @@ pub fn timeline_row(entry: &TimelineEntry, links: TimelineLinks) -> gtk::Box {
 }
 
 fn bookmark_indicator(count: u32) -> gtk::Box {
-    let indicator = gtk::Box::new(
-        gtk::Orientation::Horizontal,
-        crate::style::spacing::XXS,
-    );
+    let indicator = gtk::Box::new(gtk::Orientation::Horizontal, crate::style::spacing::XXS);
     indicator.add_css_class("kalam-ui-timeline-bookmarks");
     indicator.set_valign(gtk::Align::Center);
     indicator.set_tooltip_text(Some(&format!(
@@ -234,13 +231,7 @@ fn timeline_gutter(state: TimelineState, links: TimelineLinks) -> gtk::Box {
         match state {
             TimelineState::Read => {
                 set_source(cr, fill, 1.0);
-                cr.arc(
-                    centre_x,
-                    centre_y,
-                    radius,
-                    0.0,
-                    std::f64::consts::TAU,
-                );
+                cr.arc(centre_x, centre_y, radius, 0.0, std::f64::consts::TAU);
                 let _ = cr.fill();
 
                 cr.set_source_rgb(1.0, 1.0, 1.0);
@@ -254,24 +245,12 @@ fn timeline_gutter(state: TimelineState, links: TimelineLinks) -> gtk::Box {
             }
             TimelineState::Current => {
                 set_source(cr, background, 1.0);
-                cr.arc(
-                    centre_x,
-                    centre_y,
-                    radius - 1.0,
-                    0.0,
-                    std::f64::consts::TAU,
-                );
+                cr.arc(centre_x, centre_y, radius - 1.0, 0.0, std::f64::consts::TAU);
                 let _ = cr.fill();
 
                 set_source(cr, accent, 1.0);
                 cr.set_line_width(2.0);
-                cr.arc(
-                    centre_x,
-                    centre_y,
-                    radius - 1.0,
-                    0.0,
-                    std::f64::consts::TAU,
-                );
+                cr.arc(centre_x, centre_y, radius - 1.0, 0.0, std::f64::consts::TAU);
                 let _ = cr.stroke();
 
                 // A simple almond-and-pupil eye. Painting it avoids
@@ -356,8 +335,7 @@ fn draw_link(
 fn link_is_accent(before: TimelineState, after: TimelineState) -> bool {
     matches!(
         (before, after),
-        (TimelineState::Read, TimelineState::Read)
-            | (TimelineState::Read, TimelineState::Current)
+        (TimelineState::Read, TimelineState::Read) | (TimelineState::Read, TimelineState::Current)
     )
 }
 
@@ -368,10 +346,7 @@ mod tests {
     #[test]
     fn accent_links_cover_the_read_run_into_the_current_node() {
         assert!(link_is_accent(TimelineState::Read, TimelineState::Read));
-        assert!(link_is_accent(
-            TimelineState::Read,
-            TimelineState::Current
-        ));
+        assert!(link_is_accent(TimelineState::Read, TimelineState::Current));
         assert!(!link_is_accent(
             TimelineState::Current,
             TimelineState::Upcoming

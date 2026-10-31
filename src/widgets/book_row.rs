@@ -875,7 +875,8 @@ pub fn build_book_grid_selectable(
         let id = book.id;
         let f1 = on_full.clone();
         let f2 = on_float.clone();
-        let card = build_book_card_selectable(book, is_selected(id), move || f1(id), move || f2(id));
+        let card =
+            build_book_card_selectable(book, is_selected(id), move || f1(id), move || f2(id));
 
         let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
         cell.set_size_request(CARD_W, CARD_H);

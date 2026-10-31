@@ -21,7 +21,9 @@
 //! saved word without abusing custom fields. Nothing else reads a stray
 //! `metadata.opf` either, so the compatibility argument is imaginary.
 
-use crate::db::{Annotation, Catalog, PatchRecord, PdfDrawing, PdfDrawingGeometry, PdfPageIdentity};
+use crate::db::{
+    Annotation, Catalog, PatchRecord, PdfDrawing, PdfDrawingGeometry, PdfPageIdentity,
+};
 use crate::models::Book;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -275,7 +277,9 @@ pub fn refresh_for_book(catalog: &Catalog, book_id: i64) {
         return;
     };
     let position = catalog.get_reading_progress(book_id).ok().flatten();
-    let marks = catalog.get_annotations_for_book(book_id).unwrap_or_default();
+    let marks = catalog
+        .get_annotations_for_book(book_id)
+        .unwrap_or_default();
     let patches = catalog.get_patches_for_book(book_id).unwrap_or_default();
     let mut data = Sidecar::from_parts(&book, position, &marks, &patches);
     data.pdf_pages = catalog.pdf_page_identities(book_id).unwrap_or_default();

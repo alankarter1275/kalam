@@ -96,10 +96,7 @@ impl BookReadingSettings {
             if self.publisher_styles { "1" } else { "0" },
         );
         catalog.set_pref(engine::PREF_SCROLLED, if self.scrolled { "1" } else { "0" });
-        catalog.set_pref(
-            "reader.dual_page",
-            if self.dual_page { "1" } else { "0" },
-        );
+        catalog.set_pref("reader.dual_page", if self.dual_page { "1" } else { "0" });
         catalog.set_pref("reader.wheel_step", &self.wheel_step.to_string());
         catalog.set_pref("reader.arrow_step", &self.arrow_step.to_string());
         catalog.set_pref(

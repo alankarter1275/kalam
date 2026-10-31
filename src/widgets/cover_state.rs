@@ -135,8 +135,7 @@ pub fn fallback_cover(title: &str, author: &str, kind: &str, width: i32, height:
         top_spacer.set_vexpand(true);
         cover.append(&top_spacer);
 
-        let kind_label =
-            gtk::Label::new(Some(&display_text(kind, "BOOK").to_ascii_uppercase()));
+        let kind_label = gtk::Label::new(Some(&display_text(kind, "BOOK").to_ascii_uppercase()));
         kind_label.add_css_class("kalam-ui-cover-kind");
         kind_label.set_halign(gtk::Align::Center);
         kind_label.set_xalign(0.5);
@@ -250,10 +249,7 @@ pub fn finished_badge() -> gtk::Label {
 }
 
 /// Overlay the finished badge on any cover-shaped widget.
-pub fn cover_with_finished_badge(
-    cover: &impl IsA<gtk::Widget>,
-    finished: bool,
-) -> gtk::Overlay {
+pub fn cover_with_finished_badge(cover: &impl IsA<gtk::Widget>, finished: bool) -> gtk::Overlay {
     let overlay = gtk::Overlay::new();
     overlay.set_overflow(gtk::Overflow::Hidden);
     overlay.set_halign(gtk::Align::Start);
@@ -270,10 +266,7 @@ pub fn cover_with_finished_badge(
 pub fn file_missing_cover(cover: gtk::Widget) -> gtk::Box {
     cover.set_opacity(0.45);
 
-    let stack = gtk::Box::new(
-        gtk::Orientation::Vertical,
-        crate::style::spacing::SM,
-    );
+    let stack = gtk::Box::new(gtk::Orientation::Vertical, crate::style::spacing::SM);
     stack.set_halign(gtk::Align::Start);
     stack.set_valign(gtk::Align::Start);
     stack.append(&cover);
@@ -330,10 +323,7 @@ fn missing_cover_inner(
         // Same fixed-width guard as the generated face: keep the wrapping
         // title's natural width inside the requested cover width.
         let inner_width = width - if compact { 16 } else { 32 };
-        title_label.set_max_width_chars(max_chars_for(
-            inner_width,
-            if compact { 5 } else { 8 },
-        ));
+        title_label.set_max_width_chars(max_chars_for(inner_width, if compact { 5 } else { 8 }));
         cover.append(&title_label);
 
         let caption = gtk::Label::new(Some("Not in library"));

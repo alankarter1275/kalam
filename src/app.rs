@@ -2,28 +2,29 @@
 
 use crate::db::Catalog;
 use crate::models::{LibrarySection, NavItem, Route};
-use crate::pages::{downloads::DownloadsModel, 
+use crate::pages::{
     all_books::{AllBooksModel, AllBooksMsg, AllBooksOut},
     analytics::AnalyticsModel,
     author::{AuthorPageModel, AuthorPageOut},
     authors::{AuthorsModel, AuthorsOut},
     book::{BookPageModel, BookPageOut},
     book_float::{BookFloatModel, BookFloatOut},
-    comics::{ComicsModel, ComicsMsg, ComicsOut},
     browse::{BrowseModel, BrowseOut},
-    remote_detail::{RemoteDetailModel, RemoteDetailOut, RemoteDetailInit},
+    comics::{ComicsModel, ComicsMsg, ComicsOut},
     comics_reader::{ComicsReaderModel, ComicsReaderOut},
     component_preview::ComponentPreviewModel,
+    downloads::DownloadsModel,
+    editor_picker::{EditorPickerModel, EditorPickerMsg, EditorPickerOut},
+    epub_editor::{EpubEditorModel, EpubEditorOut},
     history::{HistoryModel, HistoryOut},
     home::{HomeOut, HomePageModel},
     library::{LibraryOut, LibraryPageModel},
     lookup_history::LookupHistoryModel,
-    placeholder::PlaceholderPageModel,
     pdf_reader::{PdfReaderInit, PdfReaderModel, PdfReaderOut},
-    editor_picker::{EditorPickerModel, EditorPickerMsg, EditorPickerOut},
-    epub_editor::{EpubEditorModel, EpubEditorOut},
+    placeholder::PlaceholderPageModel,
     reader::{ReaderModel, ReaderOut},
     reading_list::{ReadingListModel, ReadingListOut},
+    remote_detail::{RemoteDetailInit, RemoteDetailModel, RemoteDetailOut},
     review::{ReviewModel, ReviewOut},
     saved_quotes::{SavedQuotesModel, SavedQuotesOut},
     saved_words::{SavedWordsModel, SavedWordsOut},
@@ -201,9 +202,7 @@ enum Floating {
     /// Shelves checklist — a plain widget panel, nothing to keep alive.
     /// `return_to` holds the book id when the panel was opened from the book
     /// float, so closing it hands control back to that float, not the page.
-    Shelves {
-        return_to: Option<i64>,
-    },
+    Shelves { return_to: Option<i64> },
     /// The `w` task dialog. Holds the box its rows are drawn into so the
     /// app-wide tick can repaint it.
     Tasks,
@@ -651,15 +650,11 @@ impl AppModel {
                         AuthorPageOut::OpenShelf { shelf_id } => {
                             AppMsg::Push(Route::ShelfDetail { shelf_id })
                         }
-                        AuthorPageOut::OpenReaderAt { book_id, chapter } => {
-                            AppMsg::OpenReaderAt {
-                                book_id,
-                                chapter: Some(chapter),
-                            }
-                        }
-                        AuthorPageOut::ShowInLibrary { query } => {
-                            AppMsg::ShowInLibrary { query }
-                        }
+                        AuthorPageOut::OpenReaderAt { book_id, chapter } => AppMsg::OpenReaderAt {
+                            book_id,
+                            chapter: Some(chapter),
+                        },
+                        AuthorPageOut::ShowInLibrary { query } => AppMsg::ShowInLibrary { query },
                     });
                 PageSlot::Author(ctrl)
             }
@@ -679,7 +674,9 @@ impl AppModel {
                             first_author,
                         } => {
                             if let Ok(Some(s)) = cat_for_series.get_comic_series_by_title(&series) {
-                                AppMsg::Push(Route::ComicSeries { series_name: s.title })
+                                AppMsg::Push(Route::ComicSeries {
+                                    series_name: s.title,
+                                })
                             } else {
                                 AppMsg::Push(Route::SeriesPage {
                                     series,
@@ -703,20 +700,19 @@ impl AppModel {
                     series: series.clone(),
                     first_author: first_author.clone(),
                 };
-                let ctrl = SeriesPageModel::builder()
-                    .launch(init)
-                    .forward(sender.input_sender(), |out| match out {
-                        SeriesPageOut::OpenBook { book_id } => {
-                            AppMsg::Push(Route::BookPage { book_id })
-                        }
-                        SeriesPageOut::OpenReader { book_id } => {
-                            AppMsg::OpenReader { book_id }
-                        }
-                        SeriesPageOut::OpenAuthor { name } => {
-                            AppMsg::Push(Route::AuthorPage { author: name })
-                        }
-                        SeriesPageOut::Back => AppMsg::Back,
-                    });
+                let ctrl =
+                    SeriesPageModel::builder()
+                        .launch(init)
+                        .forward(sender.input_sender(), |out| match out {
+                            SeriesPageOut::OpenBook { book_id } => {
+                                AppMsg::Push(Route::BookPage { book_id })
+                            }
+                            SeriesPageOut::OpenReader { book_id } => AppMsg::OpenReader { book_id },
+                            SeriesPageOut::OpenAuthor { name } => {
+                                AppMsg::Push(Route::AuthorPage { author: name })
+                            }
+                            SeriesPageOut::Back => AppMsg::Back,
+                        });
                 PageSlot::Series(ctrl)
             }
             Route::Reader { book_id } => {
@@ -744,18 +740,23 @@ impl AppModel {
                     book_id: *book_id,
                     catalog: catalog.clone(),
                 };
-                let ctrl = PdfReaderModel::builder()
-                    .launch(init)
-                    .forward(sender.input_sender(), |out| match out {
-                        PdfReaderOut::Close => AppMsg::Back,
-                        PdfReaderOut::MinimizeToBubble { book_id } => {
-                            AppMsg::MinimizeToBubble { book_id }
-                        }
-                    });
+                let ctrl =
+                    PdfReaderModel::builder()
+                        .launch(init)
+                        .forward(sender.input_sender(), |out| match out {
+                            PdfReaderOut::Close => AppMsg::Back,
+                            PdfReaderOut::MinimizeToBubble { book_id } => {
+                                AppMsg::MinimizeToBubble { book_id }
+                            }
+                        });
                 PageSlot::PdfReader(ctrl)
             }
 
-            Route::RemoteReader { source_id, chapter_id, title } => {
+            Route::RemoteReader {
+                source_id,
+                chapter_id,
+                title,
+            } => {
                 match crate::pages::comics_reader::providers::RemoteProvider::new(
                     source_manager.clone(),
                     source_id.clone(),
@@ -769,20 +770,23 @@ impl AppModel {
                             book_id: None,
                             cover_path: None,
                         };
-                        let ctrl = ComicsReaderModel::builder()
-                            .launch(init)
-                            .forward(sender.input_sender(), |out| match out {
+                        let ctrl = ComicsReaderModel::builder().launch(init).forward(
+                            sender.input_sender(),
+                            |out| match out {
                                 ComicsReaderOut::Close => AppMsg::Back,
                                 ComicsReaderOut::MinimizeToBubble { book_id } => {
                                     AppMsg::MinimizeToBubble { book_id }
                                 }
-                            });
+                            },
+                        );
                         PageSlot::ComicsReader(ctrl)
                     }
                     Err(err) => {
                         eprintln!("Failed to open remote reader: {}", err);
                         sender.input(AppMsg::Back);
-                        let ctrl = PlaceholderPageModel::builder().launch(NavItem::RemoteBrowse).detach();
+                        let ctrl = PlaceholderPageModel::builder()
+                            .launch(NavItem::RemoteBrowse)
+                            .detach();
                         PageSlot::Placeholder(ctrl)
                     }
                 }
@@ -796,7 +800,9 @@ impl AppModel {
                 let book_result = catalog.get_book(id);
                 match book_result {
                     Ok(Some(book)) => {
-                        match crate::pages::comics_reader::providers::LocalProvider::new(book.file_path.clone()) {
+                        match crate::pages::comics_reader::providers::LocalProvider::new(
+                            book.file_path.clone(),
+                        ) {
                             Ok(provider) => {
                                 let init = crate::pages::comics_reader::types::ComicsReaderInit {
                                     title: book.title.clone(),
@@ -805,20 +811,23 @@ impl AppModel {
                                     book_id: Some(id),
                                     cover_path: book.cover_path.clone(),
                                 };
-                                let ctrl = ComicsReaderModel::builder()
-                                    .launch(init)
-                                    .forward(sender.input_sender(), |out| match out {
+                                let ctrl = ComicsReaderModel::builder().launch(init).forward(
+                                    sender.input_sender(),
+                                    |out| match out {
                                         ComicsReaderOut::Close => AppMsg::Back,
                                         ComicsReaderOut::MinimizeToBubble { book_id } => {
                                             AppMsg::MinimizeToBubble { book_id }
                                         }
-                                    });
+                                    },
+                                );
                                 PageSlot::ComicsReader(ctrl)
                             }
                             Err(err) => {
                                 eprintln!("kalam: failed to open comic file for book {id}: {err}");
                                 sender.input(AppMsg::Back);
-                                let ctrl = PlaceholderPageModel::builder().launch(NavItem::Comics).detach();
+                                let ctrl = PlaceholderPageModel::builder()
+                                    .launch(NavItem::Comics)
+                                    .detach();
                                 PageSlot::Placeholder(ctrl)
                             }
                         }
@@ -826,41 +835,55 @@ impl AppModel {
                     Ok(None) => {
                         eprintln!("kalam: comic book {id} not found in catalog");
                         sender.input(AppMsg::Back);
-                        let ctrl = PlaceholderPageModel::builder().launch(NavItem::Comics).detach();
+                        let ctrl = PlaceholderPageModel::builder()
+                            .launch(NavItem::Comics)
+                            .detach();
                         PageSlot::Placeholder(ctrl)
                     }
                     Err(err) => {
                         eprintln!("kalam: database error looking up comic book {id}: {err}");
                         sender.input(AppMsg::Back);
-                        let ctrl = PlaceholderPageModel::builder().launch(NavItem::Comics).detach();
+                        let ctrl = PlaceholderPageModel::builder()
+                            .launch(NavItem::Comics)
+                            .detach();
                         PageSlot::Placeholder(ctrl)
                     }
                 }
             }
 
             Route::Module(NavItem::Comics) => {
-                let ctrl = ComicsModel::builder()
-                    .launch(catalog.clone())
-                    .forward(sender.input_sender(), |out| match out {
+                let ctrl = ComicsModel::builder().launch(catalog.clone()).forward(
+                    sender.input_sender(),
+                    |out| match out {
                         ComicsOut::OpenComic { book_id } => AppMsg::OpenReader { book_id },
                         ComicsOut::OpenBookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
-                        ComicsOut::OpenRemoteManga { source_id, remote_id } => {
-                            AppMsg::Push(Route::RemoteDetail { source_id, remote_id })
-                        }
-                    });
+                        ComicsOut::OpenRemoteManga {
+                            source_id,
+                            remote_id,
+                        } => AppMsg::Push(Route::RemoteDetail {
+                            source_id,
+                            remote_id,
+                        }),
+                    },
+                );
                 PageSlot::Comics(ctrl)
             }
             Route::ComicSeries { series_name } => {
                 let sname = series_name.clone();
-                let ctrl = ComicsModel::builder()
-                    .launch(catalog.clone())
-                    .forward(sender.input_sender(), |out| match out {
+                let ctrl = ComicsModel::builder().launch(catalog.clone()).forward(
+                    sender.input_sender(),
+                    |out| match out {
                         ComicsOut::OpenComic { book_id } => AppMsg::OpenReader { book_id },
                         ComicsOut::OpenBookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
-                        ComicsOut::OpenRemoteManga { source_id, remote_id } => {
-                            AppMsg::Push(Route::RemoteDetail { source_id, remote_id })
-                        }
-                    });
+                        ComicsOut::OpenRemoteManga {
+                            source_id,
+                            remote_id,
+                        } => AppMsg::Push(Route::RemoteDetail {
+                            source_id,
+                            remote_id,
+                        }),
+                    },
+                );
                 let _ = ctrl.sender().send(ComicsMsg::OpenSeriesDrawer(sname));
                 PageSlot::Comics(ctrl)
             }
@@ -884,13 +907,18 @@ impl AppModel {
                     source_id: "weebcentral".to_string(),
                     initial_query: None,
                 };
-                let ctrl = BrowseModel::builder()
-                    .launch(init)
-                    .forward(sender.input_sender(), |out| match out {
-                        BrowseOut::OpenRemoteBook { source_id, remote_id } => {
-                            AppMsg::Push(Route::RemoteDetail { source_id, remote_id })
-                        }
-                    });
+                let ctrl =
+                    BrowseModel::builder()
+                        .launch(init)
+                        .forward(sender.input_sender(), |out| match out {
+                            BrowseOut::OpenRemoteBook {
+                                source_id,
+                                remote_id,
+                            } => AppMsg::Push(Route::RemoteDetail {
+                                source_id,
+                                remote_id,
+                            }),
+                        });
                 PageSlot::RemoteBrowse(ctrl)
             }
             Route::Module(NavItem::Fanfiction) => {
@@ -899,13 +927,18 @@ impl AppModel {
                     source_id: "ao3".to_string(),
                     initial_query: None,
                 };
-                let ctrl = BrowseModel::builder()
-                    .launch(init)
-                    .forward(sender.input_sender(), |out| match out {
-                        BrowseOut::OpenRemoteBook { source_id, remote_id } => {
-                            AppMsg::Push(Route::RemoteDetail { source_id, remote_id })
-                        }
-                    });
+                let ctrl =
+                    BrowseModel::builder()
+                        .launch(init)
+                        .forward(sender.input_sender(), |out| match out {
+                            BrowseOut::OpenRemoteBook {
+                                source_id,
+                                remote_id,
+                            } => AppMsg::Push(Route::RemoteDetail {
+                                source_id,
+                                remote_id,
+                            }),
+                        });
                 PageSlot::RemoteBrowse(ctrl) // Reuse the same page slot for both!
             }
             Route::RemoteSearch { source_id, query } => {
@@ -914,36 +947,54 @@ impl AppModel {
                     source_id: source_id.clone(),
                     initial_query: Some(query.clone()),
                 };
-                let ctrl = BrowseModel::builder()
-                    .launch(init)
-                    .forward(sender.input_sender(), |out| match out {
-                        BrowseOut::OpenRemoteBook { source_id, remote_id } => {
-                            AppMsg::Push(Route::RemoteDetail { source_id, remote_id })
-                        }
-                    });
+                let ctrl =
+                    BrowseModel::builder()
+                        .launch(init)
+                        .forward(sender.input_sender(), |out| match out {
+                            BrowseOut::OpenRemoteBook {
+                                source_id,
+                                remote_id,
+                            } => AppMsg::Push(Route::RemoteDetail {
+                                source_id,
+                                remote_id,
+                            }),
+                        });
                 PageSlot::RemoteBrowse(ctrl)
             }
-            Route::RemoteDetail { source_id, remote_id } => {
+            Route::RemoteDetail {
+                source_id,
+                remote_id,
+            } => {
                 let init = RemoteDetailInit {
                     manager: source_manager.clone(),
                     catalog: catalog.clone(),
                     source_id: source_id.clone(),
                     remote_id: remote_id.clone(),
                 };
-                let ctrl = RemoteDetailModel::builder()
-                    .launch(init)
-                    .forward(sender.input_sender(), |out| match out {
+                let ctrl = RemoteDetailModel::builder().launch(init).forward(
+                    sender.input_sender(),
+                    |out| match out {
                         RemoteDetailOut::Back => AppMsg::Back,
-                        RemoteDetailOut::OpenReader { source_id, chapter_id, title } => {
-                            AppMsg::Push(Route::RemoteReader { source_id, chapter_id, title })
-                        }
+                        RemoteDetailOut::OpenReader {
+                            source_id,
+                            chapter_id,
+                            title,
+                        } => AppMsg::Push(Route::RemoteReader {
+                            source_id,
+                            chapter_id,
+                            title,
+                        }),
                         RemoteDetailOut::OpenBook { book_id } => {
                             AppMsg::Push(Route::Reader { book_id })
                         }
                         RemoteDetailOut::OpenAuthor { source_id, author } => {
-                            AppMsg::Push(Route::RemoteSearch { source_id, query: author })
+                            AppMsg::Push(Route::RemoteSearch {
+                                source_id,
+                                query: author,
+                            })
                         }
-                    });
+                    },
+                );
                 PageSlot::RemoteDetail(ctrl)
             }
             Route::Module(NavItem::Editor) => {
@@ -984,9 +1035,7 @@ impl AppModel {
         }
 
         self.sidebar_override = match &route {
-            Route::BookPage { .. } | Route::Reader { .. } => {
-                Some(self.sidebar_item())
-            }
+            Route::BookPage { .. } | Route::Reader { .. } => Some(self.sidebar_item()),
             _ => None,
         };
 
@@ -1213,7 +1262,7 @@ impl Component for AppModel {
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Vertical,
                                 set_spacing: 0,
-                                
+
                                 // Hidden with the Downloads page: with no
                                 // `Source` registered the queue is always
                                 // empty, so this rail icon only ever opens a
@@ -1336,7 +1385,10 @@ impl Component for AppModel {
         // After this pass completes the marker is re-set to the book count and the
         // next launch skips as normal.
         let source_manager = crate::sources::global_source_manager();
-        let dl_mgr = std::sync::Arc::new(crate::downloads::DownloadManager::new(source_manager.clone(), catalog.clone()));
+        let dl_mgr = std::sync::Arc::new(crate::downloads::DownloadManager::new(
+            source_manager.clone(),
+            catalog.clone(),
+        ));
         let _ = crate::downloads::DOWNLOAD_MANAGER.set(dl_mgr);
         let initial_route = Route::Module(NavItem::Home);
         crate::timing::span("startup_first_page");
@@ -1415,9 +1467,15 @@ impl Component for AppModel {
         let widgets = view_output!();
         widgets.root_overlay.add_overlay(&float_scrim);
         widgets.root_overlay.add_overlay(&float_host);
-        widgets.content_overlay.add_overlay(model.bubbles.scrim_widget());
-        widgets.content_overlay.add_overlay(model.bubbles.window_widget());
-        widgets.content_overlay.add_overlay(model.bubbles.bubble_widget());
+        widgets
+            .content_overlay
+            .add_overlay(model.bubbles.scrim_widget());
+        widgets
+            .content_overlay
+            .add_overlay(model.bubbles.window_widget());
+        widgets
+            .content_overlay
+            .add_overlay(model.bubbles.bubble_widget());
 
         // The rail bell (decision 148): its panel and outside-click
         // catcher float over the whole window beside the rail, so
@@ -1499,9 +1557,7 @@ impl Component for AppModel {
             // Never swallow a letter someone is typing into a search box.
             let focused = gtk::prelude::GtkWindowExt::focus(&key_root_tasks);
             let typing = focused
-                .map(|w| {
-                    w.is::<gtk::Text>() || w.is::<gtk::Entry>() || w.is::<gtk::SearchEntry>()
-                })
+                .map(|w| w.is::<gtk::Text>() || w.is::<gtk::Entry>() || w.is::<gtk::SearchEntry>())
                 .unwrap_or(false);
             if typing {
                 return gtk::glib::Propagation::Proceed;
@@ -1543,11 +1599,7 @@ impl Component for AppModel {
 
             let focused = gtk::prelude::GtkWindowExt::focus(&key_root_shortcuts);
             let typing = focused
-                .map(|w| {
-                    w.is::<gtk::Editable>()
-                        || w.is::<gtk::Text>()
-                        || w.is::<gtk::TextView>()
-                })
+                .map(|w| w.is::<gtk::Editable>() || w.is::<gtk::Text>() || w.is::<gtk::TextView>())
                 .unwrap_or(false);
             if typing && !binding.fires_while_typing() {
                 return gtk::glib::Propagation::Proceed;
@@ -1641,53 +1693,58 @@ impl Component for AppModel {
         // The listener lives as long as the process — so does the rail.
         let brand_image = brand_logo(crate::theme::current(&model.catalog).accent);
         widgets.brand.append(&brand_image);
-        crate::theme::on_theme_applied(std::rc::Rc::new(
-            move |theme: &crate::theme::Theme| {
-                if let Some(texture) = brand_texture(theme.accent) {
-                    brand_image.set_paintable(Some(&texture));
-                }
-            },
-        ));
+        crate::theme::on_theme_applied(std::rc::Rc::new(move |theme: &crate::theme::Theme| {
+            if let Some(texture) = brand_texture(theme.accent) {
+                brand_image.set_paintable(Some(&texture));
+            }
+        }));
 
         let popover_list = widgets.download_popover_list.clone();
-        widgets.download_popover.connect_visible_notify(move |popover| {
-            if popover.is_visible() {
-                while let Some(child) = popover_list.first_child() {
-                    popover_list.remove(&child);
-                }
-                let jobs = crate::downloads::DOWNLOAD_MANAGER.get()
-                    .map(|m| m.get_jobs())
-                    .unwrap_or_default();
-                if jobs.is_empty() {
-                    let lbl = gtk::Label::new(Some("No downloads tracked."));
-                    lbl.add_css_class("kalam-subtitle-muted");
-                    popover_list.append(&lbl);
-                } else {
-                    for job in jobs.iter().take(6) {
-                        let row = gtk::Box::new(gtk::Orientation::Vertical, 2);
-                        let title = gtk::Label::new(Some(&job.title));
-                        title.set_halign(gtk::Align::Start);
-                        title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                        title.add_css_class("kalam-subtitle-bold");
-                        row.append(&title);
+        widgets
+            .download_popover
+            .connect_visible_notify(move |popover| {
+                if popover.is_visible() {
+                    while let Some(child) = popover_list.first_child() {
+                        popover_list.remove(&child);
+                    }
+                    let jobs = crate::downloads::DOWNLOAD_MANAGER
+                        .get()
+                        .map(|m| m.get_jobs())
+                        .unwrap_or_default();
+                    if jobs.is_empty() {
+                        let lbl = gtk::Label::new(Some("No downloads tracked."));
+                        lbl.add_css_class("kalam-subtitle-muted");
+                        popover_list.append(&lbl);
+                    } else {
+                        for job in jobs.iter().take(6) {
+                            let row = gtk::Box::new(gtk::Orientation::Vertical, 2);
+                            let title = gtk::Label::new(Some(&job.title));
+                            title.set_halign(gtk::Align::Start);
+                            title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                            title.add_css_class("kalam-subtitle-bold");
+                            row.append(&title);
 
-                        let status_str = match &job.status {
-                            crate::downloads::JobStatus::Pending => "Queued".to_string(),
-                            crate::downloads::JobStatus::Downloading { chapter_idx, total } => format!("Downloading {chapter_idx}/{total}"),
-                            crate::downloads::JobStatus::Packaging => "Packaging EPUB...".to_string(),
-                            crate::downloads::JobStatus::Done => "✓ Completed".to_string(),
-                            crate::downloads::JobStatus::Cancelled => "Cancelled".to_string(),
-                            crate::downloads::JobStatus::Failed(e) => format!("Failed: {e}"),
-                        };
-                        let status_lbl = gtk::Label::new(Some(&status_str));
-                        status_lbl.set_halign(gtk::Align::Start);
-                        status_lbl.add_css_class("kalam-badge");
-                        row.append(&status_lbl);
-                        popover_list.append(&row);
+                            let status_str = match &job.status {
+                                crate::downloads::JobStatus::Pending => "Queued".to_string(),
+                                crate::downloads::JobStatus::Downloading { chapter_idx, total } => {
+                                    format!("Downloading {chapter_idx}/{total}")
+                                }
+                                crate::downloads::JobStatus::Packaging => {
+                                    "Packaging EPUB...".to_string()
+                                }
+                                crate::downloads::JobStatus::Done => "✓ Completed".to_string(),
+                                crate::downloads::JobStatus::Cancelled => "Cancelled".to_string(),
+                                crate::downloads::JobStatus::Failed(e) => format!("Failed: {e}"),
+                            };
+                            let status_lbl = gtk::Label::new(Some(&status_str));
+                            status_lbl.set_halign(gtk::Align::Start);
+                            status_lbl.add_css_class("kalam-badge");
+                            row.append(&status_lbl);
+                            popover_list.append(&row);
+                        }
                     }
                 }
-            }
-        });
+            });
 
         // Above Settings, on the same end of the rail. Prepended rather than
         // appended so the order is Tasks, then the bell, then Settings;
@@ -1695,9 +1752,11 @@ impl Component for AppModel {
         {
             let btn = model.tasks_btn.clone();
             let s = sender.clone();
-            btn.connect_clicked(move |_| s.input(AppMsg::Push(Route::LibrarySection(
-                LibrarySection::TaskManager,
-            ))));
+            btn.connect_clicked(move |_| {
+                s.input(AppMsg::Push(Route::LibrarySection(
+                    LibrarySection::TaskManager,
+                )))
+            });
             widgets.bottom_nav.prepend(&btn);
         }
         widgets.bottom_nav.append(&notifications.button());
@@ -1913,9 +1972,7 @@ impl Component for AppModel {
                         // this shell dispatch can run.
                         if !self.route.is_reader() {
                             self.close_floating();
-                            if self.route
-                                != Route::LibrarySection(LibrarySection::AllBooks)
-                            {
+                            if self.route != Route::LibrarySection(LibrarySection::AllBooks) {
                                 self.swap_page(
                                     &widgets.content_host,
                                     Route::LibrarySection(LibrarySection::AllBooks),
@@ -1985,10 +2042,7 @@ impl Component for AppModel {
                     let refresh_listing = matches!(
                         self.route,
                         Route::Module(
-                            NavItem::Home
-                                | NavItem::Library
-                                | NavItem::Shelves
-                                | NavItem::Comics,
+                            NavItem::Home | NavItem::Library | NavItem::Shelves | NavItem::Comics,
                         ) | Route::ShelvesGrid
                             | Route::LibrarySection(_)
                             | Route::ComicSeries { .. }
@@ -2065,7 +2119,10 @@ impl Component for AppModel {
             AppMsg::OpenReader { book_id } => {
                 self.close_floating();
                 let route = if let Ok(Some(book)) = self.catalog.get_book(book_id) {
-                    if matches!(book.format, crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr) {
+                    if matches!(
+                        book.format,
+                        crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+                    ) {
                         Route::ComicsReader { book_id }
                     } else if matches!(book.format, crate::models::BookFormat::Pdf) {
                         Route::PdfReader { book_id }
@@ -2075,12 +2132,7 @@ impl Component for AppModel {
                 } else {
                     Route::Reader { book_id }
                 };
-                self.swap_page(
-                    &widgets.content_host,
-                    route,
-                    true,
-                    &sender,
-                );
+                self.swap_page(&widgets.content_host, route, true, &sender);
             }
             AppMsg::OpenReaderAt { book_id, chapter } => {
                 if let Some(ch) = chapter {
@@ -2164,27 +2216,24 @@ fn open_shortcut_import_files(
 
     let catalog = catalog.clone();
     let sender = sender.clone();
-    dialog.open_multiple(
-        Some(root),
-        gtk::gio::Cancellable::NONE,
-        move |result| {
-            if let Ok(files) = result {
-                let mut paths = Vec::new();
-                for i in 0..files.n_items() {
-                    if let Some(file) =
-                        files.item(i).and_then(|obj| obj.downcast::<gtk::gio::File>().ok())
-                    {
-                        if let Some(path) = file.path() {
-                            paths.push(path);
-                        }
+    dialog.open_multiple(Some(root), gtk::gio::Cancellable::NONE, move |result| {
+        if let Ok(files) = result {
+            let mut paths = Vec::new();
+            for i in 0..files.n_items() {
+                if let Some(file) = files
+                    .item(i)
+                    .and_then(|obj| obj.downcast::<gtk::gio::File>().ok())
+                {
+                    if let Some(path) = file.path() {
+                        paths.push(path);
                     }
                 }
-                if !paths.is_empty() {
-                    start_shortcut_import(catalog, paths, sender);
-                }
             }
-        },
-    );
+            if !paths.is_empty() {
+                start_shortcut_import(catalog, paths, sender);
+            }
+        }
+    });
 }
 
 /// The folder half of the Import shortcut pair. Scanning the chosen
@@ -2202,33 +2251,29 @@ fn open_shortcut_import_folder(
 
     let catalog = catalog.clone();
     let sender = sender.clone();
-    dialog.select_folder(
-        Some(root),
-        gtk::gio::Cancellable::NONE,
-        move |result| {
-            if let Ok(folder) = result {
-                if let Some(path) = folder.path() {
-                    let scan_catalog = catalog.clone();
-                    let scan_sender = sender.clone();
-                    crate::tasks::spawn(
-                        "Scanning folder for books",
-                        move |_| collect_shortcut_import_files(path),
-                        |_| {},
-                        move |paths| {
-                            if paths.is_empty() {
-                                crate::notify::info(
-                                    "No books found in that folder",
-                                    "Choose a folder containing EPUB, PDF, CBZ or CBR files.",
-                                );
-                            } else {
-                                start_shortcut_import(scan_catalog, paths, scan_sender);
-                            }
-                        },
-                    );
-                }
+    dialog.select_folder(Some(root), gtk::gio::Cancellable::NONE, move |result| {
+        if let Ok(folder) = result {
+            if let Some(path) = folder.path() {
+                let scan_catalog = catalog.clone();
+                let scan_sender = sender.clone();
+                crate::tasks::spawn(
+                    "Scanning folder for books",
+                    move |_| collect_shortcut_import_files(path),
+                    |_| {},
+                    move |paths| {
+                        if paths.is_empty() {
+                            crate::notify::info(
+                                "No books found in that folder",
+                                "Choose a folder containing EPUB, PDF, CBZ or CBR files.",
+                            );
+                        } else {
+                            start_shortcut_import(scan_catalog, paths, scan_sender);
+                        }
+                    },
+                );
             }
-        },
-    );
+        }
+    });
 }
 
 fn start_shortcut_import(
@@ -2463,7 +2508,6 @@ fn start_housekeeping(catalog: &std::sync::Arc<crate::db::Catalog>) {
             }
         },
     );
-
 }
 
 fn update_nav_styles(container: &gtk::Box, active: NavItem) {
@@ -2744,7 +2788,13 @@ mod tests {
             .into_iter()
             .filter_map(|name| route_by_name(name).as_ref().map(route_label))
             .collect();
-        for name in ["book-1", "read-1", "pdf-read-1", "comic-read-1", "edit-book-1"] {
+        for name in [
+            "book-1",
+            "read-1",
+            "pdf-read-1",
+            "comic-read-1",
+            "edit-book-1",
+        ] {
             labels.push(route_label(&route_by_name(name).expect("id form resolves")));
         }
         // `series-book-<id>` resolves through the catalog, so its route is
@@ -2753,8 +2803,7 @@ mod tests {
             series: "Alpha".into(),
             first_author: "An Author".into(),
         }));
-        let unique: std::collections::HashSet<&'static str> =
-            labels.iter().copied().collect();
+        let unique: std::collections::HashSet<&'static str> = labels.iter().copied().collect();
         assert_eq!(
             unique.len(),
             labels.len(),
@@ -2798,7 +2847,10 @@ mod tests {
         // The screenshot job opens a real book with `read-1`. Book 1 always
         // exists: the CI seeder inserts with AUTOINCREMENT from 1.
         assert_eq!(route_by_name("read-1"), Some(Route::Reader { book_id: 1 }));
-        assert_eq!(route_by_name("book-1"), Some(Route::BookPage { book_id: 1 }));
+        assert_eq!(
+            route_by_name("book-1"),
+            Some(Route::BookPage { book_id: 1 })
+        );
         assert_eq!(
             route_by_name("  READ-12 "),
             Some(Route::Reader { book_id: 12 })
@@ -2811,7 +2863,21 @@ mod tests {
             route_by_name("comic-read-7"),
             Some(Route::ComicsReader { book_id: 7 })
         );
-        for name in ["book", "reader", "book-", "read-", "book-abc", "book-1x", "read--1", "pdf-read-", "pdf-read-x", "pdf-7", "comic-read-", "comic-read-x", "comic-7"] {
+        for name in [
+            "book",
+            "reader",
+            "book-",
+            "read-",
+            "book-abc",
+            "book-1x",
+            "read--1",
+            "pdf-read-",
+            "pdf-read-x",
+            "pdf-7",
+            "comic-read-",
+            "comic-read-x",
+            "comic-7",
+        ] {
             assert_eq!(route_by_name(name), None, "{name:?} must not resolve");
         }
     }

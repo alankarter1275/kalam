@@ -75,12 +75,9 @@ pub(crate) fn build_reader_settings_panel(
     // Editing anything below while off turns it on, so these two
     // controls answer to the model either way.
     let book_card = reader_settings_card("book-open-symbolic", "This book");
-    let (book_row, set_book_override_switch) =
-        book_override_row(book_override_on, sender);
+    let (book_row, set_book_override_switch) = book_override_row(book_override_on, sender);
     book_card.append(&book_row);
-    let book_hint = gtk::Label::new(Some(
-        "Settings changed here apply to this book alone.",
-    ));
+    let book_hint = gtk::Label::new(Some("Settings changed here apply to this book alone."));
     book_hint.add_css_class("kalam-reader-setting-hint");
     book_hint.set_wrap(true);
     book_hint.set_xalign(0.0);
@@ -126,8 +123,7 @@ pub(crate) fn build_reader_settings_panel(
             gtk::Justification::Left
         });
         let width = (column_px as i32).min(276);
-        preview_body
-            .set_max_width_chars(((width * 2) / (font_px as i32).max(1)).clamp(20, 120));
+        preview_body.set_max_width_chars(((width * 2) / (font_px as i32).max(1)).clamp(20, 120));
         preview_column.set_size_request(width, -1);
     }
     preview_column.append(&preview_body);
@@ -199,8 +195,9 @@ pub(crate) fn build_reader_settings_panel(
     fonts_row.append(&fonts_open);
     type_section.append(&fonts_row);
 
-    let fonts_hint =
-        gtk::Label::new(Some("New faces join the picker the next time you open the book."));
+    let fonts_hint = gtk::Label::new(Some(
+        "New faces join the picker the next time you open the book.",
+    ));
     fonts_hint.add_css_class("kalam-reader-setting-hint");
     fonts_hint.set_wrap(true);
     fonts_hint.set_xalign(0.0);
@@ -227,7 +224,13 @@ pub(crate) fn build_reader_settings_panel(
     ));
 
     let input_tx = sender.input_sender();
-    setting_toggle(&type_section, "Justify", justify, input_tx, ReaderMsg::SetJustify);
+    setting_toggle(
+        &type_section,
+        "Justify",
+        justify,
+        input_tx,
+        ReaderMsg::SetJustify,
+    );
     setting_toggle(
         &type_section,
         "Publisher styles",
@@ -385,12 +388,9 @@ pub(crate) fn build_reader_settings_panel(
     // defaults", while there is nothing to promote.
     let use_defaults_btn = {
         let tx = sender.input_sender().clone();
-        crate::widgets::pill_button::boxed_ghost_button(
-            "Matches your defaults",
-            move || {
-                let _ = tx.send(ReaderMsg::UseSettingsAsDefaults);
-            },
-        )
+        crate::widgets::pill_button::boxed_ghost_button("Matches your defaults", move || {
+            let _ = tx.send(ReaderMsg::UseSettingsAsDefaults);
+        })
     };
     use_defaults_btn.add_css_class("kalam-reader-use-defaults");
     use_defaults_btn.set_sensitive(false);

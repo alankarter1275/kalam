@@ -57,19 +57,16 @@ impl Catalog {
                  JOIN books ON books.id = sb.book_id
                  LEFT JOIN comic_chapters cc ON cc.book_id = sb.book_id",
             )?;
-            let rows = stmt.query_map(
-                [],
-                |r| {
-                    Ok((
-                        r.get::<_, i64>(0)?,
-                        r.get::<_, i64>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, Option<String>>(3)?,
-                        r.get::<_, String>(4)?,
-                        r.get::<_, Option<i64>>(5)?,
-                    ))
-                },
-            )?;
+            let rows = stmt.query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, Option<i64>>(5)?,
+                ))
+            })?;
             let mut per_shelf: std::collections::HashMap<i64, std::collections::HashSet<String>> =
                 std::collections::HashMap::new();
             for row in rows {
@@ -77,7 +74,13 @@ impl Catalog {
                 per_shelf
                     .entry(shelf_id)
                     .or_default()
-                    .insert(collapse_count_key(id, &format, series.as_deref(), &title, series_id));
+                    .insert(collapse_count_key(
+                        id,
+                        &format,
+                        series.as_deref(),
+                        &title,
+                        series_id,
+                    ));
             }
             per_shelf.into_iter().map(|(k, v)| (k, v.len())).collect()
         };
@@ -296,7 +299,13 @@ impl Catalog {
         let mut seen = std::collections::HashSet::new();
         for row in rows {
             let (id, format, series, title, series_id) = row?;
-            seen.insert(collapse_count_key(id, &format, series.as_deref(), &title, series_id));
+            seen.insert(collapse_count_key(
+                id,
+                &format,
+                series.as_deref(),
+                &title,
+                series_id,
+            ));
         }
         Ok(seen.len())
     }
@@ -381,7 +390,11 @@ impl Catalog {
                AND id NOT IN (SELECT book_id FROM comic_chapters)",
         )?;
         let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?))
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
         })?;
         let mut peers = Vec::new();
         for row in rows {
@@ -408,10 +421,7 @@ impl Catalog {
     /// chunked query; the unregistered heuristic path runs at most twice more
     /// for the whole batch (the requested rows, then the one scan of all
     /// unregistered comics the single-book form did per book).
-    pub fn comic_series_peers_by_ids(
-        &self,
-        book_ids: &[i64],
-    ) -> Result<HashMap<i64, Vec<i64>>> {
+    pub fn comic_series_peers_by_ids(&self, book_ids: &[i64]) -> Result<HashMap<i64, Vec<i64>>> {
         let mut out: HashMap<i64, Vec<i64>> = HashMap::new();
         if book_ids.is_empty() {
             return Ok(out);
@@ -435,9 +445,8 @@ impl Catalog {
             );
             let mut stmt = conn.prepare(&sql)?;
             let params = rusqlite::params_from_iter(chunk.iter());
-            let rows = stmt.query_map(params, |r| {
-                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
-            })?;
+            let rows =
+                stmt.query_map(params, |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
             for row in rows {
                 let (asked, peer) = row?;
                 out.entry(asked).or_default().push(peer);
@@ -456,9 +465,7 @@ impl Catalog {
         // key them exactly the way `comic_series_peers` does. Their own rows
         // first, so a non-comic can be answered without the scan.
         let holders = vec!["?"; unregistered.len()].join(",");
-        let sql = format!(
-            "SELECT id, format, title, series FROM books WHERE id IN ({holders})"
-        );
+        let sql = format!("SELECT id, format, title, series FROM books WHERE id IN ({holders})");
         let mut stmt = conn.prepare(&sql)?;
         let params = rusqlite::params_from_iter(unregistered.iter());
         let rows = stmt.query_map(params, |r| {
@@ -612,13 +619,11 @@ impl Catalog {
         }
         let conn = self.conn();
         let holders = vec!["?"; book_ids.len()].join(",");
-        let sql =
-            format!("SELECT EXISTS(SELECT 1 FROM reading_list WHERE book_id IN ({holders}))");
-        let found: i64 = conn.query_row(
-            &sql,
-            rusqlite::params_from_iter(book_ids.iter()),
-            |r| r.get(0),
-        )?;
+        let sql = format!("SELECT EXISTS(SELECT 1 FROM reading_list WHERE book_id IN ({holders}))");
+        let found: i64 =
+            conn.query_row(&sql, rusqlite::params_from_iter(book_ids.iter()), |r| {
+                r.get(0)
+            })?;
         Ok(found != 0)
     }
 
@@ -627,8 +632,7 @@ impl Catalog {
     /// `any_in_reading_list` per row.
     pub fn reading_list_book_ids(&self) -> Result<Vec<i64>> {
         let conn = self.conn();
-        let mut stmt =
-            conn.prepare_cached("SELECT book_id FROM reading_list")?;
+        let mut stmt = conn.prepare_cached("SELECT book_id FROM reading_list")?;
         let rows = stmt.query_map([], |r| r.get(0))?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
@@ -638,8 +642,8 @@ impl Catalog {
     /// only needs the set).
     pub fn shelf_book_ids(&self, shelf_id: i64) -> Result<Vec<i64>> {
         let conn = self.conn();
-        let mut stmt = conn
-            .prepare_cached("SELECT book_id FROM shelf_books WHERE shelf_id = ?1")?;
+        let mut stmt =
+            conn.prepare_cached("SELECT book_id FROM shelf_books WHERE shelf_id = ?1")?;
         let rows = stmt.query_map(params![shelf_id], |r| r.get(0))?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }

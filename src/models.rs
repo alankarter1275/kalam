@@ -153,7 +153,12 @@ impl Route {
             Route::TagBooks { .. } => NavItem::Library,
             Route::AuthorsIndex | Route::AuthorPage { .. } => NavItem::Authors,
             Route::EditorWorkspace { .. } => NavItem::Editor,
-            Route::BookPage { .. } | Route::SeriesPage { .. } | Route::Reader { .. } | Route::PdfReader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
+            Route::BookPage { .. }
+            | Route::SeriesPage { .. }
+            | Route::Reader { .. }
+            | Route::PdfReader { .. }
+            | Route::ComicsReader { .. }
+            | Route::RemoteReader { .. } => NavItem::Library,
             Route::RemoteDetail { .. } => NavItem::RemoteBrowse,
             Route::RemoteSearch { source_id, .. } => {
                 if source_id == "royalroad" {

@@ -46,7 +46,9 @@ impl PdfOcrJobState {
     /// The next page to recognize: promoted pages first (front of the
     /// line), then the background scan's file order.
     pub fn next_page(&mut self) -> Option<usize> {
-        self.promoted.pop_front().or_else(|| self.pending.pop_front())
+        self.promoted
+            .pop_front()
+            .or_else(|| self.pending.pop_front())
     }
 
     /// Move `pages` to the front of the queue, in the order given (the
@@ -127,7 +129,12 @@ pub fn enqueue_import_scan(catalog: Arc<Catalog>, book_id: i64, title: String, p
 }
 
 /// The scan itself, on the task's worker thread.
-fn run_scan(catalog: Arc<Catalog>, book_id: i64, path: PathBuf, reporter: crate::tasks::Reporter) -> String {
+fn run_scan(
+    catalog: Arc<Catalog>,
+    book_id: i64,
+    path: PathBuf,
+    reporter: crate::tasks::Reporter,
+) -> String {
     // The fingerprint the cache rows are keyed by. Computed here, on the
     // worker -- the UI thread never stats files (2.20).
     let Some(fingerprint) = crate::pages::pdf_reader::pdf_path_fingerprint(&path) else {
@@ -149,7 +156,11 @@ fn run_scan(catalog: Arc<Catalog>, book_id: i64, path: PathBuf, reporter: crate:
         // A 5,000-page scan takes a while just to check; show that too,
         // so the task never looks stuck before recognition even starts.
         if page % 100 == 0 {
-            reporter.step(page, page_count, format!("checking page {page} of {page_count}"));
+            reporter.step(
+                page,
+                page_count,
+                format!("checking page {page} of {page_count}"),
+            );
         }
         // Only pages whose vector text is empty are enqueued...
         let has_vector_text = doc
@@ -199,9 +210,7 @@ fn run_scan(catalog: Arc<Catalog>, book_id: i64, path: PathBuf, reporter: crate:
             break format!("{recognized} of {total} pages recognized");
         };
         if reporter.cancelled() {
-            break format!(
-                "cancelled after {done} of {total} pages ({recognized} recognized)"
-            );
+            break format!("cancelled after {done} of {total} pages ({recognized} recognized)");
         }
 
         // Re-check the cache under the permit: the reader's own worker may
@@ -222,7 +231,11 @@ fn run_scan(catalog: Arc<Catalog>, book_id: i64, path: PathBuf, reporter: crate:
                 reporter.step(done, total, format!("page {page} of {page_count}"));
             }
             Ok(false) => {
-                reporter.step(done, total, format!("page {page} of {page_count} (no text found)"));
+                reporter.step(
+                    done,
+                    total,
+                    format!("page {page} of {page_count} (no text found)"),
+                );
             }
             Err(err) => {
                 log::warn!("Import OCR failed on page {page}: {err}");
@@ -262,9 +275,10 @@ fn recognize_page(
     let rendered = doc
         .render_page_rgba(page, scale, false)
         .map_err(|e| e.to_string())?;
-    let (width_pts, height_pts) = doc
-        .page_dimensions(page)
-        .unwrap_or((rendered.width as f32 / scale, rendered.height as f32 / scale));
+    let (width_pts, height_pts) = doc.page_dimensions(page).unwrap_or((
+        rendered.width as f32 / scale,
+        rendered.height as f32 / scale,
+    ));
 
     let text = crate::ocr::perform_ocr(engine, &rendered, page, width_pts, height_pts)
         .map_err(|e| e.to_string())?;
@@ -301,7 +315,11 @@ mod tests {
         let mut state = PdfOcrJobState::new(vec![1, 2, 3]);
         state.promote(&[3, 2]);
         state.promote(&[3, 2]);
-        assert_eq!(drain(&mut state), vec![3, 2, 1], "no page may be queued twice");
+        assert_eq!(
+            drain(&mut state),
+            vec![3, 2, 1],
+            "no page may be queued twice"
+        );
     }
 
     #[test]
@@ -340,6 +358,9 @@ mod tests {
     fn empty_queue_promotes_nothing_and_finishes() {
         let mut state = PdfOcrJobState::new(Vec::new());
         state.promote(&[1, 2]);
-        assert!(drain(&mut state).is_empty(), "promotion cannot resurrect a finished scan");
+        assert!(
+            drain(&mut state).is_empty(),
+            "promotion cannot resurrect a finished scan"
+        );
     }
 }

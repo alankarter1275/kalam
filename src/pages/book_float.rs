@@ -807,8 +807,7 @@ impl Component for BookFloatModel {
                         move |_reporter| catalog.delete_book(id).map_err(|e| e.to_string()),
                         |_| {},
                         move |res| {
-                            let _ = s
-                                .send(BookFloatMsg::RemoveDone { id, title, res });
+                            let _ = s.send(BookFloatMsg::RemoveDone { id, title, res });
                         },
                     );
                 }
@@ -897,24 +896,22 @@ impl Component for BookFloatModel {
             }
             BookFloatMsg::RemasterComic => {
                 if let Some(book) = &self.book {
-                    if matches!(book.format, crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr) {
+                    if matches!(
+                        book.format,
+                        crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr
+                    ) {
                         let catalog = self.service.catalog().clone();
                         let s = sender.clone();
                         // Same dialog as the detail page — one remaster UI,
                         // so the two pages can never drift apart.
-                        crate::widgets::remaster_dialog::present(
-                            root,
-                            book,
-                            &catalog,
-                            move || {
-                                // A remaster runs for minutes; this
-                                // floating window may be closed before
-                                // it finishes. The raw sender drops
-                                // the message quietly instead of
-                                // panicking on a closed component.
-                                let _ = s.input_sender().send(BookFloatMsg::Refresh);
-                            },
-                        );
+                        crate::widgets::remaster_dialog::present(root, book, &catalog, move || {
+                            // A remaster runs for minutes; this
+                            // floating window may be closed before
+                            // it finishes. The raw sender drops
+                            // the message quietly instead of
+                            // panicking on a closed component.
+                            let _ = s.input_sender().send(BookFloatMsg::Refresh);
+                        });
                     } else {
                         crate::notify::info(
                             "Not a comic",
@@ -1011,7 +1008,9 @@ fn fill(
         // a book whose snapshot is still on its worker (7.1 step 2a).
         if model.loading {
             widgets.header_title.set_label("Loading…");
-            widgets.description.set_label("Reading this book's details…");
+            widgets
+                .description
+                .set_label("Reading this book's details…");
         } else {
             widgets.header_title.set_label("Book not found");
             widgets.description.set_label("This book was removed.");

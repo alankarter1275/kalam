@@ -265,15 +265,8 @@ pub fn sanitize_comic_series(raw: &str) -> (String, Option<f32>) {
     // 2. Check for explicit keywords: "chapter", "ch.", "ch ", "vol.", "vol ", "issue ", "#"
     let lower = trimmed.to_lowercase();
     let keywords = [
-        "chapter ", "chapter",
-        "chap. ", "chap.", "chap ",
-        "ch. ", "ch.", "ch ",
-        " c ", " c",
-        "volume ", "volume",
-        "vol. ", "vol.", "vol ",
-        " v ", " v",
-        "issue ", "issue",
-        "#",
+        "chapter ", "chapter", "chap. ", "chap.", "chap ", "ch. ", "ch.", "ch ", " c ", " c",
+        "volume ", "volume", "vol. ", "vol.", "vol ", " v ", " v", "issue ", "issue", "#",
     ];
     for kw in &keywords {
         if let Some(idx) = lower.rfind(kw) {
@@ -327,9 +320,7 @@ pub fn sanitize_comic_series(raw: &str) -> (String, Option<f32>) {
                     let sep = chars[start - 1];
                     if sep == ' ' || sep == '-' || sep == '_' || sep == '.' || sep == ',' {
                         let prefix: String = chars[..start - 1].iter().collect();
-                        let prefix = prefix
-                            .trim_end_matches([' ', '-', '_', '.', ','])
-                            .trim();
+                        let prefix = prefix.trim_end_matches([' ', '-', '_', '.', ',']).trim();
                         if !prefix.is_empty() && prefix.chars().any(|c| c.is_alphabetic()) {
                             return (prefix.to_string(), Some(num));
                         }
@@ -521,15 +512,8 @@ fn parse_comic_filename_internal(raw_stem: &str, parent_dir: Option<&Path>) -> C
     // 4. Explicit chapter/volume keywords
     let lower_stem = trimmed.to_lowercase();
     let keywords = [
-        "chapter ", "chapter",
-        "chap. ", "chap.", "chap ",
-        "ch. ", "ch.", "ch ",
-        " c ", " c",
-        "volume ", "volume",
-        "vol. ", "vol.", "vol ",
-        " v ", " v",
-        "issue ", "issue",
-        "#",
+        "chapter ", "chapter", "chap. ", "chap.", "chap ", "ch. ", "ch.", "ch ", " c ", " c",
+        "volume ", "volume", "vol. ", "vol.", "vol ", " v ", " v", "issue ", "issue", "#",
     ];
     for kw in &keywords {
         if let Some(idx) = lower_stem.rfind(kw) {
@@ -600,7 +584,8 @@ fn parse_comic_filename_internal(raw_stem: &str, parent_dir: Option<&Path>) -> C
                         let series_cand = series_cand
                             .trim_end_matches([' ', '-', '_', '.', ','])
                             .trim();
-                        if !series_cand.is_empty() && series_cand.chars().any(|c| c.is_alphabetic()) {
+                        if !series_cand.is_empty() && series_cand.chars().any(|c| c.is_alphabetic())
+                        {
                             return ComicInfo {
                                 series: Some(series_cand.to_string()),
                                 number: Some(num),
@@ -757,7 +742,8 @@ where
         .with_context(|| format!("Could not create output comic archive at {:?}", output_path))?;
     let mut zip_writer = ZipWriter::new(dest_file);
 
-    let deflated_options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    let deflated_options =
+        SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
     for i in 0..total_entries {
         let mut entry = archive.by_index(i)?;
@@ -861,9 +847,10 @@ fn remaster_entry(
             image::codecs::jpeg::JpegEncoder::new_with_quality(&mut encoded, quality)
                 .encode_image(to_encode)
         }
-        RemasterFormat::Png => {
-            resized.write_to(&mut std::io::Cursor::new(&mut encoded), image::ImageFormat::Png)
-        }
+        RemasterFormat::Png => resized.write_to(
+            &mut std::io::Cursor::new(&mut encoded),
+            image::ImageFormat::Png,
+        ),
     };
     if encode_res.is_ok() {
         report.pages_remastered += 1;
@@ -907,8 +894,11 @@ mod tests {
         let options = SimpleFileOptions::default();
         for (name, img) in pages {
             let mut bytes = Vec::new();
-            img.write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
-                .expect("encode fixture page");
+            img.write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .expect("encode fixture page");
             zip.start_file(*name, options).expect("add fixture page");
             zip.write_all(&bytes).expect("write fixture page");
         }
@@ -1014,8 +1004,14 @@ mod tests {
         let (input, output) = scratch_cbz(
             "wide",
             &[
-                ("a_small.png", image::DynamicImage::ImageRgb8(image::RgbImage::new(60, 10))),
-                ("b_big.png", image::DynamicImage::ImageRgb8(image::RgbImage::new(300, 10))),
+                (
+                    "a_small.png",
+                    image::DynamicImage::ImageRgb8(image::RgbImage::new(60, 10)),
+                ),
+                (
+                    "b_big.png",
+                    image::DynamicImage::ImageRgb8(image::RgbImage::new(300, 10)),
+                ),
             ],
         );
 
@@ -1054,9 +1050,18 @@ mod tests {
         let (input, output) = scratch_cbz(
             "range",
             &[
-                ("z10.png", image::DynamicImage::ImageRgb8(image::RgbImage::new(10, 10))),
-                ("z1.png", image::DynamicImage::ImageRgb8(image::RgbImage::new(10, 10))),
-                ("z2.png", image::DynamicImage::ImageRgb8(image::RgbImage::new(10, 10))),
+                (
+                    "z10.png",
+                    image::DynamicImage::ImageRgb8(image::RgbImage::new(10, 10)),
+                ),
+                (
+                    "z1.png",
+                    image::DynamicImage::ImageRgb8(image::RgbImage::new(10, 10)),
+                ),
+                (
+                    "z2.png",
+                    image::DynamicImage::ImageRgb8(image::RgbImage::new(10, 10)),
+                ),
             ],
         );
 
@@ -1093,7 +1098,10 @@ mod tests {
     fn a_cancelled_remaster_removes_its_partial_output() -> Result<()> {
         let (input, output) = scratch_cbz(
             "cancel",
-            &[("a.png", image::DynamicImage::ImageRgb8(image::RgbImage::new(10, 10)))],
+            &[(
+                "a.png",
+                image::DynamicImage::ImageRgb8(image::RgbImage::new(10, 10)),
+            )],
         );
 
         let result = remaster_comic_archive(
@@ -1120,7 +1128,10 @@ mod tests {
     fn jpeg_output_never_carries_an_alpha_channel() -> Result<()> {
         let (input, output) = scratch_cbz(
             "alpha",
-            &[("a.png", image::DynamicImage::ImageRgba8(image::RgbaImage::new(10, 10)))],
+            &[(
+                "a.png",
+                image::DynamicImage::ImageRgba8(image::RgbaImage::new(10, 10)),
+            )],
         );
 
         remaster_comic_archive(
@@ -1136,7 +1147,10 @@ mod tests {
 
         let entries = decoded_entries(&output);
         assert_eq!(entries.len(), 1);
-        assert!(!entries[0].1.color().has_alpha(), "JPEG has no alpha channel");
+        assert!(
+            !entries[0].1.color().has_alpha(),
+            "JPEG has no alpha channel"
+        );
 
         let _ = std::fs::remove_file(&input);
         let _ = std::fs::remove_file(&output);
@@ -1308,5 +1322,3 @@ mod tests {
         assert_eq!(info.number, Some(2.0));
     }
 }
-
-

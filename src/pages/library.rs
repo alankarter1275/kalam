@@ -409,10 +409,7 @@ fn apply_snapshot(
 /// The "Now reading" card: cover with a hard offset shadow, identity, a Read
 /// button, the progress bar with chapter location, and a four-row chapter
 /// timeline centered on the current chapter.
-fn now_reading_card(
-    nr: &NowReading,
-    sender: &ComponentSender<LibraryPageModel>,
-) -> gtk::Box {
+fn now_reading_card(nr: &NowReading, sender: &ComponentSender<LibraryPageModel>) -> gtk::Box {
     let book = &nr.book;
     let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
     card.add_css_class("kalam-now-reading");
@@ -446,10 +443,11 @@ fn now_reading_card(
     click_cover.set_button(1);
     click_cover.connect_released(move |_, _, _, _| {
         if let Some(ser) = comic_series.as_ref() {
-            s_cover.output(LibraryOut::ComicSeries {
-                series_name: ser.clone(),
-            })
-            .ok();
+            s_cover
+                .output(LibraryOut::ComicSeries {
+                    series_name: ser.clone(),
+                })
+                .ok();
             return;
         }
         s_cover.output(LibraryOut::BookDialog { book_id: id }).ok();

@@ -127,13 +127,15 @@ fn entry_state(entry: &SeriesEntrySnapshot) -> EntryState {
 fn entry_fraction(entry: &SeriesEntrySnapshot) -> f64 {
     match entry_state(entry) {
         EntryState::Read => 1.0,
-        EntryState::InProgress => f64::from(
-            entry
-                .book
-                .as_ref()
-                .map(|book| book.progress)
-                .unwrap_or_default(),
-        ) / 100.0,
+        EntryState::InProgress => {
+            f64::from(
+                entry
+                    .book
+                    .as_ref()
+                    .map(|book| book.progress)
+                    .unwrap_or_default(),
+            ) / 100.0
+        }
         EntryState::Missing | EntryState::Unread => 0.0,
     }
 }
@@ -364,11 +366,9 @@ impl Component for SeriesPageModel {
                 self.focus = previous
                     .and_then(|(book_id, title)| {
                         if let Some(book_id) = book_id {
-                            snap.entries
-                                .iter()
-                                .position(|entry| {
-                                    entry.book.as_ref().is_some_and(|b| b.id == book_id)
-                                })
+                            snap.entries.iter().position(|entry| {
+                                entry.book.as_ref().is_some_and(|b| b.id == book_id)
+                            })
                         } else {
                             snap.entries
                                 .iter()
@@ -414,9 +414,7 @@ impl Component for SeriesPageModel {
                     .and_then(|entry| entry.book.as_ref().map(|book| book.id));
                 if index == self.focus {
                     if let Some(book_id) = clicked_book {
-                        sender
-                            .output(SeriesPageOut::OpenBook { book_id })
-                            .ok();
+                        sender.output(SeriesPageOut::OpenBook { book_id }).ok();
                         rebuild = false;
                     }
                 } else if self
@@ -438,8 +436,7 @@ impl Component for SeriesPageModel {
                     .unwrap_or(0);
                 if len > 0 {
                     let next =
-                        (self.focus as i32 + delta).clamp(0, len.saturating_sub(1) as i32)
-                            as usize;
+                        (self.focus as i32 + delta).clamp(0, len.saturating_sub(1) as i32) as usize;
                     if next != self.focus {
                         self.focus = next;
                         grab_entry = true;
@@ -476,15 +473,10 @@ impl Component for SeriesPageModel {
             SeriesPageMsg::OpenContinue => {
                 if let Some(book_id) = self.snapshot.as_ref().and_then(|snap| {
                     continue_target(&snap.entries).and_then(|(index, _)| {
-                        snap.entries[index]
-                            .book
-                            .as_ref()
-                            .map(|book| book.id)
+                        snap.entries[index].book.as_ref().map(|book| book.id)
                     })
                 }) {
-                    sender
-                        .output(SeriesPageOut::OpenReader { book_id })
-                        .ok();
+                    sender.output(SeriesPageOut::OpenReader { book_id }).ok();
                 }
                 rebuild = false;
             }
@@ -508,8 +500,7 @@ impl Component for SeriesPageModel {
                             Some("Open Library doesn't list this series yet.".to_string());
                     }
                     Err(detail) => {
-                        self.fetch_notice =
-                            Some("Couldn't fetch the series listing.".to_string());
+                        self.fetch_notice = Some("Couldn't fetch the series listing.".to_string());
                         if self.fetch_manual {
                             crate::notify::error("Could not fetch the series", &detail);
                         }
@@ -642,9 +633,7 @@ impl SeriesPageModel {
         let book_id = book.id;
         let path = book.file_path.clone();
         let cache = crate::paths::reader_cache_dir(&book.uuid);
-        if self.chapter_counts.contains_key(&book_id)
-            || !self.chapter_requests.insert(book_id)
-        {
+        if self.chapter_counts.contains_key(&book_id) || !self.chapter_requests.insert(book_id) {
             return;
         }
         let s = sender.input_sender().clone();
@@ -1210,11 +1199,7 @@ impl SeriesPageModel {
         left.set_valign(gtk::Align::Start);
 
         let meta_text = match entry.year {
-            Some(year) => format!(
-                "BOOK {} · {}",
-                format_series_index(entry.position),
-                year
-            ),
+            Some(year) => format!("BOOK {} · {}", format_series_index(entry.position), year),
             None => format!("BOOK {}", format_series_index(entry.position)),
         };
         let meta = gtk::Label::new(Some(&meta_text));
@@ -1307,9 +1292,15 @@ impl SeriesPageModel {
         controls.set_valign(gtk::Align::Center);
 
         let s = sender.clone();
-        let prev = icon_button("go-previous-symbolic", "Previous book", 36, true, move || {
-            s.input(SeriesPageMsg::MoveFocus(-1));
-        });
+        let prev = icon_button(
+            "go-previous-symbolic",
+            "Previous book",
+            36,
+            true,
+            move || {
+                s.input(SeriesPageMsg::MoveFocus(-1));
+            },
+        );
         prev.set_sensitive(self.focus > 0);
         set_accessible_label(&prev, "Previous book");
         controls.append(&prev);
@@ -1349,11 +1340,7 @@ impl SeriesPageModel {
             .copied()
             .filter(|count| *count > 0)
         {
-            Some(count) => format!(
-                "{pct}% · Chapter {} of {}",
-                (chapter + 1).min(count),
-                count
-            ),
+            Some(count) => format!("{pct}% · Chapter {} of {}", (chapter + 1).min(count), count),
             None => format!("{pct}% · Chapter {}", chapter + 1),
         }
     }
@@ -1369,8 +1356,10 @@ impl SeriesPageModel {
                 Some("openlibrary") | None => "Open Library",
                 Some(other) => other,
             };
-            let mut line =
-                format!("Series listing from {source} · Fetched {}", pretty_date(fetched_at));
+            let mut line = format!(
+                "Series listing from {source} · Fetched {}",
+                pretty_date(fetched_at)
+            );
             if let Some(notice) = &self.fetch_notice {
                 line.push_str(&format!(" · {notice}"));
             }
@@ -1515,8 +1504,8 @@ fn fetch_and_cache(
     series_name: &str,
     series_key: &str,
 ) -> Result<Vec<SeriesWork>, String> {
-    let remote = crate::metadata::series::search_series(series_name)
-        .map_err(|err| err.to_string())?;
+    let remote =
+        crate::metadata::series::search_series(series_name).map_err(|err| err.to_string())?;
 
     let works: Vec<SeriesWork> = remote
         .into_iter()

@@ -9,9 +9,7 @@
 //! book (`book.<id>.comic.*`); those values seed the series record the
 //! first time a chapter from the series is opened with this model.
 
-use super::types::{
-    ComicBackground, ComicImageSettings, FitMode, PageStyle, ReadingDirection,
-};
+use super::types::{ComicBackground, ComicImageSettings, FitMode, PageStyle, ReadingDirection};
 use crate::db::Catalog;
 use serde::{Deserialize, Serialize};
 
@@ -161,9 +159,7 @@ impl ComicReadingSettings {
     /// left to right.
     pub(crate) fn canonical(mut self) -> Self {
         self.two_page_gap = self.two_page_gap.clamp(0, 48);
-        self.zoom_percent = self
-            .zoom_percent
-            .clamp(MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT);
+        self.zoom_percent = self.zoom_percent.clamp(MIN_ZOOM_PERCENT, MAX_ZOOM_PERCENT);
         self.image = self.image.canonical();
         if self.page_style == PageStyle::Fade {
             self.page_style = PageStyle::Single;
@@ -177,9 +173,7 @@ impl ComicReadingSettings {
 
     pub(crate) fn load_globals(catalog: &Catalog) -> Self {
         Self {
-            direction: direction_from_pref(
-                catalog.get_pref("reader.comic.direction").as_deref(),
-            ),
+            direction: direction_from_pref(catalog.get_pref("reader.comic.direction").as_deref()),
             page_style: page_style_from_pref(
                 catalog.get_pref("reader.comic.page_style").as_deref(),
             ),
@@ -190,18 +184,13 @@ impl ComicReadingSettings {
             strip_gap: catalog.get_pref_i64("reader.comic.strip_gap", 1) != 0,
             zoom_percent: catalog
                 .get_pref_i64("reader.comic.zoom_percent", 100)
-                .clamp(MIN_ZOOM_PERCENT as i64, MAX_ZOOM_PERCENT as i64) as u32,
-            auto_next_chapter: catalog
-                .get_pref_i64("reader.comic.auto_next_chapter", 1)
-                != 0,
-            mark_read_on_advance: catalog
-                .get_pref_i64("reader.comic.mark_read_on_advance", 1)
-                != 0,
+                .clamp(MIN_ZOOM_PERCENT as i64, MAX_ZOOM_PERCENT as i64)
+                as u32,
+            auto_next_chapter: catalog.get_pref_i64("reader.comic.auto_next_chapter", 1) != 0,
+            mark_read_on_advance: catalog.get_pref_i64("reader.comic.mark_read_on_advance", 1) != 0,
             image: ComicImageSettings {
                 background: background_from_pref(
-                    catalog
-                        .get_pref("reader.comic.image.background")
-                        .as_deref(),
+                    catalog.get_pref("reader.comic.image.background").as_deref(),
                 ),
                 brightness: catalog.get_pref_i64("reader.comic.image.brightness", 0) as i32,
                 contrast: catalog.get_pref_i64("reader.comic.image.contrast", 0) as i32,
@@ -223,10 +212,7 @@ impl ComicReadingSettings {
         );
         catalog.set_pref("reader.comic.fit_mode", fit_pref(settings.fit_mode));
         catalog.set_pref_i64("reader.comic.two_page_gap", settings.two_page_gap as i64);
-        catalog.set_pref_i64(
-            "reader.comic.strip_gap",
-            i64::from(settings.strip_gap),
-        );
+        catalog.set_pref_i64("reader.comic.strip_gap", i64::from(settings.strip_gap));
         catalog.set_pref_i64("reader.comic.zoom_percent", settings.zoom_percent as i64);
         catalog.set_pref_i64(
             "reader.comic.auto_next_chapter",
@@ -265,9 +251,7 @@ impl ComicReadingSettings {
 
     pub(crate) fn load_series(catalog: &Catalog, key: &str) -> Option<Self> {
         let raw = catalog.get_pref(key)?;
-        serde_json::from_str::<Self>(&raw)
-            .ok()
-            .map(Self::canonical)
+        serde_json::from_str::<Self>(&raw).ok().map(Self::canonical)
     }
 
     pub(crate) fn save_series(&self, catalog: &Catalog, key: &str) {
@@ -282,11 +266,7 @@ impl ComicReadingSettings {
 
     /// The pre-redesign per-book values for one chapter, over the
     /// standing globals. `None` when the chapter never had any.
-    pub(crate) fn legacy_book(
-        catalog: &Catalog,
-        book_id: i64,
-        globals: &Self,
-    ) -> Option<Self> {
+    pub(crate) fn legacy_book(catalog: &Catalog, book_id: i64, globals: &Self) -> Option<Self> {
         let direction = catalog.get_pref(&format!("book.{book_id}.comic.direction"));
         let page_style = catalog.get_pref(&format!("book.{book_id}.comic.page_style"));
         let fit_mode = catalog.get_pref(&format!("book.{book_id}.comic.fit_mode"));
@@ -492,7 +472,10 @@ mod tests {
         assert_eq!(settings.page_style, PageStyle::LongStrip);
         assert_eq!(settings.two_page_gap, 48);
         assert_eq!(settings.zoom_percent, MAX_ZOOM_PERCENT);
-        assert_eq!(settings.image.brightness, ComicImageSettings::MAX_ADJUSTMENT);
+        assert_eq!(
+            settings.image.brightness,
+            ComicImageSettings::MAX_ADJUSTMENT
+        );
 
         settings.write_globals(&catalog);
         assert_eq!(ComicReadingSettings::load_globals(&catalog), settings);
@@ -558,7 +541,11 @@ mod tests {
             ..ComicReadingSettings::default()
         };
         let mut presets = Vec::new();
-        assert!(!upsert_preset(&mut presets, "  Manga   night ", manga.clone()));
+        assert!(!upsert_preset(
+            &mut presets,
+            "  Manga   night ",
+            manga.clone()
+        ));
         assert!(!upsert_preset(
             &mut presets,
             "Western",

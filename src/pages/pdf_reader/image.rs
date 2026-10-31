@@ -345,11 +345,7 @@ mod imp {
             gtk::SizeRequestMode::HeightForWidth
         }
 
-        fn measure(
-            &self,
-            orientation: gtk::Orientation,
-            for_size: i32,
-        ) -> (i32, i32, i32, i32) {
+        fn measure(&self, orientation: gtk::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
             let texture = self.texture.borrow();
             let Some(texture) = texture.as_ref() else {
                 return (0, 0, -1, -1);
@@ -493,7 +489,10 @@ mod tests {
         };
         let transform = color_transform(full, PAPER);
         assert_pixel(transform.apply_clamped([1.0, 1.0, 1.0, 1.0]), PAPER);
-        assert_pixel(transform.apply_clamped([0.0, 0.0, 0.0, 1.0]), [0.0, 0.0, 0.0]);
+        assert_pixel(
+            transform.apply_clamped([0.0, 0.0, 0.0, 1.0]),
+            [0.0, 0.0, 0.0],
+        );
 
         // Half strength, and none, land where the slider says.
         let half = PdfImageSettings {

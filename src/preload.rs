@@ -59,7 +59,6 @@ fn preload_enabled_for(value: Option<&std::ffi::OsStr>) -> bool {
     }
 }
 
-
 /// A decoded cover on its way back to the main thread.
 ///
 /// Deliberately plain data: `Vec<u8>` crosses threads, `gdk::Texture` does not.
@@ -486,7 +485,10 @@ mod tests {
         assert!(decode_rgba_bytes(b"not an image", 150, 210).is_none());
         assert!(decode_rgba_bytes(b"", 150, 210).is_none(), "empty body");
         assert!(decode_rgba_bytes(b"gif89a", 0, 210).is_none(), "zero width");
-        assert!(decode_rgba_bytes(b"gif89a", 150, -1).is_none(), "negative height");
+        assert!(
+            decode_rgba_bytes(b"gif89a", 150, -1).is_none(),
+            "negative height"
+        );
     }
 
     #[test]

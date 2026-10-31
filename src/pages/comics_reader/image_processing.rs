@@ -143,10 +143,7 @@ fn corner_background(
         (0, 0),
         (width.saturating_sub(patch), 0),
         (0, height.saturating_sub(patch)),
-        (
-            width.saturating_sub(patch),
-            height.saturating_sub(patch),
-        ),
+        (width.saturating_sub(patch), height.saturating_sub(patch)),
     ];
     let mut patches = Vec::with_capacity(4);
 
@@ -429,8 +426,7 @@ mod tests {
             [0, 0, 0, 0],
             Some((30, 20, 69, 59, [200, 30, 20, 255])),
         );
-        bytes[(2 * 100 + 2) * 4..(2 * 100 + 2) * 4 + 4]
-            .copy_from_slice(&[0, 0, 0, 255]);
+        bytes[(2 * 100 + 2) * 4..(2 * 100 + 2) * 4 + 4].copy_from_slice(&[0, 0, 0, 255]);
         let crop = analyse_blank_border_crop(&bytes, 100, 80, 400);
         assert!(crop.x > 0.25, "the speck preserved the margin: {crop:?}");
         assert!(crop.y > 0.18, "the speck preserved the margin: {crop:?}");

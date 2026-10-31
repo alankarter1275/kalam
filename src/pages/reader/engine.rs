@@ -1,4 +1,3 @@
-
 //! The reading engine, wired to the reader page.
 //!
 //! This file replaces the old in-app browser page and its JS bridge. Every
@@ -189,7 +188,11 @@ pub(crate) fn wire(view: &ReaderView, sender: &ComponentSender<ReaderModel>) {
 
     let tx = sender.input_sender().clone();
     view.connect_word_hover(move |word_opt: Option<&str>, x: f64, y: f64| {
-        let _ = tx.send(ReaderMsg::WordMemoryHover(word_opt.map(str::to_string), x, y));
+        let _ = tx.send(ReaderMsg::WordMemoryHover(
+            word_opt.map(str::to_string),
+            x,
+            y,
+        ));
     });
 
     let tx = sender.input_sender().clone();
@@ -288,7 +291,10 @@ pub(crate) fn locator_from_json(v: &serde_json::Value) -> Option<LayeredLocator>
             exact: q("exact"),
             suffix: q("suffix"),
         },
-        spine_fraction: v.get("spine_fraction").and_then(|x| x.as_f64()).unwrap_or(0.0),
+        spine_fraction: v
+            .get("spine_fraction")
+            .and_then(|x| x.as_f64())
+            .unwrap_or(0.0),
         book_progression: v
             .get("book_progression")
             .and_then(|x| x.as_f64())
@@ -489,7 +495,9 @@ pub(crate) fn build_calibre_drawer_box(
     save_btn.add_css_class("accent");
     let buf_clone = buffer.clone();
     save_btn.connect_clicked(move |_| {
-        let text = buf_clone.text(&buf_clone.start_iter(), &buf_clone.end_iter(), false).to_string();
+        let text = buf_clone
+            .text(&buf_clone.start_iter(), &buf_clone.end_iter(), false)
+            .to_string();
         on_save(cur_color.get(), cur_style.get(), text);
     });
     footer.append(&save_btn);
@@ -589,8 +597,9 @@ pub(crate) fn build_annotation_edit_popover(
 
     let id = anno.id;
     let cur_color = std::rc::Rc::new(std::cell::Cell::new(DbColor::from_str_lossy(&anno.color)));
-    let cur_style =
-        std::rc::Rc::new(std::cell::Cell::new(AnnotationStyle::from_str_lossy(&anno.style)));
+    let cur_style = std::rc::Rc::new(std::cell::Cell::new(AnnotationStyle::from_str_lossy(
+        &anno.style,
+    )));
     let deleted = std::rc::Rc::new(std::cell::Cell::new(false));
 
     let card = gtk::Box::new(gtk::Orientation::Vertical, 10);
@@ -969,8 +978,14 @@ impl DictCard {
 fn speak_word(word: String) {
     std::thread::spawn(move || {
         let attempts: Vec<(String, Vec<String>)> = vec![
-            ("espeak-ng".to_string(), vec!["-v".into(), "en".into(), word.clone()]),
-            ("espeak".to_string(), vec!["-v".into(), "en".into(), word.clone()]),
+            (
+                "espeak-ng".to_string(),
+                vec!["-v".into(), "en".into(), word.clone()],
+            ),
+            (
+                "espeak".to_string(),
+                vec!["-v".into(), "en".into(), word.clone()],
+            ),
             ("spd-say".to_string(), vec!["-w".into(), word.clone()]),
         ];
         for (cmd, args) in attempts {
@@ -1005,9 +1020,7 @@ fn dict_header(
     if card.can_go_back {
         let back = gtk::Button::new();
         back.add_css_class("k-back-btn");
-        back.set_child(Some(&gtk::Image::from_icon_name(
-            "go-previous-symbolic",
-        )));
+        back.set_child(Some(&gtk::Image::from_icon_name("go-previous-symbolic")));
         back.set_valign(gtk::Align::Center);
         back.set_tooltip_text(Some("Back to the word you came from"));
         let tx = sender.input_sender().clone();
@@ -1230,7 +1243,12 @@ fn append_definitions(body: &gtk::Box, card: &DictCard) {
     body.append(&defs_box);
 }
 
-fn append_chips(body: &gtk::Box, words: &[String], antonym: bool, sender: &ComponentSender<ReaderModel>) {
+fn append_chips(
+    body: &gtk::Box,
+    words: &[String],
+    antonym: bool,
+    sender: &ComponentSender<ReaderModel>,
+) {
     let flow = gtk::FlowBox::builder()
         .selection_mode(gtk::SelectionMode::None)
         .column_spacing(6)
@@ -1299,7 +1317,10 @@ fn append_sections(body: &gtk::Box, card: &DictCard, sender: &ComponentSender<Re
         append_chips(body, &card.suggestions, false, sender);
     }
     if card.senses.is_empty() && card.suggestions.is_empty() {
-        let empty = gtk::Label::new(Some(&format!("No entry for \u{2018}{}\u{2019}.", card.word)));
+        let empty = gtk::Label::new(Some(&format!(
+            "No entry for \u{2018}{}\u{2019}.",
+            card.word
+        )));
         empty.add_css_class("k-section-label");
         empty.set_xalign(0.0);
         empty.set_halign(gtk::Align::Fill);
@@ -1333,13 +1354,13 @@ pub(crate) fn build_dict_popover(
     body.add_css_class("k-body");
     append_sections(&body, card, sender);
     scroll.set_child(Some(&body));
-    
+
     let fade = gtk::Box::new(gtk::Orientation::Vertical, 0);
     fade.add_css_class("k-fade-bottom");
     fade.set_valign(gtk::Align::End);
     fade.set_size_request(-1, 16);
     fade.set_can_target(false);
-    
+
     let overlay = gtk::Overlay::new();
     overlay.set_child(Some(&scroll));
     overlay.add_overlay(&fade);
@@ -1524,10 +1545,26 @@ mod tests {
     #[test]
     fn pos_groups_orders_wordnets_four_and_lands_unnamed_last() {
         let senses = vec![
-            DictSense { pos: Some("verb".into()), def: "v".into(), example: None },
-            DictSense { pos: None, def: "bare".into(), example: None },
-            DictSense { pos: Some("noun".into()), def: "n1".into(), example: None },
-            DictSense { pos: Some("noun".into()), def: "n2".into(), example: None },
+            DictSense {
+                pos: Some("verb".into()),
+                def: "v".into(),
+                example: None,
+            },
+            DictSense {
+                pos: None,
+                def: "bare".into(),
+                example: None,
+            },
+            DictSense {
+                pos: Some("noun".into()),
+                def: "n1".into(),
+                example: None,
+            },
+            DictSense {
+                pos: Some("noun".into()),
+                def: "n2".into(),
+                example: None,
+            },
         ];
         let groups = pos_groups(&senses);
         let shape: Vec<(Option<&str>, usize)> = groups

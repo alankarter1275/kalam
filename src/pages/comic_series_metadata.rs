@@ -13,9 +13,9 @@ use crate::models::{
     ComicCredit, ComicSeries, COMIC_SERIES_FIELD_COVER, COMIC_SERIES_FIELD_CREDITS,
     COMIC_SERIES_FIELD_DESCRIPTION, COMIC_SERIES_FIELD_END_DATE, COMIC_SERIES_FIELD_GENRES,
     COMIC_SERIES_FIELD_KNOWN_CHAPTERS, COMIC_SERIES_FIELD_KNOWN_VOLUMES,
-    COMIC_SERIES_FIELD_MEDIA_TYPE, COMIC_SERIES_FIELD_ORIGINAL_TITLE,
-    COMIC_SERIES_FIELD_PUBLISHED, COMIC_SERIES_FIELD_PUBLISHER,
-    COMIC_SERIES_FIELD_SERIALIZATION, COMIC_SERIES_FIELD_STATUS, COMIC_SERIES_FIELD_TITLE,
+    COMIC_SERIES_FIELD_MEDIA_TYPE, COMIC_SERIES_FIELD_ORIGINAL_TITLE, COMIC_SERIES_FIELD_PUBLISHED,
+    COMIC_SERIES_FIELD_PUBLISHER, COMIC_SERIES_FIELD_SERIALIZATION, COMIC_SERIES_FIELD_STATUS,
+    COMIC_SERIES_FIELD_TITLE,
 };
 use crate::service::{ComicSeriesMetadataApplyOutcome, LibraryService};
 use crate::widgets::dialog::{dialog_shell, present_dialog, text_field, DialogSize, TextField};
@@ -94,12 +94,7 @@ fn text_view_value(view: &gtk::TextView) -> String {
         .to_string()
 }
 
-fn labelled_text_view(
-    host: &gtk::Box,
-    label: &str,
-    initial: &str,
-    height: i32,
-) -> gtk::TextView {
+fn labelled_text_view(host: &gtk::Box, label: &str, initial: &str, height: i32) -> gtk::TextView {
     let caption = gtk::Label::new(Some(&label.to_ascii_uppercase()));
     caption.add_css_class("kalam-ui-field-label");
     caption.set_halign(gtk::Align::Start);
@@ -335,11 +330,7 @@ pub fn open_edit_comic_series_dialog(
     form.append(&title_field.widget());
 
     let original_field = text_field(
-        &locked_label(
-            "Original title",
-            &series,
-            COMIC_SERIES_FIELD_ORIGINAL_TITLE,
-        ),
+        &locked_label("Original title", &series, COMIC_SERIES_FIELD_ORIGINAL_TITLE),
         "Original-language title, if different",
         &series.original_title,
     );
@@ -391,11 +382,7 @@ pub fn open_edit_comic_series_dialog(
     form.append(&publisher_field.widget());
 
     let serialization_field = text_field(
-        &locked_label(
-            "Serialization",
-            &series,
-            COMIC_SERIES_FIELD_SERIALIZATION,
-        ),
+        &locked_label("Serialization", &series, COMIC_SERIES_FIELD_SERIALIZATION),
         "Magazine or platform it runs in",
         &series.serialization,
     );
@@ -431,22 +418,14 @@ pub fn open_edit_comic_series_dialog(
     let counts_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     counts_row.set_margin_top(14);
     let volumes_field = text_field(
-        &locked_label(
-            "Known volumes",
-            &series,
-            COMIC_SERIES_FIELD_KNOWN_VOLUMES,
-        ),
+        &locked_label("Known volumes", &series, COMIC_SERIES_FIELD_KNOWN_VOLUMES),
         "Unknown",
         &count_initial(series.known_volumes),
     );
     volumes_field.widget().set_hexpand(true);
     counts_row.append(&volumes_field.widget());
     let chapters_field = text_field(
-        &locked_label(
-            "Known chapters",
-            &series,
-            COMIC_SERIES_FIELD_KNOWN_CHAPTERS,
-        ),
+        &locked_label("Known chapters", &series, COMIC_SERIES_FIELD_KNOWN_CHAPTERS),
         "Unknown",
         &count_initial(series.known_chapters),
     );
@@ -486,8 +465,7 @@ pub fn open_edit_comic_series_dialog(
     };
 
     let clear_locks_check = if !series.manual_fields.is_empty() {
-        let check =
-            gtk::CheckButton::with_label("Remove protection from previously edited fields");
+        let check = gtk::CheckButton::with_label("Remove protection from previously edited fields");
         check.add_css_class("kalam-comic-series-check");
         check.set_margin_top(14);
         form.append(&check);
@@ -498,9 +476,8 @@ pub fn open_edit_comic_series_dialog(
         None
     };
 
-    let lock_note = meta_label(
-        "Fields you change here stay as you set them when metadata is fetched again.",
-    );
+    let lock_note =
+        meta_label("Fields you change here stay as you set them when metadata is fetched again.");
     lock_note.set_margin_top(14);
     form.append(&lock_note);
 
@@ -611,7 +588,12 @@ pub fn open_edit_comic_series_dialog(
         );
     }));
 
-    match present_dialog(anchor, "Edit series details", DialogExit::UnsavedInput, &shell) {
+    match present_dialog(
+        anchor,
+        "Edit series details",
+        DialogExit::UnsavedInput,
+        &shell,
+    ) {
         Some(dialog) => *slot.borrow_mut() = Some(dialog),
         None => crate::notify::error(
             "Could not open the dialog",
@@ -689,11 +671,7 @@ fn candidate_field_proposals(series: &ComicSeries, candidate: &Candidate) -> Vec
         &series.description,
         &candidate.description,
     );
-    push_string(
-        COMIC_SERIES_FIELD_STATUS,
-        &series.status,
-        &candidate.status,
-    );
+    push_string(COMIC_SERIES_FIELD_STATUS, &series.status, &candidate.status);
     push_string(
         COMIC_SERIES_FIELD_PUBLISHER,
         &series.publisher,
@@ -899,7 +877,10 @@ fn refresh_linked_candidate(
     let source_id = SourceId::from_key(series.metadata_source.trim())
         .ok_or_else(|| "This series is not linked to a metadata source yet.".to_string())?;
     if source_id.kind() != metadata::SourceKind::Comic {
-        return Err(format!("{} does not describe comic series.", source_id.label()));
+        return Err(format!(
+            "{} does not describe comic series.",
+            source_id.label()
+        ));
     }
     let external_id = series.metadata_source_id.trim();
     if external_id.is_empty() {
@@ -1107,21 +1088,17 @@ fn build_review(
                                 if pixels.width > 0
                                     && pixels.height > 0
                                     && pixels.rgba.len()
-                                        == (pixels.width as usize)
-                                            * (pixels.height as usize)
-                                            * 4
+                                        == (pixels.width as usize) * (pixels.height as usize) * 4
                                 {
-                                    let bytes =
-                                        gtk::glib::Bytes::from_owned(pixels.rgba);
-                                    let texture: gtk::gdk::Texture =
-                                        gtk::gdk::MemoryTexture::new(
-                                            pixels.width,
-                                            pixels.height,
-                                            gtk::gdk::MemoryFormat::R8g8b8a8,
-                                            &bytes,
-                                            pixels.width as usize * 4,
-                                        )
-                                        .upcast();
+                                    let bytes = gtk::glib::Bytes::from_owned(pixels.rgba);
+                                    let texture: gtk::gdk::Texture = gtk::gdk::MemoryTexture::new(
+                                        pixels.width,
+                                        pixels.height,
+                                        gtk::gdk::MemoryFormat::R8g8b8a8,
+                                        &bytes,
+                                        pixels.width as usize * 4,
+                                    )
+                                    .upcast();
                                     picture.set_paintable(Some(&texture));
                                 }
                             }
@@ -1254,7 +1231,8 @@ pub fn open_find_comic_series_metadata_dialog(
         None
     };
 
-    let status = meta_label("Search by the series title. A result is reviewed before anything is saved.");
+    let status =
+        meta_label("Search by the series title. A result is reviewed before anything is saved.");
     status.set_margin_top(10);
     shell.body().append(&status);
 
@@ -1375,9 +1353,10 @@ pub fn open_find_comic_series_metadata_dialog(
         let review_state = review_state.clone();
         let apply_button = apply_button.clone();
         Rc::new(move || {
-            let any_selected = review_state.borrow().as_ref().is_some_and(|review| {
-                review.checks.iter().any(|(_, check)| check.is_active())
-            });
+            let any_selected = review_state
+                .borrow()
+                .as_ref()
+                .is_some_and(|review| review.checks.iter().any(|(_, check)| check.is_active()));
             apply_button.set_label(if any_selected {
                 "Apply selected"
             } else {
@@ -1542,7 +1521,9 @@ pub fn open_find_comic_series_metadata_dialog(
     *search_holder.borrow_mut() = Some(search_action.clone());
     {
         let search_action = search_action.clone();
-        query_field.entry().connect_activate(move |_| search_action());
+        query_field
+            .entry()
+            .connect_activate(move |_| search_action());
     }
 
     let refresh_action: Rc<dyn Fn()> = {
@@ -1698,7 +1679,10 @@ mod tests {
         assert_eq!(parse_count("Volumes", " 12 ").unwrap(), Some(12));
         assert_eq!(parse_count("Volumes", "").unwrap(), None);
         assert!(parse_count("Volumes", "-1").is_err());
-        assert_eq!(parse_genres("Adventure, adventure, Drama"), vec!["Adventure", "Drama"]);
+        assert_eq!(
+            parse_genres("Adventure, adventure, Drama"),
+            vec!["Adventure", "Drama"]
+        );
     }
 
     #[test]
@@ -1711,7 +1695,10 @@ mod tests {
         assert!(fields.contains(&COMIC_SERIES_FIELD_CREDITS));
         assert!(fields.contains(&COMIC_SERIES_FIELD_KNOWN_CHAPTERS));
         assert!(!fields.contains(&COMIC_SERIES_FIELD_STATUS), "same status");
-        assert!(!fields.contains(&COMIC_SERIES_FIELD_END_DATE), "empty end date");
+        assert!(
+            !fields.contains(&COMIC_SERIES_FIELD_END_DATE),
+            "empty end date"
+        );
 
         let mut changed_title = candidate.clone();
         changed_title.title = "The Paper Meridian".into();

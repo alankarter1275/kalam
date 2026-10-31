@@ -42,7 +42,6 @@ pub struct OpenBook {
 }
 
 impl OpenBook {
-
     /// Unzip EPUB into `cache_dir/uuid/` (or reuse if present) and parse spine/TOC.
     pub fn open(epub_path: &Path, cache_dir: &Path) -> Result<Self> {
         fs::create_dir_all(cache_dir)?;
@@ -769,10 +768,23 @@ mod tests {
     #[test]
     fn spine_index_for_handles_fragments_and_paths() {
         let spine = [
-            SpineItem { id: "c1".into(), href: "OEBPS/text/ch1.xhtml".into(), title: "Ch 1".into(), path: std::path::PathBuf::new() },
-            SpineItem { id: "c2".into(), href: "OEBPS/text/ch2.xhtml".into(), title: "Ch 2".into(), path: std::path::PathBuf::new() },
+            SpineItem {
+                id: "c1".into(),
+                href: "OEBPS/text/ch1.xhtml".into(),
+                title: "Ch 1".into(),
+                path: std::path::PathBuf::new(),
+            },
+            SpineItem {
+                id: "c2".into(),
+                href: "OEBPS/text/ch2.xhtml".into(),
+                title: "Ch 2".into(),
+                path: std::path::PathBuf::new(),
+            },
         ];
-        assert_eq!(spine_index_for(&spine, "OEBPS/text/ch1.xhtml#section1"), Some(0));
+        assert_eq!(
+            spine_index_for(&spine, "OEBPS/text/ch1.xhtml#section1"),
+            Some(0)
+        );
         assert_eq!(spine_index_for(&spine, "./ch2.xhtml"), Some(1));
         assert_eq!(spine_index_for(&spine, "nonexistent.xhtml"), None);
     }

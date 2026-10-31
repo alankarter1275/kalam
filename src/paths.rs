@@ -171,7 +171,11 @@ fn folder_name_with_suffix(authors: &str, title: &str, suffix: &str) -> String {
     let has_author = !authors.is_empty() && !authors.eq_ignore_ascii_case("unknown");
 
     let title = sanitize_folder_text(title, 64);
-    let title = if title.is_empty() { "Untitled" } else { title.as_str() };
+    let title = if title.is_empty() {
+        "Untitled"
+    } else {
+        title.as_str()
+    };
 
     let prefix = if has_author {
         format!("{authors} - {title}")
@@ -293,7 +297,9 @@ pub fn note_folder(uuid: &str, folder_name: &str) {
     let lock = FOLDER_INDEX.get_or_init(|| std::sync::Mutex::new(None));
     let mut guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if let Some(index) = guard.as_mut() {
-        index.by_full_uuid.insert(uuid.to_string(), folder_name.to_string());
+        index
+            .by_full_uuid
+            .insert(uuid.to_string(), folder_name.to_string());
     }
 }
 
@@ -724,10 +730,8 @@ mod tests {
     /// helper with an `.expect()` that sits between test functions would
     /// be miscounted as production code.
     fn scratch_library(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "kalam-paths-test-{tag}-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("kalam-paths-test-{tag}-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("scratch dir");
         dir
     }
@@ -850,7 +854,10 @@ mod tests {
         assert!(!index.by_short_id.contains_key("11112222"));
         // The full-uuid form is indexed separately and never conflicts
         // with the short form.
-        index_insert(&mut index, "Author - Title 99998888-7777-4666-8555-444433332211");
+        index_insert(
+            &mut index,
+            "Author - Title 99998888-7777-4666-8555-444433332211",
+        );
         assert!(index
             .by_full_uuid
             .contains_key("99998888-7777-4666-8555-444433332211"));
@@ -875,7 +882,10 @@ mod tests {
 
     #[test]
     fn uuid_short_suffix_handles_short_uuids_without_panicking() {
-        assert_eq!(uuid_suffix("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6"), "3f2ab91c");
+        assert_eq!(
+            uuid_suffix("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6"),
+            "3f2ab91c"
+        );
         // Shorter than eight characters (test fixtures use these): the
         // whole thing is the suffix, and nothing panics.
         assert_eq!(uuid_suffix("abc-123"), "abc-123");
@@ -904,7 +914,10 @@ mod tests {
     fn series_folder_names_stay_readable() {
         // Real series from the owner's library: the parenthetical and the
         // en dash both survive untouched.
-        assert_eq!(series_folder_name("Horimiya (Official)"), "Horimiya (Official)");
+        assert_eq!(
+            series_folder_name("Horimiya (Official)"),
+            "Horimiya (Official)"
+        );
         assert_eq!(
             series_folder_name("Naruto – Digital Colored Comics"),
             "Naruto – Digital Colored Comics"
@@ -914,7 +927,10 @@ mod tests {
         let messy = series_folder_name("A/B:\tRe: Zero.  ");
         assert!(!messy.contains('/'), "slash must go: {messy}");
         assert!(!messy.contains('\t'), "control characters must go: {messy}");
-        assert!(!messy.starts_with('.'), "a leading dot would hide the folder: {messy}");
+        assert!(
+            !messy.starts_with('.'),
+            "a leading dot would hide the folder: {messy}"
+        );
         // A very long Bengali title truncates on a character boundary and
         // leaves room for a collision suffix.
         let long = "রবীন্দ্রনাথ ঠাকুর".repeat(30);
@@ -935,11 +951,17 @@ mod tests {
             book_dir("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6").join("book.epub")
         );
         assert_eq!(
-            resolve_library_file("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6", "Naruto – Digital Colored Comics/0003.cbz"),
+            resolve_library_file(
+                "3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6",
+                "Naruto – Digital Colored Comics/0003.cbz"
+            ),
             library_dir().join("Naruto – Digital Colored Comics/0003.cbz")
         );
         assert_eq!(
-            resolve_library_file("3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6", "Horimiya (Official)/covers/0010.jpg"),
+            resolve_library_file(
+                "3f2ab91c-77d0-4c2e-9a10-52f1b3d4e5f6",
+                "Horimiya (Official)/covers/0010.jpg"
+            ),
             library_dir().join("Horimiya (Official)/covers/0010.jpg")
         );
     }

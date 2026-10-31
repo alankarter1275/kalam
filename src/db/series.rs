@@ -14,9 +14,9 @@ use crate::models::{
     ComicCredit, COMIC_SERIES_FIELD_COVER, COMIC_SERIES_FIELD_CREDITS,
     COMIC_SERIES_FIELD_DESCRIPTION, COMIC_SERIES_FIELD_END_DATE, COMIC_SERIES_FIELD_GENRES,
     COMIC_SERIES_FIELD_KNOWN_CHAPTERS, COMIC_SERIES_FIELD_KNOWN_VOLUMES,
-    COMIC_SERIES_FIELD_MEDIA_TYPE, COMIC_SERIES_FIELD_ORIGINAL_TITLE,
-    COMIC_SERIES_FIELD_PUBLISHED, COMIC_SERIES_FIELD_PUBLISHER,
-    COMIC_SERIES_FIELD_SERIALIZATION, COMIC_SERIES_FIELD_STATUS, COMIC_SERIES_FIELD_TITLE,
+    COMIC_SERIES_FIELD_MEDIA_TYPE, COMIC_SERIES_FIELD_ORIGINAL_TITLE, COMIC_SERIES_FIELD_PUBLISHED,
+    COMIC_SERIES_FIELD_PUBLISHER, COMIC_SERIES_FIELD_SERIALIZATION, COMIC_SERIES_FIELD_STATUS,
+    COMIC_SERIES_FIELD_TITLE,
 };
 
 /// One work in a cached series listing.
@@ -162,7 +162,11 @@ fn comic_author_from_credits(credits: &[ComicCredit], fallback: &str) -> String 
     let mut names: Vec<String> = Vec::new();
     for credit in credits {
         let name = compact_series_text(&credit.name);
-        if !name.is_empty() && !names.iter().any(|existing| existing.eq_ignore_ascii_case(&name)) {
+        if !name.is_empty()
+            && !names
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(&name))
+        {
             names.push(name);
         }
     }
@@ -177,7 +181,11 @@ fn normalise_series_strings(values: &[String], limit: usize) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for value in values {
         let value = compact_series_text(value);
-        if value.is_empty() || out.iter().any(|existing| existing.eq_ignore_ascii_case(&value)) {
+        if value.is_empty()
+            || out
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(&value))
+        {
             continue;
         }
         out.push(value);
@@ -706,7 +714,12 @@ impl Catalog {
     }
 
     /// Update the series name and series index for a book.
-    pub fn set_book_series(&self, book_id: i64, series: Option<&str>, series_index: f32) -> Result<()> {
+    pub fn set_book_series(
+        &self,
+        book_id: i64,
+        series: Option<&str>,
+        series_index: f32,
+    ) -> Result<()> {
         let conn = self.conn();
         conn.execute(
             "UPDATE books SET series = ?1, series_index = ?2 WHERE id = ?3",
@@ -738,7 +751,8 @@ impl Catalog {
             };
 
             let needs_clean = !current_series.is_empty()
-                && (cleaned_series != current_series || (current_idx <= 0.0 && detected_idx.is_some()));
+                && (cleaned_series != current_series
+                    || (current_idx <= 0.0 && detected_idx.is_some()));
             let needs_detect = current_series.is_empty();
 
             if needs_clean {
@@ -831,10 +845,8 @@ impl Catalog {
     /// mistaken for one, while `#3` never is.
     pub fn ensure_series_folder(&self, series_id: i64) -> Result<String> {
         let name = self.series_folder_name_for(series_id)?;
-        std::fs::create_dir_all(
-            crate::paths::library_dir().join(&name).join("covers"),
-        )
-        .map_err(DbError::Io)?;
+        std::fs::create_dir_all(crate::paths::library_dir().join(&name).join("covers"))
+            .map_err(DbError::Io)?;
         Ok(name)
     }
 
@@ -994,7 +1006,8 @@ impl Catalog {
             let mut stmt = conn.prepare_cached(
                 "SELECT id FROM comic_series WHERE title = ?1 COLLATE NOCASE LIMIT 1",
             )?;
-            stmt.query_row(params![title.trim()], |r| r.get(0)).optional()?
+            stmt.query_row(params![title.trim()], |r| r.get(0))
+                .optional()?
         };
 
         if let Some(id) = series_id {
@@ -1020,9 +1033,7 @@ impl Catalog {
     ) -> Result<ComicSeriesUpdateOutcome> {
         let title = compact_series_text(&edit.title);
         if title.is_empty() {
-            return Err(DbError::ComicSeries(
-                "A series needs a title.".into(),
-            ));
+            return Err(DbError::ComicSeries("A series needs a title.".into()));
         }
 
         let mut conn = self.conn();
@@ -1119,8 +1130,7 @@ impl Catalog {
             ));
         }
         let proposed = valid_comic_series_fields(&patch.proposed_fields);
-        let is_proposed =
-            |field: &str| proposed.iter().any(|candidate| candidate == field);
+        let is_proposed = |field: &str| proposed.iter().any(|candidate| candidate == field);
 
         let mut conn = self.conn();
         let tx = conn.transaction()?;
@@ -1134,31 +1144,29 @@ impl Catalog {
         let mut applied_fields: Vec<String> = Vec::new();
         let mut protected_fields: Vec<String> = Vec::new();
         {
-            let mut apply_string = |field: &str,
-                                    raw: Option<&String>,
-                                    target: &mut String,
-                                    keep_lines: bool| {
-                if !is_proposed(field) {
-                    return;
-                }
-                let Some(raw) = raw else {
-                    return;
+            let mut apply_string =
+                |field: &str, raw: Option<&String>, target: &mut String, keep_lines: bool| {
+                    if !is_proposed(field) {
+                        return;
+                    }
+                    let Some(raw) = raw else {
+                        return;
+                    };
+                    let value = if keep_lines {
+                        normalise_series_description(raw)
+                    } else {
+                        compact_series_text(raw)
+                    };
+                    if value.is_empty() || value == *target {
+                        return;
+                    }
+                    if current.is_manual_field(field) {
+                        push_unique_field(&mut protected_fields, field);
+                        return;
+                    }
+                    *target = value;
+                    push_unique_field(&mut applied_fields, field);
                 };
-                let value = if keep_lines {
-                    normalise_series_description(raw)
-                } else {
-                    compact_series_text(raw)
-                };
-                if value.is_empty() || value == *target {
-                    return;
-                }
-                if current.is_manual_field(field) {
-                    push_unique_field(&mut protected_fields, field);
-                    return;
-                }
-                *target = value;
-                push_unique_field(&mut applied_fields, field);
-            };
 
             apply_string(
                 COMIC_SERIES_FIELD_TITLE,
@@ -1221,18 +1229,11 @@ impl Catalog {
                 let credits = normalise_comic_credits(raw);
                 if !credits.is_empty() && credits != next.credits {
                     if current.is_manual_field(COMIC_SERIES_FIELD_CREDITS) {
-                        push_unique_field(
-                            &mut protected_fields,
-                            COMIC_SERIES_FIELD_CREDITS,
-                        );
+                        push_unique_field(&mut protected_fields, COMIC_SERIES_FIELD_CREDITS);
                     } else {
-                        next.author =
-                            comic_author_from_credits(&credits, &next.author);
+                        next.author = comic_author_from_credits(&credits, &next.author);
                         next.credits = credits;
-                        push_unique_field(
-                            &mut applied_fields,
-                            COMIC_SERIES_FIELD_CREDITS,
-                        );
+                        push_unique_field(&mut applied_fields, COMIC_SERIES_FIELD_CREDITS);
                     }
                 }
             }
@@ -1243,16 +1244,10 @@ impl Catalog {
                 let genres = normalise_series_strings(raw, 40);
                 if !genres.is_empty() && genres != next.genres {
                     if current.is_manual_field(COMIC_SERIES_FIELD_GENRES) {
-                        push_unique_field(
-                            &mut protected_fields,
-                            COMIC_SERIES_FIELD_GENRES,
-                        );
+                        push_unique_field(&mut protected_fields, COMIC_SERIES_FIELD_GENRES);
                     } else {
                         next.genres = genres;
-                        push_unique_field(
-                            &mut applied_fields,
-                            COMIC_SERIES_FIELD_GENRES,
-                        );
+                        push_unique_field(&mut applied_fields, COMIC_SERIES_FIELD_GENRES);
                     }
                 }
             }
@@ -1297,17 +1292,11 @@ impl Catalog {
                 };
                 if current.cover_file.as_deref() != Some(cover_file.as_str()) {
                     if current.is_manual_field(COMIC_SERIES_FIELD_COVER) {
-                        push_unique_field(
-                            &mut protected_fields,
-                            COMIC_SERIES_FIELD_COVER,
-                        );
+                        push_unique_field(&mut protected_fields, COMIC_SERIES_FIELD_COVER);
                     } else {
                         replaced_cover_file = current.cover_file.clone();
                         next.cover_file = Some(cover_file);
-                        push_unique_field(
-                            &mut applied_fields,
-                            COMIC_SERIES_FIELD_COVER,
-                        );
+                        push_unique_field(&mut applied_fields, COMIC_SERIES_FIELD_COVER);
                     }
                 }
             }
@@ -1672,7 +1661,10 @@ impl Catalog {
                 crate::comics::sanitize_comic_series(raw_series)
             } else {
                 let meta = crate::comics::parse_comic_title(&book.title);
-                (meta.series.unwrap_or_else(|| book.title.clone()), meta.number)
+                (
+                    meta.series.unwrap_or_else(|| book.title.clone()),
+                    meta.number,
+                )
             };
 
             let series_title = if series_title.trim().is_empty() {
@@ -1960,11 +1952,7 @@ mod tests {
             .unwrap();
 
         let s_id = cat
-            .get_or_create_comic_series(
-                "Naruto",
-                Some("Masashi Kishimoto"),
-                Some("Ninja story"),
-            )
+            .get_or_create_comic_series("Naruto", Some("Masashi Kishimoto"), Some("Ninja story"))
             .unwrap();
         cat.add_comic_chapter(s_id, b1, 1.0, None, "Chapter 1")
             .unwrap();
@@ -2073,9 +2061,12 @@ mod tests {
         let s_id = cat
             .get_or_create_comic_series("Horimiya", Some("HERO, Daisuke Hagiwara"), None)
             .unwrap();
-        cat.add_comic_chapter(s_id, c1, 1.0, None, "Page 1").unwrap();
-        cat.add_comic_chapter(s_id, c2, 2.0, None, "Page 2").unwrap();
-        cat.add_comic_chapter(s_id, c3, 3.0, None, "Page 3").unwrap();
+        cat.add_comic_chapter(s_id, c1, 1.0, None, "Page 1")
+            .unwrap();
+        cat.add_comic_chapter(s_id, c2, 2.0, None, "Page 2")
+            .unwrap();
+        cat.add_comic_chapter(s_id, c3, 3.0, None, "Page 3")
+            .unwrap();
 
         // 1. get_comic_series_by_title lookup
         let found = cat.get_comic_series_by_title("horimiya").unwrap().unwrap();
@@ -2087,7 +2078,10 @@ mod tests {
         let recent = cat.recent_books(10).unwrap();
         assert_eq!(recent.len(), 3);
         let series_item = recent.iter().find(|b| b.title == "Horimiya");
-        assert!(series_item.is_some(), "Comic series should be present as 'Horimiya'");
+        assert!(
+            series_item.is_some(),
+            "Comic series should be present as 'Horimiya'"
+        );
         assert_eq!(series_item.unwrap().authors, "HERO, Daisuke Hagiwara");
         assert_eq!(series_item.unwrap().series.as_deref(), Some("Horimiya"));
 
@@ -2097,18 +2091,29 @@ mod tests {
 
         // 4. recently_opened must deduplicate chapters of the same series
         cat.conn()
-            .execute("UPDATE books SET last_opened_at = '2026-01-01T10:00:00Z' WHERE id = ?1", params![c1])
+            .execute(
+                "UPDATE books SET last_opened_at = '2026-01-01T10:00:00Z' WHERE id = ?1",
+                params![c1],
+            )
             .unwrap();
         cat.conn()
-            .execute("UPDATE books SET last_opened_at = '2026-01-01T10:05:00Z' WHERE id = ?1", params![c2])
+            .execute(
+                "UPDATE books SET last_opened_at = '2026-01-01T10:05:00Z' WHERE id = ?1",
+                params![c2],
+            )
             .unwrap();
         cat.conn()
-            .execute("UPDATE books SET last_opened_at = '2026-01-01T10:10:00Z' WHERE id = ?1", params![reg1])
+            .execute(
+                "UPDATE books SET last_opened_at = '2026-01-01T10:10:00Z' WHERE id = ?1",
+                params![reg1],
+            )
             .unwrap();
 
         let opened = cat.recently_opened(5).unwrap();
         assert_eq!(opened.len(), 2); // 1 regular book (reg1) + 1 comic series (Horimiya)
-        let comic_opened = opened.iter().find(|b| b.series.as_deref() == Some("Horimiya"));
+        let comic_opened = opened
+            .iter()
+            .find(|b| b.series.as_deref() == Some("Horimiya"));
         assert!(comic_opened.is_some());
         // Most recently opened chapter of Horimiya was c2
         assert_eq!(comic_opened.unwrap().id, c2);
@@ -2175,8 +2180,10 @@ mod tests {
         let s_id = cat
             .get_or_create_comic_series("Horimiya", Some("HERO"), None)
             .unwrap();
-        cat.add_comic_chapter(s_id, c1, 1.0, None, "Page 1").unwrap();
-        cat.add_comic_chapter(s_id, c2, 2.0, None, "Page 2").unwrap();
+        cat.add_comic_chapter(s_id, c1, 1.0, None, "Page 1")
+            .unwrap();
+        cat.add_comic_chapter(s_id, c2, 2.0, None, "Page 2")
+            .unwrap();
 
         // A manual shelf holding the epub and both chapters.
         let shelf_id = cat
@@ -2192,7 +2199,9 @@ mod tests {
 
         // The shelf's book list collapses to one series card.
         let shelf = cat.get_shelf(shelf_id).unwrap().unwrap();
-        let mut books = cat.shelf_books(&shelf, crate::db::SortKey::Added, "").unwrap();
+        let mut books = cat
+            .shelf_books(&shelf, crate::db::SortKey::Added, "")
+            .unwrap();
         cat.collapse_comic_chapters(&mut books);
         assert_eq!(books.len(), 2);
         let comic = books
@@ -2307,8 +2316,10 @@ mod tests {
         let s_id = cat
             .get_or_create_comic_series("Horimiya", Some("HERO"), None)
             .unwrap();
-        cat.add_comic_chapter(s_id, c1, 1.0, None, "Page 1").unwrap();
-        cat.add_comic_chapter(s_id, c2, 2.0, None, "Page 2").unwrap();
+        cat.add_comic_chapter(s_id, c1, 1.0, None, "Page 1")
+            .unwrap();
+        cat.add_comic_chapter(s_id, c2, 2.0, None, "Page 2")
+            .unwrap();
 
         // Shelf: tick the series row → both chapters are members, the badge
         // still counts one card, positions run on from the shelf's order.
@@ -2318,14 +2329,18 @@ mod tests {
         cat.add_series_to_shelf(shelf_id, reg).unwrap();
         cat.add_series_to_shelf(shelf_id, c1).unwrap();
         let shelf = cat.get_shelf(shelf_id).unwrap().unwrap();
-        let members = cat.shelf_books(&shelf, crate::db::SortKey::Title, "").unwrap();
+        let members = cat
+            .shelf_books(&shelf, crate::db::SortKey::Title, "")
+            .unwrap();
         assert_eq!(members.len(), 3, "epub + both chapters");
         assert_eq!(cat.list_shelves().unwrap()[0].book_count, 2, "two cards");
 
         // Untick the series row → every chapter leaves, the epub stays.
         cat.remove_series_from_shelf(shelf_id, c1).unwrap();
         let shelf = cat.get_shelf(shelf_id).unwrap().unwrap();
-        let members = cat.shelf_books(&shelf, crate::db::SortKey::Title, "").unwrap();
+        let members = cat
+            .shelf_books(&shelf, crate::db::SortKey::Title, "")
+            .unwrap();
         assert_eq!(members.len(), 1);
         assert_eq!(members[0].id, reg);
 
@@ -2398,8 +2413,10 @@ mod tests {
         let s_id = cat
             .get_or_create_comic_series("Horimiya", Some("HERO"), None)
             .unwrap();
-        cat.add_comic_chapter(s_id, c1, 1.0, None, "Page 1").unwrap();
-        cat.add_comic_chapter(s_id, c2, 2.0, None, "Page 2").unwrap();
+        cat.add_comic_chapter(s_id, c1, 1.0, None, "Page 1")
+            .unwrap();
+        cat.add_comic_chapter(s_id, c2, 2.0, None, "Page 2")
+            .unwrap();
         let h1 = cat
             .insert_book(
                 "h-1",
@@ -2558,9 +2575,7 @@ mod tests {
             clear_manual_fields: false,
             manual_fields: Vec::new(),
         };
-        let outcome = cat
-            .update_comic_series_details(series_id, &edit)
-            .unwrap();
+        let outcome = cat.update_comic_series_details(series_id, &edit).unwrap();
         assert_eq!(outcome.title, "Hand Title");
         assert!(outcome
             .applied_fields

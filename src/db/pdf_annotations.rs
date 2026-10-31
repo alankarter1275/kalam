@@ -316,8 +316,7 @@ impl Catalog {
         if pages.is_empty() {
             return Ok(counts);
         }
-        let selected_pages: HashSet<i64> =
-            pages.iter().map(|(_, page)| *page as i64).collect();
+        let selected_pages: HashSet<i64> = pages.iter().map(|(_, page)| *page as i64).collect();
         let selected_ids: HashSet<&str> =
             pages.iter().map(|(page_id, _)| page_id.as_str()).collect();
         let conn = self.conn();
@@ -459,8 +458,7 @@ impl Catalog {
                 .any(|(index, page)| page.position != index + 1)
             {
                 return Err(DbError::PdfAnnotation(
-                    "the book's page identities are not in step with its file"
-                        .to_string(),
+                    "the book's page identities are not in step with its file".to_string(),
                 ));
             }
 
@@ -535,8 +533,7 @@ impl Catalog {
                 };
                 let now = chrono_like_now();
                 for mut drawing in drawings {
-                    let Some(rotation) = rotation_by_id.get(drawing.page_id.as_str())
-                    else {
+                    let Some(rotation) = rotation_by_id.get(drawing.page_id.as_str()) else {
                         continue;
                     };
                     drawing.geometry.rotate_clockwise(
@@ -604,14 +601,11 @@ impl Catalog {
                 let new_page = survivor_old_to_new
                     .get(&old_page)
                     .copied()
-                    .or_else(|| {
-                        nearest_remaining_new_page(old_page, &survivor_old_to_new)
-                    })
+                    .or_else(|| nearest_remaining_new_page(old_page, &survivor_old_to_new))
                     .unwrap_or(1)
                     .clamp(1, new_total);
                 let fraction = new_page as f64 / new_total as f64;
-                let progress = (((new_page as f64 + fraction) / new_total as f64)
-                    * 100.0)
+                let progress = (((new_page as f64 + fraction) / new_total as f64) * 100.0)
                     .round()
                     .clamp(0.0, 100.0) as i64;
                 tx.execute(
@@ -666,16 +660,16 @@ impl Catalog {
 
             if old_hash != new_hash {
                 // Freeze the arrival fingerprint as the bytes move. Remembered edits are
-                  // filed under it, so they no longer need re-pointing here —
-                  // which is what used to detach them from the file the owner
-                  // still has on disk.
-                  tx.execute(
-                      "UPDATE books
+                // filed under it, so they no longer need re-pointing here —
+                // which is what used to detach them from the file the owner
+                // still has on disk.
+                tx.execute(
+                    "UPDATE books
                           SET import_hash = IFNULL(import_hash, file_hash),
                               file_hash = ?1
                         WHERE id = ?2",
-                      params![new_hash, book_id],
-                  )?;
+                    params![new_hash, book_id],
+                )?;
             }
 
             // The swap itself, inside the transaction: from here a
@@ -922,10 +916,7 @@ mod tests {
         let counts = cat
             .pdf_page_bound_counts(
                 book_id,
-                &[
-                    ("page-2".to_string(), 2),
-                    ("page-3".to_string(), 3),
-                ],
+                &[("page-2".to_string(), 2), ("page-3".to_string(), 3)],
             )
             .expect("count page-bound work");
         assert_eq!(
@@ -1066,6 +1057,8 @@ mod tests {
         let (cat, book_id) = catalog_with_pdf();
         // No identities yet: the foreign key refuses an object that
         // names a page Kalam never gave an identity to.
-        assert!(cat.insert_pdf_drawing(&a_stroke(book_id, "page-1")).is_err());
+        assert!(cat
+            .insert_pdf_drawing(&a_stroke(book_id, "page-1"))
+            .is_err());
     }
 }

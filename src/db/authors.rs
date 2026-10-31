@@ -66,8 +66,7 @@ impl Catalog {
             .transpose()?
             .flatten();
         if existing.is_none() {
-            let canonical_key =
-                crate::author::normalize_author_name(&effective.canonical_name);
+            let canonical_key = crate::author::normalize_author_name(&effective.canonical_name);
             if canonical_key != key {
                 existing = profile_id_by_key(&conn, &canonical_key)?
                     .map(|id| load_author_profile(&conn, id))
@@ -103,11 +102,7 @@ impl Catalog {
     /// series cache move together or not at all. Book folders and
     /// sidecars follow after the commit, best-effort like every
     /// other metadata edit.
-    pub fn edit_author(
-        &self,
-        current_name: &str,
-        edit: &AuthorEdit,
-    ) -> Result<AuthorEditOutcome> {
+    pub fn edit_author(&self, current_name: &str, edit: &AuthorEdit) -> Result<AuthorEditOutcome> {
         let name = crate::author::display_author_name(edit.name.trim());
         if name.is_empty() {
             return Err(DbError::Author("The author needs a name.".into()));
@@ -155,7 +150,9 @@ impl Catalog {
             }
         }
         if !source_keys.contains(&new_key)
-            && (rows.iter().any(|row| authors_contain_key(&row.authors, &new_key))
+            && (rows
+                .iter()
+                .any(|row| authors_contain_key(&row.authors, &new_key))
                 || comic_rows
                     .iter()
                     .any(|row| authors_contain_key(&row.1, &new_key)))
@@ -172,7 +169,9 @@ impl Catalog {
             }
             let taken = profile_by_name_conn(&conn, alias)?
                 .is_some_and(|p| existing.as_ref().map(|e| e.id) != Some(p.id))
-                || rows.iter().any(|row| authors_contain_key(&row.authors, &alias_key))
+                || rows
+                    .iter()
+                    .any(|row| authors_contain_key(&row.authors, &alias_key))
                 || comic_rows
                     .iter()
                     .any(|row| authors_contain_key(&row.1, &alias_key));
@@ -240,10 +239,7 @@ impl Catalog {
             let sort_key = crate::author::normalize_author_name(&sort_name);
             edit.aliases.iter().any(|alias| {
                 let key = crate::author::normalize_author_name(alias);
-                !key.is_empty()
-                    && key != new_key
-                    && key != sort_key
-                    && !source_keys.contains(&key)
+                !key.is_empty() && key != new_key && key != sort_key && !source_keys.contains(&key)
             })
         };
         lock(AUTHOR_FIELD_ALIASES, aliases_changed);
@@ -298,17 +294,11 @@ impl Catalog {
     /// target, and the two cached profiles fold into one — target
     /// values win, source values fill the gaps, works are unioned,
     /// and hand-edited locks travel with the values they protect.
-    pub fn merge_authors(
-        &self,
-        source_name: &str,
-        target_name: &str,
-    ) -> Result<AuthorEditOutcome> {
+    pub fn merge_authors(&self, source_name: &str, target_name: &str) -> Result<AuthorEditOutcome> {
         let source_display = crate::author::display_author_name(source_name.trim());
         let target_display = crate::author::display_author_name(target_name.trim());
         if source_display.is_empty() || target_display.is_empty() {
-            return Err(DbError::Author(
-                "Choose an author to merge into.".into(),
-            ));
+            return Err(DbError::Author("Choose an author to merge into.".into()));
         }
 
         let mut conn = self.conn();
@@ -495,10 +485,7 @@ impl Catalog {
         );
         let candidate_rows = {
             let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(
-                rusqlite::params_from_iter(patterns.iter()),
-                row_to_book,
-            )?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(patterns.iter()), row_to_book)?;
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         };
 
@@ -684,8 +671,7 @@ fn write_author_profile(
     let subjects_json =
         serde_json::to_string(&profile.top_subjects).unwrap_or_else(|_| "[]".into());
     let works_json = serde_json::to_string(&profile.works).unwrap_or_else(|_| "[]".into());
-    let manual_json =
-        serde_json::to_string(&profile.manual_fields).unwrap_or_else(|_| "[]".into());
+    let manual_json = serde_json::to_string(&profile.manual_fields).unwrap_or_else(|_| "[]".into());
 
     let author_id = match existing_id {
         Some(id) => {
@@ -818,10 +804,7 @@ struct AuthorRewrite {
 
 /// Every normalized spelling that means this author: the name asked
 /// for plus the cached profile's canonical/sort/alias forms.
-fn identity_keys(
-    name: &str,
-    profile: Option<&AuthorProfile>,
-) -> std::collections::HashSet<String> {
+fn identity_keys(name: &str, profile: Option<&AuthorProfile>) -> std::collections::HashSet<String> {
     let mut keys = std::collections::HashSet::new();
     let mut add = |value: &str| {
         let key = crate::author::normalize_author_name(value);
@@ -899,12 +882,11 @@ fn rewrite_author_string(
     let mut out: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for name in names {
-        let replacement =
-            if source_keys.contains(&crate::author::normalize_author_name(&name)) {
-                new_name.to_string()
-            } else {
-                name
-            };
+        let replacement = if source_keys.contains(&crate::author::normalize_author_name(&name)) {
+            new_name.to_string()
+        } else {
+            name
+        };
         if seen.insert(crate::author::normalize_author_name(&replacement)) {
             out.push(replacement);
         }
@@ -913,9 +895,8 @@ fn rewrite_author_string(
 }
 
 fn author_book_rows(conn: &Connection) -> Result<Vec<AuthorBookRow>> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT id, uuid, title, authors, series FROM books ORDER BY id ASC",
-    )?;
+    let mut stmt =
+        conn.prepare_cached("SELECT id, uuid, title, authors, series FROM books ORDER BY id ASC")?;
     let rows = stmt.query_map([], |r| {
         Ok(AuthorBookRow {
             id: r.get(0)?,
@@ -929,8 +910,7 @@ fn author_book_rows(conn: &Connection) -> Result<Vec<AuthorBookRow>> {
 }
 
 fn comic_series_author_rows(conn: &Connection) -> Result<Vec<(i64, String)>> {
-    let mut stmt =
-        conn.prepare_cached("SELECT id, author FROM comic_series ORDER BY id ASC")?;
+    let mut stmt = conn.prepare_cached("SELECT id, author FROM comic_series ORDER BY id ASC")?;
     let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
     Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
 }
@@ -1024,7 +1004,9 @@ fn migrate_series_cache(
                 |r| r.get(0),
             )
             .optional()?;
-        let Some(works_json) = works_json else { continue };
+        let Some(works_json) = works_json else {
+            continue;
+        };
         let target_exists: i64 = conn.query_row(
             "SELECT COUNT(*) FROM series_cache WHERE series_key = ?1",
             params![new_key],
@@ -1074,12 +1056,9 @@ fn migrate_author_shelf_links(
         crate::author::normalize_author_name(new_name)
     );
     let prefs: Vec<(String, String)> = {
-        let mut stmt = conn.prepare_cached(
-            "SELECT key, value FROM app_prefs WHERE key LIKE 'author.shelf.%'",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-        })?;
+        let mut stmt = conn
+            .prepare_cached("SELECT key, value FROM app_prefs WHERE key LIKE 'author.shelf.%'")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
         rows.collect::<std::result::Result<Vec<_>, _>>()?
     };
     let source_pref = prefs.iter().find(|(key, _)| {
@@ -1126,11 +1105,8 @@ fn migrate_author_shelf_links(
     }
 
     let shelves: Vec<(i64, String)> = {
-        let mut stmt = conn
-            .prepare_cached("SELECT id, rules FROM shelves WHERE kind = 'smart'")?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
-        })?;
+        let mut stmt = conn.prepare_cached("SELECT id, rules FROM shelves WHERE kind = 'smart'")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
         rows.collect::<std::result::Result<Vec<_>, _>>()?
     };
     for (shelf_id, rules_json) in shelves {
@@ -1193,7 +1169,9 @@ fn merged_author_profile(
             .map(|s| {
                 s.manual_fields
                     .iter()
-                    .filter(|f| f.as_str() != AUTHOR_FIELD_NAME && f.as_str() != AUTHOR_FIELD_SORT_NAME)
+                    .filter(|f| {
+                        f.as_str() != AUTHOR_FIELD_NAME && f.as_str() != AUTHOR_FIELD_SORT_NAME
+                    })
                     .cloned()
                     .collect()
             })
@@ -1335,7 +1313,13 @@ mod tests {
     fn books_for_author_includes_profile_aliases() {
         let catalog = Catalog::open_in_memory().unwrap();
         seed_book(&catalog, "alias-1", "Canonical Book", "J. K. Rowling", None);
-        seed_book(&catalog, "alias-2", "Pen-name Book", "Robert Galbraith", None);
+        seed_book(
+            &catalog,
+            "alias-2",
+            "Pen-name Book",
+            "Robert Galbraith",
+            None,
+        );
         seed_book(&catalog, "alias-3", "Other Book", "Another Author", None);
         let profile = AuthorProfile {
             canonical_name: "J. K. Rowling".into(),
@@ -1507,10 +1491,7 @@ mod tests {
             .create_shelf(old, ShelfKind::Smart, "", &rules.to_json())
             .unwrap();
         catalog.set_pref(
-            &format!(
-                "author.shelf.{}",
-                crate::author::normalize_author_name(old)
-            ),
+            &format!("author.shelf.{}", crate::author::normalize_author_name(old)),
             &format!("{shelf_id}:linked"),
         );
         let old_series_key = series_key("A Song of Ice and Fire", old);
@@ -1551,10 +1532,7 @@ mod tests {
             format!("Someone Else; {new}")
         );
 
-        let edited = catalog
-            .get_author_profile_by_name("GRRM")
-            .unwrap()
-            .unwrap();
+        let edited = catalog.get_author_profile_by_name("GRRM").unwrap().unwrap();
         assert_eq!(edited.canonical_name, new);
         assert_eq!(edited.bio, "Hand bio");
         assert_eq!(edited.photo_file.as_deref(), Some("custom-martin.jpg"));
@@ -1566,7 +1544,10 @@ mod tests {
             AUTHOR_FIELD_ALIASES,
             AUTHOR_FIELD_PHOTO,
         ] {
-            assert!(edited.manual_fields.iter().any(|f| f == field), "missing lock {field}");
+            assert!(
+                edited.manual_fields.iter().any(|f| f == field),
+                "missing lock {field}"
+            );
         }
 
         let shelf = catalog.get_shelf(shelf_id).unwrap().unwrap();
@@ -1605,10 +1586,7 @@ mod tests {
             ..AuthorProfile::default()
         };
         catalog.upsert_author_profile(&fetched).unwrap();
-        let after_fetch = catalog
-            .get_author_profile_by_name(new)
-            .unwrap()
-            .unwrap();
+        let after_fetch = catalog.get_author_profile_by_name(new).unwrap().unwrap();
         assert_eq!(after_fetch.canonical_name, new);
         assert_eq!(after_fetch.sort_name, "Martin, George R. R.");
         assert_eq!(after_fetch.bio, "Hand bio");
@@ -1678,10 +1656,7 @@ mod tests {
             ..AuthorProfile::default()
         };
         catalog.upsert_author_profile(&fetched).unwrap();
-        let after_fetch = catalog
-            .get_author_profile_by_name(author)
-            .unwrap()
-            .unwrap();
+        let after_fetch = catalog.get_author_profile_by_name(author).unwrap().unwrap();
         assert_eq!(after_fetch.bio, "Hand-written first bio");
         assert!(after_fetch.aliases.iter().any(|a| a == "N. P. Author"));
     }
@@ -1769,20 +1744,14 @@ mod tests {
             target
         );
 
-        let merged = catalog
-            .get_author_profile_by_name(source)
-            .unwrap()
-            .unwrap();
+        let merged = catalog.get_author_profile_by_name(source).unwrap().unwrap();
         assert_eq!(merged.canonical_name, target);
         assert_eq!(merged.bio, "Hand-written pen-name bio");
         assert_eq!(merged.photo_file.as_deref(), Some("pen.jpg"));
         assert_eq!(merged.works.len(), 3);
         assert!(merged.aliases.iter().any(|a| a == source));
         assert!(merged.aliases.iter().any(|a| a == "R. Galbraith"));
-        assert!(merged
-            .manual_fields
-            .iter()
-            .any(|f| f == AUTHOR_FIELD_BIO));
+        assert!(merged.manual_fields.iter().any(|f| f == AUTHOR_FIELD_BIO));
         assert_eq!(catalog.all_author_profiles().unwrap().len(), 1);
     }
 }

@@ -186,12 +186,7 @@ impl Component for ReviewModel {
         ComponentParts { model, widgets }
     }
 
-    fn update(
-        &mut self,
-        message: Self::Input,
-        _sender: ComponentSender<Self>,
-        _root: &Self::Root,
-    ) {
+    fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>, _root: &Self::Root) {
         match message {
             ReviewMsg::Reveal => self.revealed = true,
             ReviewMsg::Answer(quality) => {

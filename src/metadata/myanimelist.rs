@@ -8,9 +8,7 @@
 //! its synopsis, credits and serialization — no second call is needed
 //! unless a linked series is being refreshed by id.
 
-use super::{
-    agent, Candidate, CandidateCredit, CoverRef, FetchError, MetadataSource, SourceId,
-};
+use super::{agent, Candidate, CandidateCredit, CoverRef, FetchError, MetadataSource, SourceId};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
@@ -147,10 +145,7 @@ impl MetadataSource for MyAnimeList {
             .unwrap_or_default())
     }
 
-    fn fetch_by_external_id(
-        &self,
-        external_id: &str,
-    ) -> Result<Option<Candidate>, FetchError> {
+    fn fetch_by_external_id(&self, external_id: &str) -> Result<Option<Candidate>, FetchError> {
         self.fetch_manga(external_id)
     }
 }
@@ -298,7 +293,11 @@ fn parse_detail_body(body: &str) -> Result<Candidate, FetchError> {
 fn manga_to_candidate(manga: Manga) -> Candidate {
     let alternative = manga.alternative_titles;
     let (english, japanese, synonyms) = match alternative {
-        Some(alt) => (alt.en.trim().to_string(), alt.ja.trim().to_string(), alt.synonyms),
+        Some(alt) => (
+            alt.en.trim().to_string(),
+            alt.ja.trim().to_string(),
+            alt.synonyms,
+        ),
         None => (String::new(), String::new(), Vec::new()),
     };
 
@@ -574,10 +573,7 @@ mod tests {
 
     #[test]
     fn malformed_payload_is_a_parse_error() {
-        assert!(matches!(
-            parse_search_body("[]"),
-            Err(FetchError::Parse(_))
-        ));
+        assert!(matches!(parse_search_body("[]"), Err(FetchError::Parse(_))));
         assert!(matches!(
             parse_detail_body("null"),
             Err(FetchError::Parse(_))

@@ -15,9 +15,16 @@ use std::sync::Arc;
 // point, not an accident.
 #[allow(clippy::enum_variant_names)]
 pub enum ComicsOut {
-    OpenComic { book_id: i64 },
-    OpenBookDialog { book_id: i64 },
-    OpenRemoteManga { source_id: String, remote_id: String },
+    OpenComic {
+        book_id: i64,
+    },
+    OpenBookDialog {
+        book_id: i64,
+    },
+    OpenRemoteManga {
+        source_id: String,
+        remote_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -406,10 +413,7 @@ fn build_empty_state(sender: &ComponentSender<ComicsModel>) -> gtk::Box {
     empty_box
 }
 
-fn build_series_card(
-    group: &ComicSeriesGroup,
-    sender: &ComponentSender<ComicsModel>,
-) -> gtk::Box {
+fn build_series_card(group: &ComicSeriesGroup, sender: &ComponentSender<ComicsModel>) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
     card.set_size_request(150, -1);
     card.add_css_class("kalam-card");
@@ -434,7 +438,10 @@ fn build_series_card(
     let sub_text = if group.all_completed() {
         format!("{} ch · All read ✓", group.total_chapters)
     } else if group.unread_count > 0 && group.unread_count < group.total_chapters {
-        format!("{} ch · {} unread", group.total_chapters, group.unread_count)
+        format!(
+            "{} ch · {} unread",
+            group.total_chapters, group.unread_count
+        )
     } else if group.unread_count == 0 && group.total_chapters > 0 {
         format!("{} ch · In progress", group.total_chapters)
     } else {
@@ -528,7 +535,12 @@ fn comic_series_source_line(series: &ComicSeries) -> String {
     if !series.metadata_fetched_at.trim().is_empty() {
         parts.push(format!(
             "fetched {}",
-            series.metadata_fetched_at.trim().chars().take(10).collect::<String>()
+            series
+                .metadata_fetched_at
+                .trim()
+                .chars()
+                .take(10)
+                .collect::<String>()
         ));
     }
     parts.join(" · ")
@@ -683,9 +695,7 @@ fn build_series_drawer_view(
 
         let find_btn = gtk::Button::with_label("Find metadata");
         find_btn.add_css_class("kalam-btn-subtle");
-        find_btn.set_tooltip_text(Some(
-            "Search MyAnimeList and Comic Vine for this series",
-        ));
+        find_btn.set_tooltip_text(Some("Search MyAnimeList and Comic Vine for this series"));
         let s_find = sender.clone();
         let title_for_find = group.series_name.clone();
         find_btn.connect_clicked(move |_| {
@@ -1266,14 +1276,11 @@ impl Component for ComicsModel {
                         // The review screenshot needs a candidate
                         // without network access; only this env hook
                         // may invent one.
-                        let staged_candidate =
-                            (std::env::var("KALAM_DIALOG").as_deref()
-                                == Ok("find-comic-series-review"))
-                            .then(|| {
-                                crate::pages::comic_series_metadata::staged_review_candidate(
-                                    &series,
-                                )
-                            });
+                        let staged_candidate = (std::env::var("KALAM_DIALOG").as_deref()
+                            == Ok("find-comic-series-review"))
+                        .then(|| {
+                            crate::pages::comic_series_metadata::staged_review_candidate(&series)
+                        });
                         crate::pages::comic_series_metadata::open_find_comic_series_metadata_dialog(
                             root,
                             self.service.clone(),
@@ -1338,8 +1345,9 @@ impl Component for ComicsModel {
                         if let Ok(files) = res {
                             let mut paths = Vec::new();
                             for i in 0..files.n_items() {
-                                if let Some(file) =
-                                    files.item(i).and_then(|o| o.downcast::<gtk::gio::File>().ok())
+                                if let Some(file) = files
+                                    .item(i)
+                                    .and_then(|o| o.downcast::<gtk::gio::File>().ok())
                                 {
                                     if let Some(p) = file.path() {
                                         paths.push(p);
@@ -1365,17 +1373,13 @@ impl Component for ComicsModel {
                 });
 
                 let s = sender.clone();
-                dialog.select_folder(
-                    window.as_ref(),
-                    gtk::gio::Cancellable::NONE,
-                    move |res| {
-                        if let Ok(folder) = res {
-                            if let Some(p) = folder.path() {
-                                s.input(ComicsMsg::FilesChosen(vec![p]));
-                            }
+                dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+                    if let Ok(folder) = res {
+                        if let Some(p) = folder.path() {
+                            s.input(ComicsMsg::FilesChosen(vec![p]));
                         }
-                    },
-                );
+                    }
+                });
             }
             ComicsMsg::FilesChosen(paths) => {
                 // Expanding dropped folders reads the disk — a big drop
@@ -1397,8 +1401,8 @@ impl Component for ComicsModel {
                             catalog,
                             expanded,
                             move |done, total, title| {
-                                let _ = s_progress
-                                    .send(ComicsMsg::ImportStep { done, total, title });
+                                let _ =
+                                    s_progress.send(ComicsMsg::ImportStep { done, total, title });
                             },
                             move |tally| {
                                 let _ = s_done.send(ComicsMsg::ImportFinished(tally));
@@ -1598,11 +1602,41 @@ mod tests {
     fn test_group_comics_into_series_polluted_series_tags_bundle_cleanly() {
         // Exact user case: Naruto – Digital Colored Comics - Ch. X in title and/or series
         let books = vec![
-            make_test_book(1, "Naruto – Digital Colored Comics - Ch. 1", Some("Naruto – Digital Colored Comics - Ch. 1"), 0.0, 0),
-            make_test_book(2, "Naruto – Digital Colored Comics - Ch. 2", Some("Naruto – Digital Colored Comics - Ch. 2"), 0.0, 0),
-            make_test_book(3, "Naruto – Digital Colored Comics - Ch. 3", Some("Naruto - Digital Colored Comics - Ch. 3"), 0.0, 0),
-            make_test_book(4, "Naruto – Digital Colored Comics - Ch. 4", Some("Naruto - Digital Colored Comics - Ch. 4"), 0.0, 0),
-            make_test_book(5, "Naruto – Digital Colored Comics - Ch. 5", Some("Naruto - Digital Colored Comics - Ch. 5"), 0.0, 0),
+            make_test_book(
+                1,
+                "Naruto – Digital Colored Comics - Ch. 1",
+                Some("Naruto – Digital Colored Comics - Ch. 1"),
+                0.0,
+                0,
+            ),
+            make_test_book(
+                2,
+                "Naruto – Digital Colored Comics - Ch. 2",
+                Some("Naruto – Digital Colored Comics - Ch. 2"),
+                0.0,
+                0,
+            ),
+            make_test_book(
+                3,
+                "Naruto – Digital Colored Comics - Ch. 3",
+                Some("Naruto - Digital Colored Comics - Ch. 3"),
+                0.0,
+                0,
+            ),
+            make_test_book(
+                4,
+                "Naruto – Digital Colored Comics - Ch. 4",
+                Some("Naruto - Digital Colored Comics - Ch. 4"),
+                0.0,
+                0,
+            ),
+            make_test_book(
+                5,
+                "Naruto – Digital Colored Comics - Ch. 5",
+                Some("Naruto - Digital Colored Comics - Ch. 5"),
+                0.0,
+                0,
+            ),
         ];
 
         let (groups, standalone) = group_comics_into_series(&books);

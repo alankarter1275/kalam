@@ -20,7 +20,8 @@ use crate::pdf::{PdfPageText, PdfTextChar, PdfTextLine, RenderedPage};
 pub const DETECTION_MODEL_BYTES: &[u8] = include_bytes!("../assets/models/ocr/text-detection.rten");
 
 /// Embedded Latin recognition model bytes (CRNN architecture via rten).
-pub const RECOGNITION_MODEL_BYTES: &[u8] = include_bytes!("../assets/models/ocr/text-recognition.rten");
+pub const RECOGNITION_MODEL_BYTES: &[u8] =
+    include_bytes!("../assets/models/ocr/text-recognition.rten");
 
 /// Represents a single OCR recognition request for a PDF page.
 #[derive(Debug, Clone)]
@@ -79,14 +80,18 @@ pub fn init_ocr_engine() -> Option<OcrEngine> {
                 let det_path = dir.join("text-detection.rten");
                 let rec_path = dir.join("text-recognition.rten");
                 if det_path.exists() && rec_path.exists() {
-                    if let (Ok(d), Ok(r)) = (Model::load_file(&det_path), Model::load_file(&rec_path)) {
+                    if let (Ok(d), Ok(r)) =
+                        (Model::load_file(&det_path), Model::load_file(&rec_path))
+                    {
                         found = Some((d, r));
                         break;
                     }
                 }
             }
             let Some((d, r)) = found else {
-                log::info!("OCR models are not yet available; OCR on scanned pages will be disabled");
+                log::info!(
+                    "OCR models are not yet available; OCR on scanned pages will be disabled"
+                );
                 return None;
             };
             (d, r)
@@ -214,11 +219,7 @@ pub fn perform_ocr_rgba(
     // (The embedded-text path is deliberately not sorted: MuPDF already
     // orders structured blocks sensibly, and re-sorting would interleave the
     // columns of a two-column page.)
-    lines.sort_by(|a, b| {
-        a.y0
-            .total_cmp(&b.y0)
-            .then_with(|| a.x0.total_cmp(&b.x0))
-    });
+    lines.sort_by(|a, b| a.y0.total_cmp(&b.y0).then_with(|| a.x0.total_cmp(&b.x0)));
 
     Ok(PdfPageText {
         page_num,
@@ -381,18 +382,13 @@ mod tests {
             ),
             (
                 5,
-                &[
-                    "ENGLISH FIRST",
-                    "PLEEEASE",
-                    "HANDWRITING",
-                    "DING-DONG",
-                ],
+                &["ENGLISH FIRST", "PLEEEASE", "HANDWRITING", "DING-DONG"],
             ),
         ];
 
         for (page, required) in expectations {
-            let jpg = std::fs::read(format!("fixtures/ocr/scan-page{page}.jpg"))
-                .expect("fixture image");
+            let jpg =
+                std::fs::read(format!("fixtures/ocr/scan-page{page}.jpg")).expect("fixture image");
             let img = image::load_from_memory(&jpg).expect("decode fixture");
             // MuPDF renders the 595.2pt x 841.9pt page at 2x scale: ~1190x1685.
             let scaled = img.resize_exact(1190, 1685, image::imageops::FilterType::Lanczos3);
@@ -408,7 +404,9 @@ mod tests {
             let input = engine.prepare_input(src).expect("prepare input");
             let words = engine.detect_words(&input).expect("detect words");
             let line_rects = engine.find_text_lines(&input, &words);
-            let recognized = engine.recognize_text(&input, &line_rects).expect("recognize");
+            let recognized = engine
+                .recognize_text(&input, &line_rects)
+                .expect("recognize");
 
             let sx = w as f32 / W_PT;
             let sy = h as f32 / H_PT;
@@ -462,11 +460,7 @@ mod tests {
             let missing: Vec<&str> = required
                 .iter()
                 .copied()
-                .filter(|s| {
-                    !page_text_raw
-                        .to_lowercase()
-                        .contains(&s.to_lowercase())
-                })
+                .filter(|s| !page_text_raw.to_lowercase().contains(&s.to_lowercase()))
                 .collect();
             assert!(
                 missing.is_empty(),

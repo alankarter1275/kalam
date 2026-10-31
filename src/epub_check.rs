@@ -62,17 +62,13 @@ pub struct CheckFile {
 
 /// Void elements that XHTML requires to be written self-closed.
 const VOID_TAGS: &[&str] = &[
-    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
-    "track", "wbr",
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track",
+    "wbr",
 ];
 
 /// Run every check over the book. Sorted errors-first, then by file
 /// and line — the order the Problems tab shows inside each group.
-pub fn check_book(
-    files: &[CheckFile],
-    opf_path: &str,
-    ncx_path: Option<&str>,
-) -> Vec<BookProblem> {
+pub fn check_book(files: &[CheckFile], opf_path: &str, ncx_path: Option<&str>) -> Vec<BookProblem> {
     let mut problems = Vec::new();
     let file_set: HashSet<&str> = files.iter().map(|f| f.path.as_str()).collect();
 
@@ -114,7 +110,14 @@ pub fn check_book(
             _ => {}
         }
         if file.kind == FileKind::Html {
-            check_html(file, text, &file_set, &ids_by_file, &mut referenced, &mut problems);
+            check_html(
+                file,
+                text,
+                &file_set,
+                &ids_by_file,
+                &mut referenced,
+                &mut problems,
+            );
         } else if file.kind == FileKind::Css {
             check_css(file, text, &file_set, &mut referenced, &mut problems);
         } else if file.path == opf_path {
@@ -145,10 +148,7 @@ pub fn check_book(
             continue;
         }
         // The package document itself never lists itself.
-        if !file.in_manifest
-            && file.path != "META-INF/container.xml"
-            && file.path != opf_path
-        {
+        if !file.in_manifest && file.path != "META-INF/container.xml" && file.path != opf_path {
             problems.push(problem(
                 Severity::Warning,
                 file,
@@ -287,14 +287,23 @@ fn check_html(
             // One problem per image: if the tag is also not
             // self-closed, the void fix above already covers the
             // tag; the alt fix then inserts before its `>`.
-            let insert_at = if tag.self_closing { tag.end - 2 } else { tag.end - 1 };
+            let insert_at = if tag.self_closing {
+                tag.end - 2
+            } else {
+                tag.end - 1
+            };
             let mut p = problem(
                 Severity::Warning,
                 file,
                 tag.line,
                 "Image has no alt text".to_string(),
             );
-            p.fix = Some(make_fix(text, insert_at, insert_at, " alt=\"\"".to_string()));
+            p.fix = Some(make_fix(
+                text,
+                insert_at,
+                insert_at,
+                " alt=\"\"".to_string(),
+            ));
             problems.push(p);
         }
     }
@@ -566,7 +575,9 @@ fn contains_attr(tag_inner: &str, attr: &str) -> bool {
     let lower = tag_inner.to_ascii_lowercase();
     let needle = format!(" {attr}=");
     let needle2 = format!(" {attr} ");
-    lower.contains(&needle) || lower.contains(&needle2) || lower.trim_end().ends_with(&format!(" {attr}"))
+    lower.contains(&needle)
+        || lower.contains(&needle2)
+        || lower.trim_end().ends_with(&format!(" {attr}"))
 }
 
 /// `&` in character data that does not begin an entity-shaped
@@ -704,9 +715,7 @@ fn line_of(text: &str, byte: usize) -> usize {
 fn matches_at(text: &str, at: usize, needle: &str) -> bool {
     // Compare bytes for the same reason: `at` and the end of the
     // candidate match are not guaranteed to be char boundaries.
-    text.as_bytes()
-        .get(at..at.saturating_add(needle.len()))
-        == Some(needle.as_bytes())
+    text.as_bytes().get(at..at.saturating_add(needle.len())) == Some(needle.as_bytes())
 }
 
 fn find_after(text: &str, from: usize, needle: &str) -> usize {
@@ -762,8 +771,14 @@ mod tests {
         ];
         let problems = check_book(&files, "OEBPS/content.opf", None);
         let msgs = messages(&problems);
-        assert!(msgs.iter().any(|m| m.contains("missing file gone.xhtml")), "{msgs:?}");
-        assert!(msgs.iter().any(|m| m.contains("missing anchor #nope")), "{msgs:?}");
+        assert!(
+            msgs.iter().any(|m| m.contains("missing file gone.xhtml")),
+            "{msgs:?}"
+        );
+        assert!(
+            msgs.iter().any(|m| m.contains("missing anchor #nope")),
+            "{msgs:?}"
+        );
         assert!(problems.iter().all(|p| !p.message.contains("#here")));
     }
 
@@ -788,7 +803,10 @@ mod tests {
 
     #[test]
     fn alt_missing_and_unreferenced_and_manifest_warnings() {
-        let mut orphan = html("OEBPS/orphan.xhtml", "<html><head><title>O</title></head><body/></html>");
+        let mut orphan = html(
+            "OEBPS/orphan.xhtml",
+            "<html><head><title>O</title></head><body/></html>",
+        );
         orphan.spine_index = None;
         let files = vec![
             html(
@@ -827,7 +845,10 @@ mod tests {
             .collect();
         assert!(removable.contains(&"OEBPS/orphan.xhtml"), "{removable:?}");
         assert!(removable.contains(&"OEBPS/stray.css"), "{removable:?}");
-        assert!(!removable.contains(&"OEBPS/i.jpg"), "referenced image must stay");
+        assert!(
+            !removable.contains(&"OEBPS/i.jpg"),
+            "referenced image must stay"
+        );
     }
 
     #[test]
@@ -884,9 +905,7 @@ mod tests {
         ];
         let problems = check_book(&files, "OEBPS/content.opf", None);
         assert!(
-            problems
-                .iter()
-                .all(|p| !p.message.contains("manifest")),
+            problems.iter().all(|p| !p.message.contains("manifest")),
             "{problems:?}"
         );
     }

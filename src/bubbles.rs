@@ -98,7 +98,9 @@ fn create_bubble_cover(cover_path: Option<&PathBuf>, size: i32, icon_size: i32) 
             let thumb = crate::paths::thumbnail_for_cover(cp).filter(|p| p.is_file());
             let path_to_load = thumb.as_deref().unwrap_or(cp.as_path());
 
-            let pic = if let Ok(pixbuf) = gdk_pixbuf::Pixbuf::from_file_at_scale(path_to_load, size, size, false) {
+            let pic = if let Ok(pixbuf) =
+                gdk_pixbuf::Pixbuf::from_file_at_scale(path_to_load, size, size, false)
+            {
                 let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
                 gtk::Picture::for_paintable(&texture)
             } else {
@@ -337,7 +339,9 @@ impl BubbleManager {
             self.window_open = false;
             self.primary_reader = None;
             self.split_reader = None;
-            unsafe { libc::malloc_trim(0); }
+            unsafe {
+                libc::malloc_trim(0);
+            }
             self.refresh_ui();
             return;
         }
@@ -356,7 +360,9 @@ impl BubbleManager {
 
             // Second choice: book right beside it
             let next_active = candidate.or_else(|| {
-                let idx = closed_idx.unwrap_or(0).min(self.items.len().saturating_sub(1));
+                let idx = closed_idx
+                    .unwrap_or(0)
+                    .min(self.items.len().saturating_sub(1));
                 self.items.get(idx).map(|i| i.book_id)
             });
 
@@ -369,7 +375,8 @@ impl BubbleManager {
 
     pub fn select_bubble(&mut self, book_id: i64) {
         let target_id = if book_id == 0 {
-            self.active_book_id.or_else(|| self.items.first().map(|i| i.book_id))
+            self.active_book_id
+                .or_else(|| self.items.first().map(|i| i.book_id))
         } else {
             Some(book_id)
         };
@@ -400,14 +407,20 @@ impl BubbleManager {
     pub fn close_split(&mut self) {
         self.split_book_id = None;
         self.split_reader = None;
-        unsafe { libc::malloc_trim(0); }
+        unsafe {
+            libc::malloc_trim(0);
+        }
         self.refresh_ui();
     }
 
     pub fn toggle_split(&mut self) {
         if self.split_book_id.is_some() {
             self.close_split();
-        } else if let Some(candidate) = self.items.iter().find(|i| Some(i.book_id) != self.active_book_id) {
+        } else if let Some(candidate) = self
+            .items
+            .iter()
+            .find(|i| Some(i.book_id) != self.active_book_id)
+        {
             self.set_split_book(candidate.book_id);
         }
     }
@@ -485,7 +498,9 @@ impl BubbleManager {
         self.minimized_stack.set_vexpand(false);
         self.minimized_stack.set_overflow(gtk::Overflow::Hidden);
 
-        let Some(top_item) = self.items.first() else { return };
+        let Some(top_item) = self.items.first() else {
+            return;
+        };
         let top_id = top_item.book_id;
 
         let root_circle = gtk::Overlay::new();
@@ -771,13 +786,19 @@ impl BubbleManager {
             self.reader_content_box.remove(&child);
         }
 
-        let Some(active_id) = self.active_book_id else { return };
+        let Some(active_id) = self.active_book_id else {
+            return;
+        };
         let split_id = self.split_book_id;
 
         if let Some(second_id) = split_id {
             // Side-by-Side Split View (Two Books at Once)
-            let left_widget = self.ensure_primary_reader(active_id).map(|r| r.widget().clone());
-            let right_widget = self.ensure_split_reader(second_id).map(|r| r.widget().clone());
+            let left_widget = self
+                .ensure_primary_reader(active_id)
+                .map(|r| r.widget().clone());
+            let right_widget = self
+                .ensure_split_reader(second_id)
+                .map(|r| r.widget().clone());
 
             let split_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
             split_box.set_hexpand(true);
@@ -833,7 +854,9 @@ impl BubbleManager {
             self.reader_content_box.append(&split_box);
         } else {
             // Single Book View
-            let widget = self.ensure_primary_reader(active_id).map(|r| r.widget().clone());
+            let widget = self
+                .ensure_primary_reader(active_id)
+                .map(|r| r.widget().clone());
             if let Some(w) = widget {
                 self.reader_content_box.append(&w);
             }
@@ -892,7 +915,9 @@ impl BubbleManager {
                 let ctrl = crate::pages::pdf_reader::PdfReaderModel::builder()
                     .launch(init)
                     .forward(self.sender.input_sender(), move |out| match out {
-                        crate::pages::pdf_reader::PdfReaderOut::Close => AppMsg::BubbleMinimizeWindow,
+                        crate::pages::pdf_reader::PdfReaderOut::Close => {
+                            AppMsg::BubbleMinimizeWindow
+                        }
                         crate::pages::pdf_reader::PdfReaderOut::MinimizeToBubble { book_id } => {
                             AppMsg::MinimizeToBubble { book_id }
                         }
@@ -900,7 +925,10 @@ impl BubbleManager {
                 Some(BubbleReaderInstance::Pdf { book_id, ctrl })
             }
             BookFormat::Cbz | BookFormat::Cbr => {
-                let provider = crate::pages::comics_reader::providers::LocalProvider::new(book.file_path.clone()).ok()?;
+                let provider = crate::pages::comics_reader::providers::LocalProvider::new(
+                    book.file_path.clone(),
+                )
+                .ok()?;
                 let init = crate::pages::comics_reader::types::ComicsReaderInit {
                     title: book.title.clone(),
                     provider: std::sync::Arc::new(provider),
@@ -911,10 +939,12 @@ impl BubbleManager {
                 let ctrl = crate::pages::comics_reader::ComicsReaderModel::builder()
                     .launch(init)
                     .forward(self.sender.input_sender(), move |out| match out {
-                        crate::pages::comics_reader::types::ComicsReaderOut::Close => AppMsg::BubbleMinimizeWindow,
-                        crate::pages::comics_reader::types::ComicsReaderOut::MinimizeToBubble { book_id } => {
-                            AppMsg::MinimizeToBubble { book_id }
+                        crate::pages::comics_reader::types::ComicsReaderOut::Close => {
+                            AppMsg::BubbleMinimizeWindow
                         }
+                        crate::pages::comics_reader::types::ComicsReaderOut::MinimizeToBubble {
+                            book_id,
+                        } => AppMsg::MinimizeToBubble { book_id },
                     });
                 Some(BubbleReaderInstance::Comic { book_id, ctrl })
             }

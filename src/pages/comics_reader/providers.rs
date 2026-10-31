@@ -26,7 +26,10 @@ impl ImageProvider for LocalProvider {
     }
 
     fn fetch_page(&self, idx: usize) -> Result<Vec<u8>> {
-        let page_name = self.pages.get(idx).ok_or_else(|| anyhow!("Page index out of bounds"))?;
+        let page_name = self
+            .pages
+            .get(idx)
+            .ok_or_else(|| anyhow!("Page index out of bounds"))?;
         extract_comic_page(&self.file_path, page_name)
     }
 
@@ -43,20 +46,18 @@ pub struct RemoteProvider {
 
 impl RemoteProvider {
     pub fn new(manager: Arc<SourceManager>, source_id: String, chapter_id: String) -> Result<Self> {
-        let source = manager.get(&source_id).ok_or_else(|| anyhow!("Source not found"))?;
+        let source = manager
+            .get(&source_id)
+            .ok_or_else(|| anyhow!("Source not found"))?;
         let content = source.get_chapter_content(&chapter_id)?;
-        
+
         match content {
-            ChapterContent::Images(urls) => {
-                Ok(Self {
-                    manager,
-                    source_id,
-                    image_urls: urls,
-                })
-            }
-            ChapterContent::Html(_) => {
-                Err(anyhow!("Expected images for comic reader, got HTML"))
-            }
+            ChapterContent::Images(urls) => Ok(Self {
+                manager,
+                source_id,
+                image_urls: urls,
+            }),
+            ChapterContent::Html(_) => Err(anyhow!("Expected images for comic reader, got HTML")),
         }
     }
 }
@@ -67,8 +68,14 @@ impl ImageProvider for RemoteProvider {
     }
 
     fn fetch_page(&self, idx: usize) -> Result<Vec<u8>> {
-        let url = self.image_urls.get(idx).ok_or_else(|| anyhow!("Page index out of bounds"))?;
-        let source = self.manager.get(&self.source_id).ok_or_else(|| anyhow!("Source not found"))?;
+        let url = self
+            .image_urls
+            .get(idx)
+            .ok_or_else(|| anyhow!("Page index out of bounds"))?;
+        let source = self
+            .manager
+            .get(&self.source_id)
+            .ok_or_else(|| anyhow!("Source not found"))?;
         source.fetch_image(url)
     }
 }

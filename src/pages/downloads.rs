@@ -1,6 +1,6 @@
+use crate::downloads::{DownloadJob, JobStatus, DOWNLOAD_MANAGER};
 use gtk::prelude::*;
 use relm4::prelude::*;
-use crate::downloads::{DownloadJob, JobStatus, DOWNLOAD_MANAGER};
 
 #[derive(Debug)]
 pub enum DownloadsMsg {
@@ -94,7 +94,11 @@ impl Component for DownloadsModel {
         }
     }
 
-    fn init(_init: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(
+        _init: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
         let initial_jobs = if let Some(mgr) = DOWNLOAD_MANAGER.get() {
             mgr.get_jobs()
         } else {
@@ -143,43 +147,51 @@ fn render_jobs(model: &DownloadsModel, widgets: &mut DownloadsModelWidgets) {
     }
 
     for job in &model.jobs {
-            let row = gtk::Box::new(gtk::Orientation::Vertical, 6);
-            row.add_css_class("kalam-card");
-            row.set_margin_bottom(4);
+        let row = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        row.add_css_class("kalam-card");
+        row.set_margin_bottom(4);
 
-            let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            let title = gtk::Label::new(Some(&job.title));
-            title.add_css_class("kalam-title-small");
-            title.set_halign(gtk::Align::Start);
-            title.set_hexpand(true);
-            title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            header.append(&title);
+        let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let title = gtk::Label::new(Some(&job.title));
+        title.add_css_class("kalam-title-small");
+        title.set_halign(gtk::Align::Start);
+        title.set_hexpand(true);
+        title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        header.append(&title);
 
-            let (status_text, frac, badge_class) = match &job.status {
-                JobStatus::Pending => ("Queued".to_string(), 0.0, "kalam-badge"),
-                JobStatus::Downloading { chapter_idx, total } => {
-                    let f = if *total > 0 { *chapter_idx as f64 / *total as f64 } else { 0.0 };
-                    (format!("Downloading ({chapter_idx}/{total})"), f, "kalam-badge")
-                }
-                JobStatus::Packaging => ("Packaging EPUB...".to_string(), 0.95, "kalam-badge"),
-                JobStatus::Done => ("✓ Completed".to_string(), 1.0, "kalam-badge"),
-                JobStatus::Cancelled => ("Cancelled".to_string(), 0.0, "kalam-badge"),
-                JobStatus::Failed(err) => (format!("Failed: {err}"), 0.0, "kalam-badge"),
-            };
-
-            let badge = gtk::Label::new(Some(&status_text));
-            badge.add_css_class(badge_class);
-            badge.set_halign(gtk::Align::End);
-            header.append(&badge);
-            row.append(&header);
-
-            let bar = gtk::ProgressBar::new();
-            bar.set_fraction(frac);
-            if matches!(job.status, JobStatus::Done) {
-                bar.add_css_class("success");
+        let (status_text, frac, badge_class) = match &job.status {
+            JobStatus::Pending => ("Queued".to_string(), 0.0, "kalam-badge"),
+            JobStatus::Downloading { chapter_idx, total } => {
+                let f = if *total > 0 {
+                    *chapter_idx as f64 / *total as f64
+                } else {
+                    0.0
+                };
+                (
+                    format!("Downloading ({chapter_idx}/{total})"),
+                    f,
+                    "kalam-badge",
+                )
             }
-            row.append(&bar);
+            JobStatus::Packaging => ("Packaging EPUB...".to_string(), 0.95, "kalam-badge"),
+            JobStatus::Done => ("✓ Completed".to_string(), 1.0, "kalam-badge"),
+            JobStatus::Cancelled => ("Cancelled".to_string(), 0.0, "kalam-badge"),
+            JobStatus::Failed(err) => (format!("Failed: {err}"), 0.0, "kalam-badge"),
+        };
 
-            widgets.jobs_box.append(&row);
+        let badge = gtk::Label::new(Some(&status_text));
+        badge.add_css_class(badge_class);
+        badge.set_halign(gtk::Align::End);
+        header.append(&badge);
+        row.append(&header);
+
+        let bar = gtk::ProgressBar::new();
+        bar.set_fraction(frac);
+        if matches!(job.status, JobStatus::Done) {
+            bar.add_css_class("success");
         }
+        row.append(&bar);
+
+        widgets.jobs_box.append(&row);
     }
+}

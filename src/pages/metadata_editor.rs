@@ -137,12 +137,8 @@ fn open_editor_inner(
     fields.set_hexpand(true);
 
     // Search icons live on the field they act on, Calibre-style.
-    let (title_entry, title_search) = labelled_entry_with_search(
-        &fields,
-        "TITLE",
-        &book.title,
-        search_tooltip,
-    );
+    let (title_entry, title_search) =
+        labelled_entry_with_search(&fields, "TITLE", &book.title, search_tooltip);
     // No search icon here: it sent exactly the same title+author query as the
     // title icon, so it was a second button for one action.
     let authors_entry = labelled_entry(&fields, "AUTHORS", &book.authors);
@@ -272,9 +268,15 @@ fn open_editor_inner(
             .map(str::trim)
             .filter(|series| !series.is_empty())
             .map(str::to_string)
-            .unwrap_or_else(|| format!("{} {}", book.title, book.authors).trim().to_string())
+            .unwrap_or_else(|| {
+                format!("{} {}", book.title, book.authors)
+                    .trim()
+                    .to_string()
+            })
     } else {
-        format!("{} {}", book.title, book.authors).trim().to_string()
+        format!("{} {}", book.title, book.authors)
+            .trim()
+            .to_string()
     };
     search_entry.set_text(&initial_query);
 
@@ -1145,9 +1147,8 @@ fn rebuild_results(
                 if !c.description.trim().is_empty() {
                     desc_view.buffer().set_text(&c.description);
                 } else if let Some(id) = c.source {
-                    let needs_detail = c.detail_key.is_some()
-                        || c.external_id.is_some()
-                        || comic_candidate;
+                    let needs_detail =
+                        c.detail_key.is_some() || c.external_id.is_some() || comic_candidate;
                     if needs_detail {
                         let desc_view = desc_view.clone();
                         let status2 = status.clone();
@@ -1156,8 +1157,7 @@ fn rebuild_results(
                         crate::tasks::spawn(
                             "Fetching description",
                             move |_reporter| {
-                                let Some(source) =
-                                    metadata::source_by_id(service.catalog(), id)
+                                let Some(source) = metadata::source_by_id(service.catalog(), id)
                                 else {
                                     return String::new();
                                 };
@@ -1191,8 +1191,7 @@ fn rebuild_results(
                             move |text| {
                                 if !text.trim().is_empty() {
                                     desc_view.buffer().set_text(&text);
-                                    status2
-                                        .set_label("Description filled — review, then Save.");
+                                    status2.set_label("Description filled — review, then Save.");
                                 }
                             },
                         );

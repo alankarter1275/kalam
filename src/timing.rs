@@ -241,13 +241,15 @@ impl Drop for ActivityGuard {
         // panicked while holding it, and this stack is diagnostic
         // bookkeeping — it must not answer that panic with a second one on
         // the UI thread (guardrails: production panics do not grow).
-        let mut state = activity_state()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut state = activity_state().lock().unwrap_or_else(|e| e.into_inner());
         // Remove the most recent entry with this label rather than a blind
         // pop: a mis-nested pair of guards must not delete some other
         // activity's label and mis-attribute a stall.
-        if let Some(idx) = state.stack.iter().rposition(|(l, _)| *l == self.label.as_str()) {
+        if let Some(idx) = state
+            .stack
+            .iter()
+            .rposition(|(l, _)| *l == self.label.as_str())
+        {
             let started = state.stack.remove(idx).1;
             let ended = Instant::now();
             state.last_ended = Some((self.label.clone(), started.elapsed(), ended));
@@ -273,9 +275,7 @@ pub fn activity(label: impl Into<String>) -> ActivityGuard {
 /// What the UI thread is doing right now, and for how long. Read by the
 /// stall watchdog thread while the UI thread is blocked inside that work.
 pub fn current_activity() -> Option<(String, Duration)> {
-    let state = activity_state()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let state = activity_state().lock().unwrap_or_else(|e| e.into_inner());
     state
         .stack
         .last()
@@ -286,9 +286,7 @@ pub fn current_activity() -> Option<(String, Duration)> {
 /// long ago it ended. A poisoned lock would mean the process is already
 /// unwinding; the watchdog should still be able to read, hence `into_inner`.
 pub fn last_ended_activity() -> Option<(String, Duration, Duration)> {
-    let state = activity_state()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let state = activity_state().lock().unwrap_or_else(|e| e.into_inner());
     state
         .last_ended
         .as_ref()

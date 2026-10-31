@@ -11,12 +11,18 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum ReadingListOut {
-    OpenBook { book_id: i64 },
-    OpenReader { book_id: i64 },
+    OpenBook {
+        book_id: i64,
+    },
+    OpenReader {
+        book_id: i64,
+    },
     /// A comic series row — chapters are only ever seen on the series page.
     /// (The Read button stays chapter-precise: it resumes exactly where the
     /// reader left that series.)
-    ComicSeries { series_name: String },
+    ComicSeries {
+        series_name: String,
+    },
 }
 
 #[derive(Debug)]

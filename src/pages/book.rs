@@ -28,8 +28,7 @@ use crate::widgets::{
     chip::chip_label,
     cover_state::{book_cover, CoverAvailability},
     dialog::{
-        confirmation_dialog, dialog_shell, present_dialog, text_field, ConfirmationKind,
-        DialogSize,
+        confirmation_dialog, dialog_shell, present_dialog, text_field, ConfirmationKind, DialogSize,
     },
     in_app_dialog::{DialogExit, InAppDialog},
     menu::{menu_button, menu_popover, MenuWidth},
@@ -479,9 +478,7 @@ impl Component for BookPageModel {
                             "Reading chapter list",
                             move |_reporter| {
                                 crate::epub_book::OpenBook::open(&path, &cache)
-                                    .map(|ob| {
-                                        ob.spine.iter().map(|c| c.title.clone()).collect()
-                                    })
+                                    .map(|ob| ob.spine.iter().map(|c| c.title.clone()).collect())
                                     .unwrap_or_default()
                             },
                             |_| {},
@@ -732,45 +729,49 @@ impl Component for BookPageModel {
 
                     let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
                     let slot_for_cancel = slot.clone();
-                    shell.footer().append(&boxed_ghost_button("Cancel", move || {
-                        if let Some(dialog) = slot_for_cancel.borrow().clone() {
-                            dialog.close();
-                        }
-                    }));
+                    shell
+                        .footer()
+                        .append(&boxed_ghost_button("Cancel", move || {
+                            if let Some(dialog) = slot_for_cancel.borrow().clone() {
+                                dialog.close();
+                            }
+                        }));
 
                     let slot_for_create = slot.clone();
                     let field_for_create = field.clone();
                     let catalog = self.service.catalog().clone();
                     let s = sender.input_sender().clone();
-                    shell.footer().append(&primary_button("Create shelf", move || {
-                        let name = field_for_create.value();
-                        let name = name.trim();
-                        if name.is_empty() {
-                            return;
-                        }
-                        if let Some(dialog) = slot_for_create.borrow().clone() {
-                            dialog.close();
-                        }
-                        match catalog.create_shelf(name, ShelfKind::Manual, "", "") {
-                            Ok(shelf_id) => {
-                                let added = crate::notify::outcome(
-                                    catalog.add_book_to_shelf(shelf_id, book_id),
-                                    "Shelf created",
-                                    name,
-                                    "Could not add the book to the new shelf",
-                                );
-                                if added {
-                                    let _ = s.send(BookPageMsg::Refresh);
+                    shell
+                        .footer()
+                        .append(&primary_button("Create shelf", move || {
+                            let name = field_for_create.value();
+                            let name = name.trim();
+                            if name.is_empty() {
+                                return;
+                            }
+                            if let Some(dialog) = slot_for_create.borrow().clone() {
+                                dialog.close();
+                            }
+                            match catalog.create_shelf(name, ShelfKind::Manual, "", "") {
+                                Ok(shelf_id) => {
+                                    let added = crate::notify::outcome(
+                                        catalog.add_book_to_shelf(shelf_id, book_id),
+                                        "Shelf created",
+                                        name,
+                                        "Could not add the book to the new shelf",
+                                    );
+                                    if added {
+                                        let _ = s.send(BookPageMsg::Refresh);
+                                    }
+                                }
+                                Err(err) => {
+                                    crate::notify::error(
+                                        "Could not create the shelf",
+                                        &err.to_string(),
+                                    );
                                 }
                             }
-                            Err(err) => {
-                                crate::notify::error(
-                                    "Could not create the shelf",
-                                    &err.to_string(),
-                                );
-                            }
-                        }
-                    }));
+                        }));
 
                     match present_dialog(root, "New shelf", DialogExit::UnsavedInput, &shell) {
                         Some(dialog) => *slot.borrow_mut() = Some(dialog),
@@ -805,17 +806,13 @@ impl Component for BookPageModel {
                                 .and_then(|w| w.downcast::<gtk::Window>().ok())
                         });
                     let s = sender.input_sender().clone();
-                    dialog.open(
-                        window.as_ref(),
-                        gtk::gio::Cancellable::NONE,
-                        move |res| {
-                            if let Ok(file) = res {
-                                if let Some(path) = file.path() {
-                                    let _ = s.send(BookPageMsg::CoverImageChosen(path));
-                                }
+                    dialog.open(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+                        if let Ok(file) = res {
+                            if let Some(path) = file.path() {
+                                let _ = s.send(BookPageMsg::CoverImageChosen(path));
                             }
-                        },
-                    );
+                        }
+                    });
                 }
             }
             BookPageMsg::CoverImageChosen(path) => {
@@ -893,18 +890,13 @@ impl Component for BookPageModel {
                         // format. The old handler hardcoded 2×, every page,
                         // JPEG 92, and replaced the file with no backup and
                         // no re-hash; the dialog fixes all of that.
-                        crate::widgets::remaster_dialog::present(
-                            root,
-                            book,
-                            &catalog,
-                            move || {
-                                // A remaster runs for minutes; the page
-                                // may be closed before it finishes. The
-                                // raw sender drops the message quietly
-                                // instead of panicking on a dead page.
-                                let _ = s.input_sender().send(BookPageMsg::Refresh);
-                            },
-                        );
+                        crate::widgets::remaster_dialog::present(root, book, &catalog, move || {
+                            // A remaster runs for minutes; the page
+                            // may be closed before it finishes. The
+                            // raw sender drops the message quietly
+                            // instead of panicking on a dead page.
+                            let _ = s.input_sender().send(BookPageMsg::Refresh);
+                        });
                     } else {
                         crate::notify::info(
                             "Not a comic",
@@ -951,8 +943,7 @@ impl BookPageModel {
                     // so the apply finds it cached (7.1 step 2a.2). The
                     // redesigned page shows no other cover.
                     if let Some(cover) = &book.cover_path {
-                        if let Some(d) = crate::preload::decode_for_cache(cover, COVER_W, COVER_H)
-                        {
+                        if let Some(d) = crate::preload::decode_for_cache(cover, COVER_W, COVER_H) {
                             covers.push(d);
                         }
                     }
@@ -996,10 +987,7 @@ impl BookPageModel {
             while let Some(c) = widgets.tags_flow.first_child() {
                 widgets.tags_flow.remove(&c);
             }
-            set_description_message(
-                &widgets.description_host,
-                "Reading this book's details…",
-            );
+            set_description_message(&widgets.description_host, "Reading this book's details…");
         } else if let Some(book) = &self.book {
             widgets.kind.set_label(book.format.as_str());
             widgets.title.set_label(&book.title);
@@ -1070,7 +1058,14 @@ fn fill_cover(host: &gtk::Box, model: &BookPageModel, sender: &ComponentSender<B
         return;
     };
 
-    let cover = book_cover(book, COVER_W, COVER_H, false, CoverAvailability::Available, true);
+    let cover = book_cover(
+        book,
+        COVER_W,
+        COVER_H,
+        false,
+        CoverAvailability::Available,
+        true,
+    );
     if file_missing(model) {
         cover.set_opacity(0.45);
     }
@@ -1136,9 +1131,8 @@ fn fill_progress_rail(host: &gtk::Box, model: &BookPageModel, chapters: &[String
         return;
     }
 
-    let started = book.progress > 0
-        || model.progress.is_some()
-        || model.stats.first_opened.is_some();
+    let started =
+        book.progress > 0 || model.progress.is_some() || model.stats.first_opened.is_some();
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let left_text = if model.finished {
         "Finished".to_string()
@@ -1187,10 +1181,8 @@ fn fill_progress_rail(host: &gtk::Box, model: &BookPageModel, chapters: &[String
 
     if !model.finished && started {
         if let Some(first) = &model.stats.first_opened {
-            let started_label = gtk::Label::new(Some(&format!(
-                "Started {}",
-                pretty_imported(first)
-            )));
+            let started_label =
+                gtk::Label::new(Some(&format!("Started {}", pretty_imported(first))));
             started_label.add_css_class("kalam-bookpage-progress-meta");
             started_label.set_halign(gtk::Align::Start);
             host.append(&started_label);
@@ -1457,9 +1449,7 @@ fn fill_actions(host: &gtk::Box, model: &BookPageModel, sender: &ComponentSender
                     let _ = s.output(BookPageOut::OpenBook { book_id });
                 }
             });
-            slide
-                .secondary_button()
-                .set_tooltip_text(Some(&next_title));
+            slide.secondary_button().set_tooltip_text(Some(&next_title));
             slide.set_secondary_sensitive(next_id.is_some());
             host.append(&slide.widget());
         } else {
@@ -1491,9 +1481,15 @@ fn fill_actions(host: &gtk::Box, model: &BookPageModel, sender: &ComponentSender
 
     // Edit metadata pencil.
     let s = sender.clone();
-    let edit = icon_button("document-edit-symbolic", "Edit metadata", 44, true, move || {
-        s.input(BookPageMsg::EditMetadata);
-    });
+    let edit = icon_button(
+        "document-edit-symbolic",
+        "Edit metadata",
+        44,
+        true,
+        move || {
+            s.input(BookPageMsg::EditMetadata);
+        },
+    );
     host.append(&edit);
 
     // The ⋯ menu (decision 86, minus the editor entries the deep-editor
@@ -1844,13 +1840,21 @@ fn fill_annotations(
 
     let mut counts: Vec<String> = Vec::new();
     if !model.annotations.is_empty() {
-        counts.push(count_noun(model.annotations.len(), "highlight", "highlights"));
+        counts.push(count_noun(
+            model.annotations.len(),
+            "highlight",
+            "highlights",
+        ));
     }
     if !model.bookmarks.is_empty() {
         counts.push(count_noun(model.bookmarks.len(), "bookmark", "bookmarks"));
     }
     if !model.saved_words.is_empty() {
-        counts.push(count_noun(model.saved_words.len(), "saved word", "saved words"));
+        counts.push(count_noun(
+            model.saved_words.len(),
+            "saved word",
+            "saved words",
+        ));
     }
     let count_line = gtk::Label::new(Some(&counts.join(" · ")));
     count_line.add_css_class("kalam-ui-meta");
@@ -1992,10 +1996,7 @@ fn present_tags_dialog(
 
     // Sections group their label with their content at XS spacing; the
     // shell body's own MD spacing then separates the sections.
-    let on_book_section = gtk::Box::new(
-        gtk::Orientation::Vertical,
-        crate::style::spacing::XS,
-    );
+    let on_book_section = gtk::Box::new(gtk::Orientation::Vertical, crate::style::spacing::XS);
     on_book_section.append(&tags_section_label("On this book"));
     let on_book_flow = tags_flow();
     let on_book_scroll = tags_flow_scroll(&on_book_flow);
@@ -2004,20 +2005,14 @@ fn present_tags_dialog(
     on_book_section.append(&on_book_empty);
     body.append(&on_book_section);
 
-    let suggested_section = gtk::Box::new(
-        gtk::Orientation::Vertical,
-        crate::style::spacing::XS,
-    );
+    let suggested_section = gtk::Box::new(gtk::Orientation::Vertical, crate::style::spacing::XS);
     suggested_section.append(&tags_section_label("Suggested from the file"));
     let suggested_flow = tags_flow();
     let suggested_scroll = tags_flow_scroll(&suggested_flow);
     suggested_section.append(&suggested_scroll);
     body.append(&suggested_section);
 
-    let library_section = gtk::Box::new(
-        gtk::Orientation::Vertical,
-        crate::style::spacing::XS,
-    );
+    let library_section = gtk::Box::new(gtk::Orientation::Vertical, crate::style::spacing::XS);
     let library_head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let library_label = tags_section_label("Your library");
     library_label.set_hexpand(true);
@@ -2135,7 +2130,9 @@ fn present_tags_dialog(
                 let subject = subject.trim();
                 if subject.is_empty()
                     || has(subject)
-                    || suggested.iter().any(|s: &String| s.eq_ignore_ascii_case(subject))
+                    || suggested
+                        .iter()
+                        .any(|s: &String| s.eq_ignore_ascii_case(subject))
                 {
                     continue;
                 }
@@ -2628,10 +2625,7 @@ fn present_tag_merge_picker(
     }));
     match present_dialog(anchor, "Merge into…", DialogExit::OwnButtons, &shell) {
         Some(dialog) => *slot.borrow_mut() = Some(dialog),
-        None => crate::notify::error(
-            "Could not merge the tag",
-            "The dialog could not be opened.",
-        ),
+        None => crate::notify::error("Could not merge the tag", "The dialog could not be opened."),
     }
 }
 
@@ -2899,10 +2893,7 @@ fn annotations_highlights_page(
                         "note" => "Note",
                         _ => "Highlight",
                     };
-                    let mut meta_parts = vec![
-                        kind.to_string(),
-                        pretty_imported(&anno.created_at),
-                    ];
+                    let mut meta_parts = vec![kind.to_string(), pretty_imported(&anno.created_at)];
                     let note = anno.note.trim();
                     if !note.is_empty() {
                         meta_parts.push(shorten_title(note, 90));
@@ -3212,7 +3203,10 @@ fn fill_file_line(host: &gtk::Box, model: &BookPageModel) {
         None if file_missing(model) => "file missing".to_string(),
         None => "size unknown".to_string(),
     };
-    let text = format!("{name} · {size} · Added {}", pretty_imported(&book.added_at));
+    let text = format!(
+        "{name} · {size} · Added {}",
+        pretty_imported(&book.added_at)
+    );
     let label = gtk::Label::new(Some(&text));
     label.add_css_class("kalam-ui-caption");
     label.set_halign(gtk::Align::Start);

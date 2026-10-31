@@ -560,7 +560,11 @@ fn panic_scanner_skips_annotated_items_whether_mod_or_fn() {
     assert_eq!(count_prod_panics(prod), 2);
 
     let test_mod = "fn a() { y.unwrap(); }\n#[cfg(test)]\nmod tests {\n    fn t() { y.unwrap(); y.unwrap(); }\n}\n";
-    assert_eq!(count_prod_panics(test_mod), 1, "the mod's unwraps must not count");
+    assert_eq!(
+        count_prod_panics(test_mod),
+        1,
+        "the mod's unwraps must not count"
+    );
 
     let test_fn = "fn a() { y.unwrap(); }\n#[cfg(test)]\npub fn helper() { y.unwrap(); }\nfn b() { z.unwrap(); }\n";
     assert_eq!(
@@ -601,8 +605,16 @@ fn hex_scanner_counts_colours_and_ignores_longer_runs() {
     assert_eq!(count_hex_literals("alpha(#000, 0.28)"), 1);
     assert_eq!(count_hex_literals("#61afef #343842"), 2);
     assert_eq!(count_hex_literals("#ab"), 0, "two digits is not a colour");
-    assert_eq!(count_hex_literals("#0123456789"), 0, "ten digits is not a colour");
-    assert_eq!(count_hex_literals("#01234567"), 1, "eight is the longest colour");
+    assert_eq!(
+        count_hex_literals("#0123456789"),
+        0,
+        "ten digits is not a colour"
+    );
+    assert_eq!(
+        count_hex_literals("#01234567"),
+        1,
+        "eight is the longest colour"
+    );
 }
 
 /// Pull `(frame name, lit percentage)` out of a screenshot report, looking only
@@ -682,7 +694,10 @@ fn css_declaration_scanner_sees_declarations_not_comments_or_selectors() {
     assert_eq!(n(".a {\n  max-width: calc(100px\n      + 2px);\n}\n"), 1);
 
     // A comment naming the property is documentation, not a declaration.
-    assert_eq!(n("/* GTK CSS has no max-width property */\n.a { color: red; }\n"), 0);
+    assert_eq!(
+        n("/* GTK CSS has no max-width property */\n.a { color: red; }\n"),
+        0
+    );
     // A selector containing the word is not a declaration.
     assert_eq!(n(".max-width-panel { color: red; }\n"), 0);
     assert_eq!(n("entry.kalam-max-width-filter:focus { color: red; }\n"), 0);

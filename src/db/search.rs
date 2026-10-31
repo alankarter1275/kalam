@@ -169,9 +169,7 @@ pub fn build_search_sql(
                 param_idx += 1;
             }
             SearchFilter::Author(author) => {
-                where_clauses.push(format!(
-                    "books.authors LIKE ?{param_idx} ESCAPE '\\'"
-                ));
+                where_clauses.push(format!("books.authors LIKE ?{param_idx} ESCAPE '\\'"));
                 sql_params.push(format!("%{}%", escape_like(author)).into());
                 param_idx += 1;
             }

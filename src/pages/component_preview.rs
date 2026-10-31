@@ -15,8 +15,7 @@ use crate::widgets::{
         missing_cover, missing_cover_with_fetch, CoverAvailability, CoverSpec,
     },
     dialog::{
-        confirmation_dialog, dialog_shell, present_dialog, text_field, ConfirmationKind,
-        DialogSize,
+        confirmation_dialog, dialog_shell, present_dialog, text_field, ConfirmationKind, DialogSize,
     },
     in_app_dialog::{DialogExit, InAppDialog},
     menu::{menu_button, menu_popover, MenuWidth},
@@ -333,18 +332,13 @@ fn build_progress_and_rating(host: &gtk::Box, status: &gtk::Label) {
 
     let status_for_rating = status.clone();
     let rating = rating_control(7, move |half_stars| {
-        status_for_rating.set_label(&format!(
-            "Rating: {:.1} / 5.",
-            half_stars as f64 / 2.0
-        ));
+        status_for_rating.set_label(&format!("Rating: {:.1} / 5.", half_stars as f64 / 2.0));
     });
     let initial_rating = rating.value();
     rating.set_value(initial_rating);
     body.append(&rating.widget());
 
-    let quote = gtk::Label::new(Some(
-        "“A reader lives a thousand lives before he dies.”",
-    ));
+    let quote = gtk::Label::new(Some("“A reader lives a thousand lives before he dies.”"));
     quote.add_css_class("kalam-ui-quote");
     quote.set_halign(gtk::Align::Start);
     quote.set_xalign(0.0);
@@ -660,18 +654,22 @@ fn build_reader_and_dialogs(host: &gtk::Box, status: &gtk::Label) {
 
         let slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
         let slot_for_cancel = slot.clone();
-        shell.footer().append(&boxed_ghost_button("Cancel", move || {
-            close_dialog_slot(&slot_for_cancel);
-        }));
+        shell
+            .footer()
+            .append(&boxed_ghost_button("Cancel", move || {
+                close_dialog_slot(&slot_for_cancel);
+            }));
 
         let slot_for_save = slot.clone();
         let field_for_save = field.clone();
         let status_for_save = status_for_form.clone();
-        shell.footer().append(&primary_button("Create shelf", move || {
-            let value = field_for_save.value();
-            close_dialog_slot(&slot_for_save);
-            status_for_save.set_label(&format!("Form dialog: Create shelf {value:?}."));
-        }));
+        shell
+            .footer()
+            .append(&primary_button("Create shelf", move || {
+                let value = field_for_save.value();
+                close_dialog_slot(&slot_for_save);
+                status_for_save.set_label(&format!("Form dialog: Create shelf {value:?}."));
+            }));
 
         match present_dialog(
             &status_for_form,
@@ -688,11 +686,9 @@ fn build_reader_and_dialogs(host: &gtk::Box, status: &gtk::Label) {
     dialog_buttons.append(&ghost_button("Open list dialog", move || {
         let shell = dialog_shell(DialogSize::List, Some("560 × 660 list surface"));
         let entries = vec![
-            TimelineEntry::new("Saved highlight", TimelineState::Read)
-                .with_right("14 Mar 2026"),
+            TimelineEntry::new("Saved highlight", TimelineState::Read).with_right("14 Mar 2026"),
             TimelineEntry::new("Current note", TimelineState::Current).with_right("46%"),
-            TimelineEntry::new("Upcoming review", TimelineState::Upcoming)
-                .with_right("Unread"),
+            TimelineEntry::new("Upcoming review", TimelineState::Upcoming).with_right("Unread"),
         ];
         shell.body().append(&timeline(&entries));
 

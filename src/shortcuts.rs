@@ -307,7 +307,9 @@ impl ShortcutBinding {
         }
 
         if rest.is_empty()
-            || rest.chars().any(|c| c.is_whitespace() || c == '<' || c == '>')
+            || rest
+                .chars()
+                .any(|c| c.is_whitespace() || c == '<' || c == '>')
             || is_modifier_or_lock_key(rest)
         {
             return None;
@@ -515,7 +517,10 @@ mod tests {
     fn every_default_round_trips_through_its_preference_spelling() {
         for action in ShortcutAction::ALL {
             let binding = action.default_binding();
-            assert_eq!(ShortcutBinding::from_pref(&binding.to_pref()), Some(binding));
+            assert_eq!(
+                ShortcutBinding::from_pref(&binding.to_pref()),
+                Some(binding)
+            );
         }
         assert_eq!(
             ShortcutAction::Notifications.default_binding().to_pref(),

@@ -170,7 +170,25 @@ jobs:
           # to show -- a step that dies here publishes nothing at all, which is
           # exactly when the text is needed. This has already cost a debugging
           # round, because "rustfmt failed" arrived with no detail attached.
-          fmt_output="$(cargo fmt --all 2>&1)" || true
+          # -p kalam rather than --all: the engine crates under crates/ are not
+          # formatted to this workspace's rustfmt.toml and are deliberately left
+          # alone, so including them adds churn to a report that is about the app.
+          #
+          # That does not make this report small, and the first version of this
+          # comment claimed it did. Measured properly on 31 October 2026, the
+          # deviation is 125 files and about 1 MB of diff -- and 114 of those
+          # files are in src/, the application itself, not the engine crates. The
+          # crates/ files only looked like the whole story because `git diff`
+          # sorts alphabetically and crates/ comes first; the claim was drawn from
+          # the first 40 lines of a 23,571-line report.
+          #
+          # So the tree is not formatted under its own rustfmt.toml with this
+          # toolchain, and has not been for some time. This step is report-only by
+          # design and the committed diff is capped below, so the finding is
+          # recorded without adding a megabyte to the repository on every run.
+          # Whether to reformat, or to accept that rustfmt.toml no longer
+          # describes this codebase, is the owner's call and not CI's.
+          fmt_output="$(cargo fmt -p kalam 2>&1)" || true
           if [ -n "$fmt_output" ]; then
             printf '%s\n' "$fmt_output" >> $CILOG_DIR/rustfmt-latest.diff
           fi
@@ -184,8 +202,16 @@ jobs:
               echo "clean" >> $CILOG_DIR/rustfmt-latest.diff
             fi
           else
-            echo "rustfmt: the tree is not formatted; diff follows"
-            git diff >> $CILOG_DIR/rustfmt-latest.diff
+            echo "rustfmt: the application tree is not formatted; diff follows"
+            # Capped. An uncapped diff is how a report becomes bigger than the
+            # problem it describes, and a formatting report over a few hundred
+            # lines is telling you something structural, not fixable line by line.
+            git diff | head -400 >> $CILOG_DIR/rustfmt-latest.diff
+            dropped=$(( $(git diff | wc -l) - 400 ))
+            if [ "$dropped" -gt 0 ]; then
+              echo "(truncated: $dropped further diff lines not committed)" \
+                >> $CILOG_DIR/rustfmt-latest.diff
+            fi
           fi
           echo "--- run $GITHUB_RUN_ID ---" >> $CILOG_DIR/rustfmt-latest.diff
           # Always publish, on clean runs too, so the committed file describes

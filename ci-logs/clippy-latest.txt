@@ -1,8 +1,4 @@
-src/db.rs:935:28: [1m[91merror[E0107][0m: type alias takes 1 generic argument but 2 generic arguments were supplied: expected 1 generic argument
-src/db.rs:935:28: [1m[91merror[E0277][0m: a value of type `std::result::Result<std::vec::Vec<_>, db::DbError>` cannot be built from an iterator over elements of type `std::result::Result<std::string::String, rusqlite::Error>`: value of type `std::result::Result<std::vec::Vec<_>, db::DbError>` cannot be built from `std::iter::Iterator<Item=std::result::Result<std::string::String, rusqlite::Error>>`
-src/db.rs:3603:13: [1m[91merror[0m: unused variable: `other_hash`: help: if this is intentional, prefix it with an underscore: `_other_hash`
-src/db.rs:3612:13: [1m[91merror[0m: unused variable: `hash`: help: if this is intentional, prefix it with an underscore: `_hash`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -24,9 +20,5 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/db.rs:935:28: [1m[91merror[E0107][0m: type alias takes 1 generic argument but 2 generic arguments were supplied: expected 1 generic argument
-src/db.rs:935:28: [1m[91merror[E0277][0m: a value of type `std::result::Result<std::vec::Vec<_>, db::DbError>` cannot be built from an iterator over elements of type `std::result::Result<std::string::String, rusqlite::Error>`: value of type `std::result::Result<std::vec::Vec<_>, db::DbError>` cannot be built from `std::iter::Iterator<Item=std::result::Result<std::string::String, rusqlite::Error>>`
-src/db.rs:3603:13: [1m[91merror[0m: unused variable: `other_hash`: help: if this is intentional, prefix it with an underscore: `_other_hash`
-src/db.rs:3612:13: [1m[91merror[0m: unused variable: `hash`: help: if this is intentional, prefix it with an underscore: `_hash`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
---- run 41138176451 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 18.26s
+--- run 41148285711 ---

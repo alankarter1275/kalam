@@ -921,13 +921,6 @@ impl Catalog {
     #[cfg(test)]
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
-        // The fingerprint a book arrived with, frozen. `file_hash` follows the
-        // bytes, so cleaning a book or writing metadata into it moves that value;
-        // this one never moves. Remembered edits are filed under it, which is what
-        // keeps them reachable from the file the owner still has on disk after the
-        // library's own copy has been edited or deleted.
-        add_column_if_missing(&conn, "books", "import_hash", "TEXT")?;
-
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let cat = Self {
             conn: Mutex::new(conn),
@@ -1405,6 +1398,12 @@ impl Catalog {
         add_column_if_missing(&conn, "books", "publisher", "TEXT NOT NULL DEFAULT ''")?;
         add_column_if_missing(&conn, "books", "published", "TEXT NOT NULL DEFAULT ''")?;
         add_column_if_missing(&conn, "books", "series_index", "REAL NOT NULL DEFAULT 0")?;
+        // The fingerprint a book arrived with, frozen. `file_hash` follows the
+        // bytes, so cleaning a book or writing metadata into it moves that value;
+        // this one never moves. Remembered edits are filed under it, which is what
+        // keeps them reachable from the file the owner still has on disk after the
+        // library's own copy has been edited or deleted.
+        add_column_if_missing(&conn, "books", "import_hash", "TEXT")?;
 
         // Indexed *after* the ALTERs above, since these columns do not exist in
         // the CREATE TABLE that older databases were built from.

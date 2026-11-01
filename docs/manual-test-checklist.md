@@ -38,6 +38,37 @@ Prepare a small library containing:
 - [ ] If a watch folder is configured, add a supported book file to it and
   confirm it is imported once.
 
+## Edits surviving a delete and re-import
+
+Hand-edited metadata is keyed to the file a book came from rather than to its
+row in the database, so deleting a book and importing the same file again should
+bring the edits back. That is what `books.import_hash` is for, added 2026-10-30.
+
+There is automated coverage — `edits_survive_a_hash_change_then_delete_and_reimport`
+in `src/db.rs` — but it uses seeded books and a synthetic hash change. The check
+below is against a real library and real edits, and **it has not been run yet**.
+
+This deletes and rewrites book files, so the rule at the top of this checklist
+applies: work against a copy of the library, not the one in daily use.
+
+- [ ] Pick a book whose metadata you edited by hand. Write down what you
+  changed: title, authors, series and its number, publisher, published date,
+  description, tags, rating, or the cover.
+- [ ] Delete the book from Kalam.
+- [ ] Import the same file again, unmodified.
+- [ ] Open the re-imported book and confirm every edit you wrote down is back.
+
+**Only those ten fields come back, and that is by design.** Deleting a book also
+removes its reading position, bookmarks, annotations, full-text search index and
+OCR cache; re-importing does not restore them. The search index and the OCR are
+rebuilt as the book is used again. A missing bookmark or annotation here is
+expected behaviour, not a failure of this check.
+
+**Keep the backup until this passes.** `~/kalam-backup-before-rekey/` holds the
+`catalog.db`, `catalog.db-wal` and `catalog.db-shm` copied before the
+`import_hash` change went in. It can be deleted once the steps above have
+succeeded once.
+
 ## EPUB reader
 
 - [ ] Open the reflowable EPUB. Move between chapters and pages, then use the

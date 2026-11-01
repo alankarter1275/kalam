@@ -3414,3 +3414,58 @@ is the vendored chapbook engine, and reformatting it is churn against a tree thi
 project no longer follows upstream. The tidy covered `src/` and `tests/`: 115
 files, 6,685 insertions and 5,536 deletions, with 1,129 tests passing and clippy
 clean both before and after.
+
+## §99 — a step that fails in zero seconds never ran
+
+The screenshot publisher was dead for four consecutive runs on `main` and every
+one of those runs reported success.
+
+**The cause was one misplaced quote, repeated four times.** Inside the
+`publish the report` step's `for shot in …` loops:
+
+    echo "  (no new $shot-latest.txt" this run; keeping the previously committed one)";
+
+The string closes after `-latest.txt`, so `this run;` and the closing paren land
+outside the quotes and the paren is an unexpected token. Bash rejects a script
+like that *before executing any of it*, so the step ran no lines at all — not the
+copies, not the `git add`, not the push. Six hundred lines of shell, and the
+first one never happened.
+
+**Two things let it hide.** The job carries `continue-on-error: true`, so its
+failure never reached the run's conclusion and four green runs went past it. And
+the evidence of a failed step lives in the Actions log, which the sandbox cannot
+download — the same restriction that made `ci-logs/` necessary, and the reason a
+broken publisher cannot publish the fact that it is broken.
+
+**What gave it away was the timing.** That step's `started_at` and `completed_at`
+were the same second. A 600-line script cannot fail in zero seconds unless it
+never started, and that reading — not anything in a log — is what turned an
+unanswerable question into `bash -n` over the extracted block, which named the
+line immediately. **When a shell step fails instantly, suspect the parser before
+the environment.** The same instinct one level up: a completed run with zero jobs
+is a workflow that does not parse (§97, §98), and a step that fails in zero
+seconds is a script that does not.
+
+Both of the first hypotheses were wrong, and both were worth testing. `git add -f`
+on a path that does not exist is fatal, and under `bash -e` that would kill the
+step — but every added path turned out to exist. The first version of that check
+reported "none missing" from an incomplete extraction: it matched only lines
+carrying a single path, and the `git add` list puts two on many lines. Re-reading
+the raw lines makes the gap obvious. A clean result from a regex is worth nothing
+until the regex has been shown to match what it is meant to match — the same
+discipline as running a validator against input known to be bad (§98).
+
+**The check now lives where a failure is reported honestly.**
+`workflow_shell_blocks_parse` in `tests/guardrails.rs` extracts every `run:` block
+from every workflow and runs `bash -n` over it — 147 blocks, all parsing. It sits
+in the build job's test suite rather than in the publishing job on purpose: the
+build cannot fail quietly, so a broken block is caught by a job that tells the
+truth instead of by the job that is broken. It asserts a floor on how many blocks
+it found, because an extractor that stops matching the file's shape would
+otherwise leave `failures` empty and pass while checking nothing. Its companion
+test feeds it the exact broken line and the exact fixed one, so the check is shown
+to be capable of failing before it is trusted to pass.
+
+The 135 reports under `ci-logs/` are still frozen at run `41108198774` from 30
+October — a *branch* run, which is the old canonical-path bug accidentally keeping
+them fresh. They refresh on the first `main` run that gets past the parse.

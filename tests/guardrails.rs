@@ -1048,3 +1048,196 @@ fn boundary_scanner_suppresses_workers_not_done_callbacks() {
          line 8 = plain fn; the worker body (3-4) is suppressed: {hits:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The workflow's shell
+// ---------------------------------------------------------------------------
+
+fn indent_of(line: &str) -> usize {
+    line.len() - line.trim_start().len()
+}
+
+/// Extract every `run: |` shell block from a workflow, as
+/// (line of the `run:` key, step name, dedented script).
+///
+/// Hand-rolled because there is no YAML parser in the dependency tree, and
+/// adding one in order to check shell syntax would be a poor trade. A `run:`
+/// block is a literal scalar: its content is every following line indented
+/// further than the key, and the block's own indentation is that of its first
+/// non-empty line. The step name is the nearest `- name:` above the key, which
+/// is what lets a failure point at a step instead of at a line number in a
+/// 2,000-line file.
+fn workflow_shell_blocks(text: &str) -> Vec<(usize, String, String)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out: Vec<(usize, String, String)> = Vec::new();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let key = lines[i].trim();
+        if key != "run: |" && key != "run: |-" {
+            i += 1;
+            continue;
+        }
+
+        let key_indent = indent_of(lines[i]);
+        let mut end = i + 1;
+        while end < lines.len()
+            && (lines[end].trim().is_empty() || indent_of(lines[end]) > key_indent)
+        {
+            end += 1;
+        }
+
+        let body = &lines[i + 1..end];
+        let content = body
+            .iter()
+            .find(|l| !l.trim().is_empty())
+            .map_or(key_indent + 2, |l| indent_of(l));
+        let script = body
+            .iter()
+            .map(|l| {
+                // A line indented less than the block is exactly the mistake
+                // this catches, so the slice has to be boundary-checked rather
+                // than assumed.
+                if l.is_char_boundary(content) && l.len() > content {
+                    l[content..].to_string()
+                } else {
+                    l.trim_start().to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let name = lines[..i]
+            .iter()
+            .rev()
+            .find_map(|l| l.trim().strip_prefix("- name: ").map(str::to_string))
+            .unwrap_or_else(|| "(unnamed step)".to_string());
+
+        out.push((i + 1, name, script));
+        i = end;
+    }
+
+    out
+}
+
+/// Run `bash -n` over a script, returning its stderr when the script does not
+/// parse.
+///
+/// Written to a file rather than passed to `bash -nc`: these blocks run to 600
+/// lines, and bash's own line numbers then refer to the block, which is what a
+/// failure message needs in order to be actionable.
+fn shell_syntax_error(script: &str) -> Option<String> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static SEQ: AtomicUsize = AtomicUsize::new(0);
+
+    let path = std::env::temp_dir().join(format!(
+        "kalam-guardrail-{}-{}.sh",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::write(&path, script).expect("the temporary script is writable");
+    let ran = std::process::Command::new("bash").arg("-n").arg(&path).output();
+    let _ = std::fs::remove_file(&path);
+
+    match ran {
+        Ok(out) if out.status.success() => None,
+        Ok(out) => Some(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+        // Deliberately a panic and not a skip. If bash cannot run then no block
+        // has been checked, and a test that passes without checking anything is
+        // the precise failure mode this test exists to stop.
+        Err(err) => panic!("bash could not be run, so no shell block was checked: {err}"),
+    }
+}
+
+/// Every shell block in every workflow must parse.
+///
+/// A block that does not parse never runs a single line: bash rejects the whole
+/// script before executing any of it, so the step fails in the same second it
+/// starts and publishes nothing. If its job also carries `continue-on-error:
+/// true`, the run still reports success — which is how one misplaced quote in
+/// the screenshot publisher survived four consecutive runs on `main`, freezing
+/// 135 committed reports at the last run that predated the typo (pitfalls §99).
+///
+/// This lives in the build job's test suite on purpose. That job is not allowed
+/// to fail quietly, so a broken block is caught by a job that reports honestly
+/// rather than by the job that is broken.
+#[test]
+fn workflow_shell_blocks_parse() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows");
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(err) => panic!("{} is not readable, so nothing was checked: {err}", dir.display()),
+    };
+
+    let mut checked = 0usize;
+    let mut failures: Vec<String> = Vec::new();
+
+    for entry in entries {
+        let path = entry.expect("a directory entry").path();
+        if path.extension().is_some_and(|e| e == "yml") {
+            let text = std::fs::read_to_string(&path).expect("the workflow is readable");
+            for (line, step, script) in workflow_shell_blocks(&text) {
+                checked += 1;
+                if let Some(err) = shell_syntax_error(&script) {
+                    failures.push(format!(
+                        "{}:{}  step \"{step}\"\n        {err}",
+                        path.display(),
+                        line
+                    ));
+                }
+            }
+        }
+    }
+
+    // A floor, not a formality: if the extraction above ever stops matching the
+    // workflow's shape, `failures` would be empty and the test would pass while
+    // checking nothing.
+    assert!(
+        checked >= 100,
+        "only {checked} `run:` blocks were found under {}, which is far fewer \
+         than this workflow has. The extractor has stopped matching the file's \
+         shape, so nothing has really been checked.",
+        dir.display()
+    );
+    assert!(
+        failures.is_empty(),
+        "\n\
+         {checked} workflow shell blocks were checked and {} do not parse.\n\
+         \n\
+         A block that does not parse runs no lines at all, so its step fails\n\
+         instantly and publishes nothing. Fix the shell, not the test.\n\
+         \n\
+         {}\
+         ",
+        failures.len(),
+        failures
+            .iter()
+            .map(|f| format!("    {f}\n"))
+            .collect::<String>()
+    );
+}
+
+/// The check above is only worth anything if it can fail.
+#[test]
+fn the_shell_syntax_check_itself_can_fail() {
+    // The bug this exists for, verbatim: the string closes after `-latest.txt`,
+    // so `this run;` and the closing paren land outside the quotes and the
+    // paren is an unexpected token.
+    let broken = "echo \"  (no new $shot-latest.txt\" this run; keeping one)\";\n";
+    assert!(
+        shell_syntax_error(broken).is_some(),
+        "bash -n accepted a script with a misplaced quote, so \
+         workflow_shell_blocks_parse is decoration"
+    );
+
+    let fixed = "echo \"  (no new $shot-latest.txt this run; keeping one)\";\n";
+    assert_eq!(shell_syntax_error(fixed), None, "bash -n rejected the corrected line");
+
+    // And the extractor has to find blocks at all, or both tests above are
+    // reading an empty list.
+    let wf = "jobs:\n  x:\n    steps:\n      - name: a step\n        run: |\n          echo hi\n";
+    let found = workflow_shell_blocks(wf);
+    assert_eq!(found.len(), 1, "one `run:` block should be found: {found:?}");
+    assert_eq!(found[0].1, "a step", "the step name should be carried");
+    assert_eq!(found[0].2, "echo hi", "the script should be dedented");
+}

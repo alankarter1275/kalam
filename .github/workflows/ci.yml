@@ -1931,7 +1931,7 @@ jobs:
                       settings-notifications-empty-light \
                       settings-notifications-dot-dark; do
             if [ -f "ci-shots-$shot/report.txt" ]; then cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt"; else
-              echo "  (no new $shot-latest.txt" this run; keeping the previously committed one)";
+              echo "  (no new $shot-latest.txt this run; keeping the previously committed one)";
             fi
             echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
             cp "ci-shots-$shot/03-settings-settled.png" \
@@ -1947,7 +1947,7 @@ jobs:
                       comics-shortcuts-dark comics-jump-range-dark \
                       comics-presets-dark; do
             if [ -f "ci-shots-$shot/report.txt" ]; then cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt"; else
-              echo "  (no new $shot-latest.txt" this run; keeping the previously committed one)";
+              echo "  (no new $shot-latest.txt this run; keeping the previously committed one)";
             fi
             echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
             cp "ci-shots-$shot/03-comic-read-22-settled.png" \
@@ -1959,7 +1959,7 @@ jobs:
                       comic-series-find-dark \
                       comic-series-find-review-dark; do
             if [ -f "ci-shots-$shot/report.txt" ]; then cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt"; else
-              echo "  (no new $shot-latest.txt" this run; keeping the previously committed one)";
+              echo "  (no new $shot-latest.txt this run; keeping the previously committed one)";
             fi
             echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
             cp "ci-shots-$shot/03-comic-series-book-22-settled.png" \
@@ -1988,7 +1988,7 @@ jobs:
                       pdf-password-wrong-dark pdf-password-unlocked-dark \
                       pdf-corrupt-dark pdf-missing-dark; do
             if [ -f "ci-shots-$shot/report.txt" ]; then cp "ci-shots-$shot/report.txt" "ci-logs/$shot-latest.txt"; else
-              echo "  (no new $shot-latest.txt" this run; keeping the previously committed one)";
+              echo "  (no new $shot-latest.txt this run; keeping the previously committed one)";
             fi
             echo "--- run $GITHUB_RUN_ID ---" >> "ci-logs/$shot-latest.txt"
             cp "ci-shots-$shot/03-pdf-read-21-settled.png" \

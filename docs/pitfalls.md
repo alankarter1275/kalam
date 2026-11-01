@@ -3409,6 +3409,19 @@ and it is the only reason the one real breakage was found before the run instead
 of in it. Reimplementing a project's scanner is worth the effort whenever the
 alternative is guessing and waiting.
 
+**`use_small_heuristics = "Default"` is what made that diff 23,000 lines long.**
+With `max_width = 100`, that setting derives `fn_call_width = 60`, so a call whose
+arguments run past 60 columns is broken onto one line each long before the line
+itself is too long. Most of the churn was that and not long lines: calls that
+looked entirely reasonable at 80 or 90 columns were exploded anyway. It is also
+why guessing at formatting is hopeless — the limit that decides is not the one in
+the config's most obvious setting. Four calls in the guardrail code added for §99
+were each written on the wrong side of that line and all four were wrong in the
+same direction, each having assumed 100 was the number that mattered. Applying the
+diff CI published fixed them in one step, which is the first time the repaired
+rustfmt report was used for what it exists for. When the report exists, apply it;
+do not reason about it.
+
 `crates/` was excluded on purpose. Ten files there are unformatted too, but that
 is the vendored chapbook engine, and reformatting it is churn against a tree this
 project no longer follows upstream. The tidy covered `src/` and `tests/`: 115

@@ -1136,7 +1136,10 @@ fn shell_syntax_error(script: &str) -> Option<String> {
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::write(&path, script).expect("the temporary script is writable");
-    let ran = std::process::Command::new("bash").arg("-n").arg(&path).output();
+    let ran = std::process::Command::new("bash")
+        .arg("-n")
+        .arg(&path)
+        .output();
     let _ = std::fs::remove_file(&path);
 
     match ran {
@@ -1166,7 +1169,10 @@ fn workflow_shell_blocks_parse() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows");
     let entries = match std::fs::read_dir(&dir) {
         Ok(entries) => entries,
-        Err(err) => panic!("{} is not readable, so nothing was checked: {err}", dir.display()),
+        Err(err) => panic!(
+            "{} is not readable, so nothing was checked: {err}",
+            dir.display()
+        ),
     };
 
     let mut checked = 0usize;
@@ -1231,13 +1237,21 @@ fn the_shell_syntax_check_itself_can_fail() {
     );
 
     let fixed = "echo \"  (no new $shot-latest.txt this run; keeping one)\";\n";
-    assert_eq!(shell_syntax_error(fixed), None, "bash -n rejected the corrected line");
+    assert_eq!(
+        shell_syntax_error(fixed),
+        None,
+        "bash -n rejected the corrected line"
+    );
 
     // And the extractor has to find blocks at all, or both tests above are
     // reading an empty list.
     let wf = "jobs:\n  x:\n    steps:\n      - name: a step\n        run: |\n          echo hi\n";
     let found = workflow_shell_blocks(wf);
-    assert_eq!(found.len(), 1, "one `run:` block should be found: {found:?}");
+    assert_eq!(
+        found.len(),
+        1,
+        "one `run:` block should be found: {found:?}"
+    );
     assert_eq!(found[0].1, "a step", "the step name should be carried");
     assert_eq!(found[0].2, "echo hi", "the script should be dedented");
 }

@@ -130,23 +130,46 @@ pose. Everywhere else in this harness the app performs the action itself —
 stages a drawn state — so a control whose wiring to its action has broken
 still produces a perfect frame. This probe is the check that can notice.
 
-It runs on `ROUTE=home` in the `pages` group and types eight of the app's own
+It runs on `ROUTE=home` in the `pages` group and types nine of the app's own
 default shortcuts (`default_binding` in `src/shortcuts.rs`) with `wtype`,
 then asks three independent witnesses whether the app acted:
 
 | # | Keys | Shortcut | The witness |
 |---|---|---|---|
-| 1 | `Alt+2` | The library | the app logs `route_open:library` |
-| 2 | `Alt+1` | Home | the app logs `route_open:home` |
-| 3 | `Ctrl+,` | Open Settings | the app logs `route_open:settings` |
-| 4 | `Alt+Left` | Back | a new `route_open:` line; the report names where it landed |
-| 5 | `Ctrl+/` | The shortcut pane | a second `route_open:settings` |
-| 6 | `Alt+1` | Home again | the app logs `route_open:home` again |
-| 7 | `F11` | Full screen, and back | **sway** reports `fullscreen_mode`, not Kalam |
-| 8 | `Ctrl+Q` | Quit | the process is gone |
+| 1 | `Alt+2` | The library | a page changed: `route_open:library`, or `page_cache_hit` |
+| 2 | `Alt+1` | Home | a page changed |
+| 3 | `Ctrl+,` | Open Settings | a page changed |
+| 4 | `Ctrl+/` | The shortcut pane | the app logs `settings_fill:shortcuts` |
+| 5 | `Alt+1` | Home again | a page changed |
+| 6 | `Ctrl+F` | Search the library | a page changed — and it pushes the history stack |
+| 7 | `Alt+Left` | Back | a page changed — now there is something to pop |
+| 8 | `F11` | Full screen, and back | **sway** reports `fullscreen_mode`, not Kalam |
+| 9 | `Ctrl+Q` | Quit | the process is gone |
 
 Steps 1 and 2 are a **control pair**, not two more shortcuts. Their job is to
 say whether the rest of the report means anything; see below.
+
+Two of those witnesses are not what a first draft would reach for, and both
+were chosen after a run proved the obvious witness wrong:
+
+- **"A page changed", not "a route line appeared".** `route_open:` is logged
+  inside `build_page`, and `build_page` is skipped when the page comes out of
+  the cache. The app says so itself: *"The page cache's hit path never enters
+  this function — a cached page is reparented, not rebuilt."* So the second
+  time you visit a page, a route-only witness reports a working shortcut as a
+  failure. Each navigation step now accepts either line and prints which one it
+  saw.
+- **`Ctrl+/` is witnessed by the tab filling.** Its handler swaps to Settings
+  and *then* selects the Shortcuts tab — and the swap is a no-op when Settings
+  is already open, so no route line is possible. `settings_fill:shortcuts`
+  fires either way.
+
+Steps 6 and 7 are a pair too. Every navigation shortcut calls `swap_page` with
+`push_history=false`, and that branch is `history.clear()`, so after any of
+them `Back` has nothing to pop and `AppMsg::Back` — `if let Some(prev) =
+self.history.pop()` — is a correct no-op. `Ctrl+F` is the one default shortcut
+that pushes, so it is the only way to give `Back` something to do. It also
+leaves the search box focused, which is what step 7 then measures.
 
 The last two matter most. `fullscreen_mode` comes from the compositor, so the
 app cannot supply it by logging something optimistic, and a dead process is
@@ -157,10 +180,10 @@ its relaunch-and-compare step, so nothing after the probe needs the app alive.
 Every one of these combos carries a modifier or is an F-key, so
 `fires_while_typing` should let it through a focused text entry.
 
-### What two runs taught
+### What three runs taught
 
-Both runs so far reported 2 of 6, and neither result is about the shortcut
-table yet.
+Runs 1 and 2 both reported 2 of 6, and neither result was about the shortcut
+table.
 
 **Run 1** had `Ctrl+F` first. It worked, and it is the one default shortcut
 that leaves a text entry holding focus. Every modified chord after it did
@@ -185,12 +208,26 @@ opposite conclusions:
 
 `F11` cannot separate them, precisely *because* it has no modifier: it passes
 under both readings. Hence the control pair. Two chords of the same kind, back
-to back, each with its own route witness and no text entry anywhere near them.
-If chord 1 arrives and chord 2 does not, the verdict says **INCONCLUSIVE** and
+to back, each with its own witness and no text entry anywhere near them. If
+chord 1 arrives and chord 2 does not, the verdict says **INCONCLUSIVE** and
 points at the injector, because at that point no line below it measures the
-app. Stub-tested: a scenario built to reproduce run 2's signature exactly
-scores 2 of 8 and reports INCONCLUSIVE, and the same scenario with the
-injector healthy scores 8 of 8.
+app.
+
+**Run 3 settled it, and the answer was neither.** Both chords passed, so the
+injector keeps applying modifiers and the "app goes deaf" reading died with it.
+Five of eight probes passed and, decisively, `Ctrl+Q` quit the app — so
+keystrokes do reach it. The three failures were then all traced to this probe's
+witnesses rather than to the app, by reading the app's own log and source:
+`Back` was a correct no-op on an emptied history stack, `Ctrl+/` had actually
+worked (`settings_fill:shortcuts` is in the log, and the frame after it differs
+from the one before), and the second `Alt+1` had actually worked too — the last
+line of the log is `page_cache_hit`.
+
+One thing is still open and unexplained: **the second `F11` does not leave
+full screen.** The handler calls `unfullscreen()` only when
+`root.is_fullscreen()`, so under a headless compositor GTK may simply never
+learn the state it is in. It is reported as a `NOTE` and is not counted as a
+probe.
 
 Three smaller things the same runs exposed, all now fixed:
 
@@ -214,7 +251,8 @@ Read the `keys: VERDICT` line before the individual results:
 - **Quit worked** — keystrokes reach the app. Any `FAILED` line above it is a
   question about that one shortcut's wiring, not about input delivery.
 - **INCONCLUSIVE** — chord 1 arrived and chord 2 did not. Nothing below the
-  pair measures the app; settle the injector first.
+  pair measures the app; settle the injector first. Run 3 did not report this,
+  which is why the runs after it mean something.
 - **Nothing worked, Quit included** — input did not arrive. That is the
   pointer's fate in the `TAP=1` probe in the script, a property of the harness
   rather than a pile of broken shortcuts. Do not go reading the wiring first.

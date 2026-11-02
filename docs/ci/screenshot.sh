@@ -708,10 +708,41 @@ fi
 # after its first chord, which is this harness breaking and says nothing about
 # Kalam. F11 cannot separate them, precisely because it has no modifier.
 #
-# This third version leads with a control pair (Alt+2 then Alt+1, each with its
-# own route witness and no text entry in sight) whose only job is to separate
-# those two readings before anything else is measured, and whose result the
-# VERDICT line reports as INCONCLUSIVE when the pair disagrees.
+# Run 3 settled it, and the answer was neither. It led with a control pair --
+# Alt+2 then Alt+1, two chords of the same kind back to back, each with its own
+# route witness and no text entry near them -- and BOTH PASSED, so the injector
+# keeps applying modifiers and the "app goes deaf" reading died with it. Five
+# of eight probes passed and, decisively, Ctrl+Q quit the app: keystrokes reach
+# it.
+#
+# The three failures were then all traced to this probe's witnesses, not to the
+# app, by reading its own log and source:
+#
+#   - Alt+Left (Back) was a correct no-op. Every navigation shortcut calls
+#     swap_page with push_history=false, and swap_page's else branch is
+#     history.clear(). So after Ctrl+comma there was nothing to pop, and
+#     AppMsg::Back is `if let Some(prev) = self.history.pop()`. The frame after
+#     it was byte-identical to the frame before, which is what a no-op looks
+#     like. Back can only be tested after the one shortcut that pushes history,
+#     which is Ctrl+F -- hence steps 6 and 7 below, which test Back and answer
+#     run 1's focused-search-box question with one variable changed.
+#   - Ctrl+slash DID work. The log carries `settings_fill:shortcuts 1.2 ms`,
+#     which only the SelectTab half of that handler can produce, and the frame
+#     after it differs from the one before. No route line was ever possible:
+#     the swap to Settings is a no-op when Settings is already open. It is now
+#     witnessed by the tab filling instead.
+#   - The second Alt+1 DID work. The last line of the app's log is
+#     `page_cache_hit`. route_open: is logged inside build_page, and build_page
+#     is skipped for a cached page -- the app's own comment: "The page cache's
+#     hit path never enters this function -- a cached page is reparented, not
+#     rebuilt." A route-only witness therefore reports a working shortcut as a
+#     failure the second time you visit a page. Every navigation step now
+#     accepts either line and says which one it saw.
+#
+# Still open, and not explained: the second F11 does not leave fullscreen.
+# The handler calls unfullscreen() only when root.is_fullscreen(), so under a
+# headless compositor GTK may simply never learn the state it is in. That is
+# reported as a NOTE and is not counted as a probe.
 #
 # Read the VERDICT line before the individual results, and read
 # docs/ci/README-screenshots.md.
@@ -739,6 +770,30 @@ if [ "${KEYS:-0}" = "1" ]; then
 
   count_all_routes() {
     grep -c '\[timing\] route_open:' "$OUT/kalam.log" 2>/dev/null || true
+  }
+
+  # Any timing label, for witnesses that are not route lines.
+  count_label() {
+    grep -c "\[timing\] $1" "$OUT/kalam.log" 2>/dev/null || true
+  }
+
+  # How many times the app changed page, by EITHER route. `route_open:` is
+  # logged inside build_page, and build_page is skipped when the page comes
+  # out of the cache -- the app's own comment says so: "The page cache's hit
+  # path never enters this function -- a cached page is reparented, not
+  # rebuilt." So counting route lines alone reports a successful navigation as
+  # a failure whenever the landing page was cached, which is exactly what the
+  # third run did. page_cache_hit is the other half of the same event.
+  count_navigations() {
+    local built reused
+    built="$(count_all_routes)"
+    reused="$(grep -c '\[timing\] page_cache_hit' "$OUT/kalam.log" 2>/dev/null || true)"
+    echo $(( ${built:-0} + ${reused:-0} ))
+  }
+
+  last_route_label() {
+    grep -oE '\[timing\] (route_open:[a-z_]*|page_cache_hit)' "$OUT/kalam.log" \
+      | tail -1 | sed 's/^\[timing\] //'
   }
 
   # Re-focus before every press. A window that does not hold focus sends the
@@ -775,16 +830,12 @@ if [ "${KEYS:-0}" = "1" ]; then
   # warm, but the runner is shared and cold, so a fixed sleep is either too
   # short or wasted. Give up early if the app dies, or the probe would sit
   # out its whole budget against a process that Quit already ended.
-  await_route() { # await_route <label> <wanted-count> <timeout-s>
+  await_label() { # await_label <timing-label> <wanted-count> <timeout-s>
     local label="$1" want="$2" timeout="$3" deadline have spins
     deadline=$(( $(now_s) + timeout ))
-    # The deadline is the intended exit. `spins` is a backstop: this loop has
-    # no other way out, so if the arithmetic above ever yields nothing the
-    # deadline test errors instead of ending the wait, and the loop runs
-    # forever. A hung step costs CI hours rather than seconds.
     spins=$(( timeout * 20 + 40 ))
     while :; do
-      have="$(count_route "$label")"
+      have="$(count_label "$label")"
       [ "${have:-0}" -ge "$want" ] && return 0
       [ "$(now_s)" -ge "$deadline" ] && return 1
       kill -0 "$APP_PID" 2>/dev/null || return 1
@@ -794,13 +845,51 @@ if [ "${KEYS:-0}" = "1" ]; then
     done
   }
 
-  await_more_routes() { # await_more_routes <min-total-count> <timeout-s>
-    local want="$1" timeout="$2" deadline have spins
+  # A page change is witnessed two ways, because the app logs a different line
+  # depending on whether it built the page or lifted it out of the cache:
+  # `route_open:<label>` for a build, `page_cache_hit` for a reuse. A witness
+  # that only knows the first reports a working shortcut as a failure the
+  # second time you visit a page, which the third run did. Sets PAGE_WITNESS
+  # to whichever line was seen, so the report can say how it knew.
+  # The baseline has to be taken BEFORE the key is sent, which is why this is
+  # two functions rather than one. Folded into the wait, it reads the count
+  # after the press -- and a fast app has often written the evidence in the
+  # microseconds between wtype returning and the wait starting, so the wait
+  # then looks for a second copy that never comes and reports a working
+  # shortcut as a failure. Stub-testing caught this: the fake app logged every
+  # navigation correctly and the probe still failed all of them.
+  mark_page() { # mark_page <label> -- call BEFORE press
+    MARK_BUILT="$(count_route "$1")"
+    MARK_NAV="$(count_navigations)"
+  }
+
+  await_page() { # await_page <label> <timeout-s> -- call AFTER press
+    local label="$1" timeout="$2" deadline want_built want_nav spins
+    # The deadline is the intended exit; `spins` is a backstop, because this
+    # loop has no other way out and a wait whose only exit depends on
+    # arithmetic will spin forever if that arithmetic ever yields nothing. A
+    # hung step costs CI hours rather than seconds.
+    PAGE_WITNESS=""
+    if [ -z "${MARK_BUILT:-}" ] || [ -z "${MARK_NAV:-}" ]; then
+      say "keys: BUG -- await_page ran with no mark_page before the press, so"
+      say "       it had no baseline to compare against. Reported as a failure"
+      say "       rather than guessed at."
+      return 1
+    fi
+    want_built=$(( MARK_BUILT + 1 ))
+    want_nav=$(( MARK_NAV + 1 ))
+    MARK_BUILT=""; MARK_NAV=""
     deadline=$(( $(now_s) + timeout ))
     spins=$(( timeout * 20 + 40 ))
     while :; do
-      have="$(count_all_routes)"
-      [ "${have:-0}" -ge "$want" ] && return 0
+      if [ "$(count_route "$label")" -ge "$want_built" ]; then
+        PAGE_WITNESS="route_open:$label"
+        return 0
+      fi
+      if [ "$(count_navigations)" -ge "$want_nav" ]; then
+        PAGE_WITNESS="$(last_route_label) (cached, so the log names no page)"
+        return 0
+      fi
       [ "$(now_s)" -ge "$deadline" ] && return 1
       kill -0 "$APP_PID" 2>/dev/null || return 1
       spins=$(( spins - 1 ))
@@ -888,33 +977,36 @@ print(found[0])
     # route witness on each and no text entry anywhere near it, is the cheap
     # way to tell those apart. Read step 2 before reading anything below it.
     FIRST_CHORD_OK=0
+    MARK_BUILT=""; MARK_NAV=""
     SECOND_CHORD_OK=0
 
     # 1. Alt+2 -- GoLibrary. The first chord, sent from home.
     KEYS_TRIED=$((KEYS_TRIED + 1))
+    mark_page library
     press "Alt+2 (GoLibrary)" -M alt -k 2 -m alt
-    if await_route library $(( ${BASE_LIBRARY:-0} + 1 )) 10; then
-      say "keys: OK -- chord 1: Alt+2 opened the library (route_open:library)"
+    if await_page library 10; then
+      say "keys: OK -- chord 1: Alt+2 opened the library ($PAGE_WITNESS)"
       KEYS_PASSED=$((KEYS_PASSED + 1))
       FIRST_CHORD_OK=1
     else
-      say "keys: FAILED -- chord 1: Alt+2 logged no route_open:library within 10s"
+      say "keys: FAILED -- chord 1: Alt+2 opened no page within 10s"
     fi
     probe_shot "05-keys-library"
 
     # 2. Alt+1 -- GoHome. The control: a second modified chord, sent after one
-    #    navigation, witnessed by its own route line.
+    #    navigation.
     KEYS_TRIED=$((KEYS_TRIED + 1))
+    mark_page home
     press "Alt+1 (GoHome)" -M alt -k 1 -m alt
-    if await_route home $(( ${BASE_HOME:-0} + 1 )) 10; then
-      say "keys: OK -- chord 2: Alt+1 went home (route_open:home)"
+    if await_page home 10; then
+      say "keys: OK -- chord 2: Alt+1 went home ($PAGE_WITNESS)"
       say "keys: CONTROL PASSED -- a second modified chord still arrives, so the"
       say "       failures below, if any, are about those bindings and not about"
       say "       input delivery."
       KEYS_PASSED=$((KEYS_PASSED + 1))
       SECOND_CHORD_OK=1
     else
-      say "keys: FAILED -- chord 2: Alt+1 logged no route_open:home within 10s"
+      say "keys: FAILED -- chord 2: Alt+1 opened no page within 10s"
       if [ "$FIRST_CHORD_OK" = "1" ]; then
         say "keys: CONTROL FAILED -- the first modified chord arrived and the"
         say "       second did not. Read every line below as uninterpretable:"
@@ -927,64 +1019,100 @@ print(found[0])
 
     # 3. Ctrl+comma -- OpenSettings.
     KEYS_TRIED=$((KEYS_TRIED + 1))
-    BEFORE_SETTINGS="$(count_route settings)"
+    mark_page settings
     press "Ctrl+comma (OpenSettings)" -M ctrl -k comma -m ctrl
-    if await_route settings $(( ${BEFORE_SETTINGS:-0} + 1 )) 10; then
-      say "keys: OK -- Ctrl+comma opened Settings (route_open:settings)"
+    if await_page settings 10; then
+      say "keys: OK -- Ctrl+comma opened Settings ($PAGE_WITNESS)"
       KEYS_PASSED=$((KEYS_PASSED + 1))
     else
-      say "keys: FAILED -- Ctrl+comma logged no route_open:settings within 10s"
+      say "keys: FAILED -- Ctrl+comma opened no page within 10s"
     fi
     probe_shot "07-keys-settings"
 
-    # 4. Alt+Left -- Back. From Settings this should return to home. Where it
-    #    actually lands depends on the back stack, so the honest assertion is
-    #    that *some* page opened; the report names it.
+    # 4. Ctrl+slash -- ShowShortcuts. Witnessed by the Shortcuts tab filling,
+    #    NOT by a route line. The handler swaps to Settings and then selects
+    #    that tab, and the swap is a no-op when Settings is already open -- so
+    #    a route witness is impossible from here, and the third run duly
+    #    reported a working shortcut as a failure. settings_fill:shortcuts
+    #    fires whether or not the swap happened, and the third run's log
+    #    carries it, which is how this one was proved to have worked.
     KEYS_TRIED=$((KEYS_TRIED + 1))
-    BEFORE_BACK="$(count_all_routes)"
+    BEFORE_SC="$(count_label settings_fill:shortcuts)"
+    press "Ctrl+slash (ShowShortcuts)" -M ctrl -k slash -m ctrl
+    if await_label settings_fill:shortcuts $(( ${BEFORE_SC:-0} + 1 )) 12; then
+      say "keys: OK -- Ctrl+slash filled the Shortcuts tab (settings_fill:shortcuts)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+    else
+      say "keys: FAILED -- Ctrl+slash logged no settings_fill:shortcuts within 12s"
+    fi
+    probe_shot "08-keys-shortcuts"
+
+    # 5. Alt+1 -- GoHome again, so the rest runs from a known page.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    mark_page home
+    press "Alt+1 (GoHome, second time)" -M alt -k 1 -m alt
+    if await_page home 10; then
+      say "keys: OK -- Alt+1 went home a second time ($PAGE_WITNESS)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+    else
+      say "keys: FAILED -- the second Alt+1 opened no page within 10s"
+    fi
+
+    # 6. Ctrl+F -- SearchLibrary. Two jobs at once, and the second is the
+    #    interesting one. It goes to All Books, and it is the only default
+    #    shortcut that pushes the history stack -- every other navigation
+    #    shortcut passes push_history=false, which clears it, so Back has
+    #    nothing to pop after them and a no-op result there proves nothing.
+    #    It also ends with the library's search box holding focus, which is
+    #    what made the first run's later chords all fail. So this step sets up
+    #    step 7 to answer that question with exactly one variable changed.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    SEARCH_FOCUSED=0
+    mark_page all_books
+    press "Ctrl+f (SearchLibrary)" -M ctrl -k f -m ctrl
+    if await_page all_books 10; then
+      say "keys: OK -- Ctrl+f reached the library search ($PAGE_WITNESS)"
+      say "       The search box now holds focus, which is the point of the"
+      say "       next step and the reason this one runs where it does."
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      SEARCH_FOCUSED=1
+    else
+      say "keys: FAILED -- Ctrl+f opened no page within 10s"
+    fi
+    probe_shot "09-keys-search"
+
+    # 7. Alt+Left -- Back. Now there IS a history entry to pop, so a no-op
+    #    would be a real result rather than a consequence of the design. This
+    #    is also the isolated form of the first run's question: keys
+    #    demonstrably arrive, the history is demonstrably not empty, and the
+    #    only thing that changed since the last success is that a text entry
+    #    holds focus.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    mark_page home
     press "Alt+Left (Back)" -M alt -k Left -m alt
-    if await_more_routes $(( ${BEFORE_BACK:-0} + 1 )) 10; then
-      LAST_ROUTE="$(grep -o '\[timing\] route_open:[a-z_]*' "$OUT/kalam.log" | tail -1 | sed 's/^\[timing\] //')"
-      say "keys: OK -- Alt+Left navigated, landing on ${LAST_ROUTE:-an unnamed page}"
+    if await_page home 10; then
+      say "keys: OK -- Alt+Left popped the history ($PAGE_WITNESS)"
+      if [ "$SEARCH_FOCUSED" = "1" ]; then
+        say "       And it did so with the search box still focused, so a"
+        say "       focused text entry does not swallow modified chords."
+      fi
       KEYS_PASSED=$((KEYS_PASSED + 1))
     else
       say "keys: FAILED -- Alt+Left opened no page within 10s"
-    fi
-    probe_shot "08-keys-back"
-
-    # 5. Ctrl+slash -- ShowShortcuts. The cheat-sheet overlay is not drawn
-    #    yet, so the app swaps to Settings and selects its Shortcuts tab,
-    #    which logs a fresh route_open:settings -- but only if we are not
-    #    already standing on Settings, because the swap is then a no-op. Back
-    #    above is what should have moved us off it, so if that failed this
-    #    line proves nothing either way and says so.
-    KEYS_TRIED=$((KEYS_TRIED + 1))
-    BEFORE_SC="$(count_route settings)"
-    press "Ctrl+slash (ShowShortcuts)" -M ctrl -k slash -m ctrl
-    if await_route settings $(( ${BEFORE_SC:-0} + 1 )) 12; then
-      say "keys: OK -- Ctrl+slash reached the shortcut pane (route_open:settings)"
-      KEYS_PASSED=$((KEYS_PASSED + 1))
-    else
-      say "keys: FAILED -- Ctrl+slash logged no route_open:settings within 12s"
-      if [ "${LAST_ROUTE:-}" = "route_open:settings" ]; then
-        say "       Uninterpretable: Back left us on Settings, so the swap is"
-        say "       skipped by design and no route line was ever possible."
+      if [ "$SEARCH_FOCUSED" = "1" ]; then
+        say "       Keys demonstrably arrive and the history is not empty, so"
+        say "       the one thing that changed is the focused search box. Read"
+        say "       this as: a focused text entry swallows modified chords,"
+        say "       which fires_while_typing says it should not. That is an app"
+        say "       question, and by now it is the only one on the table."
+      else
+        say "       Ctrl+f did not get us to the search box, so there may have"
+        say "       been no history to pop. Uninterpretable."
       fi
     fi
-    probe_shot "09-keys-shortcuts"
+    probe_shot "10-keys-back"
 
-    # 6. Alt+1 -- GoHome again, so F11 and Quit are tested from a known page.
-    KEYS_TRIED=$((KEYS_TRIED + 1))
-    BEFORE_HOME2="$(count_route home)"
-    press "Alt+1 (GoHome, second time)" -M alt -k 1 -m alt
-    if await_route home $(( ${BEFORE_HOME2:-0} + 1 )) 10; then
-      say "keys: OK -- Alt+1 went home a second time (route_open:home)"
-      KEYS_PASSED=$((KEYS_PASSED + 1))
-    else
-      say "keys: FAILED -- the second Alt+1 logged no route_open:home within 10s"
-    fi
-
-    # 5. F11 -- Fullscreen, witnessed by the compositor and not by the app.
+    # 8. F11 -- Fullscreen, witnessed by the compositor and not by the app.
     KEYS_TRIED=$((KEYS_TRIED + 1))
     FULLSCREEN_SEEN=0
     press "F11 (Fullscreen)" -k F11
@@ -995,7 +1123,7 @@ print(found[0])
     else
       say "keys: FAILED -- sway reports fullscreen_mode=$(fullscreen_mode) after F11"
     fi
-    probe_shot "10-keys-fullscreen"
+    probe_shot "11-keys-fullscreen"
 
     # And back again: the toggle proven in both directions, and the window a
     # normal shape for whatever follows. Not counted as a separate probe,
@@ -1018,7 +1146,7 @@ print(found[0])
       say "       so 'still normal' would prove nothing and is not reported as OK."
     fi
 
-    # 6. Ctrl+Q -- Quit. Last, because it ends the app, and a dead pid is the
+    # 9. Ctrl+Q -- Quit. Last, because it ends the app, and a dead pid is the
     #    one proof here that cannot be argued with.
     KEYS_TRIED=$((KEYS_TRIED + 1))
     press "Ctrl+q (Quit)" -M ctrl -k q -m ctrl

@@ -2162,11 +2162,13 @@ jobs:
             ci-logs/keys-home.png 2>/dev/null || true
           cp ci-shots-keys/07-keys-settings.png \
             ci-logs/keys-settings.png 2>/dev/null || true
-          cp ci-shots-keys/08-keys-back.png \
-            ci-logs/keys-back.png 2>/dev/null || true
-          cp ci-shots-keys/09-keys-shortcuts.png \
+          cp ci-shots-keys/08-keys-shortcuts.png \
             ci-logs/keys-shortcuts.png 2>/dev/null || true
-          cp ci-shots-keys/10-keys-fullscreen.png \
+          cp ci-shots-keys/09-keys-search.png \
+            ci-logs/keys-search.png 2>/dev/null || true
+          cp ci-shots-keys/10-keys-back.png \
+            ci-logs/keys-back.png 2>/dev/null || true
+          cp ci-shots-keys/11-keys-fullscreen.png \
             ci-logs/keys-fullscreen.png 2>/dev/null || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
@@ -2329,8 +2331,9 @@ jobs:
                       ci-logs/keys-library.png \
                       ci-logs/keys-home.png \
                       ci-logs/keys-settings.png \
-                      ci-logs/keys-back.png \
                       ci-logs/keys-shortcuts.png \
+                      ci-logs/keys-search.png \
+                      ci-logs/keys-back.png \
                       ci-logs/keys-fullscreen.png; do
             if [ -f "$shot" ]; then git add -f "$shot"; fi
           done

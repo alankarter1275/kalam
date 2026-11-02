@@ -26,5 +26,5 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m env_logger v0.11.11
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 18.92s
---- run 41494838871 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 16.56s
+--- run 41498903965 ---

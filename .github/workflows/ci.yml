@@ -1628,7 +1628,7 @@ jobs:
           path: |
             ci-shots-*/report.txt
             ci-shots-*/03-*-settled.png
-            ci-shots-keys/0*-keys-*.png
+            ci-shots-keys/*-keys-*.png
           if-no-files-found: warn
           retention-days: 1
 
@@ -2156,15 +2156,17 @@ jobs:
           # shortcut, so the report's claims can be checked against a picture
           # instead of taken on trust. There is no frame after Ctrl+q -- the
           # window is gone by then and a black frame reads as a render bug.
-          cp ci-shots-keys/05-keys-settings.png \
-            ci-logs/keys-settings.png 2>/dev/null || true
-          cp ci-shots-keys/06-keys-back.png \
-            ci-logs/keys-back.png 2>/dev/null || true
-          cp ci-shots-keys/07-keys-shortcuts.png \
-            ci-logs/keys-shortcuts.png 2>/dev/null || true
-          cp ci-shots-keys/08-keys-home.png \
+          cp ci-shots-keys/05-keys-library.png \
+            ci-logs/keys-library.png 2>/dev/null || true
+          cp ci-shots-keys/06-keys-home.png \
             ci-logs/keys-home.png 2>/dev/null || true
-          cp ci-shots-keys/09-keys-fullscreen.png \
+          cp ci-shots-keys/07-keys-settings.png \
+            ci-logs/keys-settings.png 2>/dev/null || true
+          cp ci-shots-keys/08-keys-back.png \
+            ci-logs/keys-back.png 2>/dev/null || true
+          cp ci-shots-keys/09-keys-shortcuts.png \
+            ci-logs/keys-shortcuts.png 2>/dev/null || true
+          cp ci-shots-keys/10-keys-fullscreen.png \
             ci-logs/keys-fullscreen.png 2>/dev/null || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
@@ -2324,10 +2326,11 @@ jobs:
                       ci-logs/editor-links-terracotta-dark.png \
                       ci-logs/editor-char-terracotta-dark.png \
                       ci-logs/editor-dict-terracotta-light.png \
+                      ci-logs/keys-library.png \
+                      ci-logs/keys-home.png \
                       ci-logs/keys-settings.png \
                       ci-logs/keys-back.png \
                       ci-logs/keys-shortcuts.png \
-                      ci-logs/keys-home.png \
                       ci-logs/keys-fullscreen.png; do
             if [ -f "$shot" ]; then git add -f "$shot"; fi
           done

@@ -676,26 +676,42 @@ fi
 # holds in practice is exactly what this probe is for.
 #
 # The combos are the app's own defaults (default_binding in src/shortcuts.rs):
-# Ctrl+comma settings, Alt+Left back, Ctrl+slash the shortcut pane, Alt+1 home,
-# F11 fullscreen, Ctrl+Q quit. Every one carries a modifier or is an F-key, so
-# fires_while_typing should let it through a focused text entry -- and none of
-# them actually leaves one focused, which is deliberate; see STATUS.
+# Alt+2 library, Alt+1 home, Ctrl+comma settings, Alt+Left back, Ctrl+slash the
+# shortcut pane, Alt+1 home again, F11 fullscreen, Ctrl+Q quit. Every one
+# carries a modifier or is an F-key, so fires_while_typing should let it
+# through a focused text entry -- and none of them actually leaves one
+# focused, which is deliberate; see STATUS. The first two are a control pair
+# whose job is to say whether the rest of the report means anything.
 #
 # ROUTE=home is the intended pairing. With home the script skips its
 # relaunch-and-compare step below, so nothing later in the run depends on the
 # app still being alive after Ctrl+Q ends it.
 #
-# STATUS, first run: 2 of 6 probes passed, and the four failures were this
-# probe's own doing rather than the app's. Ctrl+F was first in the list and is
-# the one default shortcut that leaves a text entry holding focus; every
-# Ctrl/Alt combo after it produced nothing, while F11 -- a plain function key
-# a text entry has no reason to claim -- still worked and sway still saw the
-# window go fullscreen. F11 landing *after* them also rules out a stuck
-# modifier, so the keys were delivered and something focused swallowed them.
-# Ctrl+F is therefore out of this list; whether a Ctrl binding *should*
-# survive a focused search box is a separate question (the app's own
-# fires_while_typing says yes) and belongs in its own probe, not mixed into
-# this one where it made every later line uninterpretable.
+# STATUS: two runs so far, both 2 of 6, and neither result is about the
+# shortcut table yet.
+#
+# Run 1 put Ctrl+F first. It worked, and it is the one default shortcut that
+# leaves a text entry holding focus; every modified chord after it did
+# nothing, while F11 still worked and sway still saw the window go fullscreen.
+# Run 2 dropped Ctrl+F for Alt+1 and led with Ctrl+comma instead. Ctrl+comma
+# worked from home -- so run 1's four failures were at least partly the
+# focused search box -- but then Alt+Left, Ctrl+slash, Alt+1 and Ctrl+Q all
+# did nothing, and F11 again was the only later key that landed. The app's own
+# log confirms it opened settings exactly once and then logged no route at all,
+# with no main-thread stall and nothing on stderr.
+#
+# So the shape survived the change: the first modified chord from home always
+# works, every modified chord after it does nothing, and the only later key
+# that works is the one carrying no modifier. Two readings fit and they have
+# opposite conclusions -- either the app goes deaf to modified keys once the
+# page has changed, which is a real bug, or wtype stops applying modifiers
+# after its first chord, which is this harness breaking and says nothing about
+# Kalam. F11 cannot separate them, precisely because it has no modifier.
+#
+# This third version leads with a control pair (Alt+2 then Alt+1, each with its
+# own route witness and no text entry in sight) whose only job is to separate
+# those two readings before anything else is measured, and whose result the
+# VERDICT line reports as INCONCLUSIVE when the pair disagrees.
 #
 # Read the VERDICT line before the individual results, and read
 # docs/ci/README-screenshots.md.
@@ -854,25 +870,76 @@ print(found[0])
     say "keys: VERDICT -- NOT RUN. Read the startup section above first."
   else
     BASE_TOTAL="$(count_all_routes)"
-    BASE_SETTINGS="$(count_route settings)"
     BASE_HOME="$(count_route home)"
-    say "keys: baseline -- ${BASE_TOTAL:-0} route_open lines so far (home=${BASE_HOME:-0}, settings=${BASE_SETTINGS:-0})"
+    BASE_LIBRARY="$(count_route library)"
+    BASE_SETTINGS="$(count_route settings)"
+    say "keys: baseline -- ${BASE_TOTAL:-0} route_open lines so far (home=${BASE_HOME:-0}, library=${BASE_LIBRARY:-0}, settings=${BASE_SETTINGS:-0})"
     say "keys: focused windows before starting: $(swaymsg -t get_tree | grep -c '"focused": true' || echo 0)"
-    say "keys: no text entry is focused at this point, by design -- see STATUS above"
 
-    # 1. Ctrl+comma -- OpenSettings.
+    # Steps 1 and 2 are a control pair, and they are the reason this probe is
+    # ordered the way it is. Two runs reported the same shape: the first chord
+    # sent from home worked, every modified chord after it did nothing, and
+    # the only later key that still worked was F11 -- the one with no modifier
+    # at all. That shape has two possible readings and they have opposite
+    # conclusions. Either the app stops hearing modified keys once the page
+    # has changed, which is a real bug, or wtype stops applying modifiers
+    # after its first chord, which is this harness breaking and says nothing
+    # about Kalam. Sending the same kind of chord twice back to back, with a
+    # route witness on each and no text entry anywhere near it, is the cheap
+    # way to tell those apart. Read step 2 before reading anything below it.
+    FIRST_CHORD_OK=0
+    SECOND_CHORD_OK=0
+
+    # 1. Alt+2 -- GoLibrary. The first chord, sent from home.
     KEYS_TRIED=$((KEYS_TRIED + 1))
+    press "Alt+2 (GoLibrary)" -M alt -k 2 -m alt
+    if await_route library $(( ${BASE_LIBRARY:-0} + 1 )) 10; then
+      say "keys: OK -- chord 1: Alt+2 opened the library (route_open:library)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      FIRST_CHORD_OK=1
+    else
+      say "keys: FAILED -- chord 1: Alt+2 logged no route_open:library within 10s"
+    fi
+    probe_shot "05-keys-library"
+
+    # 2. Alt+1 -- GoHome. The control: a second modified chord, sent after one
+    #    navigation, witnessed by its own route line.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    press "Alt+1 (GoHome)" -M alt -k 1 -m alt
+    if await_route home $(( ${BASE_HOME:-0} + 1 )) 10; then
+      say "keys: OK -- chord 2: Alt+1 went home (route_open:home)"
+      say "keys: CONTROL PASSED -- a second modified chord still arrives, so the"
+      say "       failures below, if any, are about those bindings and not about"
+      say "       input delivery."
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      SECOND_CHORD_OK=1
+    else
+      say "keys: FAILED -- chord 2: Alt+1 logged no route_open:home within 10s"
+      if [ "$FIRST_CHORD_OK" = "1" ]; then
+        say "keys: CONTROL FAILED -- the first modified chord arrived and the"
+        say "       second did not. Read every line below as uninterpretable:"
+        say "       the app is not necessarily deaf, the injector may simply"
+        say "       have stopped applying modifiers. Settle that before going"
+        say "       anywhere near the shortcut table."
+      fi
+    fi
+    probe_shot "06-keys-home"
+
+    # 3. Ctrl+comma -- OpenSettings.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    BEFORE_SETTINGS="$(count_route settings)"
     press "Ctrl+comma (OpenSettings)" -M ctrl -k comma -m ctrl
-    if await_route settings $(( ${BASE_SETTINGS:-0} + 1 )) 10; then
+    if await_route settings $(( ${BEFORE_SETTINGS:-0} + 1 )) 10; then
       say "keys: OK -- Ctrl+comma opened Settings (route_open:settings)"
       KEYS_PASSED=$((KEYS_PASSED + 1))
     else
       say "keys: FAILED -- Ctrl+comma logged no route_open:settings within 10s"
     fi
-    probe_shot "05-keys-settings"
+    probe_shot "07-keys-settings"
 
-    # 2. Alt+Left -- Back. Where it lands depends on the back stack, so the
-    #    honest assertion is that *some* page opened; the report names it.
+    # 4. Alt+Left -- Back. From Settings this should return to home. Where it
+    #    actually lands depends on the back stack, so the honest assertion is
+    #    that *some* page opened; the report names it.
     KEYS_TRIED=$((KEYS_TRIED + 1))
     BEFORE_BACK="$(count_all_routes)"
     press "Alt+Left (Back)" -M alt -k Left -m alt
@@ -883,11 +950,14 @@ print(found[0])
     else
       say "keys: FAILED -- Alt+Left opened no page within 10s"
     fi
-    probe_shot "06-keys-back"
+    probe_shot "08-keys-back"
 
-    # 3. Ctrl+slash -- ShowShortcuts. The cheat-sheet overlay is not drawn
-    #    yet, so the app swaps to Settings and selects its Shortcuts tab:
-    #    a second route_open:settings, provided we are not already there.
+    # 5. Ctrl+slash -- ShowShortcuts. The cheat-sheet overlay is not drawn
+    #    yet, so the app swaps to Settings and selects its Shortcuts tab,
+    #    which logs a fresh route_open:settings -- but only if we are not
+    #    already standing on Settings, because the swap is then a no-op. Back
+    #    above is what should have moved us off it, so if that failed this
+    #    line proves nothing either way and says so.
     KEYS_TRIED=$((KEYS_TRIED + 1))
     BEFORE_SC="$(count_route settings)"
     press "Ctrl+slash (ShowShortcuts)" -M ctrl -k slash -m ctrl
@@ -896,24 +966,23 @@ print(found[0])
       KEYS_PASSED=$((KEYS_PASSED + 1))
     else
       say "keys: FAILED -- Ctrl+slash logged no route_open:settings within 12s"
-      say "       If Back above already landed on Settings the swap is skipped"
-      say "       by design, so read this together with that line."
+      if [ "${LAST_ROUTE:-}" = "route_open:settings" ]; then
+        say "       Uninterpretable: Back left us on Settings, so the swap is"
+        say "       skipped by design and no route line was ever possible."
+      fi
     fi
-    probe_shot "07-keys-shortcuts"
+    probe_shot "09-keys-shortcuts"
 
-    # 4. Alt+1 -- GoHome. Takes the place Ctrl+F held in the first run. It
-    #    proves an Alt binding reaches the shell table from a page that is not
-    #    home, without leaving anything focused that could swallow the rest.
+    # 6. Alt+1 -- GoHome again, so F11 and Quit are tested from a known page.
     KEYS_TRIED=$((KEYS_TRIED + 1))
-    BEFORE_HOME="$(count_route home)"
-    press "Alt+1 (GoHome)" -M alt -k 1 -m alt
-    if await_route home $(( ${BEFORE_HOME:-0} + 1 )) 10; then
-      say "keys: OK -- Alt+1 went home (route_open:home)"
+    BEFORE_HOME2="$(count_route home)"
+    press "Alt+1 (GoHome, second time)" -M alt -k 1 -m alt
+    if await_route home $(( ${BEFORE_HOME2:-0} + 1 )) 10; then
+      say "keys: OK -- Alt+1 went home a second time (route_open:home)"
       KEYS_PASSED=$((KEYS_PASSED + 1))
     else
-      say "keys: FAILED -- Alt+1 logged no route_open:home within 10s"
+      say "keys: FAILED -- the second Alt+1 logged no route_open:home within 10s"
     fi
-    probe_shot "08-keys-home"
 
     # 5. F11 -- Fullscreen, witnessed by the compositor and not by the app.
     KEYS_TRIED=$((KEYS_TRIED + 1))
@@ -926,7 +995,7 @@ print(found[0])
     else
       say "keys: FAILED -- sway reports fullscreen_mode=$(fullscreen_mode) after F11"
     fi
-    probe_shot "09-keys-fullscreen"
+    probe_shot "10-keys-fullscreen"
 
     # And back again: the toggle proven in both directions, and the window a
     # normal shape for whatever follows. Not counted as a separate probe,
@@ -977,10 +1046,17 @@ print(found[0])
       say "keys: VERDICT -- keystrokes DO reach the app: it quit on Ctrl+q."
       say "       Every FAILED line above is then a question about that one"
       say "       shortcut's wiring, not about input delivery."
+    elif [ "$FIRST_CHORD_OK" = "1" ] && [ "$SECOND_CHORD_OK" = "0" ]; then
+      say "keys: VERDICT -- INCONCLUSIVE, and deliberately so. The first"
+      say "       modified chord arrived and the second did not, which is the"
+      say "       injector's signature rather than the app's. Do not go reading"
+      say "       the shortcut table yet: settle whether wtype still applies"
+      say "       modifiers after its first chord. F11 passing below would not"
+      say "       argue against this, because F11 carries no modifier."
     elif [ "$KEYS_PASSED" = "0" ]; then
       say "keys: VERDICT -- nothing responded, Quit included. Read that as"
       say "       'input did not arrive', which is the pointer's fate in the"
-      say "       TAP probe above, and NOT as six broken shortcuts. Doubt"
+      say "       TAP probe above, and NOT as a pile of broken shortcuts. Doubt"
       say "       wtype's virtual keyboard against this compositor first."
     else
       say "keys: VERDICT -- some probes passed, so input does arrive; the"

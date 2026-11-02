@@ -130,18 +130,23 @@ pose. Everywhere else in this harness the app performs the action itself —
 stages a drawn state — so a control whose wiring to its action has broken
 still produces a perfect frame. This probe is the check that can notice.
 
-It runs on `ROUTE=home` in the `pages` group and types six of the app's own
+It runs on `ROUTE=home` in the `pages` group and types eight of the app's own
 default shortcuts (`default_binding` in `src/shortcuts.rs`) with `wtype`,
 then asks three independent witnesses whether the app acted:
 
-| Keys | Shortcut | The witness |
-|---|---|---|
-| `Ctrl+,` | Open Settings | the app logs `route_open:settings` |
-| `Alt+Left` | Back | a new `route_open:` line; the report names where it landed |
-| `Ctrl+/` | The shortcut pane | a second `route_open:settings` |
-| `Alt+1` | Home | the app logs `route_open:home` again |
-| `F11` | Full screen, and back | **sway** reports `fullscreen_mode`, not Kalam |
-| `Ctrl+Q` | Quit | the process is gone |
+| # | Keys | Shortcut | The witness |
+|---|---|---|---|
+| 1 | `Alt+2` | The library | the app logs `route_open:library` |
+| 2 | `Alt+1` | Home | the app logs `route_open:home` |
+| 3 | `Ctrl+,` | Open Settings | the app logs `route_open:settings` |
+| 4 | `Alt+Left` | Back | a new `route_open:` line; the report names where it landed |
+| 5 | `Ctrl+/` | The shortcut pane | a second `route_open:settings` |
+| 6 | `Alt+1` | Home again | the app logs `route_open:home` again |
+| 7 | `F11` | Full screen, and back | **sway** reports `fullscreen_mode`, not Kalam |
+| 8 | `Ctrl+Q` | Quit | the process is gone |
+
+Steps 1 and 2 are a **control pair**, not two more shortcuts. Their job is to
+say whether the rest of the report means anything; see below.
 
 The last two matter most. `fullscreen_mode` comes from the compositor, so the
 app cannot supply it by logging something optimistic, and a dead process is
@@ -152,25 +157,42 @@ its relaunch-and-compare step, so nothing after the probe needs the app alive.
 Every one of these combos carries a modifier or is an F-key, so
 `fires_while_typing` should let it through a focused text entry.
 
-### What the first run taught
+### What two runs taught
 
-The first version of this probe had `Ctrl+F` first, and it reported 2 of 6
-passed. Four of those failures were the probe's own doing.
+Both runs so far reported 2 of 6, and neither result is about the shortcut
+table yet.
 
-`Ctrl+F` is the one default shortcut that ends with a text entry holding
-focus. Every `Ctrl`/`Alt` combo sent after it produced nothing, while `F11` —
-a plain function key, which a text entry has no reason to claim — still
-worked, and sway still saw the window go full screen. `F11` landing *after*
-the failures also rules out a stuck modifier, so the keys were delivered and
-something focused swallowed them.
+**Run 1** had `Ctrl+F` first. It worked, and it is the one default shortcut
+that leaves a text entry holding focus. Every modified chord after it did
+nothing, while `F11` still worked and sway still saw the window go full
+screen.
 
-`Ctrl+F` is out of the list, replaced by `Alt+1`, which proves an `Alt`
-binding from a page that is not home without leaving anything focused.
-Whether a `Ctrl` binding *ought* to survive a focused search box is a real
-question — `fires_while_typing` says it should — but it needs its own probe,
-because mixing it into this one made every later line uninterpretable.
+**Run 2** dropped `Ctrl+F` for `Alt+1` and led with `Ctrl+,` instead. `Ctrl+,`
+worked from home — so run 1's failures were at least partly the focused search
+box — but then `Alt+Left`, `Ctrl+/`, `Alt+1` and `Ctrl+Q` all did nothing, and
+`F11` again was the only later key that landed. The app's own log confirms it
+opened settings exactly once and then logged no route at all, with no
+main-thread stall and nothing on stderr.
 
-Two smaller things the same run exposed, both now fixed:
+So the shape survived the change: **the first modified chord from home always
+works, every modified chord after it does nothing, and the only later key that
+works is the one carrying no modifier.** Two readings fit and they have
+opposite conclusions:
+
+- the app goes deaf to modified keys once the page has changed — a real bug;
+- `wtype` stops applying modifiers after its first chord — this harness
+  breaking, and it says nothing about Kalam.
+
+`F11` cannot separate them, precisely *because* it has no modifier: it passes
+under both readings. Hence the control pair. Two chords of the same kind, back
+to back, each with its own route witness and no text entry anywhere near them.
+If chord 1 arrives and chord 2 does not, the verdict says **INCONCLUSIVE** and
+points at the injector, because at that point no line below it measures the
+app. Stub-tested: a scenario built to reproduce run 2's signature exactly
+scores 2 of 8 and reports INCONCLUSIVE, and the same scenario with the
+injector healthy scores 8 of 8.
+
+Three smaller things the same runs exposed, all now fixed:
 
 - **Route counts were doubled.** The app prints `[timing] route_open:<label>`
   when a page opens and `[timing] frame_after:route_open:<label>` when it has
@@ -178,17 +200,24 @@ Two smaller things the same run exposed, both now fixed:
   every baseline was inflated. The counting now anchors on `[timing]
   route_open:`.
 - **The pictures lagged the claims.** A shot taken the instant the log line
-  appeared caught the page before it drew, so `05-keys-search` came out
-  byte-identical to the frame before it and seemed to contradict the log.
-  Each probe shot now dwells two seconds first.
+  appeared caught the page before it drew, so run 1's fifth frame came out
+  byte-identical to the one before it and seemed to contradict the log. Each
+  probe shot now dwells two seconds first.
+- **Four wait loops had no exit but a deadline computed by arithmetic.** If
+  that arithmetic ever yields nothing, the deadline test errors instead of
+  ending the wait and the loop spins forever — observed here while
+  stub-testing. A hung CI step costs hours rather than seconds, so each loop
+  now carries an iteration backstop.
 
 Read the `keys: VERDICT` line before the individual results:
 
 - **Quit worked** — keystrokes reach the app. Any `FAILED` line above it is a
   question about that one shortcut's wiring, not about input delivery.
+- **INCONCLUSIVE** — chord 1 arrived and chord 2 did not. Nothing below the
+  pair measures the app; settle the injector first.
 - **Nothing worked, Quit included** — input did not arrive. That is the
   pointer's fate in the `TAP=1` probe in the script, a property of the harness
-  than six broken shortcuts. Do not go reading the wiring first.
+  rather than a pile of broken shortcuts. Do not go reading the wiring first.
 - **Some worked** — input arrives; read the failures one by one.
 
 What this does *not* prove: that clicking a button works. The `TAP=1` probe

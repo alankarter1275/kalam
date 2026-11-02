@@ -180,7 +180,7 @@ its relaunch-and-compare step, so nothing after the probe needs the app alive.
 Every one of these combos carries a modifier or is an F-key, so
 `fires_while_typing` should let it through a focused text entry.
 
-### What four runs taught
+### What five runs taught
 
 Runs 1 and 2 both reported 2 of 6, and neither result was about the shortcut
 table.
@@ -238,6 +238,22 @@ one has finished releasing its modifier — and that chord is lost. After a
 results alternated instead of clustering. Every chord now gets a settle before
 it is sent (`KEY_SETTLE`, 1.5 s by default), which costs about fourteen seconds
 a run.
+
+**Run 5**, with the settle, reported **8 of 9**. Every chord that had been
+flaky passed, including the two that runs 3 and 4 had disagreed about. The
+settle was the whole of it.
+
+The one failure left is `Alt+Left` after `Ctrl+F` has focused the library's
+search box. It is a real result and not a witness problem: `Ctrl+F` pushed the
+history, so there was something to pop, and the missing line never appeared
+late. It is also **narrower than it first looks**, because `Ctrl+Q` is sent
+afterwards with that same search box still focused and it *does* quit the app —
+so modified chords are not being swallowed wholesale, and this is specific to
+`Alt+Left`. The All Books page installs no `EventControllerKey` of its own,
+which leaves the `GtkSearchEntry` as the thing claiming it. In plain terms:
+**Back is dead while you are typing in the search box**, and
+`fires_while_typing` says it should not be. Whether that is worth changing is
+the owner's call, not this probe's.
 
 One thing is still open and unexplained, in every run so far: **the second
 `F11` does not leave full screen.** The handler calls `unfullscreen()` only when

@@ -753,6 +753,21 @@ fi
 # burned its whole timeout, which is why the results alternated instead of
 # clustering. Every chord now gets a settle before it is sent.
 #
+# Run 5, with the settle, reported 8 of 9 and every chord that had been
+# flaky before passed, including both that run 3 and run 4 had disagreed
+# about. The settle was the whole of it.
+#
+# The one failure left is Alt+Left after Ctrl+F has focused the library's
+# search box. It is a real result and not a witness problem: the history is not
+# empty, Ctrl+F pushed it, and the missing line never appeared late. It is also
+# narrower than it first looks, because Ctrl+Q is sent afterwards with that
+# same search box still focused and it quits the app -- so modified chords are
+# not being swallowed wholesale, and this is specific to Alt+Left. The All
+# Books page installs no EventControllerKey of its own, which leaves the
+# GtkSearchEntry as the thing claiming it. Whether that is worth changing is a
+# question for the owner, not for this probe: Back is dead while you are typing
+# in the search box, and fires_while_typing says it should not be.
+#
 # Still open, and not explained: the second F11 does not leave fullscreen, in
 # every run so far. The handler calls unfullscreen() only when
 # root.is_fullscreen(), so under a headless compositor GTK may simply never
@@ -1129,10 +1144,13 @@ print(found[0])
       say "keys: FAILED -- Alt+Left opened no page within 10s"
       if [ "$SEARCH_FOCUSED" = "1" ]; then
         say "       Keys demonstrably arrive and the history is not empty, so"
-        say "       the one thing that changed is the focused search box. Read"
-        say "       this as: a focused text entry swallows modified chords,"
-        say "       which fires_while_typing says it should not. That is an app"
-        say "       question, and by now it is the only one on the table."
+        say "       the one thing that changed is the focused search box. But"
+        say "       do not conclude from this alone that the box swallows"
+        say "       modified chords: Ctrl+Q below is sent with that same box"
+        say "       still focused. If it quits the app, then modifiers are"
+        say "       arriving fine and this is specific to Alt+Left -- which"
+        say "       fires_while_typing says should still fire while typing."
+        say "       Read the two lines together, not this one on its own."
       else
         say "       Ctrl+f did not get us to the search box, so there may have"
         say "       been no history to pop. Uninterpretable."

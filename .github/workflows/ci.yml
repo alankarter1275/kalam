@@ -1064,6 +1064,24 @@ jobs:
           BOOKS=139 OUT=ci-shots-tasks SETTLE=20 ROUTE=tasks \
             docs/ci/screenshot.sh
 
+      # The keystroke probe, and the only run here that sends real input
+      # instead of asking the app to pose -- so it is the only one that can
+      # notice a control whose wiring to its action has broken. Every combo
+      # is one of the app's own default shortcuts, and each is proved by
+      # something other than a picture: a route_open line from the app, the
+      # compositor's own fullscreen_mode, and finally the process exiting on
+      # Ctrl+q. See the KEYS=1 block in docs/ci/screenshot.sh for what each
+      # result does and does not mean.
+      #
+      # ROUTE=home is deliberate rather than incidental: with home the script
+      # skips its relaunch-and-compare step, so nothing later in the run
+      # depends on the app still being alive after the probe quits it.
+      - name: drive the app with real keystrokes and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-keys SETTLE=25 ROUTE=home KEYS=1 \
+            docs/ci/screenshot.sh
+
       # Redesign groundwork (audit §7.4): the hidden component gallery is
       # the GTK equivalent of the designs' Components artboard. It needs no
       # seeded library to speak of, so BOOKS stays small. The tall output
@@ -1610,6 +1628,7 @@ jobs:
           path: |
             ci-shots-*/report.txt
             ci-shots-*/03-*-settled.png
+            ci-shots-keys/0*-keys-*.png
           if-no-files-found: warn
           retention-days: 1
 
@@ -1715,6 +1734,10 @@ jobs:
             echo "  (no new tasks-latest.txt this run; keeping the previously committed one)";
           fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/tasks-latest.txt
+          if [ -f ci-shots-keys/report.txt ]; then cp ci-shots-keys/report.txt ci-logs/keys-latest.txt; else
+            echo "  (no new keys-latest.txt this run; keeping the previously committed one)";
+          fi
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/keys-latest.txt
           if [ -f ci-shots-components-light/report.txt ]; then cp ci-shots-components-light/report.txt ci-logs/components-light-latest.txt; else
             echo "  (no new components-light-latest.txt this run; keeping the previously committed one)";
           fi
@@ -2120,6 +2143,20 @@ jobs:
             ci-logs/author-edit-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-author-merge-dark/03-author-book-21-settled.png \
             ci-logs/author-merge-terracotta-dark.png 2>/dev/null || true
+          # The keystroke probe's frames: the screen as it looked after each
+          # shortcut, so the report's claims can be checked against a picture
+          # instead of taken on trust. There is no frame after Ctrl+q -- the
+          # window is gone by then and a black frame reads as a render bug.
+          cp ci-shots-keys/05-keys-search.png \
+            ci-logs/keys-search.png 2>/dev/null || true
+          cp ci-shots-keys/06-keys-settings.png \
+            ci-logs/keys-settings.png 2>/dev/null || true
+          cp ci-shots-keys/07-keys-back.png \
+            ci-logs/keys-back.png 2>/dev/null || true
+          cp ci-shots-keys/08-keys-shortcuts.png \
+            ci-logs/keys-shortcuts.png 2>/dev/null || true
+          cp ci-shots-keys/09-keys-fullscreen.png \
+            ci-logs/keys-fullscreen.png 2>/dev/null || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add -f ci-logs/reader-latest.txt \
@@ -2135,6 +2172,7 @@ jobs:
             ci-logs/reader-search-latest.txt \
             ci-logs/reader-search-missing-latest.txt \
             ci-logs/tasks-latest.txt \
+            ci-logs/keys-latest.txt \
             ci-logs/components-light-latest.txt ci-logs/components-dark-latest.txt \
             ci-logs/book-light-latest.txt ci-logs/book-dark-latest.txt \
             ci-logs/book-tags-light-latest.txt ci-logs/book-tags-dark-latest.txt \
@@ -2276,7 +2314,12 @@ jobs:
                       ci-logs/editor-compress-terracotta-light.png \
                       ci-logs/editor-links-terracotta-dark.png \
                       ci-logs/editor-char-terracotta-dark.png \
-                      ci-logs/editor-dict-terracotta-light.png; do
+                      ci-logs/editor-dict-terracotta-light.png \
+                      ci-logs/keys-search.png \
+                      ci-logs/keys-settings.png \
+                      ci-logs/keys-back.png \
+                      ci-logs/keys-shortcuts.png \
+                      ci-logs/keys-fullscreen.png; do
             if [ -f "$shot" ]; then git add -f "$shot"; fi
           done
           git commit -m "ci: publish smoke-test report [skip ci]" || true

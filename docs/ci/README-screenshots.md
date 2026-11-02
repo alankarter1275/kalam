@@ -66,6 +66,8 @@ The job commits text reports to:
 - `ci-logs/comic-series-*-latest.txt`
 - `ci-logs/pdf-*-latest.txt`
 - `ci-logs/tasks-latest.txt`
+- `ci-logs/keys-latest.txt` (the keystroke probe; its frames are committed as
+  `ci-logs/keys-*.png`)
 - `ci-logs/components-light-latest.txt`
 - `ci-logs/components-dark-latest.txt`
 - `ci-logs/book-light-latest.txt`
@@ -120,6 +122,54 @@ screenshot**. Reader and task-manager pages can legitimately contain little
 colour; a low colour percentage on those routes does not mean covers failed.
 The script reports measurements and does not set a pass threshold.
 
+## The keystroke probe
+
+`KEYS=1` is the one run that sends real input instead of asking the app to
+pose. Everywhere else in this harness the app performs the action itself —
+`KALAM_ROUTE` opens a page, `KALAM_DIALOG` opens a dialog, `KALAM_*_ACTION`
+stages a drawn state — so a control whose wiring to its action has broken
+still produces a perfect frame. This probe is the check that can notice.
+
+It runs on `ROUTE=home` in the `pages` group and types six of the app's own
+default shortcuts (`default_binding` in `src/shortcuts.rs`) with `wtype`,
+then asks three independent witnesses whether the app acted:
+
+| Keys | Shortcut | The witness |
+|---|---|---|
+| `Ctrl+F` | Search the library | the app logs `route_open:all_books` |
+| `Ctrl+,` | Open Settings | the app logs `route_open:settings` |
+| `Alt+Left` | Back | a new `route_open:` line; the report names where it landed |
+| `Ctrl+/` | The shortcut pane | a second `route_open:settings` |
+| `F11` | Full screen, and back | **sway** reports `fullscreen_mode`, not Kalam |
+| `Ctrl+Q` | Quit | the process is gone |
+
+The last two matter most. `fullscreen_mode` comes from the compositor, so the
+app cannot supply it by logging something optimistic, and a dead process is
+proof no argument can soften. `Ctrl+Q` therefore runs last, because it ends
+the run — which is also why the route is `home`: with `home` the script skips
+its relaunch-and-compare step, so nothing after the probe needs the app alive.
+
+Every one of these combos carries a modifier or is an F-key, so
+`fires_while_typing` lets it through a focused text entry. That is not a
+detail: the first shortcut in the list focuses the library's search box, and
+a binding that declined to fire while typing would make the rest of the probe
+measure nothing.
+
+Read the `keys: VERDICT` line before the individual results:
+
+- **Quit worked** — keystrokes reach the app. Any `FAILED` line above it is a
+  question about that one shortcut's wiring, not about input delivery.
+- **Nothing worked, Quit included** — input did not arrive. That is the
+  pointer's fate in the `TAP=1` probe in the script, a property of the harness
+  than six broken shortcuts. Do not go reading the wiring first.
+- **Some worked** — input arrives; read the failures one by one.
+
+What this does *not* prove: that clicking a button works. The `TAP=1` probe
+established that synthetic pointer events do not reach the app under headless
+sway, and nothing here changes that. The shortcut table and the actions
+behind it are now covered; the widgets that call the same actions are still
+covered only by a human hand.
+
 ## Limits
 
 - **Software rendering:** CI uses Cairo for GTK and Pixman for headless Sway.
@@ -133,7 +183,9 @@ The script reports measurements and does not set a pass threshold.
   wrapping.
 - **Input:** synthetic pointer taps are not part of the required workflow.
   Headless input delivery has not been reliable enough to treat it as proof of
-  reader gestures.
+  reader gestures. Synthetic *keystrokes* are a different mechanism and are
+  probed by `KEYS=1` above — but only for the shortcut table. No click path is
+  covered, so a button wired to nothing still passes every check here.
 - **Timing:** shared-runner milliseconds are not a performance benchmark.
   Use `KALAM_TIMING=1` on the target desktop for timing decisions. Peak memory
   is reported as a diagnostic.
@@ -153,6 +205,14 @@ Build Kalam first, then set a disposable data directory and select one route:
 cargo build --release
 XDG_DATA_HOME=/tmp/kalam-ci-data \
   BOOKS=20 OUT=/tmp/kalam-ci-reader ROUTE=read-1 \
+  docs/ci/screenshot.sh
+```
+
+For the keystroke probe:
+
+```bash
+XDG_DATA_HOME=/tmp/kalam-ci-data \
+  BOOKS=20 OUT=/tmp/kalam-ci-keys ROUTE=home KEYS=1 \
   docs/ci/screenshot.sh
 ```
 

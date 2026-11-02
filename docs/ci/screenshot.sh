@@ -646,6 +646,307 @@ print("{} {} {} {}".format(best["x"], best["y"], best["width"], best["height"]) 
   fi
 fi
 
+# --- do real keystrokes reach the app? (KEYS=1) ---------------------------
+#
+# Every other check in this harness asks the app to pose. KALAM_ROUTE opens a
+# page, KALAM_DIALOG opens a dialog, KALAM_*_ACTION stages a drawn state --
+# the app performs the action itself, so a broken wire between a control and
+# its action is invisible here: every frame still looks right.
+#
+# This probe sends real input instead. It types key combos into the focused
+# window with `wtype`, installed for this job since the harness was built and
+# never used until now, and asks three independent witnesses whether the app
+# acted:
+#
+#   1. the app's own log. Every page construction prints a `[timing]
+#      route_open:<label>` line, so a shortcut that navigates cannot help
+#      but leave evidence (route_label in src/app.rs).
+#   2. the compositor's window tree. Fullscreen shows up there as
+#      `fullscreen_mode`, which sway reports and Kalam does not, so it is
+#      genuinely independent of witness 1.
+#   3. the process. Quit closes the window and the app exits, so a dead pid
+#      is proof a keystroke arrived and was acted on. That is the strongest
+#      evidence available here, and the reason Quit runs last.
+#
+# Keys and not clicks, deliberately. The TAP probe above established that
+# synthetic pointer events do not reach the app under headless sway. wtype
+# differs in kind: it creates a virtual keyboard through the compositor's
+# virtual-keyboard protocol instead of injecting into a seat that has no
+# pointer device at all (WLR_LIBINPUT_NO_DEVICES=1). Whether that difference
+# holds in practice is exactly what this probe is for.
+#
+# The combos are the app's own defaults (default_binding in src/shortcuts.rs):
+# Ctrl+F search, Ctrl+comma settings, Alt+Left back, Ctrl+slash the shortcut
+# pane, F11 fullscreen, Ctrl+Q quit. Every one carries a modifier or is an
+# F-key, so fires_while_typing lets it through a focused text entry -- which
+# matters, because the first of them focuses the library's search box.
+#
+# ROUTE=home is the intended pairing. With home the script skips its
+# relaunch-and-compare step below, so nothing later in the run depends on the
+# app still being alive after Ctrl+Q ends it.
+#
+# STATUS: first run pending. Read the VERDICT line before trusting any of the
+# individual results, and read docs/ci/README-screenshots.md.
+if [ "${KEYS:-0}" = "1" ]; then
+  say ""
+  say "=== keystroke probe (KEYS=1) ==="
+
+  KEYS_SEND_FAILED=0
+  KEYS_PASSED=0
+  KEYS_TRIED=0
+  QUIT_PROVEN=0
+
+  # How many times the app logged a given page opening. `grep -c` exits 1 when
+  # nothing matched, so `|| true` keeps pipefail from ending the probe; the
+  # count is still printed. A missing log prints nothing at all, which is why
+  # every caller defaults the result to 0.
+  count_route() {
+    grep -c "route_open:$1" "$OUT/kalam.log" 2>/dev/null || true
+  }
+
+  count_all_routes() {
+    grep -c 'route_open:' "$OUT/kalam.log" 2>/dev/null || true
+  }
+
+  # Re-focus before every press. A window that does not hold focus sends the
+  # keys nowhere, and "nowhere" is indistinguishable from "the app ignored
+  # it" -- the false negative the September tap probe drowned in.
+  refocus() {
+    swaymsg '[app_id=".*"] focus' >/dev/null 2>&1 \
+      || swaymsg focus >/dev/null 2>&1 || true
+  }
+
+  press() { # press <human label> <wtype args...>
+    local label="$1"
+    shift
+    refocus
+    if wtype "$@" >/dev/null 2>&1; then
+      say "keys: sent $label"
+    else
+      say "keys: WARNING -- wtype could not send $label"
+      KEYS_SEND_FAILED=1
+    fi
+  }
+
+  # Poll rather than sleep a fixed time: the settings page measures ~5 ms
+  # warm, but the runner is shared and cold, so a fixed sleep is either too
+  # short or wasted. Give up early if the app dies, or the probe would sit
+  # out its whole budget against a process that Quit already ended.
+  await_route() { # await_route <label> <wanted-count> <timeout-s>
+    local label="$1" want="$2" timeout="$3" deadline have
+    deadline=$(( $(now_s) + timeout ))
+    while :; do
+      have="$(count_route "$label")"
+      [ "${have:-0}" -ge "$want" ] && return 0
+      [ "$(now_s)" -ge "$deadline" ] && return 1
+      kill -0 "$APP_PID" 2>/dev/null || return 1
+      sleep 0.25
+    done
+  }
+
+  await_more_routes() { # await_more_routes <min-total-count> <timeout-s>
+    local want="$1" timeout="$2" deadline have
+    deadline=$(( $(now_s) + timeout ))
+    while :; do
+      have="$(count_all_routes)"
+      [ "${have:-0}" -ge "$want" ] && return 0
+      [ "$(now_s)" -ge "$deadline" ] && return 1
+      kill -0 "$APP_PID" 2>/dev/null || return 1
+      sleep 0.25
+    done
+  }
+
+  # The compositor's own view of the window, walked rather than grepped:
+  # `fullscreen_mode` appears on every node in the tree, so a text match
+  # would report whichever node came first rather than the app's window.
+  fullscreen_mode() {
+    swaymsg -t get_tree 2>/dev/null | python3 -c '
+import json, sys
+
+try:
+    tree = json.load(sys.stdin)
+except Exception:
+    print("unknown")
+    raise SystemExit(0)
+
+found = ["0"]
+
+
+def walk(node):
+    mode = node.get("fullscreen_mode")
+    if mode:
+        found[0] = str(mode)
+    for child in node.get("nodes", []) + node.get("floating_nodes", []):
+        walk(child)
+
+
+walk(tree)
+print(found[0])
+'
+  }
+
+  await_fullscreen() { # await_fullscreen <1=want-fullscreen|0=want-normal> <timeout-s>
+    local want="$1" timeout="$2" deadline mode
+    deadline=$(( $(now_s) + timeout ))
+    while :; do
+      mode="$(fullscreen_mode)"
+      case "$want" in
+        1)
+          if [ -n "$mode" ] && [ "$mode" != "0" ] && [ "$mode" != "unknown" ]; then
+            return 0
+          fi
+          ;;
+        0)
+          [ "$mode" = "0" ] && return 0
+          ;;
+      esac
+      [ "$(now_s)" -ge "$deadline" ] && return 1
+      sleep 0.5
+    done
+  }
+
+  if ! command -v wtype >/dev/null 2>&1; then
+    say "keys: FAILED -- wtype is not installed, so no keystroke was sent"
+    say "keys: VERDICT -- NOT RUN. The job installs wtype; if this fires,"
+    say "       the install list changed."
+  elif ! kill -0 "$APP_PID" 2>/dev/null; then
+    say "keys: FAILED -- the app is not running, so there was nothing to send"
+    say "keys: VERDICT -- NOT RUN. Read the startup section above first."
+  else
+    BASE_TOTAL="$(count_all_routes)"
+    BASE_SETTINGS="$(count_route settings)"
+    BASE_ALL="$(count_route all_books)"
+    say "keys: baseline -- ${BASE_TOTAL:-0} route_open lines so far, of which settings=${BASE_SETTINGS:-0}"
+    say "keys: focused windows before starting: $(swaymsg -t get_tree | grep -c '"focused": true' || echo 0)"
+
+    # 1. Ctrl+F -- SearchLibrary. From home this is not the current route, so
+    #    the shell swaps to All Books and then focuses its search entry.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    press "Ctrl+f (SearchLibrary)" -M ctrl -k f -m ctrl
+    if await_route all_books $(( ${BASE_ALL:-0} + 1 )) 10; then
+      say "keys: OK -- Ctrl+f reached the library search (route_open:all_books)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+    else
+      say "keys: FAILED -- Ctrl+f logged no route_open:all_books within 10s"
+    fi
+    shot "05-keys-search"
+
+    # 2. Ctrl+comma -- OpenSettings.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    press "Ctrl+comma (OpenSettings)" -M ctrl -k comma -m ctrl
+    if await_route settings $(( ${BASE_SETTINGS:-0} + 1 )) 10; then
+      say "keys: OK -- Ctrl+comma opened Settings (route_open:settings)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+    else
+      say "keys: FAILED -- Ctrl+comma logged no route_open:settings within 10s"
+    fi
+    shot "06-keys-settings"
+
+    # 3. Alt+Left -- Back. Where it lands depends on the back stack, so the
+    #    honest assertion is that *some* page opened; the report names it.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    BEFORE_BACK="$(count_all_routes)"
+    press "Alt+Left (Back)" -M alt -k Left -m alt
+    if await_more_routes $(( ${BEFORE_BACK:-0} + 1 )) 10; then
+      LAST_ROUTE="$(grep -o 'route_open:[a-z_]*' "$OUT/kalam.log" | tail -1)"
+      say "keys: OK -- Alt+Left navigated, landing on ${LAST_ROUTE:-an unnamed page}"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+    else
+      say "keys: FAILED -- Alt+Left opened no page within 10s"
+    fi
+    shot "07-keys-back"
+
+    # 4. Ctrl+slash -- ShowShortcuts. The cheat-sheet overlay is not drawn
+    #    yet, so the app swaps to Settings and selects its Shortcuts tab:
+    #    a second route_open:settings, provided we are not already there.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    BEFORE_SC="$(count_route settings)"
+    press "Ctrl+slash (ShowShortcuts)" -M ctrl -k slash -m ctrl
+    if await_route settings $(( ${BEFORE_SC:-0} + 1 )) 12; then
+      say "keys: OK -- Ctrl+slash reached the shortcut pane (route_open:settings)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+    else
+      say "keys: FAILED -- Ctrl+slash logged no route_open:settings within 12s"
+      say "       If Back above already landed on Settings the swap is skipped"
+      say "       by design, so read this together with that line."
+    fi
+    shot "08-keys-shortcuts"
+
+    # 5. F11 -- Fullscreen, witnessed by the compositor and not by the app.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    FULLSCREEN_SEEN=0
+    press "F11 (Fullscreen)" -k F11
+    if await_fullscreen 1 10; then
+      say "keys: OK -- sway reports fullscreen_mode=$(fullscreen_mode) after F11"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      FULLSCREEN_SEEN=1
+    else
+      say "keys: FAILED -- sway reports fullscreen_mode=$(fullscreen_mode) after F11"
+    fi
+    shot "09-keys-fullscreen"
+
+    # And back again: the toggle proven in both directions, and the window a
+    # normal shape for whatever follows. Not counted as a separate probe,
+    # because it is the same shortcut and the same witness.
+    #
+    # Conditional on the first press having got there. With the window already
+    # normal, "still normal" proves nothing at all, and printing OK here would
+    # put a green line into a run where no keystroke arrived -- the failure
+    # mode this whole harness has been bitten by before (docs/pitfalls.md §21:
+    # a check that passes on broken code teaches you to ignore the checks).
+    if [ "$FULLSCREEN_SEEN" = "1" ]; then
+      press "F11 again (leave fullscreen)" -k F11
+      if await_fullscreen 0 10; then
+        say "keys: OK -- the second F11 left fullscreen (fullscreen_mode=0)"
+      else
+        say "keys: NOTE -- still fullscreen_mode=$(fullscreen_mode); is the toggle one-way?"
+      fi
+    else
+      say "keys: SKIPPED -- the second F11; the first never reached fullscreen,"
+      say "       so 'still normal' would prove nothing and is not reported as OK."
+    fi
+
+    # 6. Ctrl+Q -- Quit. Last, because it ends the app, and a dead pid is the
+    #    one proof here that cannot be argued with.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    press "Ctrl+q (Quit)" -M ctrl -k q -m ctrl
+    QUIT_DEADLINE=$(( $(now_s) + 15 ))
+    while kill -0 "$APP_PID" 2>/dev/null; do
+      [ "$(now_s)" -ge "$QUIT_DEADLINE" ] && break
+      sleep 0.25
+    done
+    if kill -0 "$APP_PID" 2>/dev/null; then
+      say "keys: FAILED -- the app was still alive 15s after Ctrl+q"
+    else
+      say "keys: OK -- the app exited on Ctrl+q"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      QUIT_PROVEN=1
+    fi
+    # No shot here on purpose. The window is gone, so a frame would be black,
+    # and a black frame in the pixel sample reads as a rendering failure.
+
+    say ""
+    say "keys: $KEYS_PASSED of $KEYS_TRIED keystroke probes passed"
+    if [ "$QUIT_PROVEN" = "1" ]; then
+      say "keys: VERDICT -- keystrokes DO reach the app: it quit on Ctrl+q."
+      say "       Every FAILED line above is then a question about that one"
+      say "       shortcut's wiring, not about input delivery."
+    elif [ "$KEYS_PASSED" = "0" ]; then
+      say "keys: VERDICT -- nothing responded, Quit included. Read that as"
+      say "       'input did not arrive', which is the pointer's fate in the"
+      say "       TAP probe above, and NOT as six broken shortcuts. Doubt"
+      say "       wtype's virtual keyboard against this compositor first."
+    else
+      say "keys: VERDICT -- some probes passed, so input does arrive; the"
+      say "       failures above are individual and worth reading one by one."
+    fi
+    if [ "$KEYS_SEND_FAILED" = "1" ]; then
+      say "keys: NOTE -- wtype itself errored at least once, so delivery and"
+      say "       not the app is the first thing to doubt."
+    fi
+  fi
+fi
+
 # --- did we actually render the requested page? ---------------------------
 #
 # Three checks, because each catches a different failure and the first two can

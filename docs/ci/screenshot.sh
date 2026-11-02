@@ -739,10 +739,25 @@ fi
 #     failure the second time you visit a page. Every navigation step now
 #     accepts either line and says which one it saw.
 #
-# Still open, and not explained: the second F11 does not leave fullscreen.
-# The handler calls unfullscreen() only when root.is_fullscreen(), so under a
-# headless compositor GTK may simply never learn the state it is in. That is
-# reported as a NOTE and is not counted as a probe.
+# Run 4 used the corrected witnesses and reported 5 of 9 -- and disagreed with
+# run 3 about which chords worked. Alt+1 had passed in run 3 and failed here;
+# Ctrl+slash had passed and failed; the second Alt+1 had failed and passed. The
+# missing lines never turned up late in the log either, so they were dropped
+# rather than slow, and there was no main-thread stall and nothing on stderr.
+#
+# The rhythm explains it. All three dropped chords had been sent within
+# milliseconds of the previous chord succeeding, and every chord sent after a
+# pause arrived: when a witness appears the await returns at once, so the next
+# wtype invocation builds a fresh virtual keyboard before the previous one has
+# finished releasing its modifier. After a FAILED chord the await has already
+# burned its whole timeout, which is why the results alternated instead of
+# clustering. Every chord now gets a settle before it is sent.
+#
+# Still open, and not explained: the second F11 does not leave fullscreen, in
+# every run so far. The handler calls unfullscreen() only when
+# root.is_fullscreen(), so under a headless compositor GTK may simply never
+# learn the state it is in. That is reported as a NOTE and is not counted as a
+# probe.
 #
 # Read the VERDICT line before the individual results, and read
 # docs/ci/README-screenshots.md.
@@ -814,9 +829,22 @@ if [ "${KEYS:-0}" = "1" ]; then
     shot "$1"
   }
 
+  # Every chord gets a settle before it is sent, and the reason is measured
+  # rather than guessed. Run 4 dropped three chords and the pattern was exact:
+  # all three had been sent within milliseconds of the previous chord
+  # succeeding, and every chord sent after a pause arrived. When a witness
+  # appears the await returns at once, so the next wtype invocation builds a
+  # fresh virtual keyboard before the previous one has finished releasing its
+  # modifier -- and that chord is lost. After a failed chord the await has
+  # already burned its whole timeout, which is why the failures alternated
+  # with successes instead of clustering. It costs about fourteen seconds a
+  # run and buys the difference between a result and a coin toss.
+  KEY_SETTLE="${KEY_SETTLE:-1.5}"
+
   press() { # press <human label> <wtype args...>
     local label="$1"
     shift
+    sleep "$KEY_SETTLE"
     refocus
     if wtype "$@" >/dev/null 2>&1; then
       say "keys: sent $label"

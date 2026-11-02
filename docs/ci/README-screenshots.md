@@ -180,7 +180,7 @@ its relaunch-and-compare step, so nothing after the probe needs the app alive.
 Every one of these combos carries a modifier or is an F-key, so
 `fires_while_typing` should let it through a focused text entry.
 
-### What three runs taught
+### What four runs taught
 
 Runs 1 and 2 both reported 2 of 6, and neither result was about the shortcut
 table.
@@ -223,8 +223,24 @@ worked (`settings_fill:shortcuts` is in the log, and the frame after it differs
 from the one before), and the second `Alt+1` had actually worked too — the last
 line of the log is `page_cache_hit`.
 
-One thing is still open and unexplained: **the second `F11` does not leave
-full screen.** The handler calls `unfullscreen()` only when
+**Run 4** used the corrected witnesses, reported 5 of 9 — and disagreed with
+run 3 about *which* chords worked. `Alt+1` had passed and now failed; `Ctrl+/`
+had passed and now failed; the second `Alt+1` had failed and now passed. The
+missing lines never turned up late in the log, so they were dropped rather than
+slow, and there was no main-thread stall and nothing on stderr.
+
+The rhythm explains it, and it is exact. **All three dropped chords had been
+sent within milliseconds of the previous chord succeeding, and every chord sent
+after a pause arrived.** When a witness appears the await returns at once, so
+the next `wtype` invocation builds a fresh virtual keyboard before the previous
+one has finished releasing its modifier — and that chord is lost. After a
+*failed* chord the await has already burned its whole timeout, which is why the
+results alternated instead of clustering. Every chord now gets a settle before
+it is sent (`KEY_SETTLE`, 1.5 s by default), which costs about fourteen seconds
+a run.
+
+One thing is still open and unexplained, in every run so far: **the second
+`F11` does not leave full screen.** The handler calls `unfullscreen()` only when
 `root.is_fullscreen()`, so under a headless compositor GTK may simply never
 learn the state it is in. It is reported as a `NOTE` and is not counted as a
 probe.

@@ -239,15 +239,23 @@ results alternated instead of clustering. Every chord now gets a settle before
 it is sent (`KEY_SETTLE`, 1.5 s by default), which costs about fourteen seconds
 a run.
 
-**Run 5**, with the settle, reported **8 of 9**. Every chord that had been
-flaky passed, including the two that runs 3 and 4 had disagreed about. The
-settle was the whole of it.
+**Run 5**, with the settle, reported **8 of 9**, losing only `Alt+Left`.
+**Run 6**, with the identical settle, reported **7 of 9** — and lost `Ctrl+,`
+and `Ctrl+Q` instead, while `Alt+Left` passed. So the settle lowered the drop
+rate and did not remove it, and the failures move between runs. Across all six,
+**every one of the nine shortcuts has been witnessed firing at least once.**
 
-The one failure left is `Alt+Left`, and **it is not an app bug** as far as
-anything readable here can tell. It is a real result rather than a witness
-problem — `Ctrl+F` pushed the history, so there was something to pop, and the
-missing line never appeared late — but every candidate explanation was checked
-against source and ruled out:
+That is why each chord is now sent twice. A binding that lands on the second
+attempt is wired, and the first key simply never arrived — which is the only
+distinction this probe exists to draw, and one a single attempt cannot make. The
+report prints `OK on RETRY` for those, and the retry count with the score, so a
+harness that is wearing out shows up as a climbing number rather than as a pile
+of failures that look like the app breaking.
+
+`Alt+Left` was the stubborn one through run 5, and the tidy story was that
+`Ctrl+F` leaves the library's search box focused, so the entry swallows the
+chord before the window's bubble-phase handler sees it. That story is
+unsupported — every candidate was checked against source and ruled out:
 
 - `gtktext.c` binds `Alt+Left` and `Alt+Right` only inside `#ifdef __APPLE__`,
   so on Linux the focused text widget has no claim on them.
@@ -261,18 +269,26 @@ against source and ruled out:
 - `Ctrl+Q` is sent afterwards with the same search box still focused, and it
   quits the app.
 
-What is left is **delivery**. `Alt+Left` failed in all five runs while `Alt+1`
-and `Alt+2` passed in all five, which is the shape of one keysym the injector
-does not send rather than of a binding the app drops. No app code was changed
-on the strength of this, and none should be until a human presses `Alt+Left`
-with the search box focused. That check is in
-[`docs/manual-test-checklist.md`](../manual-test-checklist.md).
+What is left is **delivery**, and one claim here has to be retracted. An
+earlier version of this section concluded that `Alt+Left` must be a keysym the
+injector cannot send, because it had failed in all five runs to that point while
+`Alt+1` and `Alt+2` had passed in all five. **Run 6 passed `Alt+Left`** — same
+search box focused, same injector, same settle — and dropped two chords that had
+never given trouble before. Five samples of a flaky thing is not a pattern. No
+app code was changed on the strength of any of it, and none should have been:
+the source says nothing on this platform claims `Alt+Left`, and the app has now
+been seen handling it. The human check in
+[`docs/manual-test-checklist.md`](../manual-test-checklist.md) stays anyway,
+because a harness that drops keys cannot prove a negative.
 
-One thing is still open and unexplained, in every run so far: **the second
-`F11` does not leave full screen.** The handler calls `unfullscreen()` only when
-`root.is_fullscreen()`, so under a headless compositor GTK may simply never
-learn the state it is in. It is reported as a `NOTE` and is not counted as a
-probe.
+The one check that has still never passed, in any of the six runs, is the
+**second `F11`**: the window goes full screen and does not come back. That is
+genuinely unresolved and is the only candidate for a real defect. The handler
+calls `unfullscreen()` only when `root.is_fullscreen()` agrees, so under a
+headless compositor GTK may never learn the state it is in and may ask to go
+full screen a second time instead. It is reported as a `NOTE`, not counted as a
+probe, and it is in the owner's checklist — which is the right destination for a
+question a headless harness structurally cannot answer.
 
 Three smaller things the same runs exposed, all now fixed:
 
@@ -295,6 +311,8 @@ Read the `keys: VERDICT` line before the individual results:
 
 - **Quit worked** — keystrokes reach the app. Any `FAILED` line above it is a
   question about that one shortcut's wiring, not about input delivery.
+- **`OK on RETRY`** — the binding is wired and the first key was dropped in
+  transit. Not a failure, but not clean either: watch the retry count.
 - **INCONCLUSIVE** — chord 1 arrived and chord 2 did not. Nothing below the
   pair measures the app; settle the injector first. Run 3 did not report this,
   which is why the runs after it mean something.

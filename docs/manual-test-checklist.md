@@ -156,24 +156,29 @@ succeeded once.
 CI now has a keystroke probe (`KEYS=1` in `docs/ci/screenshot.sh`) that types
 the app's own default shortcuts with `wtype` and asks three independent
 witnesses whether the app acted: its timing log, the compositor's window state,
-and whether the process died. In its fifth run it passed 8 of 9. Two of those
-checks need a human hand, because CI can produce a result but cannot interpret
-it.
+and whether the process died. Across six runs it has seen every one of the nine
+default shortcuts fire at least once, so the shortcut table looks sound. The
+harness itself is not: it drops keystrokes at a low rate and the chords it drops
+move from run to run, so each is now sent twice and the report says which
+attempt landed. Two checks still need a human hand, because CI can produce a
+result it cannot interpret.
 
 - [ ] Press `Ctrl+F` to focus the library's search box, type nothing, then
-  press `Alt+Left`. Expected: you leave All Books and go back. The probe sees
-  nothing happen, and it has seen nothing happen in all five runs — but every
-  readable source says nothing should be claiming that key. `gtktext.c` binds
-  `Alt+Left` only under `#ifdef __APPLE__`, `gtkwindow.c` binds arrows with no
-  modifier and with `Ctrl` but never with `Alt`, and `src/pages/all_books.rs`
-  installs no key controller at all. So the suspicion falls on the injector,
-  not on the app. **If Back does nothing for you here, the bug is real and
-  belongs to Kalam after all** — please say so, because five CI runs could not
-  settle it either way.
+  press `Alt+Left`. Expected: you leave All Books and go back. The probe failed
+  this in runs 1 and 5 and **passed it in run 6**, with the same search box
+  focused, so the app has been seen handling it and there is probably nothing to
+  fix. It is worth your two seconds anyway, because a harness that drops
+  keystrokes cannot prove a negative — and because for a while the reports
+  claimed a bug here that did not exist. Every readable source agrees nothing
+  should claim that key: `gtktext.c` binds `Alt+Left` only under `#ifdef
+  __APPLE__`, `gtkwindow.c` binds arrows with no modifier and with `Ctrl` but
+  never with `Alt`, and `src/pages/all_books.rs` installs no key controller at
+  all. **If Back does nothing for you, say so** — that would make it real.
 - [ ] Press `F11` twice on any page. Expected: full screen, then back to
-  windowed. The probe reports that the second press leaves the window full
-  screen, in every run, and cannot tell whether that is the headless
-  compositor or the app. The handler calls `unfullscreen()` only when
+  windowed. **This is the one check that has never passed, in any of the six
+  runs**, and the only open candidate for a real defect — the second press
+  leaves the window full screen even after being sent twice. The probe cannot
+  tell whether that is the headless compositor or the app. The handler calls `unfullscreen()` only when
   `root.is_fullscreen()` says the window is already full screen, so if GTK
   never learns the state under a headless compositor it would ask to go full
   screen a second time instead.

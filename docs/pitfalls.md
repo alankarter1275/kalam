@@ -3483,13 +3483,15 @@ The 135 reports under `ci-logs/` are still frozen at run `41108198774` from 30
 October — a *branch* run, which is the old canonical-path bug accidentally keeping
 them fresh. They refresh on the first `main` run that gets past the parse.
 
-## §100 — five runs to prove a keyboard works, and four of the failures were the test's
+## §100 — six runs to prove a keyboard works, and nearly every failure was the test's
 
-The keystroke probe (`KEYS=1` in `docs/ci/screenshot.sh`) took five CI runs to
-produce one trustworthy sentence. Every run reported failures; only the last
-one's failure was real, and even that one is not the app's. What follows is what
-each of the earlier failures actually was, because each is a way a check can be
-wrong while looking exact.
+The keystroke probe (`KEYS=1` in `docs/ci/screenshot.sh`) took six CI runs to
+produce one trustworthy sentence, and the sentence is that the app's keyboard
+works: across the six, every one of its nine default shortcuts was witnessed
+firing at least once. Each run reported failures. Almost none of them were the
+app's. What follows is what each failure actually was, because each is a way a
+check can be wrong while looking exact — including, at the end, one place where
+this section was itself wrong and had to be corrected by a later run.
 
 **A witness that only fires on one code path reports success as failure.** The
 probe counted `route_open:` lines to prove navigation. But `route_open:` is
@@ -3516,7 +3518,14 @@ once, so the next `wtype` invocation built a fresh virtual keyboard before the
 previous one had finished releasing its modifier. After a *failed* chord the
 wait had already burned its whole timeout — which is why the results alternated
 instead of clustering, the shape that gave it away. A 1.5 s settle before each
-chord took the run from 5 of 9 to 8 of 9.
+chord took run 4's 5 of 9 to 8 of 9 in run 5 — but run 6, with the identical
+settle, scored 7 of 9 and lost two *different* chords. A settle reduced the
+drop rate; it did not remove it, and no pause length was ever going to. What
+actually fixes it is sending every chord twice and reporting which attempt
+landed, because a binding that fires on the second attempt is wired and the
+first key simply never arrived. The count of retries is printed with the score,
+so a harness that is degrading is visible as a climbing number rather than as a
+pile of failures that look like the app breaking.
 
 **A probe's own failure text contaminates the log you grep.** The report said
 `route_open:settings` twice, which read as though Settings had opened. Both hits
@@ -3534,22 +3543,44 @@ while frames ran 01–09. The probe grew to eleven, and frames 10 and 11 vanishe
 from both sections with no error — the two frames most likely to show whether
 the last chords did anything. `[0-9]*.png` now.
 
-**Check the platform's source before blaming it.** This is the one that matters.
-The surviving failure is `Alt+Left`, and the obvious story was tidy: `Ctrl+F`
-leaves the library's search box focused, so the entry swallows the chord before
-the window's bubble-phase handler sees it. It fitted the evidence, it fitted
-`fires_while_typing()`'s stated intent, and it named a file to change. It is
-also unsupported. In GTK's own source, `gtktext.c` binds `Alt+Left` and
-`Alt+Right` only inside `#ifdef __APPLE__`; `gtkwindow.c`'s `add_arrow_bindings`
-binds arrows with `GDK_NO_MODIFIER_MASK` and `GDK_CONTROL_MASK` and never with
-Alt; `gtk_search_entry_is_keynav` does test the Alt mask but is a filter, not a
+**Check the platform's source before blaming it.** `Alt+Left` was the stubborn
+failure, and the obvious story was tidy: `Ctrl+F` leaves the library's search
+box focused, so the entry swallows the chord before the window's bubble-phase
+handler sees it. It fitted the evidence, it fitted `fires_while_typing()`'s
+stated intent, and it named a file to change. It is also unsupported. In GTK's
+own source, `gtktext.c` binds `Alt+Left` and `Alt+Right` only inside `#ifdef
+__APPLE__`; `gtkwindow.c`'s `add_arrow_bindings` binds arrows with
+`GDK_NO_MODIFIER_MASK` and `GDK_CONTROL_MASK` and never with Alt;
+`gtk_search_entry_is_keynav` does test the Alt mask but is a filter, not a
 claim; and `src/pages/all_books.rs` installs no key controller at all. Nothing
-on this platform takes the key, `Ctrl+Q` works with the same box focused, and
-`Alt+Left` failed in all five runs while `Alt+1` and `Alt+2` passed in all five
-— which is the shape of one keysym the injector does not send. No app code was
-changed. A plausible mechanism is not a finding; `gh api
+on this platform takes the key, and `Ctrl+Q` works with the same box focused. No
+app code was changed. A plausible mechanism is not a finding; `gh api
 repos/GNOME/gtk/contents/gtk/gtktext.c` settles it in one command, and the
 `#ifdef` was four lines from the binding that looked like the answer.
+
+**Corrected by the next run: "it failed in every run so far" is not "it always
+fails".** Having ruled out the platform, this section went on to conclude that
+`Alt+Left` must be a keysym the injector does not send, because it had failed in
+all five runs while `Alt+1` and `Alt+2` had passed in all five. Run 6 then
+passed `Alt+Left` — with the same search box focused, the same injector, the
+same settle — and instead dropped `Ctrl+comma` and `Ctrl+Q`, neither of which
+had any trouble before. Five samples of a flaky thing is not a pattern, it is
+five samples. The shape that actually distinguished the two theories was never
+"which chord fails" but "does the *same* chord fail twice", and it took a sixth
+run to ask. Two consequences: the retry above, so one run can answer it by
+itself; and a rule for writing this file down — a claim about what *always*
+happens needs either a mechanism or a lot more runs than feels necessary, and
+when it has neither, say "in every run so far" and mean it as a confession.
+
+The one check that has still never passed, in any of the six runs, is the
+*second* `F11`: the window goes full screen and does not come back. That is
+genuinely unresolved and is the only candidate for a real defect. The handler
+calls `unfullscreen()` only when `root.is_fullscreen()` agrees, so under a
+headless compositor GTK may never learn the state it is in and may ask to go
+full screen a second time instead. It is reported as a NOTE, it is not counted
+as a probe, and it is in `docs/manual-test-checklist.md` for a human to settle
+in two seconds — which is the right destination for a question a headless
+harness structurally cannot answer.
 
 **A wait loop whose only exit is arithmetic will spin forever.** Four loops in
 the probe exited on a deadline computed as `$(( $(now_s) + timeout ))`. If that

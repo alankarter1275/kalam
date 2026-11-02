@@ -1633,11 +1633,21 @@ jobs:
           retention-days: 1
 
   publish-screenshots:
-    # Main only. These reports and settled PNGs are large, and a
-    # branch-specific copy would add roughly 20 MB per branch merged.
-    # On a branch the screenshots job still runs and still uploads its
-    # artifacts, so the owner can view them in the Actions page; they
-    # are simply not committed until the work reaches main.
+    # The images are main-only. The text reports are not, and the two are now
+    # published by separate steps below.
+    #
+    # This job used to be main-only altogether, on the reasoning that a
+    # branch-specific copy would add roughly 20 MB per branch merged. Measured
+    # against main today, that figure is the pictures: the 133 settled PNGs are
+    # 19.5 MB and the 145 text reports are 1.21 MB. The text is the only part
+    # the agent can read at all -- the Arena sandbox has no route to the
+    # Actions log host or the artifact host, both of which answer with a
+    # redirect to a storage domain it cannot reach -- so excluding it made
+    # every branch run unreadable to save 6% of a figure that was about images.
+    #
+    # main deletes ci-logs/branches/ on its first run after a merge, in the
+    # build job's rustfmt step, so a branch's copy is temporary by construction
+    # rather than accumulating one directory per branch forever.
     name: publish screenshot report
     needs: screenshots
     # One condition, not two: this job already carried an `if:`, and adding a
@@ -1645,14 +1655,13 @@ jobs:
     # plausible and the run failed with zero jobs, which is the only way a
     # parse error shows up from here.
     #
-    # Main only, on top of the condition it already had. These reports and
-    # settled PNGs are large, and a branch-specific copy would add roughly
-    # 20 MB per branch merged. On a branch the screenshots job still runs and
-    # still uploads its artifacts, so the owner can view them in the Actions
-    # page; they are simply not committed until the work reaches main. A
-    # pull_request event is never on refs/heads/main, so this also removes the
-    # duplicate run without needing the same-repo clause the other jobs carry.
-    if: always() && needs.screenshots.result != 'cancelled' && github.ref == 'refs/heads/main'
+    # pull_request is excluded here because the main-only clause this job used
+    # to carry was doing that work as a side effect: a PR's ref is
+    # refs/pull/N/merge, so without this the branch step below would publish
+    # into ci-logs/branches/N/merge and then try to push to a ref that does not
+    # exist. Dropping the duplicate run, which is what the old clause was also
+    # achieving, comes with it.
+    if: always() && needs.screenshots.result != 'cancelled' && github.event_name != 'pull_request'
     runs-on: ubuntu-26.04
     continue-on-error: true
     permissions:
@@ -1679,7 +1688,7 @@ jobs:
       # Committed on success AND failure, because a failed run is precisely
       # when the diagnostics matter.
       - name: publish the report
-        if: always()
+        if: always() && github.ref == 'refs/heads/main'
         run: |
           mkdir -p ci-logs
           if [ -f ci-shots-reader/report.txt ]; then cp ci-shots-reader/report.txt ci-logs/reader-latest.txt; else
@@ -2326,3 +2335,56 @@ jobs:
           git pull --rebase -X theirs --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
 
+      # Branch runs publish their text reports and nothing else.
+      #
+      # A loop, deliberately, rather than 138 hand-written copy blocks in the
+      # shape the main step uses. Those blocks name canonical `ci-logs/` paths
+      # on purpose and must keep doing so; bulk-rewriting them to $CILOG_DIR is
+      # how that variable once became self-referential and every path in the
+      # job pointed at itself. This step never mentions the canonical directory
+      # at all, so the two spellings cannot be confused by a later edit.
+      #
+      # The CILOG_DIR guard below is not decoration. If that expression ever
+      # resolved to plain `ci-logs` on a branch, this step would overwrite
+      # main's canonical reports with one branch's run -- silently, because
+      # every write here succeeds. Refusing loudly is cheaper than finding out
+      # from a report that describes the wrong branch.
+      - name: publish the text reports on a branch
+        if: always() && github.ref != 'refs/heads/main'
+        run: |
+          case "${CILOG_DIR:-}" in
+            ci-logs/branches/*) ;;
+            ci-logs)
+              echo "REFUSING to publish: CILOG_DIR resolved to the canonical"
+              echo "ci-logs on a non-main run, which would overwrite main's"
+              echo "reports with this branch's. Fix the CILOG_DIR expression."
+              exit 1
+              ;;
+            *)
+              echo "REFUSING to publish: CILOG_DIR is '${CILOG_DIR:-<unset>}',"
+              echo "which is neither the canonical directory nor a branch one."
+              exit 1
+              ;;
+          esac
+          mkdir -p "$CILOG_DIR"
+          published=0
+          for dir in ci-shots-*; do
+            [ -f "$dir/report.txt" ] || continue
+            name="$(basename "$dir")"
+            name="${name#ci-shots-}"
+            cp "$dir/report.txt" "$CILOG_DIR/$name-latest.txt"
+            echo "--- run $GITHUB_RUN_ID ---" >> "$CILOG_DIR/$name-latest.txt"
+            published=$((published + 1))
+          done
+          echo "published $published smoke-test report(s) into $CILOG_DIR"
+          if [ "$published" -eq 0 ]; then
+            echo "no ci-shots-*/report.txt was found, so there is nothing to"
+            echo "commit; the screenshots job produced no reports this run."
+            exit 0
+          fi
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -f "$CILOG_DIR"
+          git commit -m "ci: publish smoke-test reports for this branch [skip ci]" || true
+          git pull --rebase -X theirs --autostash origin "$GITHUB_REF_NAME" || true
+          git push origin "HEAD:$GITHUB_REF_NAME" || true

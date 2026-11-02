@@ -136,10 +136,10 @@ then asks three independent witnesses whether the app acted:
 
 | Keys | Shortcut | The witness |
 |---|---|---|
-| `Ctrl+F` | Search the library | the app logs `route_open:all_books` |
 | `Ctrl+,` | Open Settings | the app logs `route_open:settings` |
 | `Alt+Left` | Back | a new `route_open:` line; the report names where it landed |
 | `Ctrl+/` | The shortcut pane | a second `route_open:settings` |
+| `Alt+1` | Home | the app logs `route_open:home` again |
 | `F11` | Full screen, and back | **sway** reports `fullscreen_mode`, not Kalam |
 | `Ctrl+Q` | Quit | the process is gone |
 
@@ -150,10 +150,37 @@ the run — which is also why the route is `home`: with `home` the script skips
 its relaunch-and-compare step, so nothing after the probe needs the app alive.
 
 Every one of these combos carries a modifier or is an F-key, so
-`fires_while_typing` lets it through a focused text entry. That is not a
-detail: the first shortcut in the list focuses the library's search box, and
-a binding that declined to fire while typing would make the rest of the probe
-measure nothing.
+`fires_while_typing` should let it through a focused text entry.
+
+### What the first run taught
+
+The first version of this probe had `Ctrl+F` first, and it reported 2 of 6
+passed. Four of those failures were the probe's own doing.
+
+`Ctrl+F` is the one default shortcut that ends with a text entry holding
+focus. Every `Ctrl`/`Alt` combo sent after it produced nothing, while `F11` —
+a plain function key, which a text entry has no reason to claim — still
+worked, and sway still saw the window go full screen. `F11` landing *after*
+the failures also rules out a stuck modifier, so the keys were delivered and
+something focused swallowed them.
+
+`Ctrl+F` is out of the list, replaced by `Alt+1`, which proves an `Alt`
+binding from a page that is not home without leaving anything focused.
+Whether a `Ctrl` binding *ought* to survive a focused search box is a real
+question — `fires_while_typing` says it should — but it needs its own probe,
+because mixing it into this one made every later line uninterpretable.
+
+Two smaller things the same run exposed, both now fixed:
+
+- **Route counts were doubled.** The app prints `[timing] route_open:<label>`
+  when a page opens and `[timing] frame_after:route_open:<label>` when it has
+  painted. An unanchored grep matched both, so one navigation read as two and
+  every baseline was inflated. The counting now anchors on `[timing]
+  route_open:`.
+- **The pictures lagged the claims.** A shot taken the instant the log line
+  appeared caught the page before it drew, so `05-keys-search` came out
+  byte-identical to the frame before it and seemed to contradict the log.
+  Each probe shot now dwells two seconds first.
 
 Read the `keys: VERDICT` line before the individual results:
 

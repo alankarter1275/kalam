@@ -12,8 +12,8 @@ not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
 [1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m cc v1.11.0
 [1m[92m  Downloaded[0m crc32fast v1.5.4
+[1m[92m  Downloaded[0m cc v1.11.0
 [1m[92m  Downloaded[0m unicode-script v0.5.9
 [1m[92m  Downloaded[0m zip v9.2.2
 [1m[92m   Compiling[0m crc32fast v1.5.4
@@ -26,20 +26,20 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m usvg v0.48.1
 [1m[92m    Checking[0m formulary v0.2.0
 [1m[92m    Checking[0m flate2 v1.1.10
+[1m[92m    Checking[0m zopfli v0.8.4
 [1m[92m    Checking[0m png v0.18.1
 [1m[92m    Checking[0m zip v9.2.2
-[1m[92m    Checking[0m zopfli v0.8.4
-[1m[92m   Compiling[0m ring v0.17.14
 [1m[92m    Checking[0m tiny-skia v0.12.0
-[1m[92m    Checking[0m image v0.25.10
 [1m[92m    Checking[0m rbook v0.7.12
+[1m[92m    Checking[0m image v0.25.10
+[1m[92m   Compiling[0m ring v0.17.14
 [1m[92m    Checking[0m resvg v0.48.1
 [1m[92m   Compiling[0m freetype-sys v0.20.1
+[1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
+[1m[92m   Compiling[0m mupdf-sys v0.8.0
+[1m[92m   Compiling[0m libsqlite3-sys v0.30.1
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
-[1m[92m   Compiling[0m mupdf-sys v0.8.0
-[1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
-[1m[92m   Compiling[0m libsqlite3-sys v0.30.1
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m   Compiling[0m font-kit v0.14.3
@@ -53,5 +53,5 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m rusqlite v0.32.1
 [1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 1m 13s
---- run 41454206575 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 1m 04s
+--- run 41468367581 ---

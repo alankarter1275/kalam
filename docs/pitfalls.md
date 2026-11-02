@@ -3482,3 +3482,80 @@ to be capable of failing before it is trusted to pass.
 The 135 reports under `ci-logs/` are still frozen at run `41108198774` from 30
 October — a *branch* run, which is the old canonical-path bug accidentally keeping
 them fresh. They refresh on the first `main` run that gets past the parse.
+
+## §100 — five runs to prove a keyboard works, and four of the failures were the test's
+
+The keystroke probe (`KEYS=1` in `docs/ci/screenshot.sh`) took five CI runs to
+produce one trustworthy sentence. Every run reported failures; only the last
+one's failure was real, and even that one is not the app's. What follows is what
+each of the earlier failures actually was, because each is a way a check can be
+wrong while looking exact.
+
+**A witness that only fires on one code path reports success as failure.** The
+probe counted `route_open:` lines to prove navigation. But `route_open:` is
+logged inside `build_page`, and `build_page` is skipped when the page comes out
+of the cache — the app says so itself, in the comment that opens `build_page`
+at `src/app.rs:433-434`: *"The page cache's hit path never enters this function
+— a cached page is reparented, not rebuilt."* So the second visit to a page logs `page_cache_hit` instead, and a
+route-only witness calls a working shortcut broken. The fix is a witness that
+accepts both lines and prints which one it saw. Before choosing a witness, ask
+what the code does on the path you are *not* expecting.
+
+**Take the baseline before the action, never inside the wait.** Folding the
+"how many so far" read into the wait function means it runs *after* the key was
+sent, and a fast app has often written the evidence in the microseconds between
+the injector returning and the wait starting. The wait then looks for a second
+copy that never comes. Stub-testing caught this: the fake app logged every
+navigation perfectly and the probe failed all of them.
+
+**Back-to-back synthetic input needs a settle, and alternating pass/fail is the
+signature.** Run 4 dropped three chords, and the rhythm was exact: all three had
+been sent within milliseconds of the previous chord *succeeding*, and every
+chord sent after a pause arrived. When a witness appears the wait returns at
+once, so the next `wtype` invocation built a fresh virtual keyboard before the
+previous one had finished releasing its modifier. After a *failed* chord the
+wait had already burned its whole timeout — which is why the results alternated
+instead of clustering, the shape that gave it away. A 1.5 s settle before each
+chord took the run from 5 of 9 to 8 of 9.
+
+**A probe's own failure text contaminates the log you grep.** The report said
+`route_open:settings` twice, which read as though Settings had opened. Both hits
+were the probe's own `keys: FAILED -- ... logged no route_open:settings ...`
+lines. Grep the section that holds the app's output, never the whole report.
+
+**A frame taken with no dwell is a picture of the previous action.** The shot
+taken the instant the log line appeared caught the page before it drew, and came
+out byte-identical to the frame before it — so the pictures appeared to
+contradict the log.
+
+**A glob that encodes today's file count silently drops tomorrow's files.** The
+pixel sample and the fingerprints both iterated `"$OUT"/0*.png`. That was fine
+while frames ran 01–09. The probe grew to eleven, and frames 10 and 11 vanished
+from both sections with no error — the two frames most likely to show whether
+the last chords did anything. `[0-9]*.png` now.
+
+**Check the platform's source before blaming it.** This is the one that matters.
+The surviving failure is `Alt+Left`, and the obvious story was tidy: `Ctrl+F`
+leaves the library's search box focused, so the entry swallows the chord before
+the window's bubble-phase handler sees it. It fitted the evidence, it fitted
+`fires_while_typing()`'s stated intent, and it named a file to change. It is
+also unsupported. In GTK's own source, `gtktext.c` binds `Alt+Left` and
+`Alt+Right` only inside `#ifdef __APPLE__`; `gtkwindow.c`'s `add_arrow_bindings`
+binds arrows with `GDK_NO_MODIFIER_MASK` and `GDK_CONTROL_MASK` and never with
+Alt; `gtk_search_entry_is_keynav` does test the Alt mask but is a filter, not a
+claim; and `src/pages/all_books.rs` installs no key controller at all. Nothing
+on this platform takes the key, `Ctrl+Q` works with the same box focused, and
+`Alt+Left` failed in all five runs while `Alt+1` and `Alt+2` passed in all five
+— which is the shape of one keysym the injector does not send. No app code was
+changed. A plausible mechanism is not a finding; `gh api
+repos/GNOME/gtk/contents/gtk/gtktext.c` settles it in one command, and the
+`#ifdef` was four lines from the binding that looked like the answer.
+
+**A wait loop whose only exit is arithmetic will spin forever.** Four loops in
+the probe exited on a deadline computed as `$(( $(now_s) + timeout ))`. If that
+arithmetic ever yields nothing, the comparison errors instead of ending the
+wait, and the loop never stops — observed here while stub-testing, where it cost
+fifteen minutes of a sandbox and would have cost hours of CI. Each now carries
+an iteration backstop alongside the deadline. The backstop is not the intended
+exit and should never fire; it exists because a hung step is expensive in a way
+a wrong answer is not.

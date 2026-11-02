@@ -757,16 +757,31 @@ fi
 # flaky before passed, including both that run 3 and run 4 had disagreed
 # about. The settle was the whole of it.
 #
-# The one failure left is Alt+Left after Ctrl+F has focused the library's
-# search box. It is a real result and not a witness problem: the history is not
-# empty, Ctrl+F pushed it, and the missing line never appeared late. It is also
-# narrower than it first looks, because Ctrl+Q is sent afterwards with that
-# same search box still focused and it quits the app -- so modified chords are
-# not being swallowed wholesale, and this is specific to Alt+Left. The All
-# Books page installs no EventControllerKey of its own, which leaves the
-# GtkSearchEntry as the thing claiming it. Whether that is worth changing is a
-# question for the owner, not for this probe: Back is dead while you are typing
-# in the search box, and fires_while_typing says it should not be.
+# The one failure left is Alt+Left, and it is NOT an app bug so far as anything
+# readable here can tell. It is a real result rather than a witness problem --
+# Ctrl+F pushed the history, so there was something to pop, and the missing
+# line never appeared late -- but every candidate explanation was checked
+# against source and ruled out:
+#
+#   - gtktext.c binds Alt+Left and Alt+Right only inside #ifdef __APPLE__, so
+#     on Linux the focused text widget has no claim on them.
+#   - gtkwindow.c's add_arrow_bindings binds arrows with GDK_NO_MODIFIER_MASK
+#     and GDK_CONTROL_MASK, never with Alt.
+#   - gtk_search_entry_is_keynav does test GDK_ALT_MASK, but it is a filter
+#     that says "this is navigation, not typing" -- it does not stop the event.
+#   - src/pages/all_books.rs installs no EventControllerKey at all.
+#   - The shell table matches the chord correctly: default_binding and capture
+#     both key on normalized_key_name, so Alt+Left compares equal to Alt+Left,
+#     and fires_while_typing returns true for any alt binding.
+#   - Ctrl+Q is sent afterwards with the same search box still focused, and it
+#     quits the app.
+#
+# What is left is delivery. Alt+Left has failed in all five runs while Alt+1
+# and Alt+2 passed in all five, which is the shape of one keysym the injector
+# does not send rather than of a binding the app drops. No app code was
+# changed on the strength of this, and none should be until a human presses
+# Alt+Left with the search box focused and sees what happens. That check is in
+# docs/manual-test-checklist.md.
 #
 # Still open, and not explained: the second F11 does not leave fullscreen, in
 # every run so far. The handler calls unfullscreen() only when
@@ -1143,14 +1158,23 @@ print(found[0])
     else
       say "keys: FAILED -- Alt+Left opened no page within 10s"
       if [ "$SEARCH_FOCUSED" = "1" ]; then
-        say "       Keys demonstrably arrive and the history is not empty, so"
-        say "       the one thing that changed is the focused search box. But"
-        say "       do not conclude from this alone that the box swallows"
-        say "       modified chords: Ctrl+Q below is sent with that same box"
-        say "       still focused. If it quits the app, then modifiers are"
-        say "       arriving fine and this is specific to Alt+Left -- which"
-        say "       fires_while_typing says should still fire while typing."
-        say "       Read the two lines together, not this one on its own."
+        say "       Keys demonstrably arrive and the history is not empty. But"
+        say "       do NOT read this as the search box swallowing the chord."
+        say "       Checked against the sources: gtktext.c binds Alt+Left only"
+        say "       under #ifdef __APPLE__; gtkwindow.c's add_arrow_bindings"
+        say "       binds arrows with no modifier and with Ctrl but never with"
+        say "       Alt; gtk_search_entry_is_keynav is a filter, not a claim;"
+        say "       and src/pages/all_books.rs installs no key controller at"
+        say "       all. Nothing on this platform takes the key, and the shell"
+        say "       table matches it correctly (capture and default_binding both"
+        say "       go through normalized_key_name). Ctrl+Q below is sent with"
+        say "       the same box still focused and it works."
+        say "       So the suspect is delivery of this one chord, not the app."
+        say "       Alt+Left has failed in every run so far while Alt+1 and"
+        say "       Alt+2 passed in every run -- the shape of a keysym the"
+        say "       injector does not send, not of a binding the app drops."
+        say "       Settle it by hand: focus the search box, press Alt+Left."
+        say "       It is in docs/manual-test-checklist.md."
       else
         say "       Ctrl+f did not get us to the search box, so there may have"
         say "       been no history to pop. Uninterpretable."
@@ -1381,7 +1405,11 @@ say "=== screenshot pixel sample ==="
 # On reader or tasks routes the percentage is descriptive, not a pass
 # or failure signal.
 say "  low colour is a cover warning only on a seeded library-grid route."
-python3 docs/ci/check-shot.py "$OUT"/0*.png 2>&1 | tee -a "$REPORT" \
+# [0-9]* rather than 0*: the keystroke probe now runs to eleven frames, and a
+# glob that only matches a leading zero silently drops the last two from both
+# the pixel sample and the fingerprints below. They are exactly the frames that
+# would show whether the final chords changed anything.
+python3 docs/ci/check-shot.py "$OUT"/[0-9]*.png 2>&1 | tee -a "$REPORT" \
   || say "  (pixel sample failed to run)"
 
 say ""
@@ -1389,7 +1417,7 @@ say "=== screenshot fingerprints ==="
 # Identical checksums mean the screen never changed -- the single cheapest
 # signal that navigation did nothing, and the one that would have caught this
 # on the first working run.
-md5sum "$OUT"/0*.png 2>/dev/null | sed 's/^/  /' | tee -a "$REPORT" \
+md5sum "$OUT"/[0-9]*.png 2>/dev/null | sed 's/^/  /' | tee -a "$REPORT" \
   || say "  (no shots to fingerprint)"
 
 say ""

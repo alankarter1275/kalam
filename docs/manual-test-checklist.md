@@ -151,6 +151,33 @@ succeeded once.
   usable. Remote source browsing and downloads are not available because no
   online source implementation is registered.
 
+## Keyboard shortcuts
+
+CI now has a keystroke probe (`KEYS=1` in `docs/ci/screenshot.sh`) that types
+the app's own default shortcuts with `wtype` and asks three independent
+witnesses whether the app acted: its timing log, the compositor's window state,
+and whether the process died. In its fifth run it passed 8 of 9. Two of those
+checks need a human hand, because CI can produce a result but cannot interpret
+it.
+
+- [ ] Press `Ctrl+F` to focus the library's search box, type nothing, then
+  press `Alt+Left`. Expected: you leave All Books and go back. The probe sees
+  nothing happen, and it has seen nothing happen in all five runs — but every
+  readable source says nothing should be claiming that key. `gtktext.c` binds
+  `Alt+Left` only under `#ifdef __APPLE__`, `gtkwindow.c` binds arrows with no
+  modifier and with `Ctrl` but never with `Alt`, and `src/pages/all_books.rs`
+  installs no key controller at all. So the suspicion falls on the injector,
+  not on the app. **If Back does nothing for you here, the bug is real and
+  belongs to Kalam after all** — please say so, because five CI runs could not
+  settle it either way.
+- [ ] Press `F11` twice on any page. Expected: full screen, then back to
+  windowed. The probe reports that the second press leaves the window full
+  screen, in every run, and cannot tell whether that is the headless
+  compositor or the app. The handler calls `unfullscreen()` only when
+  `root.is_fullscreen()` says the window is already full screen, so if GTK
+  never learns the state under a headless compositor it would ask to go full
+  screen a second time instead.
+
 ## Report failures
 
 Record the book format, the steps that led to the problem, the expected result,

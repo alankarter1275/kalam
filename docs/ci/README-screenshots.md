@@ -243,17 +243,30 @@ a run.
 flaky passed, including the two that runs 3 and 4 had disagreed about. The
 settle was the whole of it.
 
-The one failure left is `Alt+Left` after `Ctrl+F` has focused the library's
-search box. It is a real result and not a witness problem: `Ctrl+F` pushed the
-history, so there was something to pop, and the missing line never appeared
-late. It is also **narrower than it first looks**, because `Ctrl+Q` is sent
-afterwards with that same search box still focused and it *does* quit the app —
-so modified chords are not being swallowed wholesale, and this is specific to
-`Alt+Left`. The All Books page installs no `EventControllerKey` of its own,
-which leaves the `GtkSearchEntry` as the thing claiming it. In plain terms:
-**Back is dead while you are typing in the search box**, and
-`fires_while_typing` says it should not be. Whether that is worth changing is
-the owner's call, not this probe's.
+The one failure left is `Alt+Left`, and **it is not an app bug** as far as
+anything readable here can tell. It is a real result rather than a witness
+problem — `Ctrl+F` pushed the history, so there was something to pop, and the
+missing line never appeared late — but every candidate explanation was checked
+against source and ruled out:
+
+- `gtktext.c` binds `Alt+Left` and `Alt+Right` only inside `#ifdef __APPLE__`,
+  so on Linux the focused text widget has no claim on them.
+- `gtkwindow.c`'s `add_arrow_bindings` binds arrows with no modifier and with
+  `Ctrl`, never with `Alt`.
+- `gtk_search_entry_is_keynav` does test the Alt mask, but it is a filter that
+  says "this is navigation, not typing" — it does not stop the event.
+- `src/pages/all_books.rs` installs no `EventControllerKey` at all.
+- The shell table matches the chord correctly, and `fires_while_typing` returns
+  true for any Alt binding.
+- `Ctrl+Q` is sent afterwards with the same search box still focused, and it
+  quits the app.
+
+What is left is **delivery**. `Alt+Left` failed in all five runs while `Alt+1`
+and `Alt+2` passed in all five, which is the shape of one keysym the injector
+does not send rather than of a binding the app drops. No app code was changed
+on the strength of this, and none should be until a human presses `Alt+Left`
+with the search box focused. That check is in
+[`docs/manual-test-checklist.md`](../manual-test-checklist.md).
 
 One thing is still open and unexplained, in every run so far: **the second
 `F11` does not leave full screen.** The handler calls `unfullscreen()` only when

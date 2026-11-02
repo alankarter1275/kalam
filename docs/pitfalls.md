@@ -3572,15 +3572,48 @@ itself; and a rule for writing this file down — a claim about what *always*
 happens needs either a mechanism or a lot more runs than feels necessary, and
 when it has neither, say "in every run so far" and mean it as a confession.
 
-The one check that has still never passed, in any of the six runs, is the
-*second* `F11`: the window goes full screen and does not come back. That is
-genuinely unresolved and is the only candidate for a real defect. The handler
-calls `unfullscreen()` only when `root.is_fullscreen()` agrees, so under a
-headless compositor GTK may never learn the state it is in and may ask to go
-full screen a second time instead. It is reported as a NOTE, it is not counted
-as a probe, and it is in `docs/manual-test-checklist.md` for a human to settle
-in two seconds — which is the right destination for a question a headless
-harness structurally cannot answer.
+**Settled by the owner on 2026-11-03: the last "candidate for a real defect"
+was the harness too.** The *second* `F11` never worked in any of seven headless
+runs — the window went full screen and did not come back — and the paragraph
+above this one called it the only open candidate for a real defect. On real
+hardware it works, first try, along with every other shortcut. So it was the
+headless compositor all along, exactly as the handler's `root.is_fullscreen()`
+guard suggested: under headless sway GTK never learns the window's state, so the
+second press asks to go full screen again instead of leaving.
+
+Two things worth keeping. Sending it to a human was the right call and cost two
+seconds, the cheapest verification in this whole file — when a headless harness
+structurally cannot answer a question, say so and hand it over rather than
+letting it sit as a suspected defect. And the count is now seven runs, nine
+shortcuts, and **zero** app bugs: every failure this probe ever reported was its
+own. A probe that wrong that consistently is not measuring the app, it is
+measuring itself, and the honest reading of `8 of 9` was never "one thing is
+broken" but "I do not yet know how to ask".
+
+**The same rule answered the owner's warning in one command.** Their own build
+printed `Gdk-WARNING **: gdk_frame_timings_submitted() called on submitted
+frame.` The instinct is to go hunting for what the app did. The function name
+answers it first: `gdk_frame_timings_submitted` is declared in
+`gdk/gdkframetimingsprivate.h` and appears **zero** times in the public
+`gdk/gdkframetimings.h`, so it is private GDK API that no application can call.
+In GTK's tree its only caller is `gdk_draw_context_frame_submitted`
+(`gdk/gdkframeclock.c:986`), GDK's own backend path. Current `main` has also
+relaxed the check — a duplicate call on an already-submitted frame is now
+explicitly allowed and silent — so that wording belongs to an older GTK, and
+upstream has already decided it is not worth warning about. It is a
+`g_warning_once`, so it fires at most once per process, which matches the single
+line seen. Nothing in Kalam drives it: the only frame-clock contact is
+`src/frames.rs:184`, gated behind `KALAM_TIMING=1` (`src/timing.rs:71`) and
+observers only, and the two `add_tick_callback` sites (`src/pages/author.rs:759`
+and `:1258`) are bounded at 180 tries and return `Break`. An unrelated GTK4 Rust
+app emits the identical warning, and CI has never produced it in any run, because
+headless sway takes a different path.
+
+The rule: **when a warning names a function, find out who is allowed to call it
+before reading your own code.** Private or internal API in the message means the
+fault is below you. Same discipline as reading `gtktext.c` instead of believing
+the search-box story — but this time one `grep -c` against a public header,
+instead of five CI runs.
 
 **A wait loop whose only exit is arithmetic will spin forever.** Four loops in
 the probe exited on a deadline computed as `$(( $(now_s) + timeout ))`. If that

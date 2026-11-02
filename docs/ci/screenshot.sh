@@ -793,14 +793,18 @@ fi
 # now been seen handling it. The human check in docs/manual-test-checklist.md
 # stays, because a harness that drops keys cannot prove a negative.
 #
-# Still open, and the only check that has never passed in any of the six runs:
-# the second F11 does not leave fullscreen. The handler calls unfullscreen()
-# only when root.is_fullscreen() agrees, so under a headless compositor GTK may
-# never learn the state it is in and may ask to go fullscreen a second time
-# instead. It is retried like everything else, so a dropped key cannot be
-# mistaken for the toggle being one-way -- which is the interesting possibility
-# and the one a human can settle in two seconds. Reported as a NOTE, not
-# counted as a probe.
+# SETTLED 2026-11-03 by the owner, on real hardware: every shortcut works,
+# including the second F11. The check below has never passed in any of seven
+# headless runs and used to be written up as the only candidate for a real
+# defect. It is not one. Under headless sway GTK never learns the window's
+# state, so the unfullscreen() branch -- guarded by root.is_fullscreen() -- is
+# never taken and the second press asks to go fullscreen again. A property of
+# the runner, not of the app.
+#
+# It is still reported, as a NOTE and not counted as a probe, because the report
+# should show what this environment actually does. Read it as known-benign.
+# Seven runs, nine shortcuts, no app bugs: every failure this probe ever
+# reported was its own.
 #
 # Read the VERDICT line before the individual results, and read
 # docs/ci/README-screenshots.md.
@@ -1277,10 +1281,11 @@ print(found[0])
           say "       So the toggle is not one-way; the first attempt was dropped."
         else
           say "keys: NOTE -- still fullscreen_mode=$(fullscreen_mode) after two"
-          say "       attempts. The handler calls unfullscreen() only when"
-          say "       root.is_fullscreen() agrees, so under a headless"
-          say "       compositor GTK may never learn the state it is in. This is"
-          say "       the one check that has never passed in any run."
+          say "       attempts. KNOWN-BENIGN: the owner confirmed on real"
+          say "       hardware (2026-11-03) that F11 twice works. Under headless"
+          say "       sway GTK never learns the window state, so the"
+          say "       unfullscreen() branch -- guarded by root.is_fullscreen()"
+          say "       -- is never taken. A property of this runner, not a defect."
         fi
       fi
     else

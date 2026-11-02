@@ -281,14 +281,20 @@ been seen handling it. The human check in
 [`docs/manual-test-checklist.md`](../manual-test-checklist.md) stays anyway,
 because a harness that drops keys cannot prove a negative.
 
-The one check that has still never passed, in any of the six runs, is the
-**second `F11`**: the window goes full screen and does not come back. That is
-genuinely unresolved and is the only candidate for a real defect. The handler
-calls `unfullscreen()` only when `root.is_fullscreen()` agrees, so under a
-headless compositor GTK may never learn the state it is in and may ask to go
-full screen a second time instead. It is reported as a `NOTE`, not counted as a
-probe, and it is in the owner's checklist — which is the right destination for a
-question a headless harness structurally cannot answer.
+**Settled by the owner on 2026-11-03: it was the headless compositor, not the
+app.** The *second* `F11` never worked in any of seven runs — the window went
+full screen and did not come back — and this section previously called it the
+only open candidate for a real defect. On real hardware every shortcut works,
+including that one, first try. Under headless sway GTK never learns the window's
+state, so the handler's `unfullscreen()` branch, which is guarded by
+`root.is_fullscreen()`, is never taken and the second press asks to go full
+screen again. The probe keeps reporting it as a `NOTE` rather than silently
+dropping the check, so the report still shows what the headless environment does
+— but it is a property of the runner, and it is not counted as a probe.
+
+That makes seven runs, nine shortcuts, and **no app bugs at all**: every failure
+this probe ever reported was its own. Read a low score as "the harness is not
+yet asking properly", never as "a shortcut is broken".
 
 Three smaller things the same runs exposed, all now fixed:
 

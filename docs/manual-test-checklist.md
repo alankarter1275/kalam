@@ -160,25 +160,29 @@ and whether the process died. Across six runs it has seen every one of the nine
 default shortcuts fire at least once, so the shortcut table looks sound. The
 harness itself is not: it drops keystrokes at a low rate and the chords it drops
 move from run to run, so each is now sent twice and the report says which
-attempt landed. Two checks still need a human hand, because CI can produce a
-result it cannot interpret.
+attempt landed. Two checks needed a human hand, because CI can produce a result
+it cannot interpret. **Both were run by the owner on 2026-11-03 and both
+passed** — every shortcut works on real hardware, and the one CI could never
+reproduce turned out to be the headless compositor after all.
 
-- [ ] Press `Ctrl+F` to focus the library's search box, type nothing, then
-  press `Alt+Left`. Expected: you leave All Books and go back. The probe failed
-  this in runs 1 and 5 and **passed it in run 6**, with the same search box
-  focused, so the app has been seen handling it and there is probably nothing to
-  fix. It is worth your two seconds anyway, because a harness that drops
-  keystrokes cannot prove a negative — and because for a while the reports
-  claimed a bug here that did not exist. Every readable source agrees nothing
+- [x] **PASSED 2026-11-03.** Press `Ctrl+F` to focus the library's search box,
+  type nothing, then press `Alt+Left`. Expected: you leave All Books and go
+  back. **It works.** CI failed this in runs 1 and 5 and passed it in run 6,
+  with the same search box focused each time — so the failures were the harness
+  dropping the key, not the app refusing it. For a while the reports claimed a
+  bug here that never existed. Every readable source agrees nothing
   should claim that key: `gtktext.c` binds `Alt+Left` only under `#ifdef
   __APPLE__`, `gtkwindow.c` binds arrows with no modifier and with `Ctrl` but
   never with `Alt`, and `src/pages/all_books.rs` installs no key controller at
   all. **If Back does nothing for you, say so** — that would make it real.
-- [ ] Press `F11` twice on any page. Expected: full screen, then back to
-  windowed. **This is the one check that has never passed, in any of the six
-  runs**, and the only open candidate for a real defect — the second press
-  leaves the window full screen even after being sent twice. The probe cannot
-  tell whether that is the headless compositor or the app. The handler calls `unfullscreen()` only when
+- [x] **PASSED 2026-11-03.** Press `F11` twice on any page. Expected: full
+  screen, then back to windowed. **It works** — the window goes full screen and
+  comes back. This settles the one question CI could not: the second `F11` never
+  worked in any of seven headless runs, and I had written it up as the only
+  remaining candidate for a real defect. It was never a defect. It is the
+  headless compositor, exactly as the handler's `root.is_fullscreen()` guard
+  suggested — under headless sway GTK does not learn the window's state, so it
+  asks to go full screen a second time instead of leaving. The handler calls `unfullscreen()` only when
   `root.is_fullscreen()` says the window is already full screen, so if GTK
   never learns the state under a headless compositor it would ask to go full
   screen a second time instead.

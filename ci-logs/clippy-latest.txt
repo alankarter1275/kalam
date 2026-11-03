@@ -11,14 +11,52 @@ Package 'gdk4' not found
 not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
+[1m[92m Downloading[0m crates ...
+[1m[92m  Downloaded[0m crc32fast v1.5.4
+[1m[92m  Downloaded[0m cc v1.11.0
+[1m[92m  Downloaded[0m jiff-core v0.1.2
+[1m[92m  Downloaded[0m jiff v0.2.39
+[1m[92m  Downloaded[0m unicode-script v0.5.9
+[1m[92m  Downloaded[0m zip v9.3.0
+[1m[92m   Compiling[0m crc32fast v1.5.4
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
+[1m[92m    Checking[0m unicode-script v0.5.9
+[1m[92m   Compiling[0m cc v1.11.0
+[1m[92m    Checking[0m cosmic-text v0.19.0
+[1m[92m    Checking[0m rustybuzz v0.20.1
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
+[1m[92m    Checking[0m usvg v0.48.1
+[1m[92m    Checking[0m jiff-core v0.1.2
+[1m[92m    Checking[0m formulary v0.2.0
+[1m[92m    Checking[0m jiff v0.2.39
+[1m[92m    Checking[0m flate2 v1.1.10
+[1m[92m    Checking[0m zopfli v0.8.4
+[1m[92m    Checking[0m png v0.18.1
+[1m[92m    Checking[0m zip v9.3.0
+[1m[92m    Checking[0m tiny-skia v0.12.0
+[1m[92m    Checking[0m image v0.25.10
+[1m[92m    Checking[0m rbook v0.7.12
+[1m[92m    Checking[0m resvg v0.48.1
+[1m[92m    Checking[0m zip v6.0.0
+[1m[92m   Compiling[0m ring v0.17.14
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
+[1m[92m   Compiling[0m freetype-sys v0.20.1
+[1m[92m   Compiling[0m mupdf-sys v0.8.0
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
+[1m[92m   Compiling[0m libsqlite3-sys v0.30.1
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-reader)
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
+[1m[92m   Compiling[0m font-kit v0.14.3
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
+[1m[92m    Checking[0m epub-builder v0.8.3
+[1m[92m    Checking[0m env_logger v0.11.11
+[1m[92m    Checking[0m zip v2.6.1
+[1m[92m   Compiling[0m rustls v0.23.46
+[1m[92m    Checking[0m rustls-webpki v0.103.16
+[1m[92m    Checking[0m ureq v2.12.1
+[1m[92m    Checking[0m rusqlite v0.32.1
+[1m[92m    Checking[0m mupdf v0.8.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 11.71s
---- run 41290298358 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 1m 07s
+--- run 41670713264 ---

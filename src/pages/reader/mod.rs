@@ -2573,22 +2573,23 @@ impl Component for ReaderModel {
                 // stays up either way.
                 if let Some(word) = self.dict_lookup_word.clone() {
                     let catalog = self.service.catalog();
-                    let saved = catalog
-                        .saved_word_exists(&word, self.book_id)
-                        .unwrap_or(false);
+                    let saved = catalog.saved_word_exists(&word).unwrap_or(false);
                     if saved {
                         // Every row this stroke forgets, kept for
-                        // Ctrl+Z (decisions 30, 31).
+                        // Ctrl+Z (decisions 30, 31). Matched on the word
+                        // alone: the dictionary is one pool, so the row
+                        // being forgotten may have been saved in another
+                        // book, or in a book that has since been deleted
+                        // and left `book_id` NULL. Filtering on this book
+                        // captured nothing for either, and Ctrl+Z then had
+                        // no row to put back.
                         let rows: Vec<_> = self
                             .saved_words
                             .iter()
-                            .filter(|w| {
-                                w.book_id == Some(self.book_id)
-                                    && w.word.eq_ignore_ascii_case(&word)
-                            })
+                            .filter(|w| w.word.eq_ignore_ascii_case(&word))
                             .cloned()
                             .collect();
-                        match catalog.delete_saved_word_for(&word, self.book_id) {
+                        match catalog.delete_saved_word_for(&word) {
                             Ok(()) => {
                                 if !rows.is_empty() {
                                     self.remember_deleted(DeletedMark::SavedWords(rows));
@@ -3091,7 +3092,7 @@ impl ReaderModel {
         let saved = self
             .service
             .catalog()
-            .saved_word_exists(&data.word, self.book_id)
+            .saved_word_exists(&data.word)
             .unwrap_or(false);
         let rect = self.dict_anchor_rect();
         self.show_dict(&data, saved, rect, sender);
@@ -3139,7 +3140,7 @@ impl ReaderModel {
         let saved = self
             .service
             .catalog()
-            .saved_word_exists(&data.word, self.book_id)
+            .saved_word_exists(&data.word)
             .unwrap_or(false);
         self.show_dict(&data, saved, rect, sender);
     }

@@ -96,7 +96,9 @@ pub type Result<T> = std::result::Result<T, DbError>;
 ///          (decisions 48 and 112)
 /// · v22 = fetched comic-series metadata, its source link and cover,
 ///          and hand-edited field locks (decisions 46 and 48)
-pub const SCHEMA_VERSION: i64 = 22;
+/// · v23 = saved words become one dictionary entry per word rather than one
+///          per book, so the word column gains its uniqueness rule
+pub const SCHEMA_VERSION: i64 = 23;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -1015,7 +1017,8 @@ impl Catalog {
                 context_text  TEXT,
                 created_at    TEXT    NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_saved_words_word ON saved_words(word COLLATE NOCASE);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_words_word
+                ON saved_words(word COLLATE NOCASE);
 
             CREATE TABLE IF NOT EXISTS reading_bookmarks (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1554,6 +1557,43 @@ impl Catalog {
                         "UPDATE annotations SET color = 'yellow' \
                          WHERE lower(color) = 'underline'",
                         [],
+                    )?;
+                }
+                // v23: a saved word is one entry in one personal dictionary,
+                // not one entry per book, so the word column gains a
+                // uniqueness rule. Order matters here and it is not
+                // cosmetic: `migrate` returns `Result` and `Catalog::open`
+                // propagates it, so a failed statement stops the app from
+                // opening at all. The old per-book existence check let the
+                // same word be saved once per book, and creating a unique
+                // index over a table that still holds those duplicates
+                // would fail — so merge them away first.
+                //
+                // The oldest row of each word is kept, which preserves the
+                // provenance that actually matters (`book_id` records where
+                // the word was first met), and `known` is carried over if
+                // any copy of the word had it, so grading a word as learned
+                // in one book is not lost by the merge.
+                if v < 23 {
+                    conn.execute(
+                        "UPDATE saved_words SET known = 1 \
+                         WHERE lower(word) IN ( \
+                             SELECT lower(word) FROM saved_words WHERE known = 1)",
+                        [],
+                    )?;
+                    conn.execute(
+                        "DELETE FROM saved_words WHERE id NOT IN ( \
+                             SELECT MIN(id) FROM saved_words GROUP BY lower(word))",
+                        [],
+                    )?;
+                    // Drop before create: the older schema made this index
+                    // non-unique under the same name, and `CREATE UNIQUE
+                    // INDEX IF NOT EXISTS` matches on name, so it would
+                    // silently leave the non-unique one standing.
+                    conn.execute_batch(
+                        "DROP INDEX IF EXISTS idx_saved_words_word; \
+                         CREATE UNIQUE INDEX idx_saved_words_word \
+                             ON saved_words(word COLLATE NOCASE);",
                     )?;
                 }
                 conn.execute(
@@ -3159,6 +3199,57 @@ mod tests {
         let wavy = rows.iter().find(|r| r.text_excerpt == "wavy").unwrap();
         assert_eq!(wavy.style, "squiggly", "a deliberate style survives");
         assert_eq!(wavy.color, "yellow");
+    }
+
+    /// A database written before v23 could hold the same word once per
+    /// book, because the existence check was book-scoped. Creating the
+    /// unique index over such a table fails, and `migrate` propagates its
+    /// error to `Catalog::open` — so the app would not start at all. The
+    /// migration therefore merges first: oldest row kept, `known` carried
+    /// over if any copy of the word had it.
+    #[test]
+    fn v23_merges_duplicate_saved_words_before_making_the_word_unique() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let book = seed(&cat, "Words Migration", "A", &[]);
+        {
+            let conn = cat.conn();
+            // Recreate the v22 shape: same index name, not unique.
+            conn.execute_batch(
+                "DROP INDEX IF EXISTS idx_saved_words_word; \
+                 CREATE INDEX idx_saved_words_word \
+                     ON saved_words(word COLLATE NOCASE);",
+            )
+            .unwrap();
+            // Two rows for one word, as the old per-book check allowed.
+            // The newer copy is the one marked known, so the merge has to
+            // carry that flag onto the older row it keeps.
+            for (n, known) in [(1, 0), (2, 1)] {
+                let stamp = format!("2026-01-0{n}T00:00:00Z");
+                conn.execute(
+                    "INSERT INTO saved_words \
+                         (word, definition, book_id, created_at, known) \
+                     VALUES ('ubiquitous', 'present everywhere', ?1, ?2, ?3)",
+                    params![book, stamp, known],
+                )
+                .unwrap();
+            }
+            conn.execute("UPDATE schema_version SET version = 22", [])
+                .unwrap();
+        }
+
+        cat.migrate().unwrap();
+
+        let rows = cat.list_saved_words("", None).unwrap();
+        assert_eq!(rows.len(), 1, "the duplicates merge into one entry");
+        assert!(rows[0].known, "known survives the merge if any copy had it");
+        assert_eq!(rows[0].book_id, Some(book));
+
+        let dup = cat.conn().execute(
+            "INSERT INTO saved_words (word, definition, created_at) \
+             VALUES ('ubiquitous', 'x', '')",
+            [],
+        );
+        assert!(dup.is_err(), "the index is unique again after migrating");
     }
 
     #[test]

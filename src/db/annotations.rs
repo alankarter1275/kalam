@@ -404,6 +404,16 @@ impl Catalog {
     // P3: Saved words
     // -----------------------------------------------------------------------
 
+    /// Add a word to your dictionary.
+    ///
+    /// Idempotent by word: if the word is already in the dictionary, the
+    /// existing row's id comes back and nothing is written. The unique index
+    /// on `saved_words(word)` would otherwise turn a second save of the same
+    /// word into a constraint error surfaced as a toast, and any caller that
+    /// does not consult [`Catalog::saved_word_exists`] first could trip it.
+    /// Keeping the first row also keeps the provenance honest — `book_id`
+    /// records where you *first* met the word, and a later encounter in
+    /// another book does not overwrite that.
     pub fn insert_saved_word(
         &self,
         word: &str,
@@ -414,6 +424,16 @@ impl Catalog {
         context_text: Option<&str>,
     ) -> Result<i64> {
         let conn = self.conn();
+        let existing: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM saved_words WHERE word = ?1 COLLATE NOCASE",
+                params![word],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(id) = existing {
+            return Ok(id);
+        }
         let now = chrono_like_now();
         conn.execute(
             "INSERT INTO saved_words (word, definition, dict_name, book_id, chapter_index, context_text, created_at)
@@ -519,10 +539,16 @@ impl Catalog {
 
     /// Put a forgotten word back exactly as it was (decision 30's
     /// undo), review state included.
+    ///
+    /// `OR IGNORE` because the word column is now unique: if the word was
+    /// forgotten and then saved again before this undo landed, the dictionary
+    /// already holds it and the outcome the undo wanted is already true.
+    /// Failing here would report "could not bring the word back" for a word
+    /// that is plainly back.
     pub fn restore_saved_word(&self, row: &SavedWord) -> Result<()> {
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO saved_words
+            "INSERT OR IGNORE INTO saved_words
                 (id, word, definition, dict_name, book_id, chapter_index, context_text,
                  created_at, known)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -541,14 +567,19 @@ impl Catalog {
         Ok(())
     }
 
-    /// The dictionary toggle's off stroke: forget every row this book
-    /// holds for the word (one in practice — `saved_word_exists` is
-    /// what the toggle reads, and it counts any row).
-    pub fn delete_saved_word_for(&self, word: &str, book_id: i64) -> Result<()> {
+    /// The dictionary toggle's off stroke: forget the word everywhere.
+    ///
+    /// One dictionary, so one removal. This used to also match on
+    /// `book_id`, which meant a word whose book had been deleted (`book_id`
+    /// NULL) could never be un-saved: the `DELETE` matched nothing and
+    /// returned `Ok`, so the stroke reported success and removed nothing.
+    /// Dropping the book filter also clears any duplicate rows left behind
+    /// by the old per-book check in a single stroke.
+    pub fn delete_saved_word_for(&self, word: &str) -> Result<()> {
         let conn = self.conn();
         conn.execute(
-            "DELETE FROM saved_words WHERE word = ?1 COLLATE NOCASE AND book_id = ?2",
-            params![word, book_id],
+            "DELETE FROM saved_words WHERE word = ?1 COLLATE NOCASE",
+            params![word],
         )?;
         Ok(())
     }
@@ -915,6 +946,143 @@ mod tests {
             .get_saved_words_for_scope(book_id2, "library")
             .expect("query library");
         assert_eq!(all.len(), 3);
+    }
+
+    /// One dictionary, not one per book. The existence check used to match
+    /// on word *and* book, so a word met in another book read as "not
+    /// saved" — and the popup offered to save it again, contradicting the
+    /// underline, which has always been keyed on the word alone.
+    #[test]
+    fn a_word_saved_in_one_book_reads_as_saved_everywhere() {
+        let (cat, book_a) = catalog_with_book();
+        cat.insert_saved_word(
+            "ubiquitous",
+            "present everywhere",
+            None,
+            Some(book_a),
+            Some(3),
+            Some("an ubiquitous error"),
+        )
+        .expect("save word");
+
+        assert!(
+            cat.saved_word_exists("ubiquitous").expect("exists check"),
+            "the word is in the dictionary, whichever book asks"
+        );
+        // Case-insensitively, matching both the underline and the unique
+        // index on the word column.
+        assert!(cat.saved_word_exists("UBIQUITOUS").expect("exists check"));
+        assert!(!cat.saved_word_exists("ephemeral").expect("exists check"));
+
+        // The book link survives as provenance, not as ownership.
+        let rows = cat.list_saved_words("", None).expect("list words");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].book_id, Some(book_a), "where it was first met");
+    }
+
+    /// A word outlives its book. `saved_words.book_id` is
+    /// `ON DELETE SET NULL`, so the row was never lost — but the old
+    /// word-and-book queries could no longer see it: the popup read an
+    /// orphaned word as "not saved" (so saving it again made a duplicate)
+    /// and the off stroke matched nothing, returning `Ok` having removed
+    /// nothing. Both are asserted here, because both were silent.
+    #[test]
+    fn a_word_outlives_its_book_and_can_still_be_forgotten() {
+        let (cat, book) = catalog_with_book();
+        cat.insert_saved_word(
+            "ephemeral",
+            "lasting a short time",
+            None,
+            Some(book),
+            Some(2),
+            Some("an ephemeral joy"),
+        )
+        .expect("save word");
+
+        cat.delete_book(book).expect("delete book");
+
+        let rows = cat.list_saved_words("", None).expect("list words");
+        assert_eq!(rows.len(), 1, "deleting the book keeps the word");
+        assert_eq!(rows[0].book_id, None, "the link is blanked, not the row");
+        assert_eq!(
+            rows[0].context_text.as_deref(),
+            Some("an ephemeral joy"),
+            "the sentence it was met in survives too"
+        );
+
+        assert!(
+            cat.saved_word_exists("ephemeral").expect("exists check"),
+            "an orphaned word still reads as saved"
+        );
+
+        // The stroke that used to report success and do nothing.
+        cat.delete_saved_word_for("ephemeral").expect("forget word");
+        assert!(
+            cat.list_saved_words("", None).expect("list words").is_empty(),
+            "forgetting an orphaned word really removes it"
+        );
+        assert!(!cat.saved_word_exists("ephemeral").expect("exists check"));
+    }
+
+    /// Saving a word you already have keeps one entry. The unique index
+    /// makes a second row impossible at the database level, and
+    /// `insert_saved_word` checks first so the caller gets the existing id
+    /// back instead of a constraint error surfaced as a toast.
+    #[test]
+    fn saving_the_same_word_twice_keeps_one_dictionary_entry() {
+        let (cat, book_a) = catalog_with_book();
+        let book_b = cat
+            .insert_book(
+                "uuid-second-book",
+                "Second Book",
+                "Author",
+                None,
+                "",
+                BookFormat::Epub,
+                "second.epub",
+                "hash-second-book",
+                None,
+                &[],
+            )
+            .expect("insert second book");
+
+        let first = cat
+            .insert_saved_word(
+                "serendipity",
+                "a happy accident",
+                None,
+                Some(book_a),
+                Some(1),
+                Some("pure serendipity"),
+            )
+            .expect("first save");
+        let again = cat
+            .insert_saved_word(
+                "serendipity",
+                "a different gloss",
+                None,
+                Some(book_b),
+                Some(4),
+                None,
+            )
+            .expect("second save");
+
+        assert_eq!(first, again, "the second save hands back the entry you had");
+        let rows = cat.list_saved_words("", None).expect("list words");
+        assert_eq!(rows.len(), 1, "one dictionary, one entry");
+        assert_eq!(rows[0].book_id, Some(book_a), "provenance keeps the first book");
+        assert_eq!(
+            rows[0].definition, "a happy accident",
+            "the first entry is not overwritten by a later encounter"
+        );
+
+        // The guarantee belongs to the database, not just to the helper.
+        let dup = cat.conn().execute(
+            "INSERT INTO saved_words (word, definition, created_at) \
+             VALUES ('serendipity', 'x', '')",
+            [],
+        );
+        assert!(dup.is_err(), "the word column is unique");
     }
 
     #[test]

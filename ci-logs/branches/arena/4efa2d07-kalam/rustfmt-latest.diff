@@ -1,15 +1,2 @@
-diff --git a/src/db.rs b/src/db.rs
-index 774a3d1..14809c9 100644
---- a/src/db.rs
-+++ b/src/db.rs
-@@ -3586,7 +3586,8 @@ mod tests {
- 
-         // One of each kind of reading data.
-         cat.set_reading_progress(id, 7, 0.42, 20).unwrap();
--        cat.insert_reading_bookmark(id, 7, 0.42, "the good part").unwrap();
-+        cat.insert_reading_bookmark(id, 7, 0.42, "the good part")
-+            .unwrap();
-         cat.insert_annotation(
-             id,
-             "highlight",
---- run 41550784360 ---
+clean
+--- run 41553179785 ---

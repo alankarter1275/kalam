@@ -333,12 +333,10 @@ impl Catalog {
             .optional()?
         };
 
-        let Some(saved) = saved else {
-            return Ok(false);
-        };
-
         // Suppress re-stashing for the duration; the Drop impl clears the flag
-        // even if a step below fails.
+        // even if a step below fails. Set before either half is attempted:
+        // reading data has its own stash and is restored below, and neither
+        // half is an edit.
         struct RestoreGuard<'a>(&'a std::sync::atomic::AtomicBool);
         impl Drop for RestoreGuard<'_> {
             fn drop(&mut self) {
@@ -348,6 +346,14 @@ impl Catalog {
         self.restoring
             .store(true, std::sync::atomic::Ordering::Relaxed);
         let _guard = RestoreGuard(&self.restoring);
+
+        let Some(saved) = saved else {
+            // No hand edits were stashed for this file. Reading data lives in
+            // its own table and is frequently there without them -- a book you
+            // never renamed still has a place in it and highlights in it -- so
+            // this is the common case rather than an exit.
+            return self.restore_reading(book_id);
+        };
 
         let tags: Vec<String> = saved
             .tags
@@ -403,6 +409,12 @@ impl Catalog {
                 }
             }
         }
+
+        // Then the reading data, if any was stashed against this file. The
+        // metadata half already succeeded, so the answer stays true either way
+        // -- but the restore still has to happen, and its own failure should
+        // not be swallowed.
+        self.restore_reading(book_id)?;
         Ok(true)
     }
 

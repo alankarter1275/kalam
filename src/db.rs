@@ -20,6 +20,7 @@ mod patches;
 mod pdf_annotations;
 mod prefs;
 mod pronunciation;
+mod reading_stash;
 pub mod search;
 mod series;
 mod shelves;
@@ -127,7 +128,7 @@ pub struct Catalog {
 // Domain structs for P3
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)] // model mirrors the row; several fields below are not yet surfaced
 pub struct Annotation {
     pub id: i64,
@@ -218,7 +219,7 @@ pub struct QuoteRef {
     pub cover_path: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReadingBookmark {
     pub id: i64,
     #[allow(dead_code)] // bookmarks load per-book, so the id is never read back
@@ -366,7 +367,7 @@ impl PdfDrawingGeometry {
 /// One saved PDF drawing object. Colour names are the five highlight
 /// hues plus `ink` (decision 67); width and geometry are source-page
 /// points, never display pixels.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PdfDrawing {
     pub id: i64,
     pub book_id: i64,
@@ -1189,6 +1190,21 @@ impl Catalog {
                 rating       INTEGER,
                 cover_name   TEXT,
                 updated_at   TEXT NOT NULL
+            );
+
+            -- Reading data you cannot get back from the file: your place in
+            -- the book, bookmarks, highlights and notes, PDF ink, and which
+            -- shelf or reading list the book sat on. Remembered against the
+            -- same content hash as `metadata_overrides`, for the same reason
+            -- and with the same lifecycle. The payload is one JSON document
+            -- rather than a mirror of every table: the shapes are already
+            -- serde types, the sidecar serialises the same data the same way,
+            -- and a document per deleted book keeps this to one table instead
+            -- of nine.
+            CREATE TABLE IF NOT EXISTS reading_overrides (
+                file_hash  TEXT PRIMARY KEY,
+                payload    TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS author_profiles (
@@ -2250,6 +2266,12 @@ impl Catalog {
         // Capture any hand-edited metadata first: the row is about to go, and
         // re-importing the same file should not lose your work.
         let _ = self.remember_overrides(id);
+        // And the reading data, which the cascade below destroys and which
+        // cannot be derived from the file again: the place in the book, the
+        // bookmarks, the highlights, the PDF ink, the shelf it sat on.
+        // Same fingerprint, same lifecycle, separate table -- see
+        // `db::reading_stash` for what is deliberately left out and why.
+        let _ = self.remember_reading(id);
         {
             let conn = self.conn();
             let _ = conn.execute(
@@ -3641,34 +3663,35 @@ mod tests {
         assert_eq!(restored.tags.len(), 2);
     }
 
-    /// KNOWN GAP, pinned rather than endorsed. Deleting a book and re-importing
-    /// the same file restores hand-edited METADATA but loses every piece of
-    /// READING data: position, bookmarks and annotations.
+    /// Deleting a book and re-importing the same file brings back the hand-edited
+    /// METADATA *and* the READING data: position, bookmarks and annotations.
     ///
-    /// Why. `remember_overrides` stashes ten metadata columns into
-    /// `metadata_overrides`, keyed by `file_hash`, which outlives the row.
-    /// Nothing does the equivalent for reading data. `reading_progress`,
-    /// `reading_bookmarks` and `annotations` all carry
+    /// This test used to pin the opposite, as a known gap. Both halves of the
+    /// mechanism are named here because the shape of the fix follows from them.
+    /// `reading_progress`, `reading_bookmarks` and `annotations` all carry
     /// `REFERENCES books(id) ON DELETE CASCADE`, and the catalog runs with
     /// `PRAGMA foreign_keys = ON` in both `Catalog::open` and
-    /// `Catalog::open_in_memory`, so deleting the book row destroys them.
-    /// Named by function rather than by line number on purpose: line numbers
-    /// rot on the first reformat and then quietly point at nothing.
-    /// `books.id` is AUTOINCREMENT, so the re-imported book gets a fresh id and
-    /// the old rows could not be re-attached even if they had survived.
+    /// `Catalog::open_in_memory`, so deleting the book row genuinely destroys
+    /// them -- the middle block below still asserts that, and it is the reason
+    /// the rescue has to happen *before* the delete rather than after it.
+    /// `books.id` is AUTOINCREMENT, so the re-import gets a fresh id and nothing
+    /// could be re-attached to the old one even if it had survived.
     ///
-    /// The sidecar looks like it should cover this -- `Sidecar.reading_position`
-    /// is documented as "Chapter and fraction, so reading position survives a
-    /// rebuild" -- but it is written to `library/<uuid>/kalam.json`, inside the
-    /// very folder `delete_book_single` removes, and `read_sidecar` has no
-    /// caller on the import path. The backup goes with the book, and nothing
-    /// reads it back anyway.
+    /// So `remember_overrides` stashes ten metadata columns into
+    /// `metadata_overrides` keyed by `file_hash`, and `remember_reading` stashes
+    /// the reading rows into `reading_overrides` against the same fingerprint;
+    /// `restore_overrides` puts both back. See `db::reading_stash` for what is
+    /// deliberately left out -- the rebuildable indexes, the editor snapshots
+    /// whose files are addressed by a uuid the re-import does not reuse, and a
+    /// legacy `patches` table with no writer at all.
     ///
-    /// These assertions describe CURRENT behaviour and are meant to fail the day
-    /// the gap is closed. If that happens, invert the last block -- do not
-    /// delete this test to get back to green.
+    /// The sidecar is *not* the mechanism, though it looks like it should be:
+    /// `Sidecar.reading_position` is documented as surviving a rebuild, but the
+    /// file is written to `library/<uuid>/kalam.json`, inside the very folder
+    /// `delete_book_single` removes, `set_reading_progress` deliberately does not
+    /// refresh it, and `read_sidecar` has no caller on the import path.
     #[test]
-    fn delete_and_reimport_loses_reading_data_known_gap() {
+    fn delete_and_reimport_keeps_reading_data() {
         let cat = Catalog::open_in_memory().unwrap();
         // Unique title: insert_annotation refreshes the sidecar, which writes
         // real files under the data dir, and these tests run in parallel.
@@ -3719,11 +3742,12 @@ mod tests {
         cat.delete_book(id).unwrap();
         assert!(cat.get_book(id).unwrap().is_none());
 
-        // Destroyed, not merely detached. This is what decides the shape of a
-        // fix: orphaned rows could be re-attached to the new id, but the
-        // cascade has already run, so anything that preserves this data has to
-        // capture it BEFORE the delete -- exactly what remember_overrides does
-        // for metadata.
+        // Destroyed, not merely detached. This is what decides the shape of the
+        // rescue: orphaned rows could have been re-attached to the new id, but
+        // the cascade has already run, so anything that preserves this data has
+        // to capture it BEFORE the delete. Kept as an assertion rather than a
+        // comment because it is also what proves the last block below is reading
+        // the stash and not rows that somehow survived.
         assert_eq!(cat.get_reading_progress(id).unwrap(), None);
         assert!(cat.list_reading_bookmarks(id).unwrap().is_empty());
         assert!(cat.get_annotations_for_book(id).unwrap().is_empty());
@@ -3752,10 +3776,17 @@ mod tests {
         assert_eq!(restored.description, "Edited description.");
         assert_eq!(restored.rating, 8);
 
-        // Reading data did not. THIS IS THE GAP.
-        assert_eq!(cat.get_reading_progress(new_id).unwrap(), None);
-        assert!(cat.list_reading_bookmarks(new_id).unwrap().is_empty());
-        assert!(cat.get_annotations_for_book(new_id).unwrap().is_empty());
+        // Reading data came back too, re-keyed onto the fresh id.
+        assert_eq!(cat.get_reading_progress(new_id).unwrap(), Some((7, 0.42)));
+        let marks = cat.list_reading_bookmarks(new_id).unwrap();
+        assert_eq!(marks.len(), 1);
+        assert_eq!(marks[0].label, "the good part");
+        assert_eq!(marks[0].book_id, new_id, "re-keyed onto the new book");
+        let annos = cat.get_annotations_for_book(new_id).unwrap();
+        assert_eq!(annos.len(), 1);
+        assert_eq!(annos[0].text_excerpt, "quoted text");
+        assert_eq!(annos[0].note, "my note");
+        assert_eq!(annos[0].book_id, new_id, "re-keyed onto the new book");
     }
 
     #[test]

@@ -3550,6 +3550,122 @@ mod tests {
         assert_eq!(restored.tags.len(), 2);
     }
 
+    /// KNOWN GAP, pinned rather than endorsed. Deleting a book and re-importing
+    /// the same file restores hand-edited METADATA but loses every piece of
+    /// READING data: position, bookmarks and annotations.
+    ///
+    /// Why. `remember_overrides` stashes ten metadata columns into
+    /// `metadata_overrides`, keyed by `file_hash`, which outlives the row.
+    /// Nothing does the equivalent for reading data. `reading_progress`,
+    /// `reading_bookmarks` and `annotations` all carry
+    /// `REFERENCES books(id) ON DELETE CASCADE`, and the catalog runs with
+    /// `PRAGMA foreign_keys = ON` in both `Catalog::open` and
+    /// `Catalog::open_in_memory`, so deleting the book row destroys them.
+    /// Named by function rather than by line number on purpose: line numbers
+    /// rot on the first reformat and then quietly point at nothing.
+    /// `books.id` is AUTOINCREMENT, so the re-imported book gets a fresh id and
+    /// the old rows could not be re-attached even if they had survived.
+    ///
+    /// The sidecar looks like it should cover this -- `Sidecar.reading_position`
+    /// is documented as "Chapter and fraction, so reading position survives a
+    /// rebuild" -- but it is written to `library/<uuid>/kalam.json`, inside the
+    /// very folder `delete_book_single` removes, and `read_sidecar` has no
+    /// caller on the import path. The backup goes with the book, and nothing
+    /// reads it back anyway.
+    ///
+    /// These assertions describe CURRENT behaviour and are meant to fail the day
+    /// the gap is closed. If that happens, invert the last block -- do not
+    /// delete this test to get back to green.
+    #[test]
+    fn delete_and_reimport_loses_reading_data_known_gap() {
+        let cat = Catalog::open_in_memory().unwrap();
+        // Unique title: insert_annotation refreshes the sidecar, which writes
+        // real files under the data dir, and these tests run in parallel.
+        let id = seed(&cat, "ReadingDataGap", "x", &["scifi"]);
+        let hash = cat.get_book(id).unwrap().unwrap().file_hash;
+
+        // One of each kind of reading data.
+        cat.set_reading_progress(id, 7, 0.42, 20).unwrap();
+        cat.insert_reading_bookmark(id, 7, 0.42, "the good part").unwrap();
+        cat.insert_annotation(
+            id,
+            "highlight",
+            7,
+            "",
+            0,
+            "",
+            0,
+            "yellow",
+            "solid",
+            "quoted text",
+            "my note",
+        )
+        .unwrap();
+
+        // And a hand edit, so one test shows the contrast.
+        cat.update_book_metadata(
+            id,
+            "Renamed By Hand",
+            "x",
+            None,
+            0.0,
+            "",
+            "",
+            "Edited description.",
+            &["scifi".into()],
+        )
+        .unwrap();
+        cat.set_book_rating(id, 8).unwrap();
+
+        // Prove the reading data was really there. Without this the "gone"
+        // assertions below would pass just as happily if nothing had ever been
+        // written, and a check that cannot fail is not a check (pitfalls §21).
+        assert_eq!(cat.get_reading_progress(id).unwrap(), Some((7, 0.42)));
+        assert_eq!(cat.list_reading_bookmarks(id).unwrap().len(), 1);
+        assert_eq!(cat.get_annotations_for_book(id).unwrap().len(), 1);
+
+        cat.delete_book(id).unwrap();
+        assert!(cat.get_book(id).unwrap().is_none());
+
+        // Destroyed, not merely detached. This is what decides the shape of a
+        // fix: orphaned rows could be re-attached to the new id, but the
+        // cascade has already run, so anything that preserves this data has to
+        // capture it BEFORE the delete -- exactly what remember_overrides does
+        // for metadata.
+        assert_eq!(cat.get_reading_progress(id).unwrap(), None);
+        assert!(cat.list_reading_bookmarks(id).unwrap().is_empty());
+        assert!(cat.get_annotations_for_book(id).unwrap().is_empty());
+
+        // Re-import the same file: same hash, so the metadata stash matches.
+        let new_id = cat
+            .insert_book(
+                "uuid-reading-data-gap-again",
+                "ReadingDataGap",
+                "x",
+                None,
+                "",
+                BookFormat::Epub,
+                "book.epub",
+                &hash,
+                None,
+                &[],
+            )
+            .unwrap();
+        assert_ne!(new_id, id, "AUTOINCREMENT must hand out a fresh id");
+        assert!(cat.restore_overrides(new_id).unwrap());
+
+        // Metadata came back.
+        let restored = cat.get_book(new_id).unwrap().unwrap();
+        assert_eq!(restored.title, "Renamed By Hand");
+        assert_eq!(restored.description, "Edited description.");
+        assert_eq!(restored.rating, 8);
+
+        // Reading data did not. THIS IS THE GAP.
+        assert_eq!(cat.get_reading_progress(new_id).unwrap(), None);
+        assert!(cat.list_reading_bookmarks(new_id).unwrap().is_empty());
+        assert!(cat.get_annotations_for_book(new_id).unwrap().is_empty());
+    }
+
     #[test]
     fn a_restored_book_keeps_its_cover() {
         // NOTE: this test writes real files under the data dir (book cover +

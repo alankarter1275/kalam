@@ -3586,7 +3586,8 @@ mod tests {
 
         // One of each kind of reading data.
         cat.set_reading_progress(id, 7, 0.42, 20).unwrap();
-        cat.insert_reading_bookmark(id, 7, 0.42, "the good part").unwrap();
+        cat.insert_reading_bookmark(id, 7, 0.42, "the good part")
+            .unwrap();
         cat.insert_annotation(
             id,
             "highlight",

@@ -20,6 +20,7 @@ mod patches;
 mod pdf_annotations;
 mod prefs;
 mod pronunciation;
+mod reading_stash;
 pub mod search;
 mod series;
 mod shelves;
@@ -96,7 +97,9 @@ pub type Result<T> = std::result::Result<T, DbError>;
 ///          (decisions 48 and 112)
 /// · v22 = fetched comic-series metadata, its source link and cover,
 ///          and hand-edited field locks (decisions 46 and 48)
-pub const SCHEMA_VERSION: i64 = 22;
+/// · v23 = saved words become one dictionary entry per word rather than one
+///          per book, so the word column gains its uniqueness rule
+pub const SCHEMA_VERSION: i64 = 23;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -125,7 +128,7 @@ pub struct Catalog {
 // Domain structs for P3
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)] // model mirrors the row; several fields below are not yet surfaced
 pub struct Annotation {
     pub id: i64,
@@ -216,7 +219,7 @@ pub struct QuoteRef {
     pub cover_path: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReadingBookmark {
     pub id: i64,
     #[allow(dead_code)] // bookmarks load per-book, so the id is never read back
@@ -364,7 +367,7 @@ impl PdfDrawingGeometry {
 /// One saved PDF drawing object. Colour names are the five highlight
 /// hues plus `ink` (decision 67); width and geometry are source-page
 /// points, never display pixels.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PdfDrawing {
     pub id: i64,
     pub book_id: i64,
@@ -1015,7 +1018,8 @@ impl Catalog {
                 context_text  TEXT,
                 created_at    TEXT    NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_saved_words_word ON saved_words(word COLLATE NOCASE);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_saved_words_word
+                ON saved_words(word COLLATE NOCASE);
 
             CREATE TABLE IF NOT EXISTS reading_bookmarks (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1186,6 +1190,21 @@ impl Catalog {
                 rating       INTEGER,
                 cover_name   TEXT,
                 updated_at   TEXT NOT NULL
+            );
+
+            -- Reading data you cannot get back from the file: your place in
+            -- the book, bookmarks, highlights and notes, PDF ink, and which
+            -- shelf or reading list the book sat on. Remembered against the
+            -- same content hash as `metadata_overrides`, for the same reason
+            -- and with the same lifecycle. The payload is one JSON document
+            -- rather than a mirror of every table: the shapes are already
+            -- serde types, the sidecar serialises the same data the same way,
+            -- and a document per deleted book keeps this to one table instead
+            -- of nine.
+            CREATE TABLE IF NOT EXISTS reading_overrides (
+                file_hash  TEXT PRIMARY KEY,
+                payload    TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS author_profiles (
@@ -1554,6 +1573,43 @@ impl Catalog {
                         "UPDATE annotations SET color = 'yellow' \
                          WHERE lower(color) = 'underline'",
                         [],
+                    )?;
+                }
+                // v23: a saved word is one entry in one personal dictionary,
+                // not one entry per book, so the word column gains a
+                // uniqueness rule. Order matters here and it is not
+                // cosmetic: `migrate` returns `Result` and `Catalog::open`
+                // propagates it, so a failed statement stops the app from
+                // opening at all. The old per-book existence check let the
+                // same word be saved once per book, and creating a unique
+                // index over a table that still holds those duplicates
+                // would fail — so merge them away first.
+                //
+                // The oldest row of each word is kept, which preserves the
+                // provenance that actually matters (`book_id` records where
+                // the word was first met), and `known` is carried over if
+                // any copy of the word had it, so grading a word as learned
+                // in one book is not lost by the merge.
+                if v < 23 {
+                    conn.execute(
+                        "UPDATE saved_words SET known = 1 \
+                         WHERE lower(word) IN ( \
+                             SELECT lower(word) FROM saved_words WHERE known = 1)",
+                        [],
+                    )?;
+                    conn.execute(
+                        "DELETE FROM saved_words WHERE id NOT IN ( \
+                             SELECT MIN(id) FROM saved_words GROUP BY lower(word))",
+                        [],
+                    )?;
+                    // Drop before create: the older schema made this index
+                    // non-unique under the same name, and `CREATE UNIQUE
+                    // INDEX IF NOT EXISTS` matches on name, so it would
+                    // silently leave the non-unique one standing.
+                    conn.execute_batch(
+                        "DROP INDEX IF EXISTS idx_saved_words_word; \
+                         CREATE UNIQUE INDEX idx_saved_words_word \
+                             ON saved_words(word COLLATE NOCASE);",
                     )?;
                 }
                 conn.execute(
@@ -2210,6 +2266,12 @@ impl Catalog {
         // Capture any hand-edited metadata first: the row is about to go, and
         // re-importing the same file should not lose your work.
         let _ = self.remember_overrides(id);
+        // And the reading data, which the cascade below destroys and which
+        // cannot be derived from the file again: the place in the book, the
+        // bookmarks, the highlights, the PDF ink, the shelf it sat on.
+        // Same fingerprint, same lifecycle, separate table -- see
+        // `db::reading_stash` for what is deliberately left out and why.
+        let _ = self.remember_reading(id);
         {
             let conn = self.conn();
             let _ = conn.execute(
@@ -3161,6 +3223,57 @@ mod tests {
         assert_eq!(wavy.color, "yellow");
     }
 
+    /// A database written before v23 could hold the same word once per
+    /// book, because the existence check was book-scoped. Creating the
+    /// unique index over such a table fails, and `migrate` propagates its
+    /// error to `Catalog::open` — so the app would not start at all. The
+    /// migration therefore merges first: oldest row kept, `known` carried
+    /// over if any copy of the word had it.
+    #[test]
+    fn v23_merges_duplicate_saved_words_before_making_the_word_unique() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let book = seed(&cat, "Words Migration", "A", &[]);
+        {
+            let conn = cat.conn();
+            // Recreate the v22 shape: same index name, not unique.
+            conn.execute_batch(
+                "DROP INDEX IF EXISTS idx_saved_words_word; \
+                 CREATE INDEX idx_saved_words_word \
+                     ON saved_words(word COLLATE NOCASE);",
+            )
+            .unwrap();
+            // Two rows for one word, as the old per-book check allowed.
+            // The newer copy is the one marked known, so the merge has to
+            // carry that flag onto the older row it keeps.
+            for (n, known) in [(1, 0), (2, 1)] {
+                let stamp = format!("2026-01-0{n}T00:00:00Z");
+                conn.execute(
+                    "INSERT INTO saved_words \
+                         (word, definition, book_id, created_at, known) \
+                     VALUES ('ubiquitous', 'present everywhere', ?1, ?2, ?3)",
+                    params![book, stamp, known],
+                )
+                .unwrap();
+            }
+            conn.execute("UPDATE schema_version SET version = 22", [])
+                .unwrap();
+        }
+
+        cat.migrate().unwrap();
+
+        let rows = cat.list_saved_words("", None).unwrap();
+        assert_eq!(rows.len(), 1, "the duplicates merge into one entry");
+        assert!(rows[0].known, "known survives the merge if any copy had it");
+        assert_eq!(rows[0].book_id, Some(book));
+
+        let dup = cat.conn().execute(
+            "INSERT INTO saved_words (word, definition, created_at) \
+             VALUES ('ubiquitous', 'x', '')",
+            [],
+        );
+        assert!(dup.is_err(), "the index is unique again after migrating");
+    }
+
     #[test]
     fn saved_words_known_flag_round_trips_and_filters() {
         let cat = Catalog::open_in_memory().unwrap();
@@ -3548,6 +3661,132 @@ mod tests {
         assert_eq!(restored.publisher, "Random House");
         assert_eq!(restored.rating, 9);
         assert_eq!(restored.tags.len(), 2);
+    }
+
+    /// Deleting a book and re-importing the same file brings back the hand-edited
+    /// METADATA *and* the READING data: position, bookmarks and annotations.
+    ///
+    /// This test used to pin the opposite, as a known gap. Both halves of the
+    /// mechanism are named here because the shape of the fix follows from them.
+    /// `reading_progress`, `reading_bookmarks` and `annotations` all carry
+    /// `REFERENCES books(id) ON DELETE CASCADE`, and the catalog runs with
+    /// `PRAGMA foreign_keys = ON` in both `Catalog::open` and
+    /// `Catalog::open_in_memory`, so deleting the book row genuinely destroys
+    /// them -- the middle block below still asserts that, and it is the reason
+    /// the rescue has to happen *before* the delete rather than after it.
+    /// `books.id` is AUTOINCREMENT, so the re-import gets a fresh id and nothing
+    /// could be re-attached to the old one even if it had survived.
+    ///
+    /// So `remember_overrides` stashes ten metadata columns into
+    /// `metadata_overrides` keyed by `file_hash`, and `remember_reading` stashes
+    /// the reading rows into `reading_overrides` against the same fingerprint;
+    /// `restore_overrides` puts both back. See `db::reading_stash` for what is
+    /// deliberately left out -- the rebuildable indexes, the editor snapshots
+    /// whose files are addressed by a uuid the re-import does not reuse, and a
+    /// legacy `patches` table with no writer at all.
+    ///
+    /// The sidecar is *not* the mechanism, though it looks like it should be:
+    /// `Sidecar.reading_position` is documented as surviving a rebuild, but the
+    /// file is written to `library/<uuid>/kalam.json`, inside the very folder
+    /// `delete_book_single` removes, `set_reading_progress` deliberately does not
+    /// refresh it, and `read_sidecar` has no caller on the import path.
+    #[test]
+    fn delete_and_reimport_keeps_reading_data() {
+        let cat = Catalog::open_in_memory().unwrap();
+        // Unique title: insert_annotation refreshes the sidecar, which writes
+        // real files under the data dir, and these tests run in parallel.
+        let id = seed(&cat, "ReadingDataGap", "x", &["scifi"]);
+        let hash = cat.get_book(id).unwrap().unwrap().file_hash;
+
+        // One of each kind of reading data.
+        cat.set_reading_progress(id, 7, 0.42, 20).unwrap();
+        cat.insert_reading_bookmark(id, 7, 0.42, "the good part")
+            .unwrap();
+        cat.insert_annotation(
+            id,
+            "highlight",
+            7,
+            "",
+            0,
+            "",
+            0,
+            "yellow",
+            "solid",
+            "quoted text",
+            "my note",
+        )
+        .unwrap();
+
+        // And a hand edit, so one test shows the contrast.
+        cat.update_book_metadata(
+            id,
+            "Renamed By Hand",
+            "x",
+            None,
+            0.0,
+            "",
+            "",
+            "Edited description.",
+            &["scifi".into()],
+        )
+        .unwrap();
+        cat.set_book_rating(id, 8).unwrap();
+
+        // Prove the reading data was really there. Without this the "gone"
+        // assertions below would pass just as happily if nothing had ever been
+        // written, and a check that cannot fail is not a check (pitfalls §21).
+        assert_eq!(cat.get_reading_progress(id).unwrap(), Some((7, 0.42)));
+        assert_eq!(cat.list_reading_bookmarks(id).unwrap().len(), 1);
+        assert_eq!(cat.get_annotations_for_book(id).unwrap().len(), 1);
+
+        cat.delete_book(id).unwrap();
+        assert!(cat.get_book(id).unwrap().is_none());
+
+        // Destroyed, not merely detached. This is what decides the shape of the
+        // rescue: orphaned rows could have been re-attached to the new id, but
+        // the cascade has already run, so anything that preserves this data has
+        // to capture it BEFORE the delete. Kept as an assertion rather than a
+        // comment because it is also what proves the last block below is reading
+        // the stash and not rows that somehow survived.
+        assert_eq!(cat.get_reading_progress(id).unwrap(), None);
+        assert!(cat.list_reading_bookmarks(id).unwrap().is_empty());
+        assert!(cat.get_annotations_for_book(id).unwrap().is_empty());
+
+        // Re-import the same file: same hash, so the metadata stash matches.
+        let new_id = cat
+            .insert_book(
+                "uuid-reading-data-gap-again",
+                "ReadingDataGap",
+                "x",
+                None,
+                "",
+                BookFormat::Epub,
+                "book.epub",
+                &hash,
+                None,
+                &[],
+            )
+            .unwrap();
+        assert_ne!(new_id, id, "AUTOINCREMENT must hand out a fresh id");
+        assert!(cat.restore_overrides(new_id).unwrap());
+
+        // Metadata came back.
+        let restored = cat.get_book(new_id).unwrap().unwrap();
+        assert_eq!(restored.title, "Renamed By Hand");
+        assert_eq!(restored.description, "Edited description.");
+        assert_eq!(restored.rating, 8);
+
+        // Reading data came back too, re-keyed onto the fresh id.
+        assert_eq!(cat.get_reading_progress(new_id).unwrap(), Some((7, 0.42)));
+        let marks = cat.list_reading_bookmarks(new_id).unwrap();
+        assert_eq!(marks.len(), 1);
+        assert_eq!(marks[0].label, "the good part");
+        assert_eq!(marks[0].book_id, new_id, "re-keyed onto the new book");
+        let annos = cat.get_annotations_for_book(new_id).unwrap();
+        assert_eq!(annos.len(), 1);
+        assert_eq!(annos[0].text_excerpt, "quoted text");
+        assert_eq!(annos[0].note, "my note");
+        assert_eq!(annos[0].book_id, new_id, "re-keyed onto the new book");
     }
 
     #[test]

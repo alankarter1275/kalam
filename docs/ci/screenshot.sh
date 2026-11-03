@@ -646,6 +646,722 @@ print("{} {} {} {}".format(best["x"], best["y"], best["width"], best["height"]) 
   fi
 fi
 
+# --- do real keystrokes reach the app? (KEYS=1) ---------------------------
+#
+# Every other check in this harness asks the app to pose. KALAM_ROUTE opens a
+# page, KALAM_DIALOG opens a dialog, KALAM_*_ACTION stages a drawn state --
+# the app performs the action itself, so a broken wire between a control and
+# its action is invisible here: every frame still looks right.
+#
+# This probe sends real input instead. It types key combos into the focused
+# window with `wtype`, installed for this job since the harness was built and
+# never used until now, and asks three independent witnesses whether the app
+# acted:
+#
+#   1. the app's own log. Every page construction prints a `[timing]
+#      route_open:<label>` line, so a shortcut that navigates cannot help
+#      but leave evidence (route_label in src/app.rs).
+#   2. the compositor's window tree. Fullscreen shows up there as
+#      `fullscreen_mode`, which sway reports and Kalam does not, so it is
+#      genuinely independent of witness 1.
+#   3. the process. Quit closes the window and the app exits, so a dead pid
+#      is proof a keystroke arrived and was acted on. That is the strongest
+#      evidence available here, and the reason Quit runs last.
+#
+# Keys and not clicks, deliberately. The TAP probe above established that
+# synthetic pointer events do not reach the app under headless sway. wtype
+# differs in kind: it creates a virtual keyboard through the compositor's
+# virtual-keyboard protocol instead of injecting into a seat that has no
+# pointer device at all (WLR_LIBINPUT_NO_DEVICES=1). Whether that difference
+# holds in practice is exactly what this probe is for.
+#
+# The combos are the app's own defaults (default_binding in src/shortcuts.rs):
+# Alt+2 library, Alt+1 home, Ctrl+comma settings, Alt+Left back, Ctrl+slash the
+# shortcut pane, Alt+1 home again, F11 fullscreen, Ctrl+Q quit. Every one
+# carries a modifier or is an F-key, so fires_while_typing should let it
+# through a focused text entry -- and none of them actually leaves one
+# focused, which is deliberate; see STATUS. The first two are a control pair
+# whose job is to say whether the rest of the report means anything.
+#
+# ROUTE=home is the intended pairing. With home the script skips its
+# relaunch-and-compare step below, so nothing later in the run depends on the
+# app still being alive after Ctrl+Q ends it.
+#
+# STATUS: two runs so far, both 2 of 6, and neither result is about the
+# shortcut table yet.
+#
+# Run 1 put Ctrl+F first. It worked, and it is the one default shortcut that
+# leaves a text entry holding focus; every modified chord after it did
+# nothing, while F11 still worked and sway still saw the window go fullscreen.
+# Run 2 dropped Ctrl+F for Alt+1 and led with Ctrl+comma instead. Ctrl+comma
+# worked from home -- so run 1's four failures were at least partly the
+# focused search box -- but then Alt+Left, Ctrl+slash, Alt+1 and Ctrl+Q all
+# did nothing, and F11 again was the only later key that landed. The app's own
+# log confirms it opened settings exactly once and then logged no route at all,
+# with no main-thread stall and nothing on stderr.
+#
+# So the shape survived the change: the first modified chord from home always
+# works, every modified chord after it does nothing, and the only later key
+# that works is the one carrying no modifier. Two readings fit and they have
+# opposite conclusions -- either the app goes deaf to modified keys once the
+# page has changed, which is a real bug, or wtype stops applying modifiers
+# after its first chord, which is this harness breaking and says nothing about
+# Kalam. F11 cannot separate them, precisely because it has no modifier.
+#
+# Run 3 settled it, and the answer was neither. It led with a control pair --
+# Alt+2 then Alt+1, two chords of the same kind back to back, each with its own
+# route witness and no text entry near them -- and BOTH PASSED, so the injector
+# keeps applying modifiers and the "app goes deaf" reading died with it. Five
+# of eight probes passed and, decisively, Ctrl+Q quit the app: keystrokes reach
+# it.
+#
+# The three failures were then all traced to this probe's witnesses, not to the
+# app, by reading its own log and source:
+#
+#   - Alt+Left (Back) was a correct no-op. Every navigation shortcut calls
+#     swap_page with push_history=false, and swap_page's else branch is
+#     history.clear(). So after Ctrl+comma there was nothing to pop, and
+#     AppMsg::Back is `if let Some(prev) = self.history.pop()`. The frame after
+#     it was byte-identical to the frame before, which is what a no-op looks
+#     like. Back can only be tested after the one shortcut that pushes history,
+#     which is Ctrl+F -- hence steps 6 and 7 below, which test Back and answer
+#     run 1's focused-search-box question with one variable changed.
+#   - Ctrl+slash DID work. The log carries `settings_fill:shortcuts 1.2 ms`,
+#     which only the SelectTab half of that handler can produce, and the frame
+#     after it differs from the one before. No route line was ever possible:
+#     the swap to Settings is a no-op when Settings is already open. It is now
+#     witnessed by the tab filling instead.
+#   - The second Alt+1 DID work. The last line of the app's log is
+#     `page_cache_hit`. route_open: is logged inside build_page, and build_page
+#     is skipped for a cached page -- the app's own comment: "The page cache's
+#     hit path never enters this function -- a cached page is reparented, not
+#     rebuilt." A route-only witness therefore reports a working shortcut as a
+#     failure the second time you visit a page. Every navigation step now
+#     accepts either line and says which one it saw.
+#
+# Run 4 used the corrected witnesses and reported 5 of 9 -- and disagreed with
+# run 3 about which chords worked. Alt+1 had passed in run 3 and failed here;
+# Ctrl+slash had passed and failed; the second Alt+1 had failed and passed. The
+# missing lines never turned up late in the log either, so they were dropped
+# rather than slow, and there was no main-thread stall and nothing on stderr.
+#
+# The rhythm explains it. All three dropped chords had been sent within
+# milliseconds of the previous chord succeeding, and every chord sent after a
+# pause arrived: when a witness appears the await returns at once, so the next
+# wtype invocation builds a fresh virtual keyboard before the previous one has
+# finished releasing its modifier. After a FAILED chord the await has already
+# burned its whole timeout, which is why the results alternated instead of
+# clustering. Every chord now gets a settle before it is sent.
+#
+# Run 5, with the settle, reported 8 of 9, losing only Alt+Left. Run 6, with
+# the identical settle, reported 7 of 9 -- and lost Ctrl+comma and Ctrl+Q
+# instead, while Alt+Left passed. So the settle lowered the drop rate and did
+# not remove it, and the failures move between runs. Across all six, every one
+# of the nine shortcuts has been witnessed firing at least once. That is why
+# each chord is now sent twice: a binding that lands on the second attempt is
+# wired, and the first key simply never arrived.
+#
+# The one failure left is Alt+Left, and it is NOT an app bug so far as anything
+# readable here can tell. It is a real result rather than a witness problem --
+# Ctrl+F pushed the history, so there was something to pop, and the missing
+# line never appeared late -- but every candidate explanation was checked
+# against source and ruled out:
+#
+#   - gtktext.c binds Alt+Left and Alt+Right only inside #ifdef __APPLE__, so
+#     on Linux the focused text widget has no claim on them.
+#   - gtkwindow.c's add_arrow_bindings binds arrows with GDK_NO_MODIFIER_MASK
+#     and GDK_CONTROL_MASK, never with Alt.
+#   - gtk_search_entry_is_keynav does test GDK_ALT_MASK, but it is a filter
+#     that says "this is navigation, not typing" -- it does not stop the event.
+#   - src/pages/all_books.rs installs no EventControllerKey at all.
+#   - The shell table matches the chord correctly: default_binding and capture
+#     both key on normalized_key_name, so Alt+Left compares equal to Alt+Left,
+#     and fires_while_typing returns true for any alt binding.
+#   - Ctrl+Q is sent afterwards with the same search box still focused, and it
+#     quits the app.
+#
+# What is left is delivery, and note the correction: an earlier version of this
+# comment concluded that Alt+Left must be a keysym the injector cannot send,
+# because it had failed in all five runs to that point while Alt+1 and Alt+2
+# had passed in all five. Run 6 passed Alt+Left -- same search box focused,
+# same injector, same settle -- and dropped two chords that had never given
+# trouble before. Five samples of a flaky thing is not a pattern. The retry
+# exists so that one run can settle this by itself instead of needing six.
+#
+# No app code was changed on the strength of any of it, and none should be: the
+# source above says nothing on this platform claims Alt+Left, and the app has
+# now been seen handling it. The human check in docs/manual-test-checklist.md
+# stays, because a harness that drops keys cannot prove a negative.
+#
+# SETTLED 2026-11-03 by the owner, on real hardware: every shortcut works,
+# including the second F11. The check below has never passed in any of seven
+# headless runs and used to be written up as the only candidate for a real
+# defect. It is not one. Under headless sway GTK never learns the window's
+# state, so the unfullscreen() branch -- guarded by root.is_fullscreen() -- is
+# never taken and the second press asks to go fullscreen again. A property of
+# the runner, not of the app.
+#
+# It is still reported, as a NOTE and not counted as a probe, because the report
+# should show what this environment actually does. Read it as known-benign.
+# Seven runs, nine shortcuts, no app bugs: every failure this probe ever
+# reported was its own.
+#
+# Read the VERDICT line before the individual results, and read
+# docs/ci/README-screenshots.md.
+if [ "${KEYS:-0}" = "1" ]; then
+  say ""
+  say "=== keystroke probe (KEYS=1) ==="
+
+  KEYS_SEND_FAILED=0
+  KEYS_PASSED=0
+  KEYS_TRIED=0
+  QUIT_PROVEN=0
+
+  # How many times the app logged a given page opening. `grep -c` exits 1 when
+  # nothing matched, so `|| true` keeps pipefail from ending the probe; the
+  # count is still printed. A missing log prints nothing at all, which is why
+  # every caller defaults the result to 0.
+  # Anchored on `[timing] route_open:` because the app prints a second line,
+  # `[timing] frame_after:route_open:<label>`, once the page has painted. An
+  # unanchored grep counts both, so one navigation reads as two and every
+  # baseline is inflated -- the first run's counted 4 openings of home where
+  # the app had logged 2.
+  count_route() {
+    grep -c "\[timing\] route_open:$1" "$OUT/kalam.log" 2>/dev/null || true
+  }
+
+  count_all_routes() {
+    grep -c '\[timing\] route_open:' "$OUT/kalam.log" 2>/dev/null || true
+  }
+
+  # Any timing label, for witnesses that are not route lines.
+  count_label() {
+    grep -c "\[timing\] $1" "$OUT/kalam.log" 2>/dev/null || true
+  }
+
+  # How many times the app changed page, by EITHER route. `route_open:` is
+  # logged inside build_page, and build_page is skipped when the page comes
+  # out of the cache -- the app's own comment says so: "The page cache's hit
+  # path never enters this function -- a cached page is reparented, not
+  # rebuilt." So counting route lines alone reports a successful navigation as
+  # a failure whenever the landing page was cached, which is exactly what the
+  # third run did. page_cache_hit is the other half of the same event.
+  count_navigations() {
+    local built reused
+    built="$(count_all_routes)"
+    reused="$(grep -c '\[timing\] page_cache_hit' "$OUT/kalam.log" 2>/dev/null || true)"
+    echo $(( ${built:-0} + ${reused:-0} ))
+  }
+
+  last_route_label() {
+    grep -oE '\[timing\] (route_open:[a-z_]*|page_cache_hit)' "$OUT/kalam.log" \
+      | tail -1 | sed 's/^\[timing\] //'
+  }
+
+  # Re-focus before every press. A window that does not hold focus sends the
+  # keys nowhere, and "nowhere" is indistinguishable from "the app ignored
+  # it" -- the false negative the September tap probe drowned in.
+  refocus() {
+    swaymsg '[app_id=".*"] focus' >/dev/null 2>&1 \
+      || swaymsg focus >/dev/null 2>&1 || true
+  }
+
+  # The log line and the paint are not the same instant. The first run
+  # photographed a page that had been navigated to but not yet drawn, so
+  # the old 05-keys-search was byte-identical to the frame before it and the picture
+  # appeared to contradict the log. A short dwell keeps each frame about the
+  # same moment as the claim next to it.
+  probe_shot() { # probe_shot <name>
+    sleep 2
+    shot "$1"
+  }
+
+  # Every chord gets a settle before it is sent, and the reason is measured
+  # rather than guessed. Run 4 dropped three chords and the pattern was exact:
+  # all three had been sent within milliseconds of the previous chord
+  # succeeding, and every chord sent after a pause arrived. When a witness
+  # appears the await returns at once, so the next wtype invocation builds a
+  # fresh virtual keyboard before the previous one has finished releasing its
+  # modifier -- and that chord is lost. After a failed chord the await has
+  # already burned its whole timeout, which is why the failures alternated
+  # with successes instead of clustering. It costs about fourteen seconds a
+  # run and buys the difference between a result and a coin toss.
+  KEY_SETTLE="${KEY_SETTLE:-1.5}"
+
+  press() { # press <human label> <wtype args...>
+    local label="$1"
+    shift
+    sleep "$KEY_SETTLE"
+    refocus
+    if wtype "$@" >/dev/null 2>&1; then
+      say "keys: sent $label"
+    else
+      say "keys: WARNING -- wtype could not send $label"
+      KEYS_SEND_FAILED=1
+    fi
+  }
+
+  # Poll rather than sleep a fixed time: the settings page measures ~5 ms
+  # warm, but the runner is shared and cold, so a fixed sleep is either too
+  # short or wasted. Give up early if the app dies, or the probe would sit
+  # out its whole budget against a process that Quit already ended.
+  await_label() { # await_label <timing-label> <wanted-count> <timeout-s>
+    local label="$1" want="$2" timeout="$3" deadline have spins
+    deadline=$(( $(now_s) + timeout ))
+    spins=$(( timeout * 20 + 40 ))
+    while :; do
+      have="$(count_label "$label")"
+      [ "${have:-0}" -ge "$want" ] && return 0
+      [ "$(now_s)" -ge "$deadline" ] && return 1
+      kill -0 "$APP_PID" 2>/dev/null || return 1
+      spins=$(( spins - 1 ))
+      [ "$spins" -le 0 ] && return 1
+      sleep 0.25
+    done
+  }
+
+  # A page change is witnessed two ways, because the app logs a different line
+  # depending on whether it built the page or lifted it out of the cache:
+  # `route_open:<label>` for a build, `page_cache_hit` for a reuse. A witness
+  # that only knows the first reports a working shortcut as a failure the
+  # second time you visit a page, which the third run did. Sets PAGE_WITNESS
+  # to whichever line was seen, so the report can say how it knew.
+  # The baseline has to be taken BEFORE the key is sent, which is why this is
+  # two functions rather than one. Folded into the wait, it reads the count
+  # after the press -- and a fast app has often written the evidence in the
+  # microseconds between wtype returning and the wait starting, so the wait
+  # then looks for a second copy that never comes and reports a working
+  # shortcut as a failure. Stub-testing caught this: the fake app logged every
+  # navigation correctly and the probe still failed all of them.
+  mark_page() { # mark_page <label> -- call BEFORE press
+    MARK_BUILT="$(count_route "$1")"
+    MARK_NAV="$(count_navigations)"
+  }
+
+  await_page() { # await_page <label> <timeout-s> -- call AFTER press
+    local label="$1" timeout="$2" deadline want_built want_nav spins
+    # The deadline is the intended exit; `spins` is a backstop, because this
+    # loop has no other way out and a wait whose only exit depends on
+    # arithmetic will spin forever if that arithmetic ever yields nothing. A
+    # hung step costs CI hours rather than seconds.
+    PAGE_WITNESS=""
+    if [ -z "${MARK_BUILT:-}" ] || [ -z "${MARK_NAV:-}" ]; then
+      say "keys: BUG -- await_page ran with no mark_page before the press, so"
+      say "       it had no baseline to compare against. Reported as a failure"
+      say "       rather than guessed at."
+      return 1
+    fi
+    want_built=$(( MARK_BUILT + 1 ))
+    want_nav=$(( MARK_NAV + 1 ))
+    MARK_BUILT=""; MARK_NAV=""
+    deadline=$(( $(now_s) + timeout ))
+    spins=$(( timeout * 20 + 40 ))
+    while :; do
+      if [ "$(count_route "$label")" -ge "$want_built" ]; then
+        PAGE_WITNESS="route_open:$label"
+        return 0
+      fi
+      if [ "$(count_navigations)" -ge "$want_nav" ]; then
+        PAGE_WITNESS="$(last_route_label) (cached, so the log names no page)"
+        return 0
+      fi
+      [ "$(now_s)" -ge "$deadline" ] && return 1
+      kill -0 "$APP_PID" 2>/dev/null || return 1
+      spins=$(( spins - 1 ))
+      [ "$spins" -le 0 ] && return 1
+      sleep 0.25
+    done
+  }
+
+  # One attempt at a chord: take the baseline, send the key, wait for the
+  # witness. Split out from the steps below so that a retry is the same code
+  # path as the first try rather than a copy of it.
+  try_page() { # try_page <route-label> <timeout-s> <press-label> <wtype...>
+    local label="$1" timeout="$2"
+    shift 2
+    mark_page "$label"
+    press "$@"
+    await_page "$label" "$timeout"
+  }
+
+  try_label() { # try_label <timing-label> <timeout-s> <press-label> <wtype...>
+    local label="$1" timeout="$2" before
+    shift 2
+    before="$(count_label "$label")"
+    press "$@"
+    await_label "$label" $(( ${before:-0} + 1 )) "$timeout"
+  }
+
+  # The compositor's own view of the window, walked rather than grepped:
+  # `fullscreen_mode` appears on every node in the tree, so a text match
+  # would report whichever node came first rather than the app's window.
+  fullscreen_mode() {
+    swaymsg -t get_tree 2>/dev/null | python3 -c '
+import json, sys
+
+try:
+    tree = json.load(sys.stdin)
+except Exception:
+    print("unknown")
+    raise SystemExit(0)
+
+found = ["0"]
+
+
+def walk(node):
+    mode = node.get("fullscreen_mode")
+    if mode:
+        found[0] = str(mode)
+    for child in node.get("nodes", []) + node.get("floating_nodes", []):
+        walk(child)
+
+
+walk(tree)
+print(found[0])
+'
+  }
+
+  await_fullscreen() { # await_fullscreen <1=want-fullscreen|0=want-normal> <timeout-s>
+    local want="$1" timeout="$2" deadline mode spins
+    deadline=$(( $(now_s) + timeout ))
+    spins=$(( timeout * 10 + 40 ))
+    while :; do
+      mode="$(fullscreen_mode)"
+      case "$want" in
+        1)
+          if [ -n "$mode" ] && [ "$mode" != "0" ] && [ "$mode" != "unknown" ]; then
+            return 0
+          fi
+          ;;
+        0)
+          [ "$mode" = "0" ] && return 0
+          ;;
+      esac
+      [ "$(now_s)" -ge "$deadline" ] && return 1
+      spins=$(( spins - 1 ))
+      [ "$spins" -le 0 ] && return 1
+      sleep 0.5
+    done
+  }
+
+  if ! command -v wtype >/dev/null 2>&1; then
+    say "keys: FAILED -- wtype is not installed, so no keystroke was sent"
+    say "keys: VERDICT -- NOT RUN. The job installs wtype; if this fires,"
+    say "       the install list changed."
+  elif ! kill -0 "$APP_PID" 2>/dev/null; then
+    say "keys: FAILED -- the app is not running, so there was nothing to send"
+    say "keys: VERDICT -- NOT RUN. Read the startup section above first."
+  else
+    BASE_TOTAL="$(count_all_routes)"
+    BASE_HOME="$(count_route home)"
+    BASE_LIBRARY="$(count_route library)"
+    BASE_SETTINGS="$(count_route settings)"
+    say "keys: baseline -- ${BASE_TOTAL:-0} route_open lines so far (home=${BASE_HOME:-0}, library=${BASE_LIBRARY:-0}, settings=${BASE_SETTINGS:-0})"
+    say "keys: focused windows before starting: $(swaymsg -t get_tree | grep -c '"focused": true' || echo 0)"
+
+    # Steps 1 and 2 are a control pair, and they are the reason this probe is
+    # ordered the way it is. Two runs reported the same shape: the first chord
+    # sent from home worked, every modified chord after it did nothing, and
+    # the only later key that still worked was F11 -- the one with no modifier
+    # at all. That shape has two possible readings and they have opposite
+    # conclusions. Either the app stops hearing modified keys once the page
+    # has changed, which is a real bug, or wtype stops applying modifiers
+    # after its first chord, which is this harness breaking and says nothing
+    # about Kalam. Sending the same kind of chord twice back to back, with a
+    # route witness on each and no text entry anywhere near it, is the cheap
+    # way to tell those apart. Read step 2 before reading anything below it.
+    FIRST_CHORD_OK=0
+    MARK_BUILT=""; MARK_NAV=""
+    SECOND_CHORD_OK=0
+
+    # Every chord below is sent twice if the first attempt produces nothing,
+    # and the report distinguishes the two outcomes. Runs 5 and 6 forced this:
+    # with a settle in place they still lost chords, but never the same ones --
+    # run 5 lost Alt+Left and run 6 lost Ctrl+comma and Ctrl+Q, and every one
+    # of the nine has now been seen working in some run. A single attempt
+    # therefore cannot tell "the app refused this binding" from "the injector
+    # dropped this key", which is the only distinction the probe exists to
+    # draw. A retry can: if the second attempt lands, the binding is wired and
+    # the first key never arrived, and saying so costs one line.
+    RETRIES=0
+
+    # 1. Alt+2 -- GoLibrary. The first chord, sent from home.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    if try_page library 10 "Alt+2 (GoLibrary)" -M alt -k 2 -m alt; then
+      say "keys: OK -- chord 1: Alt+2 opened the library ($PAGE_WITNESS)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      FIRST_CHORD_OK=1
+    elif try_page library 10 "Alt+2 (GoLibrary), second attempt" -M alt -k 2 -m alt; then
+      say "keys: OK on RETRY -- chord 1: Alt+2 opened the library ($PAGE_WITNESS)"
+      say "       The first attempt produced nothing, so that key was dropped"
+      say "       in transit rather than refused by the app."
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      FIRST_CHORD_OK=1
+      RETRIES=$((RETRIES + 1))
+    else
+      say "keys: FAILED -- chord 1: Alt+2 opened no page in two attempts"
+    fi
+    probe_shot "05-keys-library"
+
+    # 2. Alt+1 -- GoHome. The control: a second modified chord, sent after one
+    #    navigation.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    if try_page home 10 "Alt+1 (GoHome)" -M alt -k 1 -m alt; then
+      say "keys: OK -- chord 2: Alt+1 went home ($PAGE_WITNESS)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      SECOND_CHORD_OK=1
+    elif try_page home 10 "Alt+1 (GoHome), second attempt" -M alt -k 1 -m alt; then
+      say "keys: OK on RETRY -- chord 2: Alt+1 went home ($PAGE_WITNESS)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      SECOND_CHORD_OK=1
+      RETRIES=$((RETRIES + 1))
+    else
+      say "keys: FAILED -- chord 2: Alt+1 opened no page in two attempts"
+    fi
+    if [ "$SECOND_CHORD_OK" = "1" ] && [ "$FIRST_CHORD_OK" = "1" ]; then
+      say "keys: CONTROL PASSED -- a second modified chord still arrives, so the"
+      say "       failures below, if any, are about those bindings and not about"
+      say "       input delivery."
+    elif [ "$FIRST_CHORD_OK" = "1" ]; then
+      say "keys: CONTROL FAILED -- the first modified chord arrived and the"
+      say "       second did not, on two attempts each. Read every line below"
+      say "       as uninterpretable: the app is not necessarily deaf, the"
+      say "       injector may simply have stopped applying modifiers. Settle"
+      say "       that before going anywhere near the shortcut table."
+    fi
+    probe_shot "06-keys-home"
+
+    # 3. Ctrl+comma -- OpenSettings.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    if try_page settings 10 "Ctrl+comma (OpenSettings)" -M ctrl -k comma -m ctrl; then
+      say "keys: OK -- Ctrl+comma opened Settings ($PAGE_WITNESS)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+    elif try_page settings 10 "Ctrl+comma (OpenSettings), second attempt" -M ctrl -k comma -m ctrl; then
+      say "keys: OK on RETRY -- Ctrl+comma opened Settings ($PAGE_WITNESS)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      RETRIES=$((RETRIES + 1))
+    else
+      say "keys: FAILED -- Ctrl+comma opened no page in two attempts"
+    fi
+    probe_shot "07-keys-settings"
+
+    # 4. Ctrl+slash -- ShowShortcuts. Witnessed by the Shortcuts tab filling,
+    #    NOT by a route line. The handler swaps to Settings and then selects
+    #    that tab, and the swap is a no-op when Settings is already open -- so
+    #    a route witness is impossible from here, and the third run duly
+    #    reported a working shortcut as a failure. settings_fill:shortcuts
+    #    fires whether or not the swap happened.
+    #
+    #    Read it together with step 3. If Ctrl+comma was dropped, this chord
+    #    does both halves at once and the log shows route_open:settings next to
+    #    settings_fill:shortcuts; that is step 4 covering for step 3, not step
+    #    3 having worked.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    if try_label settings_fill:shortcuts 12 "Ctrl+slash (ShowShortcuts)" -M ctrl -k slash -m ctrl; then
+      say "keys: OK -- Ctrl+slash filled the Shortcuts tab (settings_fill:shortcuts)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+    elif try_label settings_fill:shortcuts 12 "Ctrl+slash (ShowShortcuts), second attempt" -M ctrl -k slash -m ctrl; then
+      say "keys: OK on RETRY -- Ctrl+slash filled the Shortcuts tab"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      RETRIES=$((RETRIES + 1))
+    else
+      say "keys: FAILED -- Ctrl+slash logged no settings_fill:shortcuts in two attempts"
+    fi
+    probe_shot "08-keys-shortcuts"
+
+    # 5. Alt+1 -- GoHome again, so the rest runs from a known page.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    if try_page home 10 "Alt+1 (GoHome, second time)" -M alt -k 1 -m alt; then
+      say "keys: OK -- Alt+1 went home a second time ($PAGE_WITNESS)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+    elif try_page home 10 "Alt+1 (GoHome, second time), second attempt" -M alt -k 1 -m alt; then
+      say "keys: OK on RETRY -- Alt+1 went home a second time ($PAGE_WITNESS)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      RETRIES=$((RETRIES + 1))
+    else
+      say "keys: FAILED -- the second Alt+1 opened no page in two attempts"
+    fi
+
+    # 6. Ctrl+F -- SearchLibrary. Two jobs at once. It goes to All Books, and
+    #    it is the only default shortcut that pushes the history stack -- every
+    #    other navigation shortcut passes push_history=false, which clears it,
+    #    so Back has nothing to pop after them and a no-op result there proves
+    #    nothing. It also ends with the library's search box holding focus,
+    #    which is what step 7 then measures.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    SEARCH_FOCUSED=0
+    if try_page all_books 10 "Ctrl+f (SearchLibrary)" -M ctrl -k f -m ctrl; then
+      say "keys: OK -- Ctrl+f reached the library search ($PAGE_WITNESS)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      SEARCH_FOCUSED=1
+    elif try_page all_books 10 "Ctrl+f (SearchLibrary), second attempt" -M ctrl -k f -m ctrl; then
+      say "keys: OK on RETRY -- Ctrl+f reached the library search ($PAGE_WITNESS)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      SEARCH_FOCUSED=1
+      RETRIES=$((RETRIES + 1))
+    else
+      say "keys: FAILED -- Ctrl+f opened no page in two attempts"
+    fi
+    if [ "$SEARCH_FOCUSED" = "1" ]; then
+      say "       The search box now holds focus, which is the point of the"
+      say "       next step and the reason this one runs where it does."
+    fi
+    probe_shot "09-keys-search"
+
+    # 7. Alt+Left -- Back. Now there IS a history entry to pop, so a no-op
+    #    would be a real result rather than a consequence of the design.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    if try_page home 10 "Alt+Left (Back)" -M alt -k Left -m alt; then
+      say "keys: OK -- Alt+Left popped the history ($PAGE_WITNESS)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+    elif try_page home 10 "Alt+Left (Back), second attempt" -M alt -k Left -m alt; then
+      say "keys: OK on RETRY -- Alt+Left popped the history ($PAGE_WITNESS)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      RETRIES=$((RETRIES + 1))
+    else
+      say "keys: FAILED -- Alt+Left opened no page in two attempts"
+      if [ "$SEARCH_FOCUSED" = "1" ]; then
+        say "       The search box is focused, but do not blame it: run 6 saw"
+        say "       this chord land with the same box focused, and nothing on"
+        say "       this platform claims Alt+Left (gtktext.c binds it only"
+        say "       under #ifdef __APPLE__, gtkwindow.c binds arrows with no"
+        say "       modifier and with Ctrl but never Alt, and all_books.rs"
+        say "       installs no key controller). Two attempts failing is what"
+        say "       a real refusal would look like, so it is worth a human"
+        say "       hand -- see docs/manual-test-checklist.md."
+      else
+        say "       Ctrl+f did not get us to the search box, so there may have"
+        say "       been no history to pop. Uninterpretable."
+      fi
+    fi
+    probe_shot "10-keys-back"
+
+    # 8. F11 -- Fullscreen, witnessed by the compositor and not by the app.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    FULLSCREEN_SEEN=0
+    press "F11 (Fullscreen)" -k F11
+    if await_fullscreen 1 10; then
+      say "keys: OK -- sway reports fullscreen_mode=$(fullscreen_mode) after F11"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      FULLSCREEN_SEEN=1
+    else
+      press "F11 (Fullscreen), second attempt" -k F11
+      if await_fullscreen 1 10; then
+        say "keys: OK on RETRY -- sway reports fullscreen_mode=$(fullscreen_mode)"
+        KEYS_PASSED=$((KEYS_PASSED + 1))
+        FULLSCREEN_SEEN=1
+        RETRIES=$((RETRIES + 1))
+      else
+        say "keys: FAILED -- sway reports fullscreen_mode=$(fullscreen_mode) after two F11s"
+      fi
+    fi
+    probe_shot "11-keys-fullscreen"
+
+    # And back again: the toggle proven in both directions, and the window a
+    # normal shape for whatever follows. Not counted as a separate probe,
+    # because it is the same shortcut and the same witness.
+    #
+    # Conditional on the first press having got there. With the window already
+    # normal, "still normal" proves nothing at all, and printing OK here would
+    # put a green line into a run where no keystroke arrived -- the failure
+    # mode this whole harness has been bitten by before (docs/pitfalls.md §21:
+    # a check that passes on broken code teaches you to ignore the checks).
+    #
+    # This is the one check that has never passed, in any run. It is retried
+    # like the others so that a dropped key cannot be mistaken for the toggle
+    # being one-way, which is the interesting possibility.
+    if [ "$FULLSCREEN_SEEN" = "1" ]; then
+      press "F11 again (leave fullscreen)" -k F11
+      if await_fullscreen 0 10; then
+        say "keys: OK -- the second F11 left fullscreen (fullscreen_mode=0)"
+      else
+        press "F11 again (leave fullscreen), second attempt" -k F11
+        if await_fullscreen 0 10; then
+          say "keys: OK on RETRY -- the second F11 left fullscreen"
+          say "       So the toggle is not one-way; the first attempt was dropped."
+        else
+          say "keys: NOTE -- still fullscreen_mode=$(fullscreen_mode) after two"
+          say "       attempts. KNOWN-BENIGN: the owner confirmed on real"
+          say "       hardware (2026-11-03) that F11 twice works. Under headless"
+          say "       sway GTK never learns the window state, so the"
+          say "       unfullscreen() branch -- guarded by root.is_fullscreen()"
+          say "       -- is never taken. A property of this runner, not a defect."
+        fi
+      fi
+    else
+      say "keys: SKIPPED -- the second F11; the first never reached fullscreen,"
+      say "       so 'still normal' would prove nothing and is not reported as OK."
+    fi
+
+    # 9. Ctrl+Q -- Quit. Last, because it ends the app, and a dead pid is the
+    #    one proof here that cannot be argued with.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    quit_wait() { # quit_wait <seconds>
+      local deadline spins
+      deadline=$(( $(now_s) + $1 ))
+      spins=$(( $1 * 4 + 40 ))
+      while kill -0 "$APP_PID" 2>/dev/null; do
+        [ "$(now_s)" -ge "$deadline" ] && break
+        spins=$(( spins - 1 ))
+        [ "$spins" -le 0 ] && break
+        sleep 0.25
+      done
+      ! kill -0 "$APP_PID" 2>/dev/null
+    }
+    press "Ctrl+q (Quit)" -M ctrl -k q -m ctrl
+    if quit_wait 15; then
+      say "keys: OK -- the app exited on Ctrl+q"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      QUIT_PROVEN=1
+    else
+      press "Ctrl+q (Quit), second attempt" -M ctrl -k q -m ctrl
+      if quit_wait 15; then
+        say "keys: OK on RETRY -- the app exited on the second Ctrl+q"
+        KEYS_PASSED=$((KEYS_PASSED + 1))
+        QUIT_PROVEN=1
+        RETRIES=$((RETRIES + 1))
+      else
+        say "keys: FAILED -- the app was still alive after two Ctrl+q attempts"
+      fi
+    fi
+    # No shot here on purpose. The window is gone, so a frame would be black,
+    # and a black frame in the pixel sample reads as a rendering failure.
+
+    say ""
+    say "keys: $KEYS_PASSED of $KEYS_TRIED keystroke probes passed"
+    if [ "${RETRIES:-0}" -gt 0 ]; then
+      say "keys: NOTE -- $RETRIES of them only landed on a second attempt. Those"
+      say "       bindings are wired; the injector dropped the first key. A"
+      say "       retry count that climbs run over run is the harness wearing"
+      say "       out, not the app breaking, and is worth watching."
+    fi
+    if [ "$QUIT_PROVEN" = "1" ]; then
+      say "keys: VERDICT -- keystrokes DO reach the app: it quit on Ctrl+q."
+      say "       Every FAILED line above is then a question about that one"
+      say "       shortcut's wiring, not about input delivery."
+    elif [ "$FIRST_CHORD_OK" = "1" ] && [ "$SECOND_CHORD_OK" = "0" ]; then
+      say "keys: VERDICT -- INCONCLUSIVE, and deliberately so. The first"
+      say "       modified chord arrived and the second did not, which is the"
+      say "       injector's signature rather than the app's. Do not go reading"
+      say "       the shortcut table yet: settle whether wtype still applies"
+      say "       modifiers after its first chord. F11 passing below would not"
+      say "       argue against this, because F11 carries no modifier."
+    elif [ "$KEYS_PASSED" = "0" ]; then
+      say "keys: VERDICT -- nothing responded, Quit included. Read that as"
+      say "       'input did not arrive', which is the pointer's fate in the"
+      say "       TAP probe above, and NOT as a pile of broken shortcuts. Doubt"
+      say "       wtype's virtual keyboard against this compositor first."
+    else
+      say "keys: VERDICT -- some probes passed, so input does arrive; the"
+      say "       failures above are individual and worth reading one by one."
+    fi
+    if [ "$KEYS_SEND_FAILED" = "1" ]; then
+      say "keys: NOTE -- wtype itself errored at least once, so delivery and"
+      say "       not the app is the first thing to doubt."
+    fi
+  fi
+fi
+
 # --- did we actually render the requested page? ---------------------------
 #
 # Three checks, because each catches a different failure and the first two can
@@ -784,7 +1500,11 @@ say "=== screenshot pixel sample ==="
 # On reader or tasks routes the percentage is descriptive, not a pass
 # or failure signal.
 say "  low colour is a cover warning only on a seeded library-grid route."
-python3 docs/ci/check-shot.py "$OUT"/0*.png 2>&1 | tee -a "$REPORT" \
+# [0-9]* rather than 0*: the keystroke probe now runs to eleven frames, and a
+# glob that only matches a leading zero silently drops the last two from both
+# the pixel sample and the fingerprints below. They are exactly the frames that
+# would show whether the final chords changed anything.
+python3 docs/ci/check-shot.py "$OUT"/[0-9]*.png 2>&1 | tee -a "$REPORT" \
   || say "  (pixel sample failed to run)"
 
 say ""
@@ -792,7 +1512,7 @@ say "=== screenshot fingerprints ==="
 # Identical checksums mean the screen never changed -- the single cheapest
 # signal that navigation did nothing, and the one that would have caught this
 # on the first working run.
-md5sum "$OUT"/0*.png 2>/dev/null | sed 's/^/  /' | tee -a "$REPORT" \
+md5sum "$OUT"/[0-9]*.png 2>/dev/null | sed 's/^/  /' | tee -a "$REPORT" \
   || say "  (no shots to fingerprint)"
 
 say ""

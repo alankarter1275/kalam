@@ -3482,3 +3482,144 @@ to be capable of failing before it is trusted to pass.
 The 135 reports under `ci-logs/` are still frozen at run `41108198774` from 30
 October — a *branch* run, which is the old canonical-path bug accidentally keeping
 them fresh. They refresh on the first `main` run that gets past the parse.
+
+## §100 — six runs to prove a keyboard works, and nearly every failure was the test's
+
+The keystroke probe (`KEYS=1` in `docs/ci/screenshot.sh`) took six CI runs to
+produce one trustworthy sentence, and the sentence is that the app's keyboard
+works: across the six, every one of its nine default shortcuts was witnessed
+firing at least once. Each run reported failures. Almost none of them were the
+app's. What follows is what each failure actually was, because each is a way a
+check can be wrong while looking exact — including, at the end, one place where
+this section was itself wrong and had to be corrected by a later run.
+
+**A witness that only fires on one code path reports success as failure.** The
+probe counted `route_open:` lines to prove navigation. But `route_open:` is
+logged inside `build_page`, and `build_page` is skipped when the page comes out
+of the cache — the app says so itself, in the comment that opens `build_page`
+at `src/app.rs:433-434`: *"The page cache's hit path never enters this function
+— a cached page is reparented, not rebuilt."* So the second visit to a page logs `page_cache_hit` instead, and a
+route-only witness calls a working shortcut broken. The fix is a witness that
+accepts both lines and prints which one it saw. Before choosing a witness, ask
+what the code does on the path you are *not* expecting.
+
+**Take the baseline before the action, never inside the wait.** Folding the
+"how many so far" read into the wait function means it runs *after* the key was
+sent, and a fast app has often written the evidence in the microseconds between
+the injector returning and the wait starting. The wait then looks for a second
+copy that never comes. Stub-testing caught this: the fake app logged every
+navigation perfectly and the probe failed all of them.
+
+**Back-to-back synthetic input needs a settle, and alternating pass/fail is the
+signature.** Run 4 dropped three chords, and the rhythm was exact: all three had
+been sent within milliseconds of the previous chord *succeeding*, and every
+chord sent after a pause arrived. When a witness appears the wait returns at
+once, so the next `wtype` invocation built a fresh virtual keyboard before the
+previous one had finished releasing its modifier. After a *failed* chord the
+wait had already burned its whole timeout — which is why the results alternated
+instead of clustering, the shape that gave it away. A 1.5 s settle before each
+chord took run 4's 5 of 9 to 8 of 9 in run 5 — but run 6, with the identical
+settle, scored 7 of 9 and lost two *different* chords. A settle reduced the
+drop rate; it did not remove it, and no pause length was ever going to. What
+actually fixes it is sending every chord twice and reporting which attempt
+landed, because a binding that fires on the second attempt is wired and the
+first key simply never arrived. The count of retries is printed with the score,
+so a harness that is degrading is visible as a climbing number rather than as a
+pile of failures that look like the app breaking.
+
+**A probe's own failure text contaminates the log you grep.** The report said
+`route_open:settings` twice, which read as though Settings had opened. Both hits
+were the probe's own `keys: FAILED -- ... logged no route_open:settings ...`
+lines. Grep the section that holds the app's output, never the whole report.
+
+**A frame taken with no dwell is a picture of the previous action.** The shot
+taken the instant the log line appeared caught the page before it drew, and came
+out byte-identical to the frame before it — so the pictures appeared to
+contradict the log.
+
+**A glob that encodes today's file count silently drops tomorrow's files.** The
+pixel sample and the fingerprints both iterated `"$OUT"/0*.png`. That was fine
+while frames ran 01–09. The probe grew to eleven, and frames 10 and 11 vanished
+from both sections with no error — the two frames most likely to show whether
+the last chords did anything. `[0-9]*.png` now.
+
+**Check the platform's source before blaming it.** `Alt+Left` was the stubborn
+failure, and the obvious story was tidy: `Ctrl+F` leaves the library's search
+box focused, so the entry swallows the chord before the window's bubble-phase
+handler sees it. It fitted the evidence, it fitted `fires_while_typing()`'s
+stated intent, and it named a file to change. It is also unsupported. In GTK's
+own source, `gtktext.c` binds `Alt+Left` and `Alt+Right` only inside `#ifdef
+__APPLE__`; `gtkwindow.c`'s `add_arrow_bindings` binds arrows with
+`GDK_NO_MODIFIER_MASK` and `GDK_CONTROL_MASK` and never with Alt;
+`gtk_search_entry_is_keynav` does test the Alt mask but is a filter, not a
+claim; and `src/pages/all_books.rs` installs no key controller at all. Nothing
+on this platform takes the key, and `Ctrl+Q` works with the same box focused. No
+app code was changed. A plausible mechanism is not a finding; `gh api
+repos/GNOME/gtk/contents/gtk/gtktext.c` settles it in one command, and the
+`#ifdef` was four lines from the binding that looked like the answer.
+
+**Corrected by the next run: "it failed in every run so far" is not "it always
+fails".** Having ruled out the platform, this section went on to conclude that
+`Alt+Left` must be a keysym the injector does not send, because it had failed in
+all five runs while `Alt+1` and `Alt+2` had passed in all five. Run 6 then
+passed `Alt+Left` — with the same search box focused, the same injector, the
+same settle — and instead dropped `Ctrl+comma` and `Ctrl+Q`, neither of which
+had any trouble before. Five samples of a flaky thing is not a pattern, it is
+five samples. The shape that actually distinguished the two theories was never
+"which chord fails" but "does the *same* chord fail twice", and it took a sixth
+run to ask. Two consequences: the retry above, so one run can answer it by
+itself; and a rule for writing this file down — a claim about what *always*
+happens needs either a mechanism or a lot more runs than feels necessary, and
+when it has neither, say "in every run so far" and mean it as a confession.
+
+**Settled by the owner on 2026-11-03: the last "candidate for a real defect"
+was the harness too.** The *second* `F11` never worked in any of seven headless
+runs — the window went full screen and did not come back — and the paragraph
+above this one called it the only open candidate for a real defect. On real
+hardware it works, first try, along with every other shortcut. So it was the
+headless compositor all along, exactly as the handler's `root.is_fullscreen()`
+guard suggested: under headless sway GTK never learns the window's state, so the
+second press asks to go full screen again instead of leaving.
+
+Two things worth keeping. Sending it to a human was the right call and cost two
+seconds, the cheapest verification in this whole file — when a headless harness
+structurally cannot answer a question, say so and hand it over rather than
+letting it sit as a suspected defect. And the count is now seven runs, nine
+shortcuts, and **zero** app bugs: every failure this probe ever reported was its
+own. A probe that wrong that consistently is not measuring the app, it is
+measuring itself, and the honest reading of `8 of 9` was never "one thing is
+broken" but "I do not yet know how to ask".
+
+**The same rule answered the owner's warning in one command.** Their own build
+printed `Gdk-WARNING **: gdk_frame_timings_submitted() called on submitted
+frame.` The instinct is to go hunting for what the app did. The function name
+answers it first: `gdk_frame_timings_submitted` is declared in
+`gdk/gdkframetimingsprivate.h` and appears **zero** times in the public
+`gdk/gdkframetimings.h`, so it is private GDK API that no application can call.
+In GTK's tree its only caller is `gdk_draw_context_frame_submitted`
+(`gdk/gdkframeclock.c:986`), GDK's own backend path. Current `main` has also
+relaxed the check — a duplicate call on an already-submitted frame is now
+explicitly allowed and silent — so that wording belongs to an older GTK, and
+upstream has already decided it is not worth warning about. It is a
+`g_warning_once`, so it fires at most once per process, which matches the single
+line seen. Nothing in Kalam drives it: the only frame-clock contact is
+`src/frames.rs:184`, gated behind `KALAM_TIMING=1` (`src/timing.rs:71`) and
+observers only, and the two `add_tick_callback` sites (`src/pages/author.rs:759`
+and `:1258`) are bounded at 180 tries and return `Break`. An unrelated GTK4 Rust
+app emits the identical warning, and CI has never produced it in any run, because
+headless sway takes a different path.
+
+The rule: **when a warning names a function, find out who is allowed to call it
+before reading your own code.** Private or internal API in the message means the
+fault is below you. Same discipline as reading `gtktext.c` instead of believing
+the search-box story — but this time one `grep -c` against a public header,
+instead of five CI runs.
+
+**A wait loop whose only exit is arithmetic will spin forever.** Four loops in
+the probe exited on a deadline computed as `$(( $(now_s) + timeout ))`. If that
+arithmetic ever yields nothing, the comparison errors instead of ending the
+wait, and the loop never stops — observed here while stub-testing, where it cost
+fifteen minutes of a sandbox and would have cost hours of CI. Each now carries
+an iteration backstop alongside the deadline. The backstop is not the intended
+exit and should never fire; it exists because a hung step is expensive in a way
+a wrong answer is not.

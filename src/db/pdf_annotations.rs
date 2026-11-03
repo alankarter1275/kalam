@@ -27,7 +27,7 @@ fn drawing_from_row(row: DrawingRow) -> Result<PdfDrawing> {
     })
 }
 
-fn encode_geometry(drawing: &PdfDrawing) -> Result<String> {
+pub(super) fn encode_geometry(drawing: &PdfDrawing) -> Result<String> {
     serde_json::to_string(&drawing.geometry)
         .map_err(|err| DbError::PdfAnnotation(format!("encode drawing geometry: {err}")))
 }

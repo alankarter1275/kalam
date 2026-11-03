@@ -3769,10 +3769,7 @@ impl PdfReaderModel {
         };
 
         self.dismiss_selection_chip();
-        let saved = self
-            .catalog
-            .saved_word_exists(&shown_word, self.book_id)
-            .unwrap_or(false);
+        let saved = self.catalog.saved_word_exists(&shown_word).unwrap_or(false);
 
         let popover = gtk::Popover::new();
         popover.set_parent(&overlay);
@@ -9637,22 +9634,19 @@ impl Component for PdfReaderModel {
                 let Some(word) = self.dict_lookup_word.clone() else {
                     return;
                 };
-                let saved = self
-                    .catalog
-                    .saved_word_exists(&word, self.book_id)
-                    .unwrap_or(false);
+                let saved = self.catalog.saved_word_exists(&word).unwrap_or(false);
                 if saved {
+                    // Matched on the word alone, for the reason given at
+                    // the EPUB reader's equivalent: one dictionary, so the
+                    // row may belong to another book or to none.
                     let removed: Vec<SavedWord> = self
                         .saved_words
                         .iter()
-                        .filter(|row| {
-                            row.book_id == Some(self.book_id)
-                                && row.word.eq_ignore_ascii_case(&word)
-                        })
+                        .filter(|row| row.word.eq_ignore_ascii_case(&word))
                         .cloned()
                         .collect();
                     if crate::notify::report(
-                        self.catalog.delete_saved_word_for(&word, self.book_id),
+                        self.catalog.delete_saved_word_for(&word),
                         "Could not forget the word",
                     ) {
                         for row in removed {

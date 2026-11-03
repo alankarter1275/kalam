@@ -712,13 +712,22 @@ impl Catalog {
         Ok(out)
     }
 
-    /// Whether the word was already saved for this book (popup bookmark).
-    pub fn saved_word_exists(&self, word: &str, book_id: i64) -> Result<bool> {
+    /// Whether the word is in your dictionary (popup bookmark).
+    ///
+    /// Deliberately not scoped to a book. A saved word is one entry in one
+    /// personal dictionary, and `book_id` records only where you first met
+    /// it. Scoping this check to the current book made a word saved in
+    /// another book — or a word whose book had been deleted, which leaves
+    /// `book_id` NULL — read as "not saved", so the popup offered to save it
+    /// a second time. The underline this mirrors has always been keyed on
+    /// the word alone (`Catalog::get_saved_words_for_scope` under the
+    /// default "library" scope applies no book filter), so the popup and the
+    /// page now agree.
+    pub fn saved_word_exists(&self, word: &str) -> Result<bool> {
         let conn = self.conn();
         let n: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM saved_words
-             WHERE word = ?1 COLLATE NOCASE AND book_id = ?2",
-            params![word, book_id],
+            "SELECT COUNT(*) FROM saved_words WHERE word = ?1 COLLATE NOCASE",
+            params![word],
             |r| r.get(0),
         )?;
         Ok(n > 0)

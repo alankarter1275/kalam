@@ -1,2 +1,29 @@
-clean
---- run 41569266357 ---
+diff --git a/src/db/annotations.rs b/src/db/annotations.rs
+index e5d2fbb..7153d51 100644
+--- a/src/db/annotations.rs
++++ b/src/db/annotations.rs
+@@ -1018,7 +1018,9 @@ mod tests {
+         // The stroke that used to report success and do nothing.
+         cat.delete_saved_word_for("ephemeral").expect("forget word");
+         assert!(
+-            cat.list_saved_words("", None).expect("list words").is_empty(),
++            cat.list_saved_words("", None)
++                .expect("list words")
++                .is_empty(),
+             "forgetting an orphaned word really removes it"
+         );
+         assert!(!cat.saved_word_exists("ephemeral").expect("exists check"));
+@@ -1070,7 +1072,11 @@ mod tests {
+         assert_eq!(first, again, "the second save hands back the entry you had");
+         let rows = cat.list_saved_words("", None).expect("list words");
+         assert_eq!(rows.len(), 1, "one dictionary, one entry");
+-        assert_eq!(rows[0].book_id, Some(book_a), "provenance keeps the first book");
++        assert_eq!(
++            rows[0].book_id,
++            Some(book_a),
++            "provenance keeps the first book"
++        );
+         assert_eq!(
+             rows[0].definition, "a happy accident",
+             "the first entry is not overwritten by a later encounter"
+--- run 41574497858 ---

@@ -443,6 +443,23 @@ pub struct ChooserButtons {
     pub confirm_kind: PillButtonKind,
 }
 
+/// The buttons on the question an import leaves behind.
+///
+/// Defined once, here, because the same question is asked from four places —
+/// three pages that import and the book page when a book is opened. Four
+/// copies of the wording would drift, and a reader would get two different
+/// promises from what is one promise.
+///
+/// "Ask me later" is not a cancel. Closing the dialog leaves the book flagged
+/// as owing an answer, and the question comes back when the book is next
+/// opened — which is what the flag is for. Labelling it "Cancel" would have
+/// promised that nothing was left outstanding.
+pub const RESTORE_BUTTONS: ChooserButtons = ChooserButtons {
+    dismiss: "Ask me later",
+    confirm: "Keep these",
+    confirm_kind: PillButtonKind::Primary,
+};
+
 /// A table of books, each with its own five ticks.
 ///
 /// Used when the same question is being asked about more than one book at once:

@@ -35,7 +35,10 @@ use crate::widgets::{
     pill_button::{boxed_ghost_button, icon_button, primary_button, PillButtonKind},
     progress::linear_progress,
     rating::rating_control,
-    reading_choice::{choose_kinds_dialog, delete_book_dialog, describe_cleared},
+    reading_choice::{
+        choose_kinds_dialog, delete_book_dialog, describe_cleared, restored_reading_dialog,
+        RESTORE_BUTTONS,
+    },
     segmented::{segmented_control, SegmentedSize},
     slide_out_pill::slide_out_pill,
     surface::{hairline, outlined_section, quiet_notice, state_card},
@@ -126,6 +129,13 @@ pub enum BookPageMsg {
     ConfirmDelete,
     /// Ask which notes and marks to wipe from a book that stays in the library.
     ConfirmClearNotes,
+    /// The reader answered the question a re-import left behind: keep these
+    /// kinds, wipe the rest, and stop the book owing an answer.
+    ///
+    /// Carries what to keep, where `ClearNotes` carries what to wipe. They are
+    /// complements of one call, and both go through `settle_restore` so the
+    /// rescue copy is spent in one place rather than two.
+    SettleRestored(ReadingKinds),
     /// The chooser was answered: wipe these kinds, keep the book.
     ClearNotes {
         id: i64,
@@ -181,6 +191,13 @@ pub struct BookPageModel {
     /// A chapter-titles parse is in flight; Contents says
     /// "Loading chapter list…" rather than vanishing while it is.
     chapters_loading: bool,
+    /// The first-open question has been asked during this page's life.
+    ///
+    /// The database flag says a book owes an answer, and answering it clears
+    /// that flag — but "ask me later" deliberately does not. Without this, a
+    /// reader who deferred would be asked again by every refresh the page does
+    /// afterwards, which is the nagging the deferral exists to avoid.
+    restore_asked: bool,
     // The snapshot state below replaced live reads in the fill functions
     // (7.1 step 2a): rebuild is now pure view-from-model.
     progress: Option<(usize, f64)>,
@@ -378,6 +395,7 @@ impl Component for BookPageModel {
             chapter_titles_for: 0,
             loading: true,
             chapters_loading: false,
+            restore_asked: false,
             progress: None,
             stats: Default::default(),
             annotations: Vec::new(),
@@ -439,6 +457,7 @@ impl Component for BookPageModel {
                     series_position,
                     series_total,
                     file_size,
+                    restore_pending,
                 } = snap;
                 report_errors(&detail.errors);
                 report_errors(&stats.errors);
@@ -460,6 +479,33 @@ impl Component for BookPageModel {
                 self.series_position = series_position;
                 self.series_total = series_total;
                 self.file_size = file_size;
+
+                // The first-open question. This is the other half of "ask me
+                // later": the import put the notes back and left the decision
+                // open, and opening the book is when the reader is asked. It is
+                // also the only path a background import has — a watched folder
+                // and a download both restore with no window to ask from, so
+                // they leave the flag set and let this pick it up.
+                if restore_pending && !self.restore_asked {
+                    self.restore_asked = true;
+                    if let Some(book) = &self.book {
+                        let title = book.title.clone();
+                        let s = sender.input_sender().clone();
+                        let dialog =
+                            restored_reading_dialog(root, &title, RESTORE_BUTTONS, move |keep| {
+                                let _ = s.send(BookPageMsg::SettleRestored(keep));
+                            });
+                        if dialog.is_none() {
+                            // The flag stays set, so this is not a lost question
+                            // — the next open asks again. But the reader is
+                            // owed the reason nothing appeared.
+                            crate::notify::error(
+                                "Could not ask about your notes",
+                                "The question will come back the next time this book is opened.",
+                            );
+                        }
+                    }
+                }
 
                 // CI screenshot hook, the dialog counterpart of
                 // KALAM_ROUTE: `KALAM_DIALOG=tags|annotations` opens that
@@ -720,15 +766,33 @@ impl Component for BookPageModel {
             }
             BookPageMsg::ClearNotes { id, title, kinds } => {
                 let catalog = self.service.catalog().clone();
-                match catalog.clear_reading_kinds(id, kinds) {
-                    Ok(tally) => {
-                        // The rescue copy goes with it. Leaving it filed would
-                        // undo this clear the moment the book was deleted and
-                        // imported again, which is not what "clear" meant.
-                        let _ = catalog.forget_reading_stash(id);
-                        // The question is answered, so the book no longer owes
-                        // one on its next open.
-                        let _ = catalog.set_restore_pending(id, false);
+                let s = sender.input_sender().clone();
+                // A clear touches several tables and then rewrites the book's
+                // sidecar, so it is a task like the delete beside it and not
+                // work for the UI thread — the page would freeze for the length
+                // of the sidecar write.
+                crate::tasks::spawn(
+                    format!("Clearing notes in {title}"),
+                    // `kinds` is what to wipe; `settle_restore` is written in
+                    // terms of what to keep, so it takes the complement. This
+                    // used to spell out the same three steps `settle_restore`
+                    // does — clear the rows, drop the rescue copy, close the
+                    // flag — and two copies of an invariant is how one of them
+                    // gets left behind.
+                    move |_reporter| {
+                        catalog
+                            .settle_restore(id, kinds.complement())
+                            .map_err(|e| e.to_string())
+                    },
+                    |_| {},
+                    move |res| {
+                        let tally = match res {
+                            Ok(tally) => tally,
+                            Err(err) => {
+                                crate::notify::error("Could not clear the notes", &err);
+                                return;
+                            }
+                        };
                         if tally.is_empty() {
                             crate::notify::info("Nothing to clear", &title);
                         } else {
@@ -739,10 +803,52 @@ impl Component for BookPageModel {
                         }
                         // The cards on this page count annotations and
                         // bookmarks; those numbers just changed.
-                        sender.input(BookPageMsg::Refresh);
-                    }
-                    Err(err) => crate::notify::error("Could not clear the notes", &err.to_string()),
-                }
+                        let _ = s.send(BookPageMsg::Refresh);
+                    },
+                );
+            }
+            BookPageMsg::SettleRestored(keep) => {
+                // The book this page is showing. `settle_restore` takes an id,
+                // and the page already knows its own — carrying the id through
+                // the dialog callback would be a second copy of a fact that can
+                // only disagree with the first.
+                let id = self.book_id;
+                let title = self
+                    .book
+                    .as_ref()
+                    .map(|b| b.title.clone())
+                    .unwrap_or_else(|| "This book".to_string());
+                let catalog = self.service.catalog().clone();
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn(
+                    format!("Applying your choice for {title}"),
+                    move |_reporter| catalog.settle_restore(id, keep).map_err(|e| e.to_string()),
+                    |_| {},
+                    move |res| {
+                        let tally = match res {
+                            Ok(tally) => tally,
+                            Err(err) => {
+                                crate::notify::error("Could not save your choice", &err);
+                                return;
+                            }
+                        };
+                        // Keeping everything is a real answer, not a non-event:
+                        // it spends the rescue copy and closes the flag, so the
+                        // reader is told what changed even when nothing was
+                        // removed.
+                        if tally.is_empty() {
+                            crate::notify::success("Keeping everything", &title);
+                        } else {
+                            crate::notify::success(
+                                "Your choice is saved",
+                                &format!("{title} — removed {}.", describe_cleared(tally)),
+                            );
+                        }
+                        // The page's cards count annotations and bookmarks, and
+                        // the flag that opened the question is now spent.
+                        let _ = s.send(BookPageMsg::Refresh);
+                    },
+                );
             }
             BookPageMsg::LocateFile => {
                 if let Some(book) = &self.book {

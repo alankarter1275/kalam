@@ -511,7 +511,6 @@ impl Catalog {
         Ok(())
     }
 
-    #[allow(dead_code)] // wired up by the book page and the reader
     pub fn restore_pending(&self, book_id: i64) -> Result<bool> {
         let conn = self.conn();
         let flag: i64 = conn

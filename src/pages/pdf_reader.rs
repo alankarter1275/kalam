@@ -25,13 +25,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::db::{
-    Annotation, Catalog, HighlightColor, PdfDrawing, PdfPageIdentity, ReadingBookmark, SavedWord,
+    Annotation, Catalog, HighlightColor, PdfDrawing, PdfPageIdentity, ReadingBookmark, ReadingKinds,
+    SavedWord,
 };
 use crate::epub_book::ReadingTheme;
 use crate::pdf::{
     PdfDocument, PdfOpenOutcome, PdfPageText, PdfSearchOutcome, PdfSearchResult, PdfTocEntry,
 };
-use crate::widgets::dialog::{confirmation_dialog, ConfirmationKind};
+use crate::widgets::reading_choice::delete_book_dialog;
 
 mod drawings;
 mod image;
@@ -1684,7 +1685,8 @@ pub enum PdfReaderMsg {
     SubmitPassword,
     LocateFile,
     ConfirmRemoveBook,
-    RemoveBook,
+    /// Remove the book, keeping the chosen kinds filed for a later re-import.
+    RemoveBook(ReadingKinds),
     RemoveBookDone(Result<(), String>),
     /// The doc service extracted one page's vector text (empty text means
     /// a scanned page: the handler falls back to the OCR cache / worker).
@@ -6845,7 +6847,7 @@ impl Component for PdfReaderModel {
                     | PdfReaderMsg::SubmitPassword
                     | PdfReaderMsg::LocateFile
                     | PdfReaderMsg::ConfirmRemoveBook
-                    | PdfReaderMsg::RemoveBook
+                    | PdfReaderMsg::RemoveBook(_)
                     | PdfReaderMsg::RemoveBookDone(_)
             )
         {
@@ -6935,20 +6937,9 @@ impl Component for PdfReaderModel {
                 if self.open_state == PdfOpenState::CantOpen && !self.open_state_removing {
                     let title = self.title.clone();
                     let s = sender.input_sender().clone();
-                    let dialog = confirmation_dialog(
-                        _root,
-                        "Remove this book?",
-                        &format!(
-                            "\u{201c}{title}\u{201d} will be removed from your library and its files \
-                             deleted. This cannot be undone."
-                        ),
-                        "Keep book",
-                        "Remove book",
-                        ConfirmationKind::Destructive,
-                        move || {
-                            let _ = s.send(PdfReaderMsg::RemoveBook);
-                        },
-                    );
+                    let dialog = delete_book_dialog(_root, &title, move |keep| {
+                        let _ = s.send(PdfReaderMsg::RemoveBook(keep));
+                    });
                     if dialog.is_none() {
                         crate::notify::error(
                             "Could not remove the book",
@@ -6957,7 +6948,7 @@ impl Component for PdfReaderModel {
                     }
                 }
             }
-            PdfReaderMsg::RemoveBook => {
+            PdfReaderMsg::RemoveBook(keep) => {
                 if self.open_state == PdfOpenState::CantOpen && !self.open_state_removing {
                     self.open_state_removing = true;
                     let id = self.book_id;
@@ -6966,7 +6957,7 @@ impl Component for PdfReaderModel {
                     let s = sender.input_sender().clone();
                     crate::tasks::spawn(
                         format!("Deleting {title}"),
-                        move |_reporter| catalog.delete_book(id).map_err(|e| e.to_string()),
+                        move |_reporter| catalog.delete_book_keeping(id, keep).map_err(|e| e.to_string()),
                         |_| {},
                         move |res| {
                             let _ = s.send(PdfReaderMsg::RemoveBookDone(res));

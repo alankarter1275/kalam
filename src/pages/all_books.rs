@@ -7,7 +7,7 @@ use crate::widgets::book_row::{
 use crate::widgets::in_app_dialog;
 use crate::widgets::pill_button::PillButtonKind;
 use crate::widgets::reading_choice::{
-    choose_kinds_table, restored_reading_dialog, ChoiceRow, ChooserButtons,
+    choose_kinds_table, restored_reading_dialog, ChoiceRow, ChooserButtons, RESTORE_BUTTONS,
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -101,18 +101,6 @@ pub enum AllBooksMsg {
     Settled,
 }
 
-/// The buttons on the import question.
-///
-/// "Ask me later" is not a cancel. Closing the dialog leaves the book flagged
-/// as owing an answer, and the question comes back when the book is next
-/// opened — which is what the flag is for. Labelling it "Cancel" would have
-/// promised the reader that nothing was left outstanding.
-const IMPORT_BUTTONS: ChooserButtons = ChooserButtons {
-    dismiss: "Ask me later",
-    confirm: "Keep these",
-    confirm_kind: PillButtonKind::Primary,
-};
-
 /// A book an import brought back with its reading data.
 #[derive(Debug, Clone)]
 pub struct RestoredBook {
@@ -165,7 +153,7 @@ pub fn ask_about_restored(
         let book = restored[0].clone();
         let service_for_dialog = service.clone();
         let settled_for_dialog = settled.clone();
-        restored_reading_dialog(anchor, &book.title, IMPORT_BUTTONS, move |keep| {
+        restored_reading_dialog(anchor, &book.title, RESTORE_BUTTONS, move |keep| {
             settle_restored(
                 service_for_dialog.clone(),
                 vec![(book.id, keep)],
@@ -198,7 +186,7 @@ pub fn ask_about_restored(
              removed for good."
         ),
         rows,
-        IMPORT_BUTTONS,
+        RESTORE_BUTTONS,
         move |choices| {
             settle_restored(
                 service_for_table.clone(),

@@ -226,6 +226,17 @@ pub struct BookPageSnapshot {
     /// this with the file's `fs::metadata` size on its way back, so the
     /// stat also stays off the UI thread.
     pub file_size: Option<u64>,
+    /// Whether this book is still waiting for the reader to say what to keep.
+    ///
+    /// Set when a re-import brought reading data back and the question went
+    /// unanswered — the reader chose "ask me later", or the import ran with no
+    /// window to ask from, which a watched folder and a download both do.
+    ///
+    /// Carried in the snapshot rather than read when the dialog is built,
+    /// because building a dialog is UI-thread work. A page that reached for the
+    /// database handle there could query while the page waits to be painted,
+    /// which is what `LibraryService` exists to prevent.
+    pub restore_pending: bool,
 }
 
 /// One volume on the series page: a cached listing entry, an owned book
@@ -830,6 +841,14 @@ impl LibraryService {
         let (next_in_series, next_series_title, series_position, series_total) =
             self.next_in_series(book_id, detail.book.as_ref(), &mut detail.errors);
 
+        // A failed read means "do not ask", not "ask": a book whose flag cannot
+        // be read is not a book the reader is being pestered about, and the
+        // error itself is already reported through `detail.errors`.
+        let restore_pending = self
+            .catalog
+            .restore_pending(book_id)
+            .unwrap_or(false);
+
         BookPageSnapshot {
             detail,
             progress,
@@ -846,6 +865,7 @@ impl LibraryService {
             series_total,
             // The service is DB-pure; the page's worker fills this.
             file_size: None,
+            restore_pending,
         }
     }
 

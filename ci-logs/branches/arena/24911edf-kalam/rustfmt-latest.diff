@@ -1,67 +1,45 @@
-diff --git a/src/pages/all_books.rs b/src/pages/all_books.rs
-index bf5bff2..c9f8171 100644
---- a/src/pages/all_books.rs
-+++ b/src/pages/all_books.rs
-@@ -717,14 +717,9 @@ impl Component for AllBooksModel {
+diff --git a/src/pages/pdf_reader.rs b/src/pages/pdf_reader.rs
+index f196deb..78bf118 100644
+--- a/src/pages/pdf_reader.rs
++++ b/src/pages/pdf_reader.rs
+@@ -25,8 +25,8 @@ use std::sync::Arc;
+ use std::time::Duration;
  
-                 if !tally.restored_books.is_empty() {
+ use crate::db::{
+-    Annotation, Catalog, HighlightColor, PdfDrawing, PdfPageIdentity, ReadingBookmark, ReadingKinds,
+-    SavedWord,
++    Annotation, Catalog, HighlightColor, PdfDrawing, PdfPageIdentity, ReadingBookmark,
++    ReadingKinds, SavedWord,
+ };
+ use crate::epub_book::ReadingTheme;
+ use crate::pdf::{
+@@ -6957,7 +6957,11 @@ impl Component for PdfReaderModel {
                      let s = sender.input_sender().clone();
--                    ask_about_restored(
--                        root,
--                        &self.service,
--                        &tally.restored_books,
--                        move || {
--                            s.send(AllBooksMsg::Settled).ok();
--                        },
--                    );
-+                    ask_about_restored(root, &self.service, &tally.restored_books, move || {
-+                        s.send(AllBooksMsg::Settled).ok();
-+                    });
-                 }
-             }
-             AllBooksMsg::Settled => {
-diff --git a/src/pages/comics.rs b/src/pages/comics.rs
-index 7a05952..4e423b1 100644
---- a/src/pages/comics.rs
-+++ b/src/pages/comics.rs
-@@ -1423,14 +1423,9 @@ impl Component for ComicsModel {
-                 // All Books does rather than quietly keeping them.
-                 if !tally.restored_books.is_empty() {
-                     let s = sender.input_sender().clone();
--                    ask_about_restored(
--                        root,
--                        &self.service,
--                        &tally.restored_books,
--                        move || {
--                            s.send(ComicsMsg::Refresh).ok();
--                        },
--                    );
-+                    ask_about_restored(root, &self.service, &tally.restored_books, move || {
-+                        s.send(ComicsMsg::Refresh).ok();
-+                    });
-                 }
-             }
-             ComicsMsg::OpenComic(id) => {
-diff --git a/src/pages/home.rs b/src/pages/home.rs
-index ec792f8..577e146 100644
---- a/src/pages/home.rs
-+++ b/src/pages/home.rs
-@@ -249,14 +249,9 @@ impl Component for HomePageModel {
-                 // nowhere for books imported from this screen.
-                 if !tally.restored_books.is_empty() {
-                     let s = sender.input_sender().clone();
--                    ask_about_restored(
--                        root,
--                        &self.service,
--                        &tally.restored_books,
--                        move || {
--                            s.send(HomeMsg::Refresh).ok();
--                        },
--                    );
-+                    ask_about_restored(root, &self.service, &tally.restored_books, move || {
-+                        s.send(HomeMsg::Refresh).ok();
-+                    });
-                 }
-             }
-             HomeMsg::Refresh => {
---- run 41769580809 ---
+                     crate::tasks::spawn(
+                         format!("Deleting {title}"),
+-                        move |_reporter| catalog.delete_book_keeping(id, keep).map_err(|e| e.to_string()),
++                        move |_reporter| {
++                            catalog
++                                .delete_book_keeping(id, keep)
++                                .map_err(|e| e.to_string())
++                        },
+                         |_| {},
+                         move |res| {
+                             let _ = s.send(PdfReaderMsg::RemoveBookDone(res));
+diff --git a/src/service.rs b/src/service.rs
+index 1c4be31..095f5fc 100644
+--- a/src/service.rs
++++ b/src/service.rs
+@@ -844,10 +844,7 @@ impl LibraryService {
+         // A failed read means "do not ask", not "ask": a book whose flag cannot
+         // be read is not a book the reader is being pestered about, and the
+         // error itself is already reported through `detail.errors`.
+-        let restore_pending = self
+-            .catalog
+-            .restore_pending(book_id)
+-            .unwrap_or(false);
++        let restore_pending = self.catalog.restore_pending(book_id).unwrap_or(false);
+ 
+         BookPageSnapshot {
+             detail,
+--- run 41772347828 ---

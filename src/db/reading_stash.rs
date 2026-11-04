@@ -114,6 +114,11 @@ impl Catalog {
     /// remembering; this one only matters at the single moment the rows are about
     /// to be destroyed. Hooking it into `remember_overrides` would serialise
     /// every highlight in the book on every title or tag edit, for nothing.
+    // Capture is always partial now: `delete_book_single` passes the reader's
+    // choice straight through. This shorthand survives for the tests and for any
+    // caller that genuinely means "all of it", but nothing in the app reaches it
+    // yet, so it would fail `-D warnings` without the allow.
+    #[allow(dead_code)]
     pub(super) fn remember_reading(&self, book_id: i64) -> Result<()> {
         self.remember_reading_kinds(book_id, ReadingKinds::ALL)
     }
@@ -795,7 +800,17 @@ mod tests {
         cat.set_reading_progress(id, 4, 0.25, 12).unwrap();
         cat.insert_reading_bookmark(id, 4, 0.25, "kept").unwrap();
         cat.insert_annotation(
-            id, "highlight", 4, "", 0, "", 9, "yellow", "solid", "kept", "",
+            id,
+            "highlight",
+            4,
+            "",
+            0,
+            "",
+            9,
+            "yellow",
+            "solid",
+            "kept",
+            "",
         )
         .unwrap();
         cat.insert_annotation(
@@ -855,10 +870,8 @@ mod tests {
         cat.set_reading_progress(id, 4, 0.25, 12).unwrap();
         cat.insert_reading_bookmark(id, 4, 0.25, "one").unwrap();
         cat.insert_reading_bookmark(id, 5, 0.5, "two").unwrap();
-        cat.insert_annotation(
-            id, "highlight", 4, "", 0, "", 9, "yellow", "solid", "h", "",
-        )
-        .unwrap();
+        cat.insert_annotation(id, "highlight", 4, "", 0, "", 9, "yellow", "solid", "h", "")
+            .unwrap();
         cat.insert_annotation(id, "quote", 4, "", 0, "", 9, "yellow", "solid", "q", "")
             .unwrap();
 
@@ -878,7 +891,10 @@ mod tests {
         assert!(tally.position);
         assert_eq!(tally.bookmarks, 2);
         assert_eq!(tally.highlights, 1);
-        assert_eq!(tally.quotes, 0, "quotes were not chosen, so none were removed");
+        assert_eq!(
+            tally.quotes, 0,
+            "quotes were not chosen, so none were removed"
+        );
         assert_eq!(tally.total(), 4);
 
         assert_eq!(cat.get_reading_progress(id).unwrap(), None);
@@ -927,7 +943,17 @@ mod tests {
         let cat = Catalog::open_in_memory().unwrap();
         let id = book(&cat, "Forgotten");
         cat.insert_annotation(
-            id, "highlight", 4, "", 0, "", 9, "yellow", "solid", "doomed", "",
+            id,
+            "highlight",
+            4,
+            "",
+            0,
+            "",
+            9,
+            "yellow",
+            "solid",
+            "doomed",
+            "",
         )
         .unwrap();
         cat.remember_reading(id).unwrap();

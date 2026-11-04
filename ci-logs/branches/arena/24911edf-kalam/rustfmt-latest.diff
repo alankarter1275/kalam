@@ -1,48 +1,66 @@
+diff --git a/src/db/reading_stash.rs b/src/db/reading_stash.rs
+index cba1a39..df08d5d 100644
+--- a/src/db/reading_stash.rs
++++ b/src/db/reading_stash.rs
+@@ -1088,7 +1088,17 @@ mod tests {
+ 
+         let first = book(&cat, "Settled");
+         cat.insert_annotation(
+-            first, "highlight", 2, "", 0, "", 6, "yellow", "solid", "kept", "",
++            first,
++            "highlight",
++            2,
++            "",
++            0,
++            "",
++            6,
++            "yellow",
++            "solid",
++            "kept",
++            "",
+         )
+         .unwrap();
+         cat.insert_annotation(
+diff --git a/src/pages/all_books.rs b/src/pages/all_books.rs
+index 48fd22f..8527702 100644
+--- a/src/pages/all_books.rs
++++ b/src/pages/all_books.rs
+@@ -12,8 +12,8 @@ use crate::widgets::reading_choice::{
+ use gtk::prelude::*;
+ use relm4::prelude::*;
+ use std::collections::HashSet;
+-use std::rc::Rc;
+ use std::path::PathBuf;
++use std::rc::Rc;
+ use std::sync::Arc;
+ 
+ #[derive(Debug)]
 diff --git a/src/widgets/reading_choice.rs b/src/widgets/reading_choice.rs
-index 6c11a3b..3e6bf57 100644
+index 8d91d95..5b1921b 100644
 --- a/src/widgets/reading_choice.rs
 +++ b/src/widgets/reading_choice.rs
-@@ -551,10 +551,9 @@ pub fn choose_kinds_table(
+@@ -567,9 +567,10 @@ pub fn choose_kinds_table(
      let slot_for_confirm = dialog_slot.clone();
      let answers_for_confirm = answers.clone();
      let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
--    shell.footer().append(&pill_button(
--        confirm_label,
--        confirm_kind,
--        move || {
-+    shell
-+        .footer()
-+        .append(&pill_button(confirm_label, confirm_kind, move || {
+-    shell
+-        .footer()
+-        .append(&pill_button(buttons.confirm, buttons.confirm_kind, move || {
++    shell.footer().append(&pill_button(
++        buttons.confirm,
++        buttons.confirm_kind,
++        move || {
              let chosen: Vec<(i64, ReadingKinds)> = ids
                  .iter()
                  .copied()
-@@ -562,8 +561,7 @@ pub fn choose_kinds_table(
+@@ -577,7 +578,8 @@ pub fn choose_kinds_table(
                  .collect();
              close_from_slot(&slot_for_confirm);
              on_confirm(chosen);
--        },
--    ));
-+        }));
+-        }));
++        },
++    ));
  
      let dialog = present_dialog(anchor, title, DialogExit::OwnButtons, &shell)?;
      *dialog_slot.borrow_mut() = Some(dialog.clone());
-@@ -683,13 +681,13 @@ mod tests {
-     fn the_table_filter_matches_title_and_detail_and_ignores_case() {
-         let title = "Dune";
-         let detail = "Frank Herbert · 12 chapters";
--        assert!(row_matches("", title, detail), "an empty query hides nothing");
--        assert!(row_matches("   ", title, detail), "nor does a blank one");
--        assert!(row_matches("dune", title, detail));
-         assert!(
--            row_matches("DUNE", title, detail),
--            "case must not matter"
-+            row_matches("", title, detail),
-+            "an empty query hides nothing"
-         );
-+        assert!(row_matches("   ", title, detail), "nor does a blank one");
-+        assert!(row_matches("dune", title, detail));
-+        assert!(row_matches("DUNE", title, detail), "case must not matter");
-         assert!(
-             row_matches("herbert", title, detail),
-             "the author is part of what a reader will type"
---- run 41764354466 ---
+--- run 41768674904 ---

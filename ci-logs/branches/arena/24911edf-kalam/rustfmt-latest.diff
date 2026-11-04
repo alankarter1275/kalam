@@ -1,2 +1,154 @@
-clean
---- run 41774658619 ---
+diff --git a/src/db/reading_stash.rs b/src/db/reading_stash.rs
+index 6899317..f698e16 100644
+--- a/src/db/reading_stash.rs
++++ b/src/db/reading_stash.rs
+@@ -1240,8 +1240,20 @@ mod tests {
+ 
+         // A book that is deleted afterwards: its copy ends up orphaned.
+         let gone = book(&cat, "Gone");
+-        cat.insert_annotation(gone, "highlight", 1, "", 0, "", 4, "yellow", "solid", "h", "")
+-            .unwrap();
++        cat.insert_annotation(
++            gone,
++            "highlight",
++            1,
++            "",
++            0,
++            "",
++            4,
++            "yellow",
++            "solid",
++            "h",
++            "",
++        )
++        .unwrap();
+         cat.insert_annotation(gone, "quote", 1, "", 0, "", 8, "yellow", "solid", "q", "")
+             .unwrap();
+         cat.insert_reading_bookmark(gone, 1, 0.5, "mark").unwrap();
+@@ -1250,7 +1262,17 @@ mod tests {
+         // A book that comes back: its copy is still filed, but the book is live.
+         let returned = book(&cat, "Returned");
+         cat.insert_annotation(
+-            returned, "highlight", 2, "", 0, "", 6, "yellow", "solid", "kept", "",
++            returned,
++            "highlight",
++            2,
++            "",
++            0,
++            "",
++            6,
++            "yellow",
++            "solid",
++            "kept",
++            "",
+         )
+         .unwrap();
+         cat.delete_book(returned).unwrap();
+@@ -1289,7 +1311,11 @@ mod tests {
+         );
+ 
+         let live = by_hash("hash-Returned");
+-        assert_eq!(live.book_id, Some(again), "matched to the book that came back");
++        assert_eq!(
++            live.book_id,
++            Some(again),
++            "matched to the book that came back"
++        );
+         assert_eq!(live.book_title.as_deref(), Some("ReturnedAgain"));
+         assert!(
+             live.pending,
+@@ -1322,8 +1348,20 @@ mod tests {
+         let cat = Catalog::open_in_memory().unwrap();
+ 
+         let live = book(&cat, "Live");
+-        cat.insert_annotation(live, "highlight", 1, "", 0, "", 4, "yellow", "solid", "h", "")
+-            .unwrap();
++        cat.insert_annotation(
++            live,
++            "highlight",
++            1,
++            "",
++            0,
++            "",
++            4,
++            "yellow",
++            "solid",
++            "h",
++            "",
++        )
++        .unwrap();
+         cat.delete_book(live).unwrap();
+         let again = book(&cat, "LiveAgain");
+         {
+@@ -1405,7 +1443,10 @@ mod tests {
+ 
+         let list = cat.list_reading_stash(200).unwrap();
+         assert_eq!(list.len(), 1, "still listed");
+-        assert!(list[0].contents.is_empty(), "and counted as holding nothing");
++        assert!(
++            list[0].contents.is_empty(),
++            "and counted as holding nothing"
++        );
+         assert!(!list[0].placement);
+     }
+ 
+diff --git a/src/pages/settings.rs b/src/pages/settings.rs
+index b90a5b9..743b01c 100644
+--- a/src/pages/settings.rs
++++ b/src/pages/settings.rs
+@@ -626,11 +626,12 @@ impl Component for SettingsPageModel {
+                         "Let go",
+                         "That copy will not come back with the file again.",
+                     ),
+-                    Ok(false) => crate::notify::info(
+-                        "Already gone",
+-                        "That copy was let go earlier.",
+-                    ),
+-                    Err(err) => crate::notify::error("Could not let go of the copy", &err.to_string()),
++                    Ok(false) => {
++                        crate::notify::info("Already gone", "That copy was let go earlier.")
++                    }
++                    Err(err) => {
++                        crate::notify::error("Could not let go of the copy", &err.to_string())
++                    }
+                 }
+                 request_snapshot(&self.service, &sender);
+             }
+@@ -643,7 +644,9 @@ impl Component for SettingsPageModel {
+                             if n == 1 { "y was" } else { "ies were" }
+                         ),
+                     ),
+-                    Err(err) => crate::notify::error("Could not let go of the copies", &err.to_string()),
++                    Err(err) => {
++                        crate::notify::error("Could not let go of the copies", &err.to_string())
++                    }
+                 }
+                 request_snapshot(&self.service, &sender);
+             }
+@@ -2661,8 +2664,10 @@ fn build_remembered_pane(
+         pane_row(
+             &rows,
+             "Nothing is being kept",
+-            Some("When you remove a book, its notes and marks are kept here in case \
+-                  you import the same file again."),
++            Some(
++                "When you remove a book, its notes and marks are kept here in case \
++                  you import the same file again.",
++            ),
+         );
+         return;
+     }
+@@ -2757,8 +2762,10 @@ fn build_remembered_pane(
+                 snap.stash_total,
+                 if snap.stash_total == 1 { "y" } else { "ies" }
+             ),
+-            Some("Books still in your library keep their notes and marks. \
+-                  Only the copies go."),
++            Some(
++                "Books still in your library keep their notes and marks. \
++                  Only the copies go.",
++            ),
+         );
+     }
+     let anchor = rows.clone();
+--- run 41776962762 ---

@@ -1,2 +1,14 @@
-clean
---- run 41756310424 ---
+error: unexpected closing delimiter: `}`
+   --> /home/runner/work/kalam/kalam/src/db.rs:682:1
+    |
+662 | impl RestoreOutcome {
+    |                     - this opening brace...
+...
+667 | }
+    | - ...matches this closing brace
+...
+682 | }
+    | ^ unexpected closing delimiter
+
+Error writing files: failed to resolve mod `db`: cannot parse /home/runner/work/kalam/kalam/src/db.rs
+--- run 41761169547 ---

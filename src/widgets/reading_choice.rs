@@ -102,6 +102,11 @@ pub fn describe(kinds: ReadingKinds) -> String {
     }
 }
 
+/// The running sentence shown under the five ticks.
+fn summary_line(kinds: ReadingKinds) -> String {
+    format!("Keeping {}.", describe(kinds))
+}
+
 /// What a clear actually removed, in plain words, for the toast that follows.
 ///
 /// Counts rather than kind names, because "3 highlights" tells the reader
@@ -308,18 +313,31 @@ pub fn delete_book_dialog(
     panel.set_visible(false);
     panel.set_margin_top(12);
 
+    // A running sentence rather than five ticks to read back. The reader is
+    // about to destroy something, and "Keeping your highlights and your quotes"
+    // says what survives far more plainly than two ticked boxes do.
+    let summary = gtk::Label::new(Some(&summary_line(ReadingKinds::ALL)));
+    summary.add_css_class("kalam-ui-meta");
+    summary.set_halign(gtk::Align::Start);
+    summary.set_xalign(0.0);
+    summary.set_wrap(true);
+    summary.set_margin_top(8);
+
     // Writing to one control must not echo back into itself. The picker guards
     // its own checkboxes; this guards `wipe`.
     let syncing = Rc::new(Cell::new(false));
 
     let wipe_for_picker = wipe.clone();
     let syncing_for_picker = syncing.clone();
+    let summary_for_picker = summary.clone();
     let picker = KindPicker::new(ReadingKinds::ALL, move |kinds| {
+        summary_for_picker.set_text(&summary_line(kinds));
         syncing_for_picker.set(true);
         wipe_for_picker.set_active(kinds.is_empty());
         syncing_for_picker.set(false);
     });
     panel.append(picker.widget());
+    panel.append(&summary);
     shell.body().append(&panel);
 
     let panel_for_link = panel.clone();
@@ -336,15 +354,20 @@ pub fn delete_book_dialog(
 
     let picker_for_wipe = picker.clone();
     let syncing_for_wipe = syncing.clone();
+    let summary_for_wipe = summary.clone();
     wipe.connect_toggled(move |button| {
         if syncing_for_wipe.get() {
             return;
         }
-        picker_for_wipe.set_kinds(if button.is_active() {
+        let kinds = if button.is_active() {
             ReadingKinds::NONE
         } else {
             ReadingKinds::ALL
-        });
+        };
+        picker_for_wipe.set_kinds(kinds);
+        // `set_kinds` is guarded against echoing, so it does not fire the
+        // callback that would otherwise have updated this.
+        summary_for_wipe.set_text(&summary_line(kinds));
     });
 
     let dialog_slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));

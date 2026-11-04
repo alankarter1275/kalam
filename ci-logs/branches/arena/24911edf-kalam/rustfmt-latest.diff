@@ -1,5 +1,5 @@
 diff --git a/src/pages/book.rs b/src/pages/book.rs
-index 6d96750..be00715 100644
+index 702b38d..6f0ca82 100644
 --- a/src/pages/book.rs
 +++ b/src/pages/book.rs
 @@ -524,7 +524,9 @@ impl Component for BookPageModel {
@@ -15,7 +15,7 @@ index 6d96750..be00715 100644
                          move |res| {
 @@ -739,9 +741,7 @@ impl Component for BookPageModel {
                          // bookmarks; those numbers just changed.
-                         sender.input(BookPageMsg::Refresh).ok();
+                         sender.input(BookPageMsg::Refresh);
                      }
 -                    Err(err) => {
 -                        crate::notify::error("Could not clear the notes", &err.to_string())
@@ -48,4 +48,4 @@ index bc2e4fe..944a922 100644
  
      let dialog = present_dialog(anchor, title, DialogExit::OwnButtons, &shell)?;
      *dialog_slot.borrow_mut() = Some(dialog.clone());
---- run 41761488360 ---
+--- run 41761749411 ---

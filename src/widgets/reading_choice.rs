@@ -258,15 +258,13 @@ pub fn choose_kinds_dialog(
 
     let slot_for_confirm = dialog_slot.clone();
     let picker_for_confirm = picker.clone();
-    shell.footer().append(&pill_button(
-        confirm_label,
-        confirm_kind,
-        move || {
+    shell
+        .footer()
+        .append(&pill_button(confirm_label, confirm_kind, move || {
             let kinds = picker_for_confirm.kinds();
             close_from_slot(&slot_for_confirm);
             on_confirm(kinds);
-        },
-    ));
+        }));
 
     let dialog = present_dialog(anchor, title, DialogExit::OwnButtons, &shell)?;
     *dialog_slot.borrow_mut() = Some(dialog.clone());

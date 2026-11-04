@@ -551,10 +551,9 @@ pub fn choose_kinds_table(
     let slot_for_confirm = dialog_slot.clone();
     let answers_for_confirm = answers.clone();
     let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
-    shell.footer().append(&pill_button(
-        confirm_label,
-        confirm_kind,
-        move || {
+    shell
+        .footer()
+        .append(&pill_button(confirm_label, confirm_kind, move || {
             let chosen: Vec<(i64, ReadingKinds)> = ids
                 .iter()
                 .copied()
@@ -562,8 +561,7 @@ pub fn choose_kinds_table(
                 .collect();
             close_from_slot(&slot_for_confirm);
             on_confirm(chosen);
-        },
-    ));
+        }));
 
     let dialog = present_dialog(anchor, title, DialogExit::OwnButtons, &shell)?;
     *dialog_slot.borrow_mut() = Some(dialog.clone());
@@ -683,13 +681,13 @@ mod tests {
     fn the_table_filter_matches_title_and_detail_and_ignores_case() {
         let title = "Dune";
         let detail = "Frank Herbert · 12 chapters";
-        assert!(row_matches("", title, detail), "an empty query hides nothing");
+        assert!(
+            row_matches("", title, detail),
+            "an empty query hides nothing"
+        );
         assert!(row_matches("   ", title, detail), "nor does a blank one");
         assert!(row_matches("dune", title, detail));
-        assert!(
-            row_matches("DUNE", title, detail),
-            "case must not matter"
-        );
+        assert!(row_matches("DUNE", title, detail), "case must not matter");
         assert!(
             row_matches("herbert", title, detail),
             "the author is part of what a reader will type"

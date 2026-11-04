@@ -281,12 +281,20 @@ pub fn import_watch_files_with_rules(
 
     let mut imported_count = 0;
     let mut last_title = String::new();
+    // Books whose marks came back from an earlier copy of the same file. A
+    // background scan has no window to ask from, so the question is left open
+    // on the book and the reader is pointed at it instead.
+    let mut restored_count = 0;
+    let mut restored_title = String::new();
 
     for (path, rule_id) in items {
         let rule_opt = rules_by_id.get(&rule_id);
 
         match crate::epub::import_epub(catalog, &path) {
             Ok(res) => {
+                // Taken before `res.title` is moved into `last_title` below.
+                let came_back = res.reading_restored;
+                let came_back_title = res.title.clone();
                 if !res.duplicate {
                     imported_count += 1;
                     last_title = res.title;
@@ -316,6 +324,11 @@ pub fn import_watch_files_with_rules(
                         res.title,
                         path.display()
                     );
+                }
+
+                if came_back {
+                    restored_count += 1;
+                    restored_title = came_back_title;
                 }
 
                 // Apply target shelf & subfolder rules
@@ -385,6 +398,19 @@ pub fn import_watch_files_with_rules(
         if let Some(sender) = app_sender {
             let _ = sender.send(AppMsg::RefreshCurrentPage);
         }
+    }
+
+    // Reported separately from the import count, and deliberately not as an
+    // undo: the marks are already back in the book, so there is nothing to
+    // take back. What is outstanding is the reader's choice about what to
+    // keep, and the place to make it is the book itself.
+    if restored_count > 0 {
+        let detail = if restored_count == 1 {
+            format!("\u{201c}{restored_title}\u{201d} brought back your notes and marks. Open it to choose what to keep.")
+        } else {
+            format!("{restored_count} books brought back your notes and marks. Open one to choose what to keep.")
+        };
+        crate::notify::info("Your notes came back", &detail);
     }
 }
 

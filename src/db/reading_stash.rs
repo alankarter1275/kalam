@@ -1307,7 +1307,12 @@ mod tests {
             Some(again),
             "matched to the book that came back"
         );
-        assert_eq!(live.book_title.as_deref(), Some("ReturnedAgain"));
+        // "Returned", not "ReturnedAgain". A delete stashes the book's
+        // metadata as well as its reading data, and a re-import puts both back,
+        // so the copy that came home also renamed the book to what it was
+        // called before. The panel shows the title the book has now, which is
+        // the honest thing to show and not the title the file arrived with.
+        assert_eq!(live.book_title.as_deref(), Some("Returned"));
         assert!(
             live.pending,
             "the restore left the book owing an answer, and the panel says so"

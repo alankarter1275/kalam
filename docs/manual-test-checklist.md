@@ -187,6 +187,144 @@ reproduce turned out to be the headless compositor after all.
   never learns the state under a headless compositor it would ask to go full
   screen a second time instead.
 
+## Keeping your notes when a book is removed and comes back
+
+Added 2026-11-04. These check the work that lets you choose what survives a
+book being removed, and what comes back when you import the same file again.
+Nothing here touches your book files. It does write to the catalog, so use a
+library you are willing to test on.
+
+There are five kinds of saved work: your place in the book, bookmarks,
+highlights, quotes, and ink on PDF pages. An underline is a highlight drawn in
+a different style, not a sixth kind. Which shelf a book sits on and whether it
+is on your reading list are always put back and are never offered as a choice,
+because they are where the book lives rather than work you did in it.
+
+**Removing one book**
+
+- [ ] Open a book's details page. Make some marks in it: a highlight, a quote,
+  a bookmark, and read a little way in so it has a position.
+- [ ] Open the ⋯ menu. Confirm "Remove from library" is now a submenu with two
+  items: one that removes the book, and one that clears its notes.
+- [ ] Choose the remove item. Confirm the dialog shows one checkbox, "Also
+  remove my notes and marks", and a small "choose what to keep" link under it.
+- [ ] Click the link. Confirm the five kinds appear and can be ticked
+  separately, and that a line under them says in words what you are keeping.
+- [ ] Click "Keep book". Confirm nothing was removed and the book is still there.
+- [ ] Remove the book again, leave the checkbox unticked, and confirm. Then
+  import the same file again. Confirm your marks came back.
+- [ ] Now try the other choice: remove the book with the checkbox ticked, then
+  import the same file again. Confirm it comes back clean, with no marks.
+
+**Clearing notes without removing the book**
+
+- [ ] On a book's details page, open the ⋯ submenu and choose the clear-notes
+  item. Untick one or two kinds and confirm.
+- [ ] Check that only the kinds you unticked are gone, and that the rest are
+  still there. Confirm a message says what was removed, naming the kinds and
+  how many.
+- [ ] Choose the clear action again but leave everything unticked. Confirm it
+  says there is nothing to clear rather than claiming it removed something.
+- [ ] Remove the book, then import the same file again. Confirm the kinds you
+  cleared do **not** come back. This is the important one: clearing is meant to
+  be permanent, and the copy Kalam keeps aside has to go with it or the cleared
+  marks would walk back in.
+
+**Removing several books at once**
+
+- [ ] In All Books, select two or three books and choose delete.
+- [ ] Confirm a table appears with one row per book, a search box, and a column
+  per kind.
+- [ ] Type in the search box. Confirm the list narrows, and that the rows you
+  cannot see any more are still decided by their own ticks — hiding a row does
+  not change its answer.
+- [ ] Untick different kinds on different rows, then confirm. Check afterwards
+  that each book kept exactly what its own row said.
+- [ ] Import those files again. Confirm each comes back with only what its row
+  kept.
+
+**Comics**
+
+- [ ] Select a comic series and delete it. Confirm the table shows one row per
+  card, not one row per chapter, and that the count in the title matches the
+  number of cards.
+- [ ] Confirm one tick on a card row applies to every chapter of that series.
+
+**The question after an import**
+
+- [ ] Remove a book that has marks in it, leaving the marks kept aside. Then
+  import the same file again.
+- [ ] Confirm the import finishes first, and only then a dialog appears titled
+  "Your notes came back", naming the book by its real title rather than its
+  file name.
+- [ ] Confirm the two buttons read "Ask me later" and "Keep these" — not
+  "Cancel", because closing this dialog leaves something outstanding.
+- [ ] Choose "Keep these" with everything ticked. Confirm your marks stay and no
+  further question is asked.
+- [ ] Repeat, but untick some kinds before choosing "Keep these". Confirm only
+  the ticked kinds stayed.
+- [ ] Import several files at once that all have marks kept aside. Confirm you
+  get the searchable table rather than one dialog per book.
+
+**"Ask me later"**
+
+- [ ] Import a file that has marks kept aside, and choose "Ask me later".
+- [ ] Confirm nothing is removed and no message claims a choice was saved.
+- [ ] Leave the book and open it again. Confirm the same question appears, with
+  the same five choices.
+- [ ] Answer it. Confirm you are not asked again on the next refresh of that
+  page, and not again the next time you open the book.
+- [ ] Choose "Ask me later" again, then open a *different* book. Confirm the
+  question does not appear for the other book — it belongs to one book only.
+
+**Imports that happen by themselves**
+
+- [ ] If you use a watch folder, drop in a file that has marks kept aside.
+  Confirm no dialog appears, and that a message says your notes came back and
+  tells you to open the book to choose. Confirm the message does not offer an
+  undo — the marks are already back, so there is nothing to take back.
+- [ ] Open that book. Confirm the question appears then.
+- [ ] If you use downloads, do the same with a download that replaces a book you
+  had removed.
+
+**The reader's own remove dialog**
+
+- [ ] Open a PDF whose file has gone missing or will not open, so the reader
+  shows its "cannot open" state with a remove button.
+- [ ] Confirm the dialog there is the same granular one, with the checkbox and
+  the "choose what to keep" link, rather than a plain two-button confirmation.
+
+**Settings → Remembered data**
+
+- [ ] Open Settings and find "Remembered data" in the Library group, next to
+  "Data and export".
+- [ ] Confirm it explains what these copies are before listing anything.
+- [ ] With at least one removed book that has a copy kept aside, confirm the
+  copies for books no longer in your library are listed, each saying what it
+  holds and when it was kept.
+- [ ] Remove a book and import it again so the book is back in the library. Then
+  look at the pane again. Confirm that book's copy is listed too, under its own
+  heading. This is not a leftover: Kalam keeps the copy on purpose so that a
+  second remove-and-import still works, and you should be able to let go of it.
+- [ ] Confirm a book that is still waiting for an answer is listed first, under
+  "Waiting for your answer", and that its row says to open the book.
+- [ ] Choose "Let go" on one copy. Confirm the copy goes and that nothing
+  changed in any book still in your library.
+- [ ] Choose "Let go of every copy". Confirm it asks first, and that the warning
+  says plainly that books still in your library keep their notes and marks.
+- [ ] Confirm it, then check a book that was in the list. Confirm its marks are
+  all still there.
+- [ ] Remove that book and import the same file again. Confirm it now comes back
+  clean, since the copy is gone.
+- [ ] If you have more than 200 copies, confirm the pane says it is showing the
+  newest 200 of the real total, and that clearing still lets go of all of them.
+
+**Saved words**
+
+- [ ] Confirm the saved-words section on a book's details page is unchanged by
+  all of the above. Saved words are one personal dictionary and are never
+  touched by removing a book, clearing notes, or letting go of a copy.
+
 ## Report failures
 
 Record the book format, the steps that led to the problem, the expected result,

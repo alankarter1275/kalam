@@ -3623,3 +3623,105 @@ fifteen minutes of a sandbox and would have cost hours of CI. Each now carries
 an iteration backstop alongside the deadline. The backstop is not the intended
 exit and should never fire; it exists because a hung step is expensive in a way
 a wrong answer is not.
+
+## §101 — a guardrail that counts text found a real bug, and two ways an insertion strands an attribute
+
+The keep/restore work (the chooser, the import question, the first-open
+question, the Settings pane) cost seven failed CI runs. Four of the seven are
+what this section is about, and three of those four are the same class of
+mistake: an edit that inserts something *above* an existing line, and thereby
+changes what that line belongs to. The fourth was a guardrail firing on a count
+of literal text — and it was right.
+
+The other three failures are recorded where they belong: `.ok()` on a call that
+returns unit, a function only tests reached counting as dead code in a binary
+crate, and a Python edit script whose match spanned an attribute and a
+declaration and so deleted both.
+
+**A guardrail that counts a type name as text is still a real review.**
+`tests/guardrails.rs` has `pages_do_not_gain_catalog_handles`, which greps
+`src/pages/` for the literal string `Arc<Catalog>` and fails past
+`MAX_ARC_CATALOG_IN_PAGES = 44`. Adding a helper that took `Arc<Catalog>` moved
+the count to 46 and failed the build. The escape hatch is raising the constant,
+and that is exactly the wrong move: the ratchet exists so a page cannot gain a
+raw database handle, because a page holding one can query on the UI thread and
+nothing stops it.
+
+The count was also pointing at a genuine defect that no compiler would have
+caught. The helper was reading a book's author line *while building a dialog*,
+which is UI-thread work. The fix was to take `&LibraryService` instead and move
+the read into the import worker, where every other read already happens. The
+guardrail did not just police a style; it found the query. **Grep
+`tests/guardrails.rs` before adding a type name anywhere under `src/pages/`** —
+and when it fires, read what it is protecting before reaching for the constant.
+
+**Inserting a test above a `fn` line strands the attribute and the doc comment.**
+Five new tests were spliced in above an existing test's `fn` line. The `#[test]`
+and the nine-line doc comment above that `fn` stayed where they were, so they
+landed on top of the *first new* test. Two errors followed, and they point in
+opposite directions, which is what makes the pair worth remembering:
+
+- `error: duplicated attribute` — the stranded `#[test]` and the new test's own
+  `#[test]` were now adjacent.
+- `function ... is never used` — the displaced test had lost its `#[test]`, so
+  it was no longer a test at all. It compiled as a private function nobody
+  calls, which `-D warnings --all-targets` turns into a build failure.
+
+The second error is the dangerous one. Had `-D warnings` not been set, that test
+would have **silently stopped running** and the suite would still have reported
+green. A passing build is not evidence that a test ran. When a test's name
+disappears from the per-test verdicts in `ci-logs/.../test-full.txt`, that is
+the same failure with the errors turned off.
+
+The same shape bit earlier in the unit with a `#[derive]`: inserting
+`const IMPORT_BUTTONS` between `#[derive(Debug, Default)]` and
+`pub struct ImportTally` silently re-targeted the derive onto a `const`, which
+does not accept it. **An attribute belongs to the next item, not to the line it
+sits above.** Any insertion anchored on a `fn`/`struct` line must carry that
+item's attributes and doc comment with it, or land below them.
+
+**A `Fn` callback cannot move a captured value out.** Two dialog callbacks took
+an `Arc<Catalog>` and passed it onward. `restored_reading_dialog` and
+`choose_kinds_table` both take `impl Fn(...)`, not `FnOnce`, because a dialog
+button can in principle fire twice — so the closure must still own everything
+after the first call, and `arc` has to become `arc.clone()`. The compiler says
+"cannot move out of captured variable"; the fix is not to change the bound.
+
+**`(&impl Fn()).clone()` clones the reference.** A completion callback was
+stored as `&impl Fn() + 'static` and then `.clone()`d to hand to
+`tasks::spawn`. Cloning a `&F` yields another `&F`, which borrows and so is not
+`'static`, and the `D: FnOnce(T) + 'static` bound rejects it. Wrap in
+`Rc<dyn Fn()>` and call it as `(*cb)()`. Worth knowing on the same page:
+`tasks::spawn`'s `work` closure is `Send`, but its `on_done` callback is **not**
+— only `work` crosses the thread — so `Rc` is acceptable in a completion
+callback and would not be in the worker.
+
+**A correct assertion can still assert the wrong behaviour.** The new Settings
+listing test seeded a book called `ReturnedAgain`, re-imported it, and asserted
+the panel showed that title. It showed `Returned`. The code was right and the
+test was wrong: a delete stashes the book's *metadata* alongside its reading
+data, and a re-import puts both back, so the rescued copy renamed the book to
+what it was called before. The assertion now expects `Returned` and says why at
+the assertion site, because to anyone else `Returned` where the test seeded
+`ReturnedAgain` reads like the bug. When a test fails on a value that looks
+plainly wrong, establish which of the two is lying before changing either.
+
+**A conditional query breaks a statement budget.** `settings()` is held to a
+fixed number of SQL statements by `settings_statement_count_is_fixed`, so a page
+cannot get slower as the library grows. The first draft of the rescue-copy
+listing ran one query for the rows and a second for their titles *only when
+there were titles to fetch* — which makes the statement count depend on what is
+in the library, and would have failed that test on any machine with a rescue
+copy on file. It became one statement with correlated subqueries. The same
+reasoning ruled out a join: a join returns two rows for one copy if two books
+ever share a fingerprint.
+
+**`origin_hash` can read the disk, so a listing must not call it.** Matching a
+rescue copy to a live book wants the same rule `origin_hash` uses. Calling it
+per book would hash backup files off disk to draw a Settings pane. The pane
+resolves the match in SQL with `COALESCE(NULLIF(import_hash, ''), file_hash)`,
+which agrees with `origin_hash` except for the never-frozen-and-since-changed
+case, where a copy shows as orphaned. Letting go of an orphan is safe — it
+removes a spare, never live data — so the approximation costs nothing, and the
+function documents the case it gets wrong.
+

@@ -573,6 +573,133 @@ impl ShelfKind {
     }
 }
 
+/// Which parts of a book's reading data a choice covers.
+///
+/// Five, not six, and both omissions are because the data does not work the
+/// way the words suggest:
+///
+/// - **Notes are not separate.** A note is free text attached to a highlight or
+///   a quote, not a row of its own, so it travels with the mark it was written
+///   on. A "notes" checkbox could only mean "keep the highlight, throw away the
+///   words I wrote on it".
+/// - **Underlines are not separate.** They are highlights whose `style` is
+///   `underline`, which is what schema v19 made of the old "underline" colour.
+///   They count as highlights.
+///
+/// Shelf and reading-list placement is deliberately absent from the choice.
+/// That is where a book lives rather than work done inside it, so it always
+/// comes back and is never offered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadingKinds {
+    /// Where you were in the book.
+    pub position: bool,
+    pub bookmarks: bool,
+    /// Highlights, including the ones drawn as underlines.
+    pub highlights: bool,
+    pub quotes: bool,
+    /// Ink on PDF pages: pen, highlighter, shapes, text boxes, sticky notes.
+    pub ink: bool,
+}
+
+impl ReadingKinds {
+    pub const ALL: Self = Self {
+        position: true,
+        bookmarks: true,
+        highlights: true,
+        quotes: true,
+        ink: true,
+    };
+
+    #[allow(dead_code)] // wired up by the granular chooser
+    pub const NONE: Self = Self {
+        position: false,
+        bookmarks: false,
+        highlights: false,
+        quotes: false,
+        ink: false,
+    };
+
+    #[allow(dead_code)] // wired up by the granular chooser
+    pub fn is_empty(&self) -> bool {
+        *self == Self::NONE
+    }
+
+    #[allow(dead_code)] // wired up by the granular chooser
+    pub fn is_all(&self) -> bool {
+        *self == Self::ALL
+    }
+
+    /// Whether an annotation row of this `kind` is covered. Only `highlight`
+    /// and `quote` are ever created — an unrecognised kind counts as a
+    /// highlight, so a new kind lands somewhere sensible rather than nowhere.
+    pub fn covers_annotation(&self, kind: &str) -> bool {
+        match kind {
+            "quote" => self.quotes,
+            _ => self.highlights,
+        }
+    }
+}
+
+/// `Default` is `ALL`, not `NONE`. Everything was captured unconditionally
+/// before this type existed, so a forgotten field must fail towards keeping
+/// the reader's work rather than discarding it.
+impl Default for ReadingKinds {
+    fn default() -> Self {
+        Self::ALL
+    }
+}
+
+/// What a re-import brought back, split in two.
+///
+/// The halves are told to the reader differently: metadata edits are simply
+/// re-applied and mentioned in passing, while reading data is something the
+/// app asks about. One boolean could not carry that distinction, and reporting
+/// "kept your earlier metadata edits" for a book that only came back with its
+/// highlights would simply be untrue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RestoreOutcome {
+    pub metadata: bool,
+    pub reading: bool,
+}
+
+impl RestoreOutcome {
+    #[allow(dead_code)] // used by tests now, and by the import dialog next
+    pub fn any(&self) -> bool {
+        self.metadata || self.reading
+    }
+}
+
+/// What a clear actually removed, so the confirmation can say something true
+/// rather than "done".
+///
+/// Highlights and quotes are counted apart because they are separate choices,
+/// even though both live in the `annotations` table and are told apart only by
+/// its `kind` column. `position` is a flag rather than a count: there is at
+/// most one row per book.
+#[allow(dead_code)] // wired up by the clear action and the import dialog
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ClearTally {
+    pub position: bool,
+    pub bookmarks: usize,
+    pub highlights: usize,
+    pub quotes: usize,
+    pub ink: usize,
+}
+
+// Reachable today only from `clear_reading_kinds`, which is itself awaiting the
+// UI. An allow on the struct does not cover its impl, so the block needs one.
+#[allow(dead_code)]
+impl ClearTally {
+    /// Total rows removed, counting the position row as one.
+    pub fn total(&self) -> usize {
+        self.bookmarks + self.highlights + self.quotes + self.ink + usize::from(self.position)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.total() == 0
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Shelf {
     pub id: i64,
@@ -1399,6 +1526,20 @@ impl Catalog {
         // way to extend an existing table created by v1–v3.
         add_column_if_missing(&conn, "books", "last_opened_at", "TEXT")?;
         add_column_if_missing(&conn, "books", "finished_at", "TEXT")?;
+        // Set when a re-import brought reading data back and the reader has
+        // not yet said whether to keep it — either because they chose "ask me
+        // when I open it", or because the import ran with no window to ask
+        // from (a watched folder, a download). Lives on the book rather than
+        // in the notification: the bell holds 200 entries and can be cleared
+        // in one click, and a decision that can be lost by tidying up is not a
+        // decision. Additive, so no version bump — the ALTER block below runs
+        // on every open, including a fresh database.
+        add_column_if_missing(
+            &conn,
+            "books",
+            "restore_pending",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         // Legacy whole-file guard from the removed EPUB editor. Preserve the
         // column so old patch rows remain readable.
         add_column_if_missing(&conn, "patches", "before_hash", "TEXT NOT NULL DEFAULT ''")?;
@@ -2168,15 +2309,28 @@ impl Catalog {
     }
 
     pub fn delete_book(&self, id: i64) -> Result<()> {
+        self.delete_book_keeping(id, ReadingKinds::ALL)
+    }
+
+    /// Delete a book, remembering only `keep` for a later re-import.
+    ///
+    /// `delete_book` is this with `ReadingKinds::ALL`, which is what every
+    /// caller wanted before the choice existed. The variants that take a choice
+    /// are separate methods rather than a changed signature because 18 call
+    /// sites delete a book, and only the two confirmation dialogs have anything
+    /// to ask.
+    pub fn delete_book_keeping(&self, id: i64, keep: ReadingKinds) -> Result<()> {
         // Owner field report, 2026-10-02: every surface shows a comic as
         // its series — the collapsed card, the drawer, the page — so
         // "delete this" at one chapter's book row removed one chapter of
         // seventy and left the rest. A comic chapter is therefore deleted
-        // at its series' scope, everywhere, as one semantic.
+        // at its series' scope, everywhere, as one semantic. The choice
+        // travels with it: one card is every chapter, so one answer covers
+        // every chapter.
         if let Some(series_id) = self.comic_series_id_for_book(id)? {
-            return self.delete_comic_series(series_id);
+            return self.delete_comic_series_keeping(series_id, keep);
         }
-        self.delete_book_single(id)
+        self.delete_book_single(id, keep)
     }
 
     /// The series a comic chapter belongs to, if the book is one.
@@ -2195,7 +2349,12 @@ impl Catalog {
     /// path (so overrides, thumbnails, files and folders are handled
     /// identically), then the series row itself. The series folder goes
     /// with the last chapter's cleanup.
+    #[allow(dead_code)] // `delete_book_keeping` calls the _keeping form directly
     pub fn delete_comic_series(&self, series_id: i64) -> Result<()> {
+        self.delete_comic_series_keeping(series_id, ReadingKinds::ALL)
+    }
+
+    pub fn delete_comic_series_keeping(&self, series_id: i64, keep: ReadingKinds) -> Result<()> {
         let book_ids: Vec<i64> = {
             let conn = self.conn();
             let mut stmt = conn.prepare_cached(
@@ -2206,7 +2365,7 @@ impl Catalog {
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         };
         for id in book_ids {
-            self.delete_book_single(id)?;
+            self.delete_book_single(id, keep)?;
         }
         let conn = self.conn();
         conn.execute("DELETE FROM comic_series WHERE id = ?1", params![series_id])?;
@@ -2258,7 +2417,7 @@ impl Catalog {
         total
     }
 
-    fn delete_book_single(&self, id: i64) -> Result<()> {
+    fn delete_book_single(&self, id: i64, keep: ReadingKinds) -> Result<()> {
         let book = match self.get_book(id)? {
             Some(b) => b,
             None => return Ok(()),
@@ -2271,7 +2430,7 @@ impl Catalog {
         // bookmarks, the highlights, the PDF ink, the shelf it sat on.
         // Same fingerprint, same lifecycle, separate table -- see
         // `db::reading_stash` for what is deliberately left out and why.
-        let _ = self.remember_reading(id);
+        let _ = self.remember_reading_kinds(id, keep);
         {
             let conn = self.conn();
             let _ = conn.execute(
@@ -3606,7 +3765,7 @@ mod tests {
             )
             .unwrap();
 
-        assert!(cat.restore_overrides(new_id).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap().metadata);
         let restored = cat.get_book(new_id).unwrap().unwrap();
         assert_eq!(restored.title, "Nyxia Uprising");
         assert_eq!(restored.description, "Edited by hand.");
@@ -3651,7 +3810,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-        assert!(cat.restore_overrides(new_id).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap().metadata);
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         assert_eq!(restored.title, "Nyxia Uprising");
@@ -3768,7 +3927,9 @@ mod tests {
             )
             .unwrap();
         assert_ne!(new_id, id, "AUTOINCREMENT must hand out a fresh id");
-        assert!(cat.restore_overrides(new_id).unwrap());
+        let outcome = cat.restore_overrides(new_id).unwrap();
+        assert!(outcome.metadata, "the hand edits came back");
+        assert!(outcome.reading, "and so did the reading data");
 
         // Metadata came back.
         let restored = cat.get_book(new_id).unwrap().unwrap();
@@ -3822,7 +3983,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-        assert!(cat.restore_overrides(new_id).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap().metadata);
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         assert!(restored.cover_name.is_some(), "cover was not restored");
@@ -3872,7 +4033,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-        assert!(cat.restore_overrides(new_id).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap().metadata);
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         let bytes = std::fs::read(restored.cover_path.as_ref().unwrap()).unwrap();
@@ -3923,7 +4084,7 @@ mod tests {
         std::fs::create_dir_all(&fresh_dir).unwrap();
         std::fs::write(fresh_dir.join("epub-default.png"), vec![b'E'; 800]).unwrap();
 
-        assert!(cat.restore_overrides(new_id).unwrap());
+        assert!(cat.restore_overrides(new_id).unwrap().metadata);
 
         let restored = cat.get_book(new_id).unwrap().unwrap();
         let bytes = std::fs::read(restored.cover_path.as_ref().unwrap()).unwrap();
@@ -3946,7 +4107,7 @@ mod tests {
 
         // A book whose bytes differ has a different hash and must be untouched.
         let other = seed(&cat, "B", "y", &[]);
-        assert!(!cat.restore_overrides(other).unwrap());
+        assert!(!cat.restore_overrides(other).unwrap().any());
         assert_eq!(cat.get_book(other).unwrap().unwrap().title, "B");
     }
 
@@ -3958,7 +4119,7 @@ mod tests {
             .unwrap();
 
         cat.forget_overrides(id).unwrap();
-        assert!(!cat.restore_overrides(id).unwrap());
+        assert!(!cat.restore_overrides(id).unwrap().any());
     }
 
     #[test]

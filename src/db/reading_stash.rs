@@ -115,6 +115,15 @@ impl Catalog {
     /// to be destroyed. Hooking it into `remember_overrides` would serialise
     /// every highlight in the book on every title or tag edit, for nothing.
     pub(super) fn remember_reading(&self, book_id: i64) -> Result<()> {
+        self.remember_reading_kinds(book_id, ReadingKinds::ALL)
+    }
+
+    /// Capture only the parts `keep` names.
+    ///
+    /// Shelf and reading-list placement is captured whatever `keep` says. It is
+    /// never offered as a choice, because it is where the book lives rather than
+    /// work done inside it — see `ReadingKinds`.
+    pub(super) fn remember_reading_kinds(&self, book_id: i64, keep: ReadingKinds) -> Result<()> {
         // A restore is not an edit — the same guard `remember_overrides` keeps.
         if self.restoring.load(std::sync::atomic::Ordering::Relaxed) {
             return Ok(());
@@ -126,13 +135,42 @@ impl Catalog {
             return Ok(());
         }
 
+        // Annotations are one table told apart only by its `kind` column, so
+        // the split between highlights and quotes happens here rather than in
+        // two queries.
+        let annotations = if keep.highlights && keep.quotes {
+            self.get_annotations_for_book(book_id)?
+        } else {
+            self.get_annotations_for_book(book_id)?
+                .into_iter()
+                .filter(|a| keep.covers_annotation(&a.kind))
+                .collect()
+        };
         let stash = Stash {
             version: STASH_VERSION,
-            progress: self.progress_row(book_id)?,
-            bookmarks: self.list_reading_bookmarks(book_id)?,
-            annotations: self.get_annotations_for_book(book_id)?,
-            page_identities: self.pdf_page_identities(book_id)?,
-            drawings: self.pdf_drawings_for_book(book_id)?,
+            progress: if keep.position {
+                self.progress_row(book_id)?
+            } else {
+                None
+            },
+            bookmarks: if keep.bookmarks {
+                self.list_reading_bookmarks(book_id)?
+            } else {
+                Vec::new()
+            },
+            annotations,
+            // Identities are only worth keeping with the ink that hangs off
+            // them; on their own they are rebuilt by `ensure_pdf_page_identities`.
+            page_identities: if keep.ink {
+                self.pdf_page_identities(book_id)?
+            } else {
+                Vec::new()
+            },
+            drawings: if keep.ink {
+                self.pdf_drawings_for_book(book_id)?
+            } else {
+                Vec::new()
+            },
             shelves: self.shelf_slots(book_id)?,
             reading_list: self.reading_list_slot(book_id)?,
         };
@@ -175,6 +213,15 @@ impl Catalog {
     /// delete rewrites it, so it stays current, and a second re-import of the
     /// same file restores just as well as the first.
     pub(super) fn restore_reading(&self, book_id: i64) -> Result<bool> {
+        self.restore_reading_kinds(book_id, ReadingKinds::ALL)
+    }
+
+    /// Put back only the parts `keep` names. Placement always comes back.
+    ///
+    /// Filtering here rather than at capture is what makes "ask me later"
+    /// possible: the whole document is stored once, and a reader who defers the
+    /// question can still be offered all of it when they open the book.
+    pub(super) fn restore_reading_kinds(&self, book_id: i64, keep: ReadingKinds) -> Result<bool> {
         let Some(origin) = self.origin_hash(book_id)? else {
             return Ok(false);
         };
@@ -203,7 +250,7 @@ impl Catalog {
         {
             let conn = self.conn();
 
-            if let Some(p) = &stash.progress {
+            if let Some(p) = stash.progress.as_ref().filter(|_| keep.position) {
                 conn.execute(
                     "INSERT OR REPLACE INTO reading_progress
                          (book_id, chapter_index, fraction, updated_at)
@@ -216,7 +263,7 @@ impl Catalog {
             // composite foreign key to `pdf_page_identities(book_id, page_id)`,
             // so a drawing written first is rejected outright and the whole
             // restore would abort with it.
-            for pi in &stash.page_identities {
+            for pi in stash.page_identities.iter().filter(|_| keep.ink) {
                 conn.execute(
                     "INSERT OR IGNORE INTO pdf_page_identities
                          (book_id, page_id, position)
@@ -224,7 +271,7 @@ impl Catalog {
                     params![book_id, pi.page_id, pi.position as i64],
                 )?;
             }
-            for d in &stash.drawings {
+            for d in stash.drawings.iter().filter(|_| keep.ink) {
                 conn.execute(
                     "INSERT OR IGNORE INTO pdf_drawings
                          (id, book_id, page_id, kind, color, opacity, width_pts,
@@ -245,7 +292,11 @@ impl Catalog {
                 )?;
             }
 
-            for a in &stash.annotations {
+            for a in stash
+                .annotations
+                .iter()
+                .filter(|a| keep.covers_annotation(&a.kind))
+            {
                 conn.execute(
                     "INSERT OR IGNORE INTO annotations
                          (id, book_id, kind, chapter_index, start_path, start_offset,
@@ -272,7 +323,7 @@ impl Catalog {
                 )?;
             }
 
-            for b in &stash.bookmarks {
+            for b in stash.bookmarks.iter().filter(|_| keep.bookmarks) {
                 conn.execute(
                     "INSERT OR IGNORE INTO reading_bookmarks
                          (id, book_id, chapter_index, fraction, label, created_at)
@@ -325,6 +376,129 @@ impl Catalog {
         // per restored row — hundreds of writes for a well-marked book.
         crate::sidecar::refresh_for_book(self, book_id);
         Ok(true)
+    }
+
+    /// Remove the chosen kinds from a book that is still in the library.
+    ///
+    /// This is the other half of "start fresh". Because a re-import restores
+    /// first and asks afterwards, declining means taking rows back out of a
+    /// live book rather than never writing them — and the same operation serves
+    /// the book page's clear action, where there is no import involved at all.
+    ///
+    /// The highlights/quotes split mirrors `ReadingKinds::covers_annotation`
+    /// exactly: `quote` rows are quotes, every other `kind` is a highlight. The
+    /// two must not drift, or a clear would remove marks the chooser said it was
+    /// keeping.
+    ///
+    /// This touches the live rows only. A rescue copy already filed against the
+    /// file's fingerprint is untouched — the book page's clear action has to call
+    /// [`forget_reading_stash`] as well, or the marks it just removed would come
+    /// back on the next delete-and-reimport.
+    #[allow(dead_code)] // wired up by the clear action and the import dialog
+    pub fn clear_reading_kinds(&self, book_id: i64, kinds: ReadingKinds) -> Result<ClearTally> {
+        let conn = self.conn();
+        let mut tally = ClearTally::default();
+
+        if kinds.position {
+            let n = conn.execute(
+                "DELETE FROM reading_progress WHERE book_id = ?1",
+                params![book_id],
+            )?;
+            if n > 0 {
+                tally.position = true;
+                // `books.progress` is a denormalised percent for the grid card,
+                // written by `set_reading_progress_from`. Clearing the position
+                // row without it leaves a card advertising a place in a book
+                // that no longer has one. Same pairing as the reset in
+                // `db::tags`, including `finished_at`.
+                conn.execute(
+                    "UPDATE books SET progress = 0, finished_at = NULL WHERE id = ?1",
+                    params![book_id],
+                )?;
+            }
+        }
+        if kinds.bookmarks {
+            tally.bookmarks = conn.execute(
+                "DELETE FROM reading_bookmarks WHERE book_id = ?1",
+                params![book_id],
+            )?;
+        }
+        if kinds.highlights {
+            tally.highlights = conn.execute(
+                "DELETE FROM annotations WHERE book_id = ?1 AND kind <> 'quote'",
+                params![book_id],
+            )?;
+        }
+        if kinds.quotes {
+            tally.quotes = conn.execute(
+                "DELETE FROM annotations WHERE book_id = ?1 AND kind = 'quote'",
+                params![book_id],
+            )?;
+        }
+        if kinds.ink {
+            // Page identities stay: they are structural, rebuilt on demand by
+            // `ensure_pdf_page_identities`, and carry no mark of the reader.
+            tally.ink = conn.execute(
+                "DELETE FROM pdf_drawings WHERE book_id = ?1",
+                params![book_id],
+            )?;
+        }
+        drop(conn);
+
+        if !tally.is_empty() {
+            // One refresh, for the same reason the restore does one: the
+            // per-row helpers would each rewrite the whole sidecar.
+            crate::sidecar::refresh_for_book(self, book_id);
+        }
+        Ok(tally)
+    }
+
+    /// Drop the rescue copy filed against this book's fingerprint.
+    ///
+    /// Returns whether a row was there. Called by the book page's clear action,
+    /// so that clearing is permanent — without it the marks would sit in the
+    /// stash and return on the next delete-and-reimport, which is exactly what
+    /// "clear" promised not to do.
+    #[allow(dead_code)] // wired up by the clear action and the import dialog
+    pub fn forget_reading_stash(&self, book_id: i64) -> Result<bool> {
+        let Some(origin) = self.origin_hash(book_id)? else {
+            return Ok(false);
+        };
+        let conn = self.conn();
+        let n = conn.execute(
+            "DELETE FROM reading_overrides WHERE file_hash = ?1",
+            params![origin],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Whether a book is still waiting for the reader to say what to keep.
+    ///
+    /// Set when a re-import brought reading data back and the question went
+    /// unanswered — either the reader chose "ask me when I open it", or the
+    /// import ran with no window to ask from, which a watched folder and a
+    /// download both do.
+    pub fn set_restore_pending(&self, book_id: i64, pending: bool) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE books SET restore_pending = ?1 WHERE id = ?2",
+            params![i64::from(pending), book_id],
+        )?;
+        Ok(())
+    }
+
+    #[allow(dead_code)] // wired up by the book page and the reader
+    pub fn restore_pending(&self, book_id: i64) -> Result<bool> {
+        let conn = self.conn();
+        let flag: i64 = conn
+            .query_row(
+                "SELECT restore_pending FROM books WHERE id = ?1",
+                params![book_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .unwrap_or(0);
+        Ok(flag != 0)
     }
 
     fn progress_row(&self, book_id: i64) -> Result<Option<Progress>> {
@@ -609,5 +783,249 @@ mod tests {
             cat.shelf_book_ids(shelf).unwrap_or_default().is_empty(),
             "the dead shelf gained nothing"
         );
+    }
+
+    /// A reader who keeps only some of it gets only some of it back. This is the
+    /// whole point of `ReadingKinds`: the chooser's ticks have to survive the
+    /// trip through the stash rather than being flattened into all-or-nothing.
+    #[test]
+    fn a_partial_choice_captures_and_restores_only_what_was_chosen() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = book(&cat, "Partial");
+        cat.set_reading_progress(id, 4, 0.25, 12).unwrap();
+        cat.insert_reading_bookmark(id, 4, 0.25, "kept").unwrap();
+        cat.insert_annotation(
+            id, "highlight", 4, "", 0, "", 9, "yellow", "solid", "kept", "",
+        )
+        .unwrap();
+        cat.insert_annotation(
+            id, "quote", 4, "", 0, "", 9, "yellow", "solid", "dropped", "",
+        )
+        .unwrap();
+
+        // Keep the place and the highlight; let the quote and the bookmark go.
+        //
+        // This goes through the delete entry point rather than calling
+        // `remember_reading_kinds` and then `delete_book`, and that ordering is
+        // the whole test: `delete_book` stashes with `ALL`, so capturing first
+        // and deleting second would silently overwrite the choice with a full
+        // capture and everything would come back. The UI only ever has the one
+        // call, so this is the path that has to work.
+        cat.delete_book_keeping(
+            id,
+            ReadingKinds {
+                position: true,
+                bookmarks: false,
+                highlights: true,
+                quotes: false,
+                ink: false,
+            },
+        )
+        .unwrap();
+
+        let again = book(&cat, "PartialAgain");
+        {
+            let conn = cat.conn();
+            conn.execute(
+                "UPDATE books SET file_hash = 'hash-Partial' WHERE id = ?1",
+                params![again],
+            )
+            .unwrap();
+        }
+        assert!(cat.restore_reading(again).unwrap());
+
+        assert_eq!(cat.get_reading_progress(again).unwrap(), Some((4, 0.25)));
+        assert!(
+            cat.list_reading_bookmarks(again).unwrap().is_empty(),
+            "the bookmark was not chosen"
+        );
+        let marks = cat.get_annotations_for_book(again).unwrap();
+        assert_eq!(marks.len(), 1, "only the chosen kind came back");
+        assert_eq!(marks[0].kind, "highlight");
+        assert_eq!(marks[0].text_excerpt, "kept");
+    }
+
+    /// Clearing takes rows out of a book that is still in the library, which is
+    /// what "start fresh" means once a re-import has already restored them. The
+    /// counts are what let the confirmation say something true.
+    #[test]
+    fn clearing_removes_the_chosen_kinds_and_counts_them() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = book(&cat, "Cleared");
+        cat.set_reading_progress(id, 4, 0.25, 12).unwrap();
+        cat.insert_reading_bookmark(id, 4, 0.25, "one").unwrap();
+        cat.insert_reading_bookmark(id, 5, 0.5, "two").unwrap();
+        cat.insert_annotation(
+            id, "highlight", 4, "", 0, "", 9, "yellow", "solid", "h", "",
+        )
+        .unwrap();
+        cat.insert_annotation(id, "quote", 4, "", 0, "", 9, "yellow", "solid", "q", "")
+            .unwrap();
+
+        let tally = cat
+            .clear_reading_kinds(
+                id,
+                ReadingKinds {
+                    position: true,
+                    bookmarks: true,
+                    highlights: true,
+                    quotes: false,
+                    ink: false,
+                },
+            )
+            .unwrap();
+
+        assert!(tally.position);
+        assert_eq!(tally.bookmarks, 2);
+        assert_eq!(tally.highlights, 1);
+        assert_eq!(tally.quotes, 0, "quotes were not chosen, so none were removed");
+        assert_eq!(tally.total(), 4);
+
+        assert_eq!(cat.get_reading_progress(id).unwrap(), None);
+        assert!(cat.list_reading_bookmarks(id).unwrap().is_empty());
+        let left = cat.get_annotations_for_book(id).unwrap();
+        assert_eq!(left.len(), 1, "the unchosen quote survives");
+        assert_eq!(left[0].kind, "quote");
+    }
+
+    /// `books.progress` is a second copy of the position, denormalised onto the
+    /// book row so the grid card can show a percentage without a join. Clearing
+    /// the position row without it leaves a card advertising a place in a book
+    /// that no longer has one.
+    #[test]
+    fn clearing_the_position_also_clears_the_percentage_on_the_card() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = book(&cat, "Percent");
+        cat.set_reading_progress(id, 6, 0.5, 12).unwrap();
+        assert!(
+            cat.get_book(id).unwrap().unwrap().progress > 0,
+            "the test needs a non-zero percentage to prove it was cleared"
+        );
+
+        cat.clear_reading_kinds(
+            id,
+            ReadingKinds {
+                position: true,
+                ..ReadingKinds::NONE
+            },
+        )
+        .unwrap();
+
+        assert_eq!(cat.get_reading_progress(id).unwrap(), None);
+        assert_eq!(
+            cat.get_book(id).unwrap().unwrap().progress,
+            0,
+            "the card still showed a percentage for a position that is gone"
+        );
+    }
+
+    /// The trap this exists to close: clearing the marks but leaving the rescue
+    /// copy means the next restore brings them straight back, which is exactly
+    /// what "clear" promised not to do.
+    #[test]
+    fn a_clear_is_only_permanent_once_the_stash_is_forgotten_too() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = book(&cat, "Forgotten");
+        cat.insert_annotation(
+            id, "highlight", 4, "", 0, "", 9, "yellow", "solid", "doomed", "",
+        )
+        .unwrap();
+        cat.remember_reading(id).unwrap();
+        let highlights = ReadingKinds {
+            highlights: true,
+            ..ReadingKinds::NONE
+        };
+
+        // Clearing the live rows alone is not enough: the rescue copy still
+        // holds them, and any restore puts them straight back.
+        cat.clear_reading_kinds(id, highlights).unwrap();
+        assert!(cat.get_annotations_for_book(id).unwrap().is_empty());
+        assert!(
+            cat.restore_reading(id).unwrap(),
+            "the copy survived the clear, so the marks came back"
+        );
+        assert_eq!(cat.get_annotations_for_book(id).unwrap().len(), 1);
+
+        // Forgetting the copy is what makes "clear" mean clear.
+        cat.clear_reading_kinds(id, highlights).unwrap();
+        assert!(cat.forget_reading_stash(id).unwrap(), "a copy was there");
+        assert!(
+            !cat.restore_reading(id).unwrap(),
+            "the forgotten marks came back anyway"
+        );
+        assert!(cat.get_annotations_for_book(id).unwrap().is_empty());
+        assert!(
+            !cat.forget_reading_stash(id).unwrap(),
+            "forgetting twice should report nothing left to forget"
+        );
+    }
+
+    /// A restore that brought reading data back leaves the book owing the reader
+    /// a question. One that brought back only metadata does not, because there
+    /// is nothing to choose about — the edits are simply re-applied.
+    #[test]
+    fn only_a_reading_restore_flags_the_book_as_owing_an_answer() {
+        let cat = Catalog::open_in_memory().unwrap();
+
+        // Metadata only: no question to ask.
+        let meta = book(&cat, "MetaOnly");
+        cat.update_book_metadata(
+            meta,
+            "Renamed By Hand",
+            "Author",
+            None,
+            0.0,
+            "",
+            "",
+            "",
+            &[],
+        )
+        .unwrap();
+        cat.delete_book(meta).unwrap();
+        let meta_again = book(&cat, "MetaOnlyAgain");
+        {
+            let conn = cat.conn();
+            conn.execute(
+                "UPDATE books SET file_hash = 'hash-MetaOnly' WHERE id = ?1",
+                params![meta_again],
+            )
+            .unwrap();
+        }
+        let outcome = cat.restore_overrides(meta_again).unwrap();
+        assert!(outcome.metadata);
+        assert!(!outcome.reading);
+        assert!(
+            !cat.restore_pending(meta_again).unwrap(),
+            "a metadata-only restore owes the reader nothing"
+        );
+
+        // Reading data: the question is outstanding until answered.
+        let read = book(&cat, "ReadOnly");
+        cat.insert_reading_bookmark(read, 1, 0.5, "mark").unwrap();
+        cat.delete_book(read).unwrap();
+        let read_again = book(&cat, "ReadOnlyAgain");
+        {
+            let conn = cat.conn();
+            conn.execute(
+                "UPDATE books SET file_hash = 'hash-ReadOnly' WHERE id = ?1",
+                params![read_again],
+            )
+            .unwrap();
+        }
+        // `outcome.metadata` is deliberately not asserted here. Deleting a book
+        // remembers its metadata unconditionally, edited or not, so a re-import
+        // reports a metadata restore for every book that was ever deleted. The
+        // two halves are therefore not mutually exclusive, and the pending flag
+        // has to key off `reading` alone -- which is what this asserts.
+        let outcome = cat.restore_overrides(read_again).unwrap();
+        assert!(outcome.reading);
+        assert!(
+            cat.restore_pending(read_again).unwrap(),
+            "the reader has not said whether to keep it yet"
+        );
+
+        // Answering clears the flag, so the question is asked once.
+        cat.set_restore_pending(read_again, false).unwrap();
+        assert!(!cat.restore_pending(read_again).unwrap());
     }
 }

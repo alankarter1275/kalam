@@ -14,7 +14,18 @@ use zip::ZipArchive;
 #[derive(Debug)]
 pub struct ImportResult {
     /// True when hand-edited metadata was re-applied from a previous import.
+    ///
+    /// This used to also cover reading data, which made the import summary
+    /// claim a book "kept your earlier metadata edits" when all that actually
+    /// came back was its highlights. The two are separate fields now because
+    /// they are reported separately: see `reading_restored`.
     pub restored: bool,
+    /// True when reading data — position, bookmarks, marks, ink — came back
+    /// from a previous copy of this file. The book is also flagged
+    /// `restore_pending` at that point, so the reader still owes an answer
+    /// about what to keep even if this result is dropped on the floor, which
+    /// three of the four import paths do.
+    pub reading_restored: bool,
     #[allow(dead_code)] // only some import paths read the id; the rest re-fetch the book
     pub book_id: i64,
     pub title: String,
@@ -78,6 +89,7 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
             title,
             duplicate: true,
             restored: false,
+            reading_restored: false,
             format: BookFormat::from_str_lossy(&ext),
         });
     }
@@ -402,11 +414,13 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     // undo an otherwise successful import.
     let _ = catalog.log_event(id, crate::db::EventKind::Imported, "");
 
-    // If this exact file was in the library before and had hand-edited
-    // metadata, put those edits back rather than silently reverting to
-    // whatever the EPUB's OPF says.
-    let restored = catalog.restore_overrides(id).unwrap_or(false);
-    let title = if restored {
+    // If this exact file was in the library before, put back what was
+    // remembered about it rather than silently reverting to whatever the EPUB's
+    // OPF says. Metadata edits are re-applied and that is the end of it;
+    // reading data is restored too, but it leaves the book flagged as owing the
+    // reader a question, because whether to keep it is not this function's call.
+    let outcome = catalog.restore_overrides(id).unwrap_or_default();
+    let title = if outcome.metadata {
         catalog
             .get_book(id)
             .ok()
@@ -428,7 +442,8 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         book_id: id,
         title,
         duplicate: false,
-        restored,
+        restored: outcome.metadata,
+        reading_restored: outcome.reading,
         format,
     })
 }

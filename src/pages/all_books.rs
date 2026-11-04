@@ -98,18 +98,34 @@ pub struct ImportTally {
     pub dupes: usize,
     pub errors: usize,
     pub restored: usize,
+    /// Books that came back with reading data, counted apart from `restored`
+    /// because they are reported apart: metadata edits are simply re-applied,
+    /// while reading data leaves the book owing the reader a question.
+    pub reading_restored: usize,
     pub last_title: String,
 }
 
 /// The one-line summary shown after an import finishes.
 pub fn import_summary(tally: &ImportTally) -> String {
+    // Two clauses, because the two counts are different facts and can both be
+    // non-zero for the same book. One clause saying "metadata edits" for a book
+    // that only came back with its highlights was simply untrue — the defect
+    // that splitting `RestoreOutcome` exists to fix.
     let restored_note = if tally.restored > 0 {
         format!(" {} kept your earlier metadata edits.", tally.restored)
     } else {
         String::new()
     };
+    let reading_note = if tally.reading_restored > 0 {
+        format!(
+            " {} came back with your notes and marks.",
+            tally.reading_restored
+        )
+    } else {
+        String::new()
+    };
     format!(
-        "Import done — {} added, {} already in library, {} failed.{restored_note}{}",
+        "Import done — {} added, {} already in library, {} failed.{restored_note}{reading_note}{}",
         tally.imported,
         tally.dupes,
         tally.errors,
@@ -151,6 +167,9 @@ pub fn spawn_import(
                         imported_titles.push(r.title.clone());
                         if r.restored {
                             tally.restored += 1;
+                        }
+                        if r.reading_restored {
+                            tally.reading_restored += 1;
                         }
                         // A freshly imported scanned PDF gets the
                         // import-time whole-book OCR scan (2.20). Digital
@@ -1650,6 +1669,41 @@ mod tests {
             ..Default::default()
         };
         assert!(import_summary(&some).contains("1 kept your earlier metadata edits."));
+    }
+
+    /// Reading data gets its own clause, and never borrows the metadata one.
+    ///
+    /// This is the regression that splitting the restore outcome was for: the
+    /// summary used to say "kept your earlier metadata edits" for any restore at
+    /// all, so a book that came back with only its highlights was described as
+    /// having kept edits nobody had made.
+    #[test]
+    fn a_restore_of_reading_data_does_not_claim_metadata_edits() {
+        let reading_only = ImportTally {
+            imported: 1,
+            reading_restored: 1,
+            ..Default::default()
+        };
+        let s = import_summary(&reading_only);
+        assert!(
+            s.contains("1 came back with your notes and marks."),
+            "the reading clause is missing: {s}"
+        );
+        assert!(
+            !s.contains("metadata edits"),
+            "a highlights-only restore claimed metadata edits: {s}"
+        );
+
+        // And the two facts coexist without either swallowing the other.
+        let both = ImportTally {
+            imported: 2,
+            restored: 1,
+            reading_restored: 2,
+            ..Default::default()
+        };
+        let s = import_summary(&both);
+        assert!(s.contains("1 kept your earlier metadata edits."), "{s}");
+        assert!(s.contains("2 came back with your notes and marks."), "{s}");
     }
 
     #[test]

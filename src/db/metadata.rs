@@ -283,9 +283,13 @@ impl Catalog {
         Ok(())
     }
 
-    /// Re-apply remembered edits to a freshly imported book. Returns true when
-    /// something was restored.
-    pub fn restore_overrides(&self, book_id: i64) -> Result<bool> {
+    /// Re-apply remembered edits and reading data to a freshly imported book.
+    ///
+    /// The two halves are reported apart because they are told to the reader
+    /// apart: metadata edits are simply re-applied, while reading data is
+    /// something the app now asks about. A single boolean could not carry that,
+    /// and it had already started to lie — see `RestoreOutcome`.
+    pub fn restore_overrides(&self, book_id: i64) -> Result<RestoreOutcome> {
         // A named struct rather than a ten-element tuple: the tuple needed a
         // type annotation that tripped clippy::type_complexity, and this is
         // easier to read besides.
@@ -303,7 +307,7 @@ impl Catalog {
         }
 
         let Some(origin) = self.origin_hash(book_id)? else {
-            return Ok(false);
+            return Ok(RestoreOutcome::default());
         };
 
         let saved: Option<Saved> = {
@@ -352,7 +356,12 @@ impl Catalog {
             // its own table and is frequently there without them -- a book you
             // never renamed still has a place in it and highlights in it -- so
             // this is the common case rather than an exit.
-            return self.restore_reading(book_id);
+            let reading = self.restore_reading(book_id)?;
+            self.flag_restore_pending(book_id, reading)?;
+            return Ok(RestoreOutcome {
+                metadata: false,
+                reading,
+            });
         };
 
         let tags: Vec<String> = saved
@@ -410,12 +419,30 @@ impl Catalog {
             }
         }
 
-        // Then the reading data, if any was stashed against this file. The
-        // metadata half already succeeded, so the answer stays true either way
-        // -- but the restore still has to happen, and its own failure should
-        // not be swallowed.
-        self.restore_reading(book_id)?;
-        Ok(true)
+        // Then the reading data, if any was stashed against this file. Its own
+        // failure must not be swallowed just because the metadata half worked.
+        let reading = self.restore_reading(book_id)?;
+        self.flag_restore_pending(book_id, reading)?;
+        Ok(RestoreOutcome {
+            metadata: true,
+            reading,
+        })
+    }
+
+    /// Mark a book as owing the reader a question about what came back.
+    ///
+    /// Done here rather than in the UI because `import_epub` is the one choke
+    /// point all four import paths pass through — the "+ Add books" button, the
+    /// downloads page, a book's remote page and the watched folder. Two of those
+    /// run with no window to ask from, so the flag has to be set by something
+    /// that does not depend on there being one. A dialog that was dismissed, or
+    /// an app closed before it was answered, leaves the flag set, and the book
+    /// page picks the question up again.
+    fn flag_restore_pending(&self, book_id: i64, reading_restored: bool) -> Result<()> {
+        if reading_restored {
+            self.set_restore_pending(book_id, true)?;
+        }
+        Ok(())
     }
 
     /// Forget remembered edits for a file — used by "import fresh".

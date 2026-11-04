@@ -1,66 +1,67 @@
-diff --git a/src/db/reading_stash.rs b/src/db/reading_stash.rs
-index cba1a39..df08d5d 100644
---- a/src/db/reading_stash.rs
-+++ b/src/db/reading_stash.rs
-@@ -1088,7 +1088,17 @@ mod tests {
- 
-         let first = book(&cat, "Settled");
-         cat.insert_annotation(
--            first, "highlight", 2, "", 0, "", 6, "yellow", "solid", "kept", "",
-+            first,
-+            "highlight",
-+            2,
-+            "",
-+            0,
-+            "",
-+            6,
-+            "yellow",
-+            "solid",
-+            "kept",
-+            "",
-         )
-         .unwrap();
-         cat.insert_annotation(
 diff --git a/src/pages/all_books.rs b/src/pages/all_books.rs
-index 48fd22f..8527702 100644
+index bf5bff2..c9f8171 100644
 --- a/src/pages/all_books.rs
 +++ b/src/pages/all_books.rs
-@@ -12,8 +12,8 @@ use crate::widgets::reading_choice::{
- use gtk::prelude::*;
- use relm4::prelude::*;
- use std::collections::HashSet;
--use std::rc::Rc;
- use std::path::PathBuf;
-+use std::rc::Rc;
- use std::sync::Arc;
+@@ -717,14 +717,9 @@ impl Component for AllBooksModel {
  
- #[derive(Debug)]
-diff --git a/src/widgets/reading_choice.rs b/src/widgets/reading_choice.rs
-index 8d91d95..5b1921b 100644
---- a/src/widgets/reading_choice.rs
-+++ b/src/widgets/reading_choice.rs
-@@ -567,9 +567,10 @@ pub fn choose_kinds_table(
-     let slot_for_confirm = dialog_slot.clone();
-     let answers_for_confirm = answers.clone();
-     let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
--    shell
--        .footer()
--        .append(&pill_button(buttons.confirm, buttons.confirm_kind, move || {
-+    shell.footer().append(&pill_button(
-+        buttons.confirm,
-+        buttons.confirm_kind,
-+        move || {
-             let chosen: Vec<(i64, ReadingKinds)> = ids
-                 .iter()
-                 .copied()
-@@ -577,7 +578,8 @@ pub fn choose_kinds_table(
-                 .collect();
-             close_from_slot(&slot_for_confirm);
-             on_confirm(chosen);
--        }));
-+        },
-+    ));
- 
-     let dialog = present_dialog(anchor, title, DialogExit::OwnButtons, &shell)?;
-     *dialog_slot.borrow_mut() = Some(dialog.clone());
---- run 41768674904 ---
+                 if !tally.restored_books.is_empty() {
+                     let s = sender.input_sender().clone();
+-                    ask_about_restored(
+-                        root,
+-                        &self.service,
+-                        &tally.restored_books,
+-                        move || {
+-                            s.send(AllBooksMsg::Settled).ok();
+-                        },
+-                    );
++                    ask_about_restored(root, &self.service, &tally.restored_books, move || {
++                        s.send(AllBooksMsg::Settled).ok();
++                    });
+                 }
+             }
+             AllBooksMsg::Settled => {
+diff --git a/src/pages/comics.rs b/src/pages/comics.rs
+index 7a05952..4e423b1 100644
+--- a/src/pages/comics.rs
++++ b/src/pages/comics.rs
+@@ -1423,14 +1423,9 @@ impl Component for ComicsModel {
+                 // All Books does rather than quietly keeping them.
+                 if !tally.restored_books.is_empty() {
+                     let s = sender.input_sender().clone();
+-                    ask_about_restored(
+-                        root,
+-                        &self.service,
+-                        &tally.restored_books,
+-                        move || {
+-                            s.send(ComicsMsg::Refresh).ok();
+-                        },
+-                    );
++                    ask_about_restored(root, &self.service, &tally.restored_books, move || {
++                        s.send(ComicsMsg::Refresh).ok();
++                    });
+                 }
+             }
+             ComicsMsg::OpenComic(id) => {
+diff --git a/src/pages/home.rs b/src/pages/home.rs
+index ec792f8..577e146 100644
+--- a/src/pages/home.rs
++++ b/src/pages/home.rs
+@@ -249,14 +249,9 @@ impl Component for HomePageModel {
+                 // nowhere for books imported from this screen.
+                 if !tally.restored_books.is_empty() {
+                     let s = sender.input_sender().clone();
+-                    ask_about_restored(
+-                        root,
+-                        &self.service,
+-                        &tally.restored_books,
+-                        move || {
+-                            s.send(HomeMsg::Refresh).ok();
+-                        },
+-                    );
++                    ask_about_restored(root, &self.service, &tally.restored_books, move || {
++                        s.send(HomeMsg::Refresh).ok();
++                    });
+                 }
+             }
+             HomeMsg::Refresh => {
+--- run 41769580809 ---

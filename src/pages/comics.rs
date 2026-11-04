@@ -1423,14 +1423,9 @@ impl Component for ComicsModel {
                 // All Books does rather than quietly keeping them.
                 if !tally.restored_books.is_empty() {
                     let s = sender.input_sender().clone();
-                    ask_about_restored(
-                        root,
-                        &self.service,
-                        &tally.restored_books,
-                        move || {
-                            s.send(ComicsMsg::Refresh).ok();
-                        },
-                    );
+                    ask_about_restored(root, &self.service, &tally.restored_books, move || {
+                        s.send(ComicsMsg::Refresh).ok();
+                    });
                 }
             }
             ComicsMsg::OpenComic(id) => {

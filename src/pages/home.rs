@@ -249,14 +249,9 @@ impl Component for HomePageModel {
                 // nowhere for books imported from this screen.
                 if !tally.restored_books.is_empty() {
                     let s = sender.input_sender().clone();
-                    ask_about_restored(
-                        root,
-                        &self.service,
-                        &tally.restored_books,
-                        move || {
-                            s.send(HomeMsg::Refresh).ok();
-                        },
-                    );
+                    ask_about_restored(root, &self.service, &tally.restored_books, move || {
+                        s.send(HomeMsg::Refresh).ok();
+                    });
                 }
             }
             HomeMsg::Refresh => {

@@ -717,14 +717,9 @@ impl Component for AllBooksModel {
 
                 if !tally.restored_books.is_empty() {
                     let s = sender.input_sender().clone();
-                    ask_about_restored(
-                        root,
-                        &self.service,
-                        &tally.restored_books,
-                        move || {
-                            s.send(AllBooksMsg::Settled).ok();
-                        },
-                    );
+                    ask_about_restored(root, &self.service, &tally.restored_books, move || {
+                        s.send(AllBooksMsg::Settled).ok();
+                    });
                 }
             }
             AllBooksMsg::Settled => {

@@ -25,10 +25,10 @@ index 702b38d..6f0ca82 100644
              }
              BookPageMsg::LocateFile => {
 diff --git a/src/widgets/reading_choice.rs b/src/widgets/reading_choice.rs
-index bc2e4fe..944a922 100644
+index b4ac339..b00e5dd 100644
 --- a/src/widgets/reading_choice.rs
 +++ b/src/widgets/reading_choice.rs
-@@ -253,15 +253,13 @@ pub fn choose_kinds_dialog(
+@@ -258,15 +258,13 @@ pub fn choose_kinds_dialog(
  
      let slot_for_confirm = dialog_slot.clone();
      let picker_for_confirm = picker.clone();
@@ -48,4 +48,4 @@ index bc2e4fe..944a922 100644
  
      let dialog = present_dialog(anchor, title, DialogExit::OwnButtons, &shell)?;
      *dialog_slot.borrow_mut() = Some(dialog.clone());
---- run 41761749411 ---
+--- run 41762021619 ---

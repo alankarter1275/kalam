@@ -1,14 +1,51 @@
-error: unexpected closing delimiter: `}`
-   --> /home/runner/work/kalam/kalam/src/db.rs:682:1
-    |
-662 | impl RestoreOutcome {
-    |                     - this opening brace...
-...
-667 | }
-    | - ...matches this closing brace
-...
-682 | }
-    | ^ unexpected closing delimiter
-
-Error writing files: failed to resolve mod `db`: cannot parse /home/runner/work/kalam/kalam/src/db.rs
---- run 41761169547 ---
+diff --git a/src/pages/book.rs b/src/pages/book.rs
+index 6d96750..be00715 100644
+--- a/src/pages/book.rs
++++ b/src/pages/book.rs
+@@ -524,7 +524,9 @@ impl Component for BookPageModel {
+                     crate::tasks::spawn(
+                         format!("Deleting {title}"),
+                         move |_reporter| {
+-                            catalog.delete_book_keeping(id, keep).map_err(|e| e.to_string())
++                            catalog
++                                .delete_book_keeping(id, keep)
++                                .map_err(|e| e.to_string())
+                         },
+                         |_| {},
+                         move |res| {
+@@ -739,9 +741,7 @@ impl Component for BookPageModel {
+                         // bookmarks; those numbers just changed.
+                         sender.input(BookPageMsg::Refresh).ok();
+                     }
+-                    Err(err) => {
+-                        crate::notify::error("Could not clear the notes", &err.to_string())
+-                    }
++                    Err(err) => crate::notify::error("Could not clear the notes", &err.to_string()),
+                 }
+             }
+             BookPageMsg::LocateFile => {
+diff --git a/src/widgets/reading_choice.rs b/src/widgets/reading_choice.rs
+index bc2e4fe..944a922 100644
+--- a/src/widgets/reading_choice.rs
++++ b/src/widgets/reading_choice.rs
+@@ -253,15 +253,13 @@ pub fn choose_kinds_dialog(
+ 
+     let slot_for_confirm = dialog_slot.clone();
+     let picker_for_confirm = picker.clone();
+-    shell.footer().append(&pill_button(
+-        confirm_label,
+-        confirm_kind,
+-        move || {
++    shell
++        .footer()
++        .append(&pill_button(confirm_label, confirm_kind, move || {
+             let kinds = picker_for_confirm.kinds();
+             close_from_slot(&slot_for_confirm);
+             on_confirm(kinds);
+-        },
+-    ));
++        }));
+ 
+     let dialog = present_dialog(anchor, title, DialogExit::OwnButtons, &shell)?;
+     *dialog_slot.borrow_mut() = Some(dialog.clone());
+--- run 41761488360 ---

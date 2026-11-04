@@ -1,37 +1,11 @@
-diff --git a/src/pages/book.rs b/src/pages/book.rs
-index 702b38d..6f0ca82 100644
---- a/src/pages/book.rs
-+++ b/src/pages/book.rs
-@@ -524,7 +524,9 @@ impl Component for BookPageModel {
-                     crate::tasks::spawn(
-                         format!("Deleting {title}"),
-                         move |_reporter| {
--                            catalog.delete_book_keeping(id, keep).map_err(|e| e.to_string())
-+                            catalog
-+                                .delete_book_keeping(id, keep)
-+                                .map_err(|e| e.to_string())
-                         },
-                         |_| {},
-                         move |res| {
-@@ -739,9 +741,7 @@ impl Component for BookPageModel {
-                         // bookmarks; those numbers just changed.
-                         sender.input(BookPageMsg::Refresh);
-                     }
--                    Err(err) => {
--                        crate::notify::error("Could not clear the notes", &err.to_string())
--                    }
-+                    Err(err) => crate::notify::error("Could not clear the notes", &err.to_string()),
-                 }
-             }
-             BookPageMsg::LocateFile => {
 diff --git a/src/widgets/reading_choice.rs b/src/widgets/reading_choice.rs
-index b4ac339..b00e5dd 100644
+index 6c11a3b..3e6bf57 100644
 --- a/src/widgets/reading_choice.rs
 +++ b/src/widgets/reading_choice.rs
-@@ -258,15 +258,13 @@ pub fn choose_kinds_dialog(
- 
+@@ -551,10 +551,9 @@ pub fn choose_kinds_table(
      let slot_for_confirm = dialog_slot.clone();
-     let picker_for_confirm = picker.clone();
+     let answers_for_confirm = answers.clone();
+     let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
 -    shell.footer().append(&pill_button(
 -        confirm_label,
 -        confirm_kind,
@@ -39,13 +13,36 @@ index b4ac339..b00e5dd 100644
 +    shell
 +        .footer()
 +        .append(&pill_button(confirm_label, confirm_kind, move || {
-             let kinds = picker_for_confirm.kinds();
+             let chosen: Vec<(i64, ReadingKinds)> = ids
+                 .iter()
+                 .copied()
+@@ -562,8 +561,7 @@ pub fn choose_kinds_table(
+                 .collect();
              close_from_slot(&slot_for_confirm);
-             on_confirm(kinds);
+             on_confirm(chosen);
 -        },
 -    ));
 +        }));
  
      let dialog = present_dialog(anchor, title, DialogExit::OwnButtons, &shell)?;
      *dialog_slot.borrow_mut() = Some(dialog.clone());
---- run 41762021619 ---
+@@ -683,13 +681,13 @@ mod tests {
+     fn the_table_filter_matches_title_and_detail_and_ignores_case() {
+         let title = "Dune";
+         let detail = "Frank Herbert · 12 chapters";
+-        assert!(row_matches("", title, detail), "an empty query hides nothing");
+-        assert!(row_matches("   ", title, detail), "nor does a blank one");
+-        assert!(row_matches("dune", title, detail));
+         assert!(
+-            row_matches("DUNE", title, detail),
+-            "case must not matter"
++            row_matches("", title, detail),
++            "an empty query hides nothing"
+         );
++        assert!(row_matches("   ", title, detail), "nor does a blank one");
++        assert!(row_matches("dune", title, detail));
++        assert!(row_matches("DUNE", title, detail), "case must not matter");
+         assert!(
+             row_matches("herbert", title, detail),
+             "the author is part of what a reader will type"
+--- run 41764354466 ---

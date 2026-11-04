@@ -17,7 +17,4 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/widgets/reading_choice.rs:35:9: [1m[91merror[0m: field `noun` is never read
-src/widgets/reading_choice.rs:86:8: [1m[91merror[0m: function `describe` is never used
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 20.52s

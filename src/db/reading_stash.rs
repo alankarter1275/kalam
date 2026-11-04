@@ -399,7 +399,6 @@ impl Catalog {
     /// file's fingerprint is untouched — the book page's clear action has to call
     /// [`forget_reading_stash`] as well, or the marks it just removed would come
     /// back on the next delete-and-reimport.
-    #[allow(dead_code)] // wired up by the clear action and the import dialog
     pub fn clear_reading_kinds(&self, book_id: i64, kinds: ReadingKinds) -> Result<ClearTally> {
         let conn = self.conn();
         let mut tally = ClearTally::default();
@@ -464,7 +463,6 @@ impl Catalog {
     /// so that clearing is permanent — without it the marks would sit in the
     /// stash and return on the next delete-and-reimport, which is exactly what
     /// "clear" promised not to do.
-    #[allow(dead_code)] // wired up by the clear action and the import dialog
     pub fn forget_reading_stash(&self, book_id: i64) -> Result<bool> {
         let Some(origin) = self.origin_hash(book_id)? else {
             return Ok(false);

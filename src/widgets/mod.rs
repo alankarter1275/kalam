@@ -15,6 +15,7 @@ pub mod paint;
 pub mod pill_button;
 pub mod progress;
 pub mod rating;
+pub mod reading_choice;
 pub mod remaster_dialog;
 pub mod segmented;
 pub mod selection_chip;

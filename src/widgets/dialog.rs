@@ -148,6 +148,25 @@ impl ConfirmationKind {
     }
 }
 
+/// A dialog's opening paragraph, sized to the panel it will sit in.
+///
+/// Shared because the width cap below was measured rather than guessed, and two
+/// copies of a measured constant is how one of them drifts.
+pub(crate) fn dialog_message(shell: &DialogShell, message: &str) -> gtk::Label {
+    let label = gtk::Label::new(Some(message));
+    label.add_css_class("kalam-ui-dialog-message");
+    label.set_halign(gtk::Align::Start);
+    label.set_xalign(0.0);
+    label.set_wrap(true);
+    // Same fixed-panel guard as the shell subtitle: cap the natural
+    // width with the measured ~8.7px/char (÷9). At ÷7 the Settings
+    // captures measured this 420 dialog at 446–509px, widened by
+    // exactly this label's capped natural width.
+    label.set_width_chars(1);
+    label.set_max_width_chars(((shell.size().width() - 48) / 9).max(1));
+    label
+}
+
 /// Present the standard question dialog: section title, 13.5px body copy,
 /// boxed-ghost safe choice, and one primary/destructive choice.
 ///
@@ -165,19 +184,7 @@ pub fn confirmation_dialog(
     on_confirm: impl Fn() + 'static,
 ) -> Option<InAppDialog> {
     let shell = dialog_shell(DialogSize::Form, None);
-
-    let message_label = gtk::Label::new(Some(message));
-    message_label.add_css_class("kalam-ui-dialog-message");
-    message_label.set_halign(gtk::Align::Start);
-    message_label.set_xalign(0.0);
-    message_label.set_wrap(true);
-    // Same fixed-panel guard as the shell subtitle: cap the natural
-    // width with the measured ~8.7px/char (÷9). At ÷7 the Settings
-    // captures measured this 420 dialog at 446–509px, widened by
-    // exactly this label's capped natural width.
-    message_label.set_width_chars(1);
-    message_label.set_max_width_chars(((shell.size().width() - 48) / 9).max(1));
-    shell.body.append(&message_label);
+    shell.body.append(&dialog_message(&shell, message));
 
     let dialog_slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
 
@@ -201,7 +208,7 @@ pub fn confirmation_dialog(
     Some(dialog)
 }
 
-fn close_from_slot(slot: &Rc<RefCell<Option<InAppDialog>>>) {
+pub(crate) fn close_from_slot(slot: &Rc<RefCell<Option<InAppDialog>>>) {
     let dialog = slot.borrow().clone();
     if let Some(dialog) = dialog {
         dialog.close();

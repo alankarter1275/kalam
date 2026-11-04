@@ -610,8 +610,7 @@ impl ReadingKinds {
         ink: true,
     };
 
-    #[allow(dead_code)] // wired up by the granular chooser
-    pub const NONE: Self = Self {
+: Self = Self {
         position: false,
         bookmarks: false,
         highlights: false,
@@ -619,13 +618,11 @@ impl ReadingKinds {
         ink: false,
     };
 
-    #[allow(dead_code)] // wired up by the granular chooser
-    pub fn is_empty(&self) -> bool {
+(&self) -> bool {
         *self == Self::NONE
     }
 
-    #[allow(dead_code)] // wired up by the granular chooser
-    pub fn is_all(&self) -> bool {
+(&self) -> bool {
         *self == Self::ALL
     }
 
@@ -676,9 +673,7 @@ impl RestoreOutcome {
 /// even though both live in the `annotations` table and are told apart only by
 /// its `kind` column. `position` is a flag rather than a count: there is at
 /// most one row per book.
-#[allow(dead_code)] // wired up by the clear action and the import dialog
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ClearTally {
+
     pub position: bool,
     pub bookmarks: usize,
     pub highlights: usize,
@@ -686,9 +681,6 @@ pub struct ClearTally {
     pub ink: usize,
 }
 
-// Reachable today only from `clear_reading_kinds`, which is itself awaiting the
-// UI. An allow on the struct does not cover its impl, so the block needs one.
-#[allow(dead_code)]
 impl ClearTally {
     /// Total rows removed, counting the position row as one.
     pub fn total(&self) -> usize {

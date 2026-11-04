@@ -17,7 +17,7 @@
 //!
 //! The series link opens the series page (`series.rs`, decision 94).
 
-use crate::db::{Catalog, HighlightColor, ShelfKind};
+use crate::db::{Catalog, HighlightColor, ReadingKinds, ShelfKind};
 use crate::models::{Book, BookFormat};
 use crate::pages::history::pretty_day;
 use crate::pages::metadata_editor::open_metadata_editor;
@@ -32,9 +32,10 @@ use crate::widgets::{
     },
     in_app_dialog::{DialogExit, InAppDialog},
     menu::{menu_button, menu_popover, MenuWidth},
-    pill_button::{boxed_ghost_button, icon_button, primary_button},
+    pill_button::{boxed_ghost_button, icon_button, primary_button, PillButtonKind},
     progress::linear_progress,
     rating::rating_control,
+    reading_choice::{choose_kinds_dialog, delete_book_dialog, describe_cleared},
     segmented::{segmented_control, SegmentedSize},
     slide_out_pill::slide_out_pill,
     surface::{hairline, outlined_section, quiet_notice, state_card},
@@ -93,7 +94,8 @@ pub enum BookPageMsg {
     /// `Loaded` (it is only requested once the book's format is known)
     /// and is applied whenever it lands — titles are per book id.
     ChaptersLoaded(Vec<String>),
-    Delete,
+    /// Remove the book, keeping the parts of its reading data named here.
+    Delete(ReadingKinds),
     /// The single-book delete finished on its worker.
     DeleteDone {
         id: i64,
@@ -122,6 +124,14 @@ pub enum BookPageMsg {
     ToggleDescription,
     /// Ask before removing the book (the ⋯ menu's destructive item).
     ConfirmDelete,
+    /// Ask which notes and marks to wipe from a book that stays in the library.
+    ConfirmClearNotes,
+    /// The chooser was answered: wipe these kinds, keep the book.
+    ClearNotes {
+        id: i64,
+        title: String,
+        kinds: ReadingKinds,
+    },
     /// Open the deep editor on this book (the ⋯ menu's Edit book…).
     EditBook,
     /// Reveal the book's folder — the file footer's button, the ⋯ menu
@@ -496,7 +506,7 @@ impl Component for BookPageModel {
                     self.chapter_titles_for = book.id;
                 }
             }
-            BookPageMsg::Delete => {
+            BookPageMsg::Delete(keep) => {
                 if let Some(book) = &self.book {
                     let id = book.id;
                     let title = book.title.clone();
@@ -513,7 +523,9 @@ impl Component for BookPageModel {
                     // book's directory.
                     crate::tasks::spawn(
                         format!("Deleting {title}"),
-                        move |_reporter| catalog.delete_book(id).map_err(|e| e.to_string()),
+                        move |_reporter| {
+                            catalog.delete_book_keeping(id, keep).map_err(|e| e.to_string())
+                        },
                         |_| {},
                         move |res| {
                             s.send(BookPageMsg::DeleteDone { id, title, res }).ok();
@@ -659,25 +671,76 @@ impl Component for BookPageModel {
                 if let Some(book) = &self.book {
                     let title = book.title.clone();
                     let s = sender.input_sender().clone();
-                    let dialog = confirmation_dialog(
-                        root,
-                        "Remove this book?",
-                        &format!(
-                            "“{title}” will be removed from your library and its files \
-                             deleted. This cannot be undone."
-                        ),
-                        "Keep book",
-                        "Remove book",
-                        ConfirmationKind::Destructive,
-                        move || {
-                            let _ = s.send(BookPageMsg::Delete);
-                        },
-                    );
+                    // Not `confirmation_dialog`: that shape is a message and two
+                    // buttons, and this question has a checkbox in it plus a link
+                    // to five more choices.
+                    let dialog = delete_book_dialog(root, &title, move |keep| {
+                        let _ = s.send(BookPageMsg::Delete(keep));
+                    });
                     if dialog.is_none() {
                         crate::notify::error(
                             "Could not remove the book",
                             "The confirmation dialog could not be opened.",
                         );
+                    }
+                }
+            }
+            BookPageMsg::ConfirmClearNotes => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    let title = book.title.clone();
+                    let s = sender.input_sender().clone();
+                    let dialog = choose_kinds_dialog(
+                        root,
+                        "Clear notes and marks?",
+                        &format!(
+                            "“{title}” stays in your library. Choose what to clear \
+                             from it. This cannot be undone."
+                        ),
+                        ReadingKinds::ALL,
+                        "Clear",
+                        PillButtonKind::Danger,
+                        move |kinds| {
+                            let _ = s.send(BookPageMsg::ClearNotes {
+                                id,
+                                title: title.clone(),
+                                kinds,
+                            });
+                        },
+                    );
+                    if dialog.is_none() {
+                        crate::notify::error(
+                            "Could not clear the notes",
+                            "The chooser could not be opened.",
+                        );
+                    }
+                }
+            }
+            BookPageMsg::ClearNotes { id, title, kinds } => {
+                let catalog = self.service.catalog().clone();
+                match catalog.clear_reading_kinds(id, kinds) {
+                    Ok(tally) => {
+                        // The rescue copy goes with it. Leaving it filed would
+                        // undo this clear the moment the book was deleted and
+                        // imported again, which is not what "clear" meant.
+                        let _ = catalog.forget_reading_stash(id);
+                        // The question is answered, so the book no longer owes
+                        // one on its next open.
+                        let _ = catalog.set_restore_pending(id, false);
+                        if tally.is_empty() {
+                            crate::notify::info("Nothing to clear", &title);
+                        } else {
+                            crate::notify::success(
+                                "Notes cleared",
+                                &format!("{title} — removed {}.", describe_cleared(tally)),
+                            );
+                        }
+                        // The cards on this page count annotations and
+                        // bookmarks; those numbers just changed.
+                        sender.input(BookPageMsg::Refresh).ok();
+                    }
+                    Err(err) => {
+                        crate::notify::error("Could not clear the notes", &err.to_string())
                     }
                 }
             }
@@ -1534,10 +1597,20 @@ fn fill_actions(host: &gtk::Box, model: &BookPageModel, sender: &ComponentSender
         s.input(BookPageMsg::LocateFile);
     });
     menu.add_separator();
+    // A submenu rather than one item, because "remove from library" carries two
+    // different intentions: get rid of the book, or get rid of the work done
+    // inside it and keep the book. Guessing wrong either way costs the reader
+    // something they cannot get back, so the menu asks which they meant.
+    let remove_menu = menu_popover(MenuWidth::Wide);
     let s = sender.clone();
-    menu.add_destructive_item("Remove from library", move || {
+    remove_menu.add_destructive_item("Remove the book…", move || {
         s.input(BookPageMsg::ConfirmDelete);
     });
+    let s = sender.clone();
+    remove_menu.add_item("Clear my notes and marks…", move || {
+        s.input(BookPageMsg::ConfirmClearNotes);
+    });
+    menu.add_submenu("Remove from library", remove_menu);
 
     let more = menu_button("view-more-symbolic", "More actions", menu);
     more.add_css_class("kalam-bookpage-more");

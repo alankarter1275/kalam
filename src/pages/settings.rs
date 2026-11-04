@@ -626,11 +626,12 @@ impl Component for SettingsPageModel {
                         "Let go",
                         "That copy will not come back with the file again.",
                     ),
-                    Ok(false) => crate::notify::info(
-                        "Already gone",
-                        "That copy was let go earlier.",
-                    ),
-                    Err(err) => crate::notify::error("Could not let go of the copy", &err.to_string()),
+                    Ok(false) => {
+                        crate::notify::info("Already gone", "That copy was let go earlier.")
+                    }
+                    Err(err) => {
+                        crate::notify::error("Could not let go of the copy", &err.to_string())
+                    }
                 }
                 request_snapshot(&self.service, &sender);
             }
@@ -643,7 +644,9 @@ impl Component for SettingsPageModel {
                             if n == 1 { "y was" } else { "ies were" }
                         ),
                     ),
-                    Err(err) => crate::notify::error("Could not let go of the copies", &err.to_string()),
+                    Err(err) => {
+                        crate::notify::error("Could not let go of the copies", &err.to_string())
+                    }
                 }
                 request_snapshot(&self.service, &sender);
             }
@@ -2661,8 +2664,10 @@ fn build_remembered_pane(
         pane_row(
             &rows,
             "Nothing is being kept",
-            Some("When you remove a book, its notes and marks are kept here in case \
-                  you import the same file again."),
+            Some(
+                "When you remove a book, its notes and marks are kept here in case \
+                  you import the same file again.",
+            ),
         );
         return;
     }
@@ -2757,8 +2762,10 @@ fn build_remembered_pane(
                 snap.stash_total,
                 if snap.stash_total == 1 { "y" } else { "ies" }
             ),
-            Some("Books still in your library keep their notes and marks. \
-                  Only the copies go."),
+            Some(
+                "Books still in your library keep their notes and marks. \
+                  Only the copies go.",
+            ),
         );
     }
     let anchor = rows.clone();

@@ -1220,15 +1220,6 @@ mod tests {
         assert!(!cat.restore_pending(read_again).unwrap());
     }
 
-    /// Settling an import answer subtracts what was refused and spends the
-    /// rescue ticket.
-    ///
-    /// Spending the ticket is the half that would fail silently. A reader who
-    /// refuses everything leaves no live rows, so the next delete captures
-    /// nothing, and `remember_reading_kinds` writes nothing when the capture is
-    /// empty. The old payload would therefore survive untouched and walk back
-    /// in on the following re-import — the exact thing refusing was for.
-    #[test]
     /// The panel lists copies for books that are gone and copies for books that
     /// are still there, tells them apart, and counts what each holds. Getting
     /// the match wrong in either direction is visible to the reader: a live book
@@ -1240,8 +1231,20 @@ mod tests {
 
         // A book that is deleted afterwards: its copy ends up orphaned.
         let gone = book(&cat, "Gone");
-        cat.insert_annotation(gone, "highlight", 1, "", 0, "", 4, "yellow", "solid", "h", "")
-            .unwrap();
+        cat.insert_annotation(
+            gone,
+            "highlight",
+            1,
+            "",
+            0,
+            "",
+            4,
+            "yellow",
+            "solid",
+            "h",
+            "",
+        )
+        .unwrap();
         cat.insert_annotation(gone, "quote", 1, "", 0, "", 8, "yellow", "solid", "q", "")
             .unwrap();
         cat.insert_reading_bookmark(gone, 1, 0.5, "mark").unwrap();
@@ -1250,7 +1253,17 @@ mod tests {
         // A book that comes back: its copy is still filed, but the book is live.
         let returned = book(&cat, "Returned");
         cat.insert_annotation(
-            returned, "highlight", 2, "", 0, "", 6, "yellow", "solid", "kept", "",
+            returned,
+            "highlight",
+            2,
+            "",
+            0,
+            "",
+            6,
+            "yellow",
+            "solid",
+            "kept",
+            "",
         )
         .unwrap();
         cat.delete_book(returned).unwrap();
@@ -1289,7 +1302,11 @@ mod tests {
         );
 
         let live = by_hash("hash-Returned");
-        assert_eq!(live.book_id, Some(again), "matched to the book that came back");
+        assert_eq!(
+            live.book_id,
+            Some(again),
+            "matched to the book that came back"
+        );
         assert_eq!(live.book_title.as_deref(), Some("ReturnedAgain"));
         assert!(
             live.pending,
@@ -1322,8 +1339,20 @@ mod tests {
         let cat = Catalog::open_in_memory().unwrap();
 
         let live = book(&cat, "Live");
-        cat.insert_annotation(live, "highlight", 1, "", 0, "", 4, "yellow", "solid", "h", "")
-            .unwrap();
+        cat.insert_annotation(
+            live,
+            "highlight",
+            1,
+            "",
+            0,
+            "",
+            4,
+            "yellow",
+            "solid",
+            "h",
+            "",
+        )
+        .unwrap();
         cat.delete_book(live).unwrap();
         let again = book(&cat, "LiveAgain");
         {
@@ -1405,10 +1434,22 @@ mod tests {
 
         let list = cat.list_reading_stash(200).unwrap();
         assert_eq!(list.len(), 1, "still listed");
-        assert!(list[0].contents.is_empty(), "and counted as holding nothing");
+        assert!(
+            list[0].contents.is_empty(),
+            "and counted as holding nothing"
+        );
         assert!(!list[0].placement);
     }
 
+    /// Settling an import answer subtracts what was refused and spends the
+    /// rescue ticket.
+    ///
+    /// Spending the ticket is the half that would fail silently. A reader who
+    /// refuses everything leaves no live rows, so the next delete captures
+    /// nothing, and `remember_reading_kinds` writes nothing when the capture is
+    /// empty. The old payload would therefore survive untouched and walk back
+    /// in on the following re-import — the exact thing refusing was for.
+    #[test]
     fn settling_an_import_answer_clears_what_was_refused_and_spends_the_ticket() {
         let cat = Catalog::open_in_memory().unwrap();
 

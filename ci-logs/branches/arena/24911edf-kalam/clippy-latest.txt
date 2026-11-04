@@ -1,4 +1,6 @@
-(no lines matched; last 100 lines of output)
+src/db/reading_stash.rs:1237:5: [1m[91merror[0m: duplicated attribute
+src/db/reading_stash.rs:1412:8: [1m[91merror[0m: function `settling_an_import_answer_clears_what_was_refused_and_spends_the_ticket` is never used
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -20,5 +22,7 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 27.43s
---- run 41774658619 ---
+src/db/reading_stash.rs:1237:5: [1m[91merror[0m: duplicated attribute
+src/db/reading_stash.rs:1412:8: [1m[91merror[0m: function `settling_an_import_answer_clears_what_was_refused_and_spends_the_ticket` is never used
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+--- run 41776962762 ---

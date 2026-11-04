@@ -1,0 +1,68 @@
+diff --git a/src/db/reading_stash.rs b/src/db/reading_stash.rs
+index bd8fb5e..38c7f5f 100644
+--- a/src/db/reading_stash.rs
++++ b/src/db/reading_stash.rs
+@@ -795,7 +795,17 @@ mod tests {
+         cat.set_reading_progress(id, 4, 0.25, 12).unwrap();
+         cat.insert_reading_bookmark(id, 4, 0.25, "kept").unwrap();
+         cat.insert_annotation(
+-            id, "highlight", 4, "", 0, "", 9, "yellow", "solid", "kept", "",
++            id,
++            "highlight",
++            4,
++            "",
++            0,
++            "",
++            9,
++            "yellow",
++            "solid",
++            "kept",
++            "",
+         )
+         .unwrap();
+         cat.insert_annotation(
+@@ -855,10 +865,8 @@ mod tests {
+         cat.set_reading_progress(id, 4, 0.25, 12).unwrap();
+         cat.insert_reading_bookmark(id, 4, 0.25, "one").unwrap();
+         cat.insert_reading_bookmark(id, 5, 0.5, "two").unwrap();
+-        cat.insert_annotation(
+-            id, "highlight", 4, "", 0, "", 9, "yellow", "solid", "h", "",
+-        )
+-        .unwrap();
++        cat.insert_annotation(id, "highlight", 4, "", 0, "", 9, "yellow", "solid", "h", "")
++            .unwrap();
+         cat.insert_annotation(id, "quote", 4, "", 0, "", 9, "yellow", "solid", "q", "")
+             .unwrap();
+ 
+@@ -878,7 +886,10 @@ mod tests {
+         assert!(tally.position);
+         assert_eq!(tally.bookmarks, 2);
+         assert_eq!(tally.highlights, 1);
+-        assert_eq!(tally.quotes, 0, "quotes were not chosen, so none were removed");
++        assert_eq!(
++            tally.quotes, 0,
++            "quotes were not chosen, so none were removed"
++        );
+         assert_eq!(tally.total(), 4);
+ 
+         assert_eq!(cat.get_reading_progress(id).unwrap(), None);
+@@ -927,7 +938,17 @@ mod tests {
+         let cat = Catalog::open_in_memory().unwrap();
+         let id = book(&cat, "Forgotten");
+         cat.insert_annotation(
+-            id, "highlight", 4, "", 0, "", 9, "yellow", "solid", "doomed", "",
++            id,
++            "highlight",
++            4,
++            "",
++            0,
++            "",
++            9,
++            "yellow",
++            "solid",
++            "doomed",
++            "",
+         )
+         .unwrap();
+         cat.remember_reading(id).unwrap();
+--- run 41755915930 ---

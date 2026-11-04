@@ -610,7 +610,7 @@ impl ReadingKinds {
         ink: true,
     };
 
-: Self = Self {
+    pub const NONE: Self = Self {
         position: false,
         bookmarks: false,
         highlights: false,
@@ -618,11 +618,11 @@ impl ReadingKinds {
         ink: false,
     };
 
-(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         *self == Self::NONE
     }
 
-(&self) -> bool {
+    pub fn is_all(&self) -> bool {
         *self == Self::ALL
     }
 
@@ -673,7 +673,8 @@ impl RestoreOutcome {
 /// even though both live in the `annotations` table and are told apart only by
 /// its `kind` column. `position` is a flag rather than a count: there is at
 /// most one row per book.
-
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ClearTally {
     pub position: bool,
     pub bookmarks: usize,
     pub highlights: usize,

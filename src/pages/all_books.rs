@@ -6,10 +6,13 @@ use crate::widgets::book_row::{
 };
 use crate::widgets::in_app_dialog;
 use crate::widgets::pill_button::PillButtonKind;
-use crate::widgets::reading_choice::{choose_kinds_table, ChoiceRow};
+use crate::widgets::reading_choice::{
+    choose_kinds_table, restored_reading_dialog, ChoiceRow, ChooserButtons,
+};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::collections::HashSet;
+use std::rc::Rc;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -93,6 +96,159 @@ pub enum AllBooksMsg {
         done: usize,
         failed: usize,
     },
+    /// An import answer was applied; the page should re-read its list, because
+    /// clearing a reading position changes the percentage on the card.
+    Settled,
+}
+
+/// The buttons on the import question.
+///
+/// "Ask me later" is not a cancel. Closing the dialog leaves the book flagged
+/// as owing an answer, and the question comes back when the book is next
+/// opened — which is the whole reason the flag exists. Labelling it "Cancel"
+/// would promise the reader that nothing was left outstanding.
+const IMPORT_BUTTONS: ChooserButtons = ChooserButtons {
+    dismiss: "Ask me later",
+    confirm: "Keep these",
+    confirm_kind: PillButtonKind::Primary,
+};
+
+/// Ask what to do with the reading data an import just brought back.
+///
+/// Shared by every page that can start an import, because the question and its
+/// consequences are the same whichever button began it. Three pages import
+/// books, and three copies of this would drift.
+///
+/// Asked after the import rather than before it. By now the data is already in
+/// the book, so this is a subtraction and not a permission — and it means the
+/// question can name real titles rather than the file names the reader picked,
+/// because reading the titles out of the files is what the import was for.
+/// Asking first would also have meant fingerprinting every chosen file twice,
+/// since the fingerprint that finds the rescue copy is computed inside.
+///
+/// One book gets the single dialog. Several get the table, because a stack of
+/// dialogs to click through is worse than one screen of ticks.
+///
+/// `on_settled` runs once the answer has been applied, so the caller can
+/// re-read its list.
+pub fn ask_about_restored(
+    anchor: &impl IsA<gtk::Widget>,
+    catalog: Arc<Catalog>,
+    restored: &[(i64, String)],
+    on_settled: impl Fn() + 'static,
+) {
+    if restored.is_empty() {
+        return;
+    }
+    // Boxed as a trait object because both branches hand it to a worker that
+    // outlives this call, and a borrow of the caller's closure would not.
+    // `on_done` is not `Send`, so `Rc` is enough.
+    let settled: Rc<dyn Fn()> = Rc::new(on_settled);
+
+    if restored.len() == 1 {
+        let (id, title) = restored[0].clone();
+        let catalog_for_dialog = catalog.clone();
+        let settled_for_dialog = settled.clone();
+        restored_reading_dialog(anchor, &title, IMPORT_BUTTONS, move |keep| {
+            settle_restored(
+                catalog_for_dialog.clone(),
+                vec![(id, keep)],
+                settled_for_dialog.clone(),
+            );
+        });
+        return;
+    }
+
+    // The author goes on the row because two books can share a title, and the
+    // reader is about to decide what to throw away.
+    let rows: Vec<ChoiceRow> = restored
+        .iter()
+        .map(|(id, title)| {
+            let detail = catalog
+                .get_book(*id)
+                .ok()
+                .flatten()
+                .map(|b| b.authors.trim().to_string())
+                .unwrap_or_default();
+            ChoiceRow {
+                id: *id,
+                title: title.clone(),
+                detail,
+                initial: ReadingKinds::ALL,
+            }
+        })
+        .collect();
+    let count = rows.len();
+    let catalog_for_table = catalog.clone();
+    let settled_for_table = settled.clone();
+    choose_kinds_table(
+        anchor,
+        "Your notes came back",
+        &format!(
+            "{count} of the books you imported came back with the notes and marks \
+             you left in them. Choose what to keep for each. Anything unticked is \
+             removed for good."
+        ),
+        rows,
+        IMPORT_BUTTONS,
+        move |choices| {
+            settle_restored(
+                catalog_for_table.clone(),
+                choices,
+                settled_for_table.clone(),
+            );
+        },
+    );
+}
+
+/// Apply the answers on a worker, then say what happened.
+///
+/// Each book is settled separately rather than in one transaction, so one
+/// failure cannot roll back nine good answers — and the count reported is the
+/// count that actually landed.
+fn settle_restored(
+    catalog: Arc<Catalog>,
+    choices: Vec<(i64, ReadingKinds)>,
+    settled: Rc<dyn Fn()>,
+) {
+    let total = choices.len();
+    crate::tasks::spawn(
+        format!(
+            "Applying your choice for {total} book{}",
+            if total == 1 { "" } else { "s" }
+        ),
+        move |reporter| {
+            let mut failed = 0usize;
+            for (i, (id, keep)) in choices.iter().enumerate() {
+                if reporter.cancelled() {
+                    break;
+                }
+                if catalog.settle_restore(*id, *keep).is_err() {
+                    failed += 1;
+                    reporter.fail();
+                }
+                reporter.step(i + 1, total, format!("{}/{total}", i + 1));
+            }
+            (total - failed, failed)
+        },
+        |_| {},
+        move |(done, failed)| {
+            if failed == 0 {
+                crate::notify::success(
+                    "Your choices are saved",
+                    &format!("{done} book{} updated", if done == 1 { "" } else { "s" }),
+                );
+            } else {
+                crate::notify::error(
+                    "Some choices were not saved",
+                    &format!("{failed} of {} could not be updated", done + failed),
+                );
+            }
+            // `Rc<F>` is not itself callable; the call has to go through the
+            // pointee.
+            (*settled)();
+        },
+    );
 }
 
 #[derive(Debug, Default)]
@@ -101,10 +257,14 @@ pub struct ImportTally {
     pub dupes: usize,
     pub errors: usize,
     pub restored: usize,
-    /// Books that came back with reading data, counted apart from `restored`
-    /// because they are reported apart: metadata edits are simply re-applied,
-    /// while reading data leaves the book owing the reader a question.
-    pub reading_restored: usize,
+    /// Books that came back with reading data, as id and title.
+    ///
+    /// Kept apart from `restored` because they are reported apart: metadata
+    /// edits are simply re-applied, while reading data leaves the book owing
+    /// the reader a question. Carried as a list rather than a count because the
+    /// question is asked per book, and a count that could disagree with the
+    /// list would be two answers to the same thing.
+    pub restored_books: Vec<(i64, String)>,
     pub last_title: String,
 }
 
@@ -119,10 +279,10 @@ pub fn import_summary(tally: &ImportTally) -> String {
     } else {
         String::new()
     };
-    let reading_note = if tally.reading_restored > 0 {
+    let reading_note = if !tally.restored_books.is_empty() {
         format!(
             " {} came back with your notes and marks.",
-            tally.reading_restored
+            tally.restored_books.len()
         )
     } else {
         String::new()
@@ -172,7 +332,7 @@ pub fn spawn_import(
                             tally.restored += 1;
                         }
                         if r.reading_restored {
-                            tally.reading_restored += 1;
+                            tally.restored_books.push((r.book_id, r.title.clone()));
                         }
                         // A freshly imported scanned PDF gets the
                         // import-time whole-book OCR scan (2.20). Digital
@@ -530,6 +690,21 @@ impl Component for AllBooksModel {
                 }
 
                 self.status = import_summary(&tally);
+
+                if !tally.restored_books.is_empty() {
+                    let s = sender.input_sender().clone();
+                    ask_about_restored(
+                        root,
+                        self.service.catalog().clone(),
+                        &tally.restored_books,
+                        move || {
+                            s.send(AllBooksMsg::Settled).ok();
+                        },
+                    );
+                }
+            }
+            AllBooksMsg::Settled => {
+                self.reload(&sender);
             }
             AllBooksMsg::BooksLoaded { gen, snap } => {
                 // Drop a reply an older query produced. Typing quickly starts
@@ -959,8 +1134,13 @@ impl Component for AllBooksModel {
                         if real_count == 1 { "" } else { "s" }
                     ),
                     rows,
-                    "Delete",
-                    PillButtonKind::Danger,
+                    // "Cancel" is honest here and would not be on an import:
+                    // closing this dialog leaves every book untouched.
+                    ChooserButtons {
+                        dismiss: "Cancel",
+                        confirm: "Delete",
+                        confirm_kind: PillButtonKind::Danger,
+                    },
                     move |choices| {
                         s.send(AllBooksMsg::DeleteSelected(choices)).ok();
                     },
@@ -1698,7 +1878,7 @@ mod tests {
     fn a_restore_of_reading_data_does_not_claim_metadata_edits() {
         let reading_only = ImportTally {
             imported: 1,
-            reading_restored: 1,
+            restored_books: vec![(1, "Dune".to_string())],
             ..Default::default()
         };
         let s = import_summary(&reading_only);
@@ -1715,7 +1895,7 @@ mod tests {
         let both = ImportTally {
             imported: 2,
             restored: 1,
-            reading_restored: 2,
+            restored_books: vec![(1, "Dune".to_string()), (2, "Neuromancer".to_string())],
             ..Default::default()
         };
         let s = import_summary(&both);

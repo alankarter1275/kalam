@@ -626,6 +626,24 @@ impl ReadingKinds {
         *self == Self::ALL
     }
 
+    /// The kinds this does not cover.
+    ///
+    /// The two questions this type answers run in opposite directions. Deleting
+    /// asks what to keep, and clears nothing. An import has already put
+    /// everything back, so its answer has to be turned around before it reaches
+    /// the database: what the reader keeps is what must *not* be cleared. Both
+    /// are the same five ticks, and neither caller should hand-write the
+    /// inversion.
+    pub fn complement(self) -> Self {
+        Self {
+            position: !self.position,
+            bookmarks: !self.bookmarks,
+            highlights: !self.highlights,
+            quotes: !self.quotes,
+            ink: !self.ink,
+        }
+    }
+
     /// Whether an annotation row of this `kind` is covered. Only `highlight`
     /// and `quote` are ever created — an unrecognised kind counts as a
     /// highlight, so a new kind lands somewhere sensible rather than nowhere.

@@ -1,6 +1,6 @@
 use crate::db::Catalog;
 use crate::models::BookFormat;
-use crate::pages::all_books::{import_summary, spawn_import, ImportTally};
+use crate::pages::all_books::{ask_about_restored, import_summary, spawn_import, ImportTally};
 use crate::service::HomeSnapshot;
 use crate::service::LibraryService;
 use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W, COVER_H, COVER_W};
@@ -41,6 +41,10 @@ pub enum HomeMsg {
     },
     /// The whole import finished.
     ImportFinished(ImportTally),
+    /// Re-read the snapshot. Used after an import answer changes what is in a
+    /// book, since the continue-reading card shows a percentage that clearing a
+    /// reading position resets.
+    Refresh,
     /// The home snapshot finished on its worker (7.1 step 2b) — the
     /// page painted its skeleton in `init` and fills every section from
     /// this. No library read happens on the UI thread.
@@ -237,6 +241,25 @@ impl Component for HomePageModel {
                 // New books are in the catalog now; refresh this page so the
                 // counts / continue / recently-added cards reflect them.
                 // Same road as init: the worker reads, the apply builds.
+                request_snapshot(&self.service, &sender);
+
+                // And ask about anything that came back with its marks. The
+                // home page is a real import path, not a shortcut to one, so
+                // skipping the question here would leave it silently asked
+                // nowhere for books imported from this screen.
+                if !tally.restored_books.is_empty() {
+                    let s = sender.input_sender().clone();
+                    ask_about_restored(
+                        root,
+                        self.service.catalog().clone(),
+                        &tally.restored_books,
+                        move || {
+                            s.send(HomeMsg::Refresh).ok();
+                        },
+                    );
+                }
+            }
+            HomeMsg::Refresh => {
                 request_snapshot(&self.service, &sender);
             }
             HomeMsg::Loaded(snap) => {

@@ -426,6 +426,23 @@ fn row_matches(query: &str, title: &str, detail: &str) -> bool {
     title.to_lowercase().contains(&q) || detail.to_lowercase().contains(&q)
 }
 
+/// What the two buttons under a chooser say.
+///
+/// Bundled because two buttons need three settings, and passing them loose
+/// pushes these functions past the argument count clippy allows.
+pub struct ChooserButtons {
+    /// The button that decides nothing.
+    ///
+    /// A delete calls this "Cancel", because closing the dialog really does
+    /// leave the book alone. An import calls it "Ask me later", because closing
+    /// it leaves the book flagged and the question genuinely comes back when
+    /// the book is next opened. Same widget, two different promises, and the
+    /// label is the only thing telling the reader which one they got.
+    pub dismiss: &'static str,
+    pub confirm: &'static str,
+    pub confirm_kind: PillButtonKind,
+}
+
 /// A table of books, each with its own five ticks.
 ///
 /// Used when the same question is being asked about more than one book at once:
@@ -441,8 +458,7 @@ pub fn choose_kinds_table(
     title: &str,
     message: &str,
     rows: Vec<ChoiceRow>,
-    confirm_label: &str,
-    confirm_kind: PillButtonKind,
+    buttons: ChooserButtons,
     on_confirm: impl Fn(Vec<(i64, ReadingKinds)>) + 'static,
 ) -> Option<InAppDialog> {
     let shell = dialog_shell(DialogSize::Wide, None);
@@ -544,7 +560,7 @@ pub fn choose_kinds_table(
     let slot_for_cancel = dialog_slot.clone();
     shell
         .footer()
-        .append(&boxed_ghost_button("Cancel", move || {
+        .append(&boxed_ghost_button(buttons.dismiss, move || {
             close_from_slot(&slot_for_cancel);
         }));
 
@@ -553,7 +569,7 @@ pub fn choose_kinds_table(
     let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
     shell
         .footer()
-        .append(&pill_button(confirm_label, confirm_kind, move || {
+        .append(&pill_button(buttons.confirm, buttons.confirm_kind, move || {
             let chosen: Vec<(i64, ReadingKinds)> = ids
                 .iter()
                 .copied()
@@ -564,6 +580,77 @@ pub fn choose_kinds_table(
         }));
 
     let dialog = present_dialog(anchor, title, DialogExit::OwnButtons, &shell)?;
+    *dialog_slot.borrow_mut() = Some(dialog.clone());
+    Some(dialog)
+}
+
+/// The single-book version of the import question.
+///
+/// Asked after the import has finished, so the data is already back in the book
+/// and this is a subtraction: whatever is left unticked is removed again. The
+/// ticks start all on, because the default answer to "your notes came back" is
+/// "good".
+pub fn restored_reading_dialog(
+    anchor: &impl IsA<gtk::Widget>,
+    book_title: &str,
+    buttons: ChooserButtons,
+    on_keep: impl Fn(ReadingKinds) + 'static,
+) -> Option<InAppDialog> {
+    let shell = dialog_shell(DialogSize::Form, None);
+    shell.body().append(&dialog_message(
+        &shell,
+        &format!(
+            "“{book_title}” came back with the notes and marks you left in it. \
+             Choose what to keep. Anything unticked is removed for good."
+        ),
+    ));
+
+    // The running sentence matters more here than on a delete: unticking all
+    // five and pressing the confirm button IS "start fresh", and without the
+    // sentence that reads like keeping everything.
+    let summary = gtk::Label::new(Some(&summary_line(ReadingKinds::ALL)));
+    summary.add_css_class("kalam-ui-meta");
+    summary.set_halign(gtk::Align::Start);
+    summary.set_xalign(0.0);
+    summary.set_wrap(true);
+
+    let summary_for_picker = summary.clone();
+    let picker = KindPicker::new(ReadingKinds::ALL, move |kinds| {
+        summary_for_picker.set_text(&summary_line(kinds));
+    });
+    shell.body().append(picker.widget());
+    shell.body().append(&summary);
+
+    let dialog_slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+
+    let slot_for_later = dialog_slot.clone();
+    shell
+        .footer()
+        .append(&boxed_ghost_button(buttons.dismiss, move || {
+            // Closing decides nothing. The book is already flagged as owing an
+            // answer, so leaving it flagged is what makes the question come
+            // back when the book is next opened.
+            close_from_slot(&slot_for_later);
+        }));
+
+    let slot_for_confirm = dialog_slot.clone();
+    let picker_for_confirm = picker.clone();
+    shell.footer().append(&pill_button(
+        buttons.confirm,
+        buttons.confirm_kind,
+        move || {
+            let kinds = picker_for_confirm.kinds();
+            close_from_slot(&slot_for_confirm);
+            on_keep(kinds);
+        },
+    ));
+
+    let dialog = present_dialog(
+        anchor,
+        "Your notes came back",
+        DialogExit::OwnButtons,
+        &shell,
+    )?;
     *dialog_slot.borrow_mut() = Some(dialog.clone());
     Some(dialog)
 }

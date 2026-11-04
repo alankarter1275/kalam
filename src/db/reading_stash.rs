@@ -475,6 +475,27 @@ impl Catalog {
         Ok(n > 0)
     }
 
+    /// Apply the reader's answer to "an import brought this back — keep it?".
+    ///
+    /// The data is already live in the book when this is called, because the
+    /// restore happens inside the import. So an answer is a subtraction: clear
+    /// whatever was not kept, then spend the rescue ticket.
+    ///
+    /// Spending it is the part that is easy to miss. `remember_reading_kinds`
+    /// upserts, so a later delete normally overwrites a stale payload — but it
+    /// writes nothing at all when the capture comes out empty. A reader who
+    /// threw everything away would therefore have all of it walk back in on the
+    /// next delete-and-reimport, which is precisely what throwing it away meant
+    /// to prevent.
+    ///
+    /// Returns what was actually removed, for the toast that follows.
+    pub fn settle_restore(&self, book_id: i64, keep: ReadingKinds) -> Result<ClearTally> {
+        let tally = self.clear_reading_kinds(book_id, keep.complement())?;
+        self.forget_reading_stash(book_id)?;
+        self.set_restore_pending(book_id, false)?;
+        Ok(tally)
+    }
+
     /// Whether a book is still waiting for the reader to say what to keep.
     ///
     /// Set when a re-import brought reading data back and the question went
@@ -1051,5 +1072,107 @@ mod tests {
         // Answering clears the flag, so the question is asked once.
         cat.set_restore_pending(read_again, false).unwrap();
         assert!(!cat.restore_pending(read_again).unwrap());
+    }
+
+    /// Settling an import answer subtracts what was refused and spends the
+    /// rescue ticket.
+    ///
+    /// Spending the ticket is the half that would fail silently. A reader who
+    /// refuses everything leaves no live rows, so the next delete captures
+    /// nothing, and `remember_reading_kinds` writes nothing when the capture is
+    /// empty. The old payload would therefore survive untouched and walk back
+    /// in on the following re-import — the exact thing refusing was for.
+    #[test]
+    fn settling_an_import_answer_clears_what_was_refused_and_spends_the_ticket() {
+        let cat = Catalog::open_in_memory().unwrap();
+
+        let first = book(&cat, "Settled");
+        cat.insert_annotation(
+            first, "highlight", 2, "", 0, "", 6, "yellow", "solid", "kept", "",
+        )
+        .unwrap();
+        cat.insert_annotation(
+            first, "quote", 3, "", 0, "", 9, "yellow", "solid", "refused", "",
+        )
+        .unwrap();
+        cat.insert_reading_bookmark(first, 1, 0.25, "mark").unwrap();
+        cat.delete_book(first).unwrap();
+
+        // The same file comes back, and with it the question.
+        let again = book(&cat, "SettledAgain");
+        {
+            let conn = cat.conn();
+            conn.execute(
+                "UPDATE books SET file_hash = 'hash-Settled' WHERE id = ?1",
+                params![again],
+            )
+            .unwrap();
+        }
+        assert!(cat.restore_overrides(again).unwrap().reading);
+        assert!(
+            cat.restore_pending(again).unwrap(),
+            "the question should be open before it is answered"
+        );
+        assert_eq!(cat.get_annotations_for_book(again).unwrap().len(), 2);
+
+        // Keep the highlight and the bookmark, refuse the quote.
+        let keep = ReadingKinds {
+            highlights: true,
+            bookmarks: true,
+            ..ReadingKinds::NONE
+        };
+        let tally = cat.settle_restore(again, keep).unwrap();
+        assert_eq!(tally.quotes, 1, "the refused quote was not removed");
+        assert_eq!(tally.highlights, 0, "the kept highlight was removed too");
+        assert_eq!(tally.bookmarks, 0, "the kept bookmark was removed too");
+
+        let marks = cat.get_annotations_for_book(again).unwrap();
+        assert_eq!(marks.len(), 1);
+        assert_eq!(marks[0].kind, "highlight");
+        assert_eq!(cat.list_reading_bookmarks(again).unwrap().len(), 1);
+        assert!(
+            !cat.restore_pending(again).unwrap(),
+            "answering should close the question"
+        );
+
+        // A later delete re-captures only what was left, so the refused quote
+        // stays refused.
+        cat.delete_book(again).unwrap();
+        let third = book(&cat, "SettledThird");
+        {
+            let conn = cat.conn();
+            conn.execute(
+                "UPDATE books SET file_hash = 'hash-Settled' WHERE id = ?1",
+                params![third],
+            )
+            .unwrap();
+        }
+        assert!(cat.restore_overrides(third).unwrap().reading);
+        let marks = cat.get_annotations_for_book(third).unwrap();
+        assert_eq!(marks.len(), 1, "the refused quote came back: {marks:?}");
+        assert_eq!(marks[0].kind, "highlight");
+
+        // Refusing everything is the case the ticket exists for.
+        cat.settle_restore(third, ReadingKinds::NONE).unwrap();
+        assert!(cat.get_annotations_for_book(third).unwrap().is_empty());
+        assert!(cat.list_reading_bookmarks(third).unwrap().is_empty());
+
+        cat.delete_book(third).unwrap();
+        let fourth = book(&cat, "SettledFourth");
+        {
+            let conn = cat.conn();
+            conn.execute(
+                "UPDATE books SET file_hash = 'hash-Settled' WHERE id = ?1",
+                params![fourth],
+            )
+            .unwrap();
+        }
+        let outcome = cat.restore_overrides(fourth).unwrap();
+        assert!(
+            !outcome.reading,
+            "a reader who refused everything got it all back anyway"
+        );
+        assert!(cat.get_annotations_for_book(fourth).unwrap().is_empty());
+        assert!(cat.list_reading_bookmarks(fourth).unwrap().is_empty());
     }
 }

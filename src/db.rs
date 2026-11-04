@@ -711,6 +711,44 @@ impl ClearTally {
     }
 }
 
+/// One rescue copy of a book's reading data, as the settings panel lists it.
+///
+/// A copy is written when a book is deleted, filed under the file's
+/// fingerprint, and put back if that same file is imported again. So the
+/// normal state for a copy is orphaned: its book is gone from the library, and
+/// the copy is the only thing left of the work done in it.
+///
+/// A copy can also belong to a book that is still there. A restore deliberately
+/// does not prune the stash, so after a delete-and-reimport the book has its
+/// data back *and* the copy is still filed — which is what makes a second
+/// delete-and-reimport work. Both kinds are listed, because both are things the
+/// reader may want to let go of.
+///
+/// Dropping a copy never destroys live data. It removes the safety net: after
+/// it, deleting the book and importing it again starts clean.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StashEntry {
+    /// The fingerprint the copy is filed under. This is the row's identity —
+    /// an orphaned copy has no book id left to go by.
+    pub file_hash: String,
+    /// When the copy was last written.
+    pub updated_at: String,
+    /// The book this copy belongs to, when one is still in the library.
+    pub book_id: Option<i64>,
+    pub book_title: Option<String>,
+    /// Whether that book is still waiting for the reader to say what to keep.
+    /// Only meaningful alongside `book_id`.
+    pub pending: bool,
+    /// What the copy holds, counted the same way a clear counts, so one
+    /// description serves both.
+    pub contents: ClearTally,
+    /// Whether the copy also holds shelf or reading-list placement. Those are
+    /// always put back and never offered as a choice, so they are not in
+    /// `contents` — but a copy holding only placement is not empty, and saying
+    /// "nothing" about it would be a lie.
+    pub placement: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct Shelf {
     pub id: i64,

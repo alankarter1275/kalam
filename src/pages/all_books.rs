@@ -1,10 +1,12 @@
-use crate::db::{BulkMetadataEdit, Catalog, SortKey};
+use crate::db::{BulkMetadataEdit, Catalog, ReadingKinds, SortKey};
 use crate::models::Book;
 use crate::service::{AllBooksSnapshot, LibraryService};
 use crate::widgets::book_row::{
     build_book_grid, build_book_grid_selectable, invalidate_cover_cache,
 };
 use crate::widgets::in_app_dialog;
+use crate::widgets::pill_button::PillButtonKind;
+use crate::widgets::reading_choice::{choose_kinds_table, ChoiceRow};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::collections::HashSet;
@@ -83,8 +85,9 @@ pub enum AllBooksMsg {
     /// Ask before deleting the selected books; carries the button as anchor.
     OpenDeleteConfirm(gtk::Widget),
     /// Run the bulk delete on a worker so deleting many books cannot freeze
-    /// the grid.
-    DeleteSelected,
+    /// the grid. Carries what the reader chose to keep for each book, decided
+    /// per row in the table rather than once for the whole selection.
+    DeleteSelected(Vec<(i64, ReadingKinds)>),
     /// The bulk delete finished; the counts feed the toast and a reload.
     DeleteDone {
         done: usize,
@@ -939,17 +942,41 @@ impl Component for AllBooksModel {
                 // is series-scoped for comics), so the number the dialog
                 // shows must count the chapters, not the cards.
                 let ids: Vec<i64> = self.selected_books.iter().copied().collect();
-                let real_count = self.service.catalog().delete_scope_count(&ids).max(count);
+                let catalog = self.service.catalog();
+                let real_count = catalog.delete_scope_count(&ids).max(count);
+                let rows = choice_rows(catalog, &ids);
                 let s = sender.input_sender().clone();
-                confirm_bulk_delete(&anchor, real_count, move || {
-                    s.send(AllBooksMsg::DeleteSelected).ok();
-                });
+                // Not the old two-button confirm: deleting a book can now keep
+                // some of it and lose some of it, and one answer for the whole
+                // selection would force the same choice on every book in it.
+                let dialog = choose_kinds_table(
+                    &anchor,
+                    "Delete books",
+                    &format!(
+                        "Delete {real_count} book{}? The files and their library entries go. \
+                         Anything still ticked is kept aside, and comes back if you import the \
+                         same file again. Untick what should go for good.",
+                        if real_count == 1 { "" } else { "s" }
+                    ),
+                    rows,
+                    "Delete",
+                    PillButtonKind::Danger,
+                    move |choices| {
+                        s.send(AllBooksMsg::DeleteSelected(choices)).ok();
+                    },
+                );
+                if dialog.is_none() {
+                    crate::notify::error(
+                        "Could not show the confirmation",
+                        "Please try again once the page has finished loading.",
+                    );
+                }
             }
-            AllBooksMsg::DeleteSelected => {
-                let ids: Vec<i64> = self.selected_books.iter().copied().collect();
-                if ids.is_empty() {
+            AllBooksMsg::DeleteSelected(choices) => {
+                if choices.is_empty() {
                     return;
                 }
+                let ids: Vec<i64> = choices.iter().map(|(id, _)| *id).collect();
                 // Owned Arc so the worker can outlive this borrow.
                 let catalog = self.service.catalog().clone();
                 let count = ids.len();
@@ -977,7 +1004,12 @@ impl Component for AllBooksModel {
                                     invalidate_cover_cache(path);
                                 }
                             }
-                            if catalog.delete_book(*id).is_err() {
+                            let keep = choices
+                                .iter()
+                                .find(|(cid, _)| cid == id)
+                                .map(|(_, k)| *k)
+                                .unwrap_or(ReadingKinds::ALL);
+                            if catalog.delete_book_keeping(*id, keep).is_err() {
                                 failed += 1;
                                 reporter.fail();
                             }
@@ -1285,55 +1317,40 @@ fn rebuild_list(
     }
 }
 
-/// Ask before a bulk delete. Mirrors `shelves_grid::confirm_delete`, which is
-/// the app's one established shape for a destructive yes/no.
-fn confirm_bulk_delete(anchor: &gtk::Widget, count: usize, on_confirm: impl Fn() + 'static) {
-    let body = gtk::Box::new(gtk::Orientation::Vertical, 14);
-    body.set_size_request(360, -1);
-
-    let text = gtk::Label::new(Some(&format!(
-        "Delete {count} book{}?\n\nThis removes the files and their reading history from your library. This cannot be undone.",
-        if count == 1 { "" } else { "s" }
-    )));
-    text.set_wrap(true);
-    text.set_halign(gtk::Align::Start);
-    text.set_xalign(0.0);
-    body.append(&text);
-
-    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-    actions.set_halign(gtk::Align::End);
-    let cancel = gtk::Button::with_label("Cancel");
-    cancel.add_css_class("kalam-secondary-btn");
-    let confirm = gtk::Button::with_label("Delete");
-    confirm.add_css_class("kalam-btn-danger");
-    actions.append(&cancel);
-    actions.append(&confirm);
-    body.append(&actions);
-
-    let Some(dialog) = in_app_dialog::present(
-        anchor,
-        "Delete books",
-        in_app_dialog::DialogExit::OwnButtons,
-        &body,
-    ) else {
-        crate::notify::error(
-            "Could not show the confirmation",
-            "Please try again once the page has finished loading.",
-        );
-        return;
-    };
-
-    {
-        let dialog = dialog.clone();
-        cancel.connect_clicked(move |_| dialog.close());
-    }
-    {
-        let dialog = dialog.clone();
-        confirm.connect_clicked(move |_| {
-            on_confirm();
-            dialog.close();
-        });
-    }
+/// Build one table row per selected card.
+///
+/// A comic is a single card on the grid but several chapters underneath, and
+/// `delete_book_keeping` is series-scoped for comics — one row, one tick, and
+/// the whole series follows it. The row says so, because "one book" on screen
+/// is really twelve files being deleted.
+fn choice_rows(catalog: &Catalog, ids: &[i64]) -> Vec<ChoiceRow> {
+    ids.iter()
+        .filter_map(|id| {
+            let book = catalog.get_book(*id).ok().flatten()?;
+            let covers = catalog.delete_scope_count(&[*id]);
+            let authors = book.authors.trim();
+            let detail = if covers > 1 {
+                // Inside this branch the count is at least two, so the plural
+                // is the only form that can ever be printed.
+                let chapters = format!("{covers} chapters");
+                if authors.is_empty() {
+                    chapters
+                } else {
+                    format!("{authors} · {chapters}")
+                }
+            } else {
+                authors.to_string()
+            };
+            Some(ChoiceRow {
+                id: *id,
+                title: book.title.clone(),
+                detail,
+                // Everything starts ticked. Deleting has always kept the
+                // reading data, so the table must not change that by default.
+                initial: ReadingKinds::ALL,
+            })
+        })
+        .collect()
 }
 
 fn rebuild_content_search_list(

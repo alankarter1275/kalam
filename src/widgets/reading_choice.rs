@@ -33,6 +33,8 @@ pub struct KindRow {
     pub note: &'static str,
     /// How the kind reads in a sentence: "and your bookmarks".
     pub noun: &'static str,
+    /// The table's column heading, where the full label is too wide.
+    pub column: &'static str,
     pub get: fn(&ReadingKinds) -> bool,
     pub set: fn(&mut ReadingKinds, bool),
 }
@@ -45,6 +47,7 @@ pub const KIND_ROWS: [KindRow; 5] = [
         label: "My place in the book",
         note: "Where you stopped reading.",
         noun: "your place in the book",
+        column: "Place",
         get: |k| k.position,
         set: |k, v| k.position = v,
     },
@@ -52,6 +55,7 @@ pub const KIND_ROWS: [KindRow; 5] = [
         label: "Bookmarks",
         note: "Pages you marked to come back to.",
         noun: "your bookmarks",
+        column: "Marks",
         get: |k| k.bookmarks,
         set: |k, v| k.bookmarks = v,
     },
@@ -59,6 +63,7 @@ pub const KIND_ROWS: [KindRow; 5] = [
         label: "Highlights",
         note: "Passages you marked, including underlined ones.",
         noun: "your highlights",
+        column: "Highlights",
         get: |k| k.highlights,
         set: |k, v| k.highlights = v,
     },
@@ -66,6 +71,7 @@ pub const KIND_ROWS: [KindRow; 5] = [
         label: "Quotes",
         note: "Passages you saved as quotes.",
         noun: "your quotes",
+        column: "Quotes",
         get: |k| k.quotes,
         set: |k, v| k.quotes = v,
     },
@@ -73,6 +79,7 @@ pub const KIND_ROWS: [KindRow; 5] = [
         label: "Ink on PDF pages",
         note: "Pen, highlighter, shapes and notes you drew.",
         noun: "your ink",
+        column: "Ink",
         get: |k| k.ink,
         set: |k, v| k.ink = v,
     },
@@ -394,6 +401,175 @@ pub fn delete_book_dialog(
     Some(dialog)
 }
 
+/// One book in the chooser table.
+pub struct ChoiceRow {
+    /// The book id. A comic card is one row and one id, and the database layer
+    /// expands that to every chapter — one tick covers the whole series, which
+    /// is what the reader sees on the grid.
+    pub id: i64,
+    pub title: String,
+    /// The grey line under the title: author, and for a comic how many chapters
+    /// the one row stands for.
+    pub detail: String,
+    /// What the ticks start at. Deletion starts from "keep all of it".
+    pub initial: ReadingKinds,
+}
+
+/// Whether a row matches the search text. Split out because it is the one part
+/// of the table that can be wrong in a way the eye misses: a filter that hides
+/// a book the reader meant to change would silently apply that row's default.
+fn row_matches(query: &str, title: &str, detail: &str) -> bool {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return true;
+    }
+    title.to_lowercase().contains(&q) || detail.to_lowercase().contains(&q)
+}
+
+/// A table of books, each with its own five ticks.
+///
+/// Used when the same question is being asked about more than one book at once:
+/// a bulk delete, and an import that brought several books back with their
+/// notes. The search box is there because a bulk selection can be long, and a
+/// reader who wants to treat one book differently has to be able to find it.
+///
+/// Confirming returns every row, including the ones the search box is hiding.
+/// Filtering narrows what is on screen, not what is being decided; dropping the
+/// hidden rows would apply a choice the reader never saw.
+pub fn choose_kinds_table(
+    anchor: &impl IsA<gtk::Widget>,
+    title: &str,
+    message: &str,
+    rows: Vec<ChoiceRow>,
+    confirm_label: &str,
+    confirm_kind: PillButtonKind,
+    on_confirm: impl Fn(Vec<(i64, ReadingKinds)>) + 'static,
+) -> Option<InAppDialog> {
+    let shell = dialog_shell(DialogSize::Wide, None);
+    shell.body().append(&dialog_message(&shell, message));
+
+    let search = gtk::SearchEntry::new();
+    search.set_placeholder_text(Some("Search these books…"));
+    search.set_hexpand(true);
+    search.set_margin_bottom(10);
+    shell.body().append(&search);
+
+    // One shared answer per row, so the confirm button and the checkboxes can be
+    // built apart and still agree.
+    let answers: Rc<RefCell<Vec<ReadingKinds>>> =
+        Rc::new(RefCell::new(rows.iter().map(|r| r.initial).collect()));
+
+    let grid = gtk::Grid::new();
+    grid.set_column_spacing(14);
+    grid.set_row_spacing(6);
+    grid.set_hexpand(true);
+
+    // Heading row: the five short names, over the ticks they govern.
+    for (c, row) in KIND_ROWS.iter().enumerate() {
+        let head = gtk::Label::new(Some(row.column));
+        head.add_css_class("kalam-ui-caption");
+        head.set_halign(gtk::Align::Center);
+        grid.attach(&head, (c + 1) as i32, 0, 1, 1);
+    }
+
+    // Every widget belonging to one row, so the search box can hide it whole.
+    let mut row_widgets: Vec<Vec<gtk::Widget>> = Vec::with_capacity(rows.len());
+
+    for (r, book) in rows.iter().enumerate() {
+        let line = (r + 1) as i32;
+
+        let names = gtk::Box::new(gtk::Orientation::Vertical, 1);
+        names.set_hexpand(true);
+        let name = gtk::Label::new(Some(&book.title));
+        name.set_halign(gtk::Align::Start);
+        name.set_xalign(0.0);
+        name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        names.append(&name);
+        if !book.detail.trim().is_empty() {
+            let detail = gtk::Label::new(Some(&book.detail));
+            detail.add_css_class("kalam-ui-meta");
+            detail.set_halign(gtk::Align::Start);
+            detail.set_xalign(0.0);
+            detail.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            names.append(&detail);
+        }
+        grid.attach(&names, 0, line, 1, 1);
+        let mut owned: Vec<gtk::Widget> = vec![names.upcast::<gtk::Widget>()];
+
+        for (c, kind) in KIND_ROWS.iter().enumerate() {
+            let check = gtk::CheckButton::new();
+            check.set_active((kind.get)(&book.initial));
+            check.set_halign(gtk::Align::Center);
+            check.set_tooltip_text(Some(kind.label));
+            grid.attach(&check, (c + 1) as i32, line, 1, 1);
+            owned.push(check.clone().upcast::<gtk::Widget>());
+
+            let answers_for_tick = answers.clone();
+            let set = kind.set;
+            check.connect_toggled(move |button| {
+                let mut all = answers_for_tick.borrow_mut();
+                if let Some(slot) = all.get_mut(r) {
+                    (set)(slot, button.is_active());
+                }
+            });
+        }
+        row_widgets.push(owned);
+    }
+
+    let scroll = gtk::ScrolledWindow::new();
+    scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    scroll.set_hexpand(true);
+    scroll.set_vexpand(true);
+    scroll.set_child(Some(&grid));
+    shell.body().append(&scroll);
+
+    // Hide rows that do not match, without touching their answers. The texts
+    // are cloned out because `rows` is consumed by the confirm closure below.
+    let texts: Vec<(String, String)> = rows
+        .iter()
+        .map(|r| (r.title.clone(), r.detail.clone()))
+        .collect();
+    search.connect_search_changed(move |entry| {
+        let query = entry.text().to_string();
+        for ((title, detail), widgets) in texts.iter().zip(row_widgets.iter()) {
+            let show = row_matches(&query, title, detail);
+            for w in widgets {
+                w.set_visible(show);
+            }
+        }
+    });
+
+    let dialog_slot: Rc<RefCell<Option<InAppDialog>>> = Rc::new(RefCell::new(None));
+
+    let slot_for_cancel = dialog_slot.clone();
+    shell
+        .footer()
+        .append(&boxed_ghost_button("Cancel", move || {
+            close_from_slot(&slot_for_cancel);
+        }));
+
+    let slot_for_confirm = dialog_slot.clone();
+    let answers_for_confirm = answers.clone();
+    let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
+    shell.footer().append(&pill_button(
+        confirm_label,
+        confirm_kind,
+        move || {
+            let chosen: Vec<(i64, ReadingKinds)> = ids
+                .iter()
+                .copied()
+                .zip(answers_for_confirm.borrow().iter().copied())
+                .collect();
+            close_from_slot(&slot_for_confirm);
+            on_confirm(chosen);
+        },
+    ));
+
+    let dialog = present_dialog(anchor, title, DialogExit::OwnButtons, &shell)?;
+    *dialog_slot.borrow_mut() = Some(dialog.clone());
+    Some(dialog)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -501,6 +677,30 @@ mod tests {
         );
     }
 
+    /// Filtering narrows what is on screen, never what is decided. A row the
+    /// search box hides still has to come back with its answer.
+    #[test]
+    fn the_table_filter_matches_title_and_detail_and_ignores_case() {
+        let title = "Dune";
+        let detail = "Frank Herbert · 12 chapters";
+        assert!(row_matches("", title, detail), "an empty query hides nothing");
+        assert!(row_matches("   ", title, detail), "nor does a blank one");
+        assert!(row_matches("dune", title, detail));
+        assert!(
+            row_matches("DUNE", title, detail),
+            "case must not matter"
+        );
+        assert!(
+            row_matches("herbert", title, detail),
+            "the author is part of what a reader will type"
+        );
+        assert!(
+            row_matches("12 chapters", title, detail),
+            "so is the chapter count on a comic card"
+        );
+        assert!(!row_matches("foundation", title, detail));
+    }
+
     /// The labels are what the reader sees in four different dialogs, so a
     /// stray duplicate would be confusing in a way no other test would catch.
     #[test]
@@ -512,6 +712,10 @@ mod tests {
                 }
                 assert_ne!(a.label, b.label, "rows {i} and {j} share a label");
                 assert_ne!(a.noun, b.noun, "rows {i} and {j} share a noun");
+                assert_ne!(
+                    a.column, b.column,
+                    "rows {i} and {j} share a column heading"
+                );
             }
         }
     }

@@ -737,7 +737,7 @@ impl Component for BookPageModel {
                         }
                         // The cards on this page count annotations and
                         // bookmarks; those numbers just changed.
-                        sender.input(BookPageMsg::Refresh).ok();
+                        sender.input(BookPageMsg::Refresh);
                     }
                     Err(err) => {
                         crate::notify::error("Could not clear the notes", &err.to_string())

@@ -844,10 +844,7 @@ impl LibraryService {
         // A failed read means "do not ask", not "ask": a book whose flag cannot
         // be read is not a book the reader is being pestered about, and the
         // error itself is already reported through `detail.errors`.
-        let restore_pending = self
-            .catalog
-            .restore_pending(book_id)
-            .unwrap_or(false);
+        let restore_pending = self.catalog.restore_pending(book_id).unwrap_or(false);
 
         BookPageSnapshot {
             detail,

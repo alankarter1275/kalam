@@ -25,8 +25,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::db::{
-    Annotation, Catalog, HighlightColor, PdfDrawing, PdfPageIdentity, ReadingBookmark, ReadingKinds,
-    SavedWord,
+    Annotation, Catalog, HighlightColor, PdfDrawing, PdfPageIdentity, ReadingBookmark,
+    ReadingKinds, SavedWord,
 };
 use crate::epub_book::ReadingTheme;
 use crate::pdf::{
@@ -6957,7 +6957,11 @@ impl Component for PdfReaderModel {
                     let s = sender.input_sender().clone();
                     crate::tasks::spawn(
                         format!("Deleting {title}"),
-                        move |_reporter| catalog.delete_book_keeping(id, keep).map_err(|e| e.to_string()),
+                        move |_reporter| {
+                            catalog
+                                .delete_book_keeping(id, keep)
+                                .map_err(|e| e.to_string())
+                        },
                         |_| {},
                         move |res| {
                             let _ = s.send(PdfReaderMsg::RemoveBookDone(res));

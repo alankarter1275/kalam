@@ -12,8 +12,8 @@ use crate::widgets::reading_choice::{
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::collections::HashSet;
-use std::rc::Rc;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -105,13 +105,28 @@ pub enum AllBooksMsg {
 ///
 /// "Ask me later" is not a cancel. Closing the dialog leaves the book flagged
 /// as owing an answer, and the question comes back when the book is next
-/// opened — which is the whole reason the flag exists. Labelling it "Cancel"
-/// would promise the reader that nothing was left outstanding.
+/// opened — which is what the flag is for. Labelling it "Cancel" would have
+/// promised the reader that nothing was left outstanding.
 const IMPORT_BUTTONS: ChooserButtons = ChooserButtons {
     dismiss: "Ask me later",
     confirm: "Keep these",
     confirm_kind: PillButtonKind::Primary,
 };
+
+/// A book an import brought back with its reading data.
+#[derive(Debug, Clone)]
+pub struct RestoredBook {
+    pub id: i64,
+    pub title: String,
+    /// The grey second line in the chooser table.
+    ///
+    /// Read on the import worker, which already has the book open, rather than
+    /// looked up when the dialog is built. Building a dialog is UI-thread work,
+    /// and a page that reaches for the database handle there is exactly what
+    /// `LibraryService` exists to prevent — the query would run while the grid
+    /// is waiting to be repainted.
+    pub authors: String,
+}
 
 /// Ask what to do with the reading data an import just brought back.
 ///
@@ -133,8 +148,8 @@ const IMPORT_BUTTONS: ChooserButtons = ChooserButtons {
 /// re-read its list.
 pub fn ask_about_restored(
     anchor: &impl IsA<gtk::Widget>,
-    catalog: Arc<Catalog>,
-    restored: &[(i64, String)],
+    service: &LibraryService,
+    restored: &[RestoredBook],
     on_settled: impl Fn() + 'static,
 ) {
     if restored.is_empty() {
@@ -144,15 +159,16 @@ pub fn ask_about_restored(
     // outlives this call, and a borrow of the caller's closure would not.
     // `on_done` is not `Send`, so `Rc` is enough.
     let settled: Rc<dyn Fn()> = Rc::new(on_settled);
+    let service = service.clone();
 
     if restored.len() == 1 {
-        let (id, title) = restored[0].clone();
-        let catalog_for_dialog = catalog.clone();
+        let book = restored[0].clone();
+        let service_for_dialog = service.clone();
         let settled_for_dialog = settled.clone();
-        restored_reading_dialog(anchor, &title, IMPORT_BUTTONS, move |keep| {
+        restored_reading_dialog(anchor, &book.title, IMPORT_BUTTONS, move |keep| {
             settle_restored(
-                catalog_for_dialog.clone(),
-                vec![(id, keep)],
+                service_for_dialog.clone(),
+                vec![(book.id, keep)],
                 settled_for_dialog.clone(),
             );
         });
@@ -163,23 +179,15 @@ pub fn ask_about_restored(
     // reader is about to decide what to throw away.
     let rows: Vec<ChoiceRow> = restored
         .iter()
-        .map(|(id, title)| {
-            let detail = catalog
-                .get_book(*id)
-                .ok()
-                .flatten()
-                .map(|b| b.authors.trim().to_string())
-                .unwrap_or_default();
-            ChoiceRow {
-                id: *id,
-                title: title.clone(),
-                detail,
-                initial: ReadingKinds::ALL,
-            }
+        .map(|b| ChoiceRow {
+            id: b.id,
+            title: b.title.clone(),
+            detail: b.authors.trim().to_string(),
+            initial: ReadingKinds::ALL,
         })
         .collect();
     let count = rows.len();
-    let catalog_for_table = catalog.clone();
+    let service_for_table = service.clone();
     let settled_for_table = settled.clone();
     choose_kinds_table(
         anchor,
@@ -193,7 +201,7 @@ pub fn ask_about_restored(
         IMPORT_BUTTONS,
         move |choices| {
             settle_restored(
-                catalog_for_table.clone(),
+                service_for_table.clone(),
                 choices,
                 settled_for_table.clone(),
             );
@@ -207,11 +215,15 @@ pub fn ask_about_restored(
 /// failure cannot roll back nine good answers — and the count reported is the
 /// count that actually landed.
 fn settle_restored(
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     choices: Vec<(i64, ReadingKinds)>,
     settled: Rc<dyn Fn()>,
 ) {
     let total = choices.len();
+    // The handle is taken here, at the edge of the worker, and never used to
+    // read on the UI thread: `LibraryService` is what a page holds, and the
+    // catalog it wraps is only ever handed to the task below.
+    let catalog = service.catalog().clone();
     crate::tasks::spawn(
         format!(
             "Applying your choice for {total} book{}",
@@ -244,8 +256,7 @@ fn settle_restored(
                     &format!("{failed} of {} could not be updated", done + failed),
                 );
             }
-            // `Rc<F>` is not itself callable; the call has to go through the
-            // pointee.
+            // `Rc<F>` is not itself callable; the call goes through the pointee.
             (*settled)();
         },
     );
@@ -264,7 +275,7 @@ pub struct ImportTally {
     /// the reader a question. Carried as a list rather than a count because the
     /// question is asked per book, and a count that could disagree with the
     /// list would be two answers to the same thing.
-    pub restored_books: Vec<(i64, String)>,
+    pub restored_books: Vec<RestoredBook>,
     pub last_title: String,
 }
 
@@ -332,7 +343,20 @@ pub fn spawn_import(
                             tally.restored += 1;
                         }
                         if r.reading_restored {
-                            tally.restored_books.push((r.book_id, r.title.clone()));
+                            // The author is read here, on the worker, because
+                            // the chooser table shows it and building that
+                            // table is UI-thread work.
+                            let authors = catalog
+                                .get_book(r.book_id)
+                                .ok()
+                                .flatten()
+                                .map(|b| b.authors)
+                                .unwrap_or_default();
+                            tally.restored_books.push(RestoredBook {
+                                id: r.book_id,
+                                title: r.title.clone(),
+                                authors,
+                            });
                         }
                         // A freshly imported scanned PDF gets the
                         // import-time whole-book OCR scan (2.20). Digital
@@ -695,7 +719,7 @@ impl Component for AllBooksModel {
                     let s = sender.input_sender().clone();
                     ask_about_restored(
                         root,
-                        self.service.catalog().clone(),
+                        &self.service,
                         &tally.restored_books,
                         move || {
                             s.send(AllBooksMsg::Settled).ok();
@@ -1878,7 +1902,11 @@ mod tests {
     fn a_restore_of_reading_data_does_not_claim_metadata_edits() {
         let reading_only = ImportTally {
             imported: 1,
-            restored_books: vec![(1, "Dune".to_string())],
+            restored_books: vec![RestoredBook {
+                id: 1,
+                title: "Dune".to_string(),
+                authors: "Frank Herbert".to_string(),
+            }],
             ..Default::default()
         };
         let s = import_summary(&reading_only);
@@ -1895,7 +1923,18 @@ mod tests {
         let both = ImportTally {
             imported: 2,
             restored: 1,
-            restored_books: vec![(1, "Dune".to_string()), (2, "Neuromancer".to_string())],
+            restored_books: vec![
+                RestoredBook {
+                    id: 1,
+                    title: "Dune".to_string(),
+                    authors: "Frank Herbert".to_string(),
+                },
+                RestoredBook {
+                    id: 2,
+                    title: "Neuromancer".to_string(),
+                    authors: "William Gibson".to_string(),
+                },
+            ],
             ..Default::default()
         };
         let s = import_summary(&both);

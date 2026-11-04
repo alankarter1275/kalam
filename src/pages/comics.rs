@@ -1425,7 +1425,7 @@ impl Component for ComicsModel {
                     let s = sender.input_sender().clone();
                     ask_about_restored(
                         root,
-                        self.service.catalog().clone(),
+                        &self.service,
                         &tally.restored_books,
                         move || {
                             s.send(ComicsMsg::Refresh).ok();

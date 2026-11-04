@@ -1088,7 +1088,17 @@ mod tests {
 
         let first = book(&cat, "Settled");
         cat.insert_annotation(
-            first, "highlight", 2, "", 0, "", 6, "yellow", "solid", "kept", "",
+            first,
+            "highlight",
+            2,
+            "",
+            0,
+            "",
+            6,
+            "yellow",
+            "solid",
+            "kept",
+            "",
         )
         .unwrap();
         cat.insert_annotation(

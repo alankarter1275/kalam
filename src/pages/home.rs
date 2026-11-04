@@ -251,7 +251,7 @@ impl Component for HomePageModel {
                     let s = sender.input_sender().clone();
                     ask_about_restored(
                         root,
-                        self.service.catalog().clone(),
+                        &self.service,
                         &tally.restored_books,
                         move || {
                             s.send(HomeMsg::Refresh).ok();

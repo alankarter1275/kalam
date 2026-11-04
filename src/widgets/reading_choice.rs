@@ -567,9 +567,10 @@ pub fn choose_kinds_table(
     let slot_for_confirm = dialog_slot.clone();
     let answers_for_confirm = answers.clone();
     let ids: Vec<i64> = rows.iter().map(|r| r.id).collect();
-    shell
-        .footer()
-        .append(&pill_button(buttons.confirm, buttons.confirm_kind, move || {
+    shell.footer().append(&pill_button(
+        buttons.confirm,
+        buttons.confirm_kind,
+        move || {
             let chosen: Vec<(i64, ReadingKinds)> = ids
                 .iter()
                 .copied()
@@ -577,7 +578,8 @@ pub fn choose_kinds_table(
                 .collect();
             close_from_slot(&slot_for_confirm);
             on_confirm(chosen);
-        }));
+        },
+    ));
 
     let dialog = present_dialog(anchor, title, DialogExit::OwnButtons, &shell)?;
     *dialog_slot.borrow_mut() = Some(dialog.clone());

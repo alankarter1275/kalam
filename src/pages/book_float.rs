@@ -832,7 +832,9 @@ impl Component for BookFloatModel {
                     crate::tasks::spawn(
                         format!("Deleting {title}"),
                         move |_reporter| {
-                            catalog.delete_book_keeping(id, keep).map_err(|e| e.to_string())
+                            catalog
+                                .delete_book_keeping(id, keep)
+                                .map_err(|e| e.to_string())
                         },
                         |_| {},
                         move |res| {

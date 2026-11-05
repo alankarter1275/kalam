@@ -4199,7 +4199,10 @@ mod tests {
             cat.restore_overrides(edited_again).unwrap().metadata,
             "a real edit is still remembered across the delete"
         );
-        assert_eq!(cat.get_book(edited_again).unwrap().unwrap().title, "Renamed");
+        assert_eq!(
+            cat.get_book(edited_again).unwrap().unwrap().title,
+            "Renamed"
+        );
     }
 
     #[test]

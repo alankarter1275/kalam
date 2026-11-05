@@ -57,12 +57,21 @@ applies: work against a copy of the library, not the one in daily use.
 - [ ] Delete the book from Kalam.
 - [ ] Import the same file again, unmodified.
 - [ ] Open the re-imported book and confirm every edit you wrote down is back.
+- [ ] Now take a book you have **never** edited. Delete it, import the same file
+  again, and read the message that appears when the import finishes. It must not
+  say that the book kept your earlier metadata edits. There were none to keep.
+- [ ] Edit a book's metadata, delete it, import the same file again, and confirm
+  the message *does* say your edits were kept. The two cases must not both stay
+  quiet or both speak up.
 
-**Only those ten fields come back, and that is by design.** Deleting a book also
-removes its reading position, bookmarks, annotations, full-text search index and
-OCR cache; re-importing does not restore them. The search index and the OCR are
-rebuilt as the book is used again. A missing bookmark or annotation here is
-expected behaviour, not a failure of this check.
+Your reading position, bookmarks, highlights, quotes and PDF ink come back too,
+but they are a separate question and the app asks you about them — see
+"Keeping your notes when a book is removed and comes back" below.
+
+**The full-text search index and the OCR cache do not come back, and that is by
+design.** Both are rebuilt as the book is used again, so a book that has just
+been re-imported may not appear in a deep search until it has been opened. That
+is expected here, not a failure of this check.
 
 **Keep the backup until this passes.** `~/kalam-backup-before-rekey/` holds the
 `catalog.db`, `catalog.db-wal` and `catalog.db-shm` copied before the
@@ -318,6 +327,17 @@ because they are where the book lives rather than work you did in it.
   clean, since the copy is gone.
 - [ ] If you have more than 200 copies, confirm the pane says it is showing the
   newest 200 of the real total, and that clearing still lets go of all of them.
+
+**The hover card asks too**
+
+- [ ] Hover over a book anywhere it shows a small remove button (the hover card),
+  and click it. Confirm a question appears asking what to keep, with the same
+  checkbox and the same "choose what to keep" link as everywhere else.
+- [ ] Confirm nothing is removed until you answer. Clicking the button alone must
+  not delete the book — it used to.
+- [ ] Answer it, then confirm the book is gone and the toast says it was removed.
+- [ ] Repeat, but this time untick the box so your notes are let go. Re-import the
+  same file and confirm it comes back clean, with no notes and no question.
 
 **Saved words**
 

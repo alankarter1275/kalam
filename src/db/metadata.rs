@@ -211,6 +211,22 @@ impl Catalog {
     }
 
     pub(super) fn remember_overrides(&self, book_id: i64) -> Result<()> {
+        self.stash_overrides(book_id, true)
+    }
+
+    /// Capture the metadata of a book that is about to be deleted.
+    ///
+    /// Unlike `remember_overrides` this does not mark the book as hand-edited.
+    /// A delete captures every removed book whether the reader ever touched it
+    /// or not, and marking all of them as edited is what made a re-import
+    /// announce "kept your earlier metadata edits" for books nobody had edited.
+    /// The capture itself still has to happen for all of them: not every edit
+    /// path stashes on its own, so skipping the unedited ones would lose work.
+    pub(super) fn capture_overrides_before_delete(&self, book_id: i64) -> Result<()> {
+        self.stash_overrides(book_id, false)
+    }
+
+    fn stash_overrides(&self, book_id: i64, edited: bool) -> Result<()> {
         // A restore is not an edit: writing the freshly-imported state back
         // over the saved copy is exactly what we are trying to avoid.
         if self.restoring.load(std::sync::atomic::Ordering::Relaxed) {
@@ -251,9 +267,14 @@ impl Catalog {
         conn.execute(
             "INSERT INTO metadata_overrides
                 (file_hash, title, authors, series, series_index, publisher,
-                 published, description, tags, rating, cover_name, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+                 published, description, tags, rating, cover_name,
+                 hand_edited, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
              ON CONFLICT(file_hash) DO UPDATE SET
+                -- MAX, not the incoming value: a delete captures every removed
+                -- book, and that capture must not erase the fact that the
+                -- reader edited this one by hand earlier.
+                hand_edited = MAX(metadata_overrides.hand_edited, excluded.hand_edited),
                 title = excluded.title,
                 authors = excluded.authors,
                 series = excluded.series,
@@ -277,6 +298,7 @@ impl Catalog {
                 book.tags.join(", "),
                 book.rating as i64,
                 stashed_cover,
+                edited as i64,
                 chrono_like_now(),
             ],
         )?;
@@ -304,6 +326,7 @@ impl Catalog {
             tags: String,
             rating: i64,
             cover_name: Option<String>,
+            hand_edited: i64,
         }
 
         let Some(origin) = self.origin_hash(book_id)? else {
@@ -316,7 +339,8 @@ impl Catalog {
                 "SELECT IFNULL(title,''), IFNULL(authors,''), series,
                         IFNULL(series_index,0), IFNULL(publisher,''),
                         IFNULL(published,''), IFNULL(description,''),
-                        IFNULL(tags,''), IFNULL(rating,0), cover_name
+                        IFNULL(tags,''), IFNULL(rating,0), cover_name,
+                        IFNULL(hand_edited,0)
                  FROM metadata_overrides WHERE file_hash = ?1",
                 params![origin],
                 |r| {
@@ -331,6 +355,7 @@ impl Catalog {
                         tags: r.get(7)?,
                         rating: r.get(8)?,
                         cover_name: r.get(9)?,
+                        hand_edited: r.get(10)?,
                     })
                 },
             )
@@ -363,6 +388,40 @@ impl Catalog {
                 reading,
             });
         };
+
+        // What the report gets to claim. A row here proves nothing on its own:
+        // the delete-time capture runs for every removed book, edited or not, so
+        // `hand_edited` is the only direct evidence that the reader changed
+        // something. It is not complete evidence either, because a few edit paths
+        // write straight to `books` without stashing -- the comic series editor
+        // does -- so the saved values are also compared against what the file
+        // just produced. Either being true means work really did come back, and
+        // an untouched book re-imported as itself now correctly claims nothing.
+        let fresh = self.get_book(book_id)?;
+        let reported_edits = saved.hand_edited != 0
+            || match &fresh {
+                // Nothing to compare against; the restore below reports loudly.
+                None => true,
+                Some(book) => {
+                    let saved_tags: Vec<String> = saved
+                        .tags
+                        .split(',')
+                        .map(|t| t.trim().to_string())
+                        .filter(|t| !t.is_empty())
+                        .collect();
+                    book.title != saved.title
+                        || book.authors != saved.authors
+                        || book.series != saved.series
+                        || (book.series_index as f64 - saved.series_index).abs() > f64::EPSILON
+                        || book.publisher != saved.publisher
+                        || book.published != saved.published
+                        || book.description != saved.description
+                        || book.tags != saved_tags
+                        // A saved rating of 0 is never applied below, so it is
+                        // never a change either.
+                        || (saved.rating > 0 && book.rating as i64 != saved.rating)
+                }
+            };
 
         let tags: Vec<String> = saved
             .tags
@@ -424,7 +483,7 @@ impl Catalog {
         let reading = self.restore_reading(book_id)?;
         self.flag_restore_pending(book_id, reading)?;
         Ok(RestoreOutcome {
-            metadata: true,
+            metadata: reported_edits,
             reading,
         })
     }

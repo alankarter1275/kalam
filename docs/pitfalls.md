@@ -3725,3 +3725,75 @@ case, where a copy shows as orphaned. Letting go of an orphan is safe — it
 removes a spare, never live data — so the approximation costs nothing, and the
 function documents the case it gets wrong.
 
+## §102 — the obvious fix for a lying message would have destroyed real work
+
+Two defects came out of the audit of the keep/restore work. Both were reported,
+and the owner said "fix them". The first one had a trap in it.
+
+**The message.** `import_summary` said "N kept your earlier metadata edits".
+Every deleted book got a row in `metadata_overrides`, because `delete_book_single`
+called `remember_overrides` unconditionally, and `restore_overrides` returned
+`metadata: true` whenever it found a row at all. So the count was really "how many
+books came back", not "how many books had edits".
+
+**The obvious fix, and why it is wrong.** Make the delete-time capture
+conditional: only refresh a row that already exists, since every genuine edit path
+calls `remember_overrides` itself. A grep confirms ten call sites —
+`update_book_metadata`, `add_book_tag`, `remove_book_tag`, `set_cover_name`,
+`set_book_rating`, `refresh_renamed_author_books`, and four in `tags.rs`. That
+list looks complete.
+
+It is not. Scanning for `UPDATE books` statements that touch a metadata column
+instead of scanning for callers of the stash turns up four more writers that never
+stash at all: `set_book_series`, `apply_comic_series_metadata`,
+`update_comic_series_details` and `set_book_file_names`. One of them is reached
+from `src/pages/comic_series_metadata.rs` — a page whose whole purpose is editing
+metadata by hand. Under the conditional capture, editing a comic series and then
+deleting it would have thrown the edit away silently, because no row existed to
+refresh.
+
+**Ask the database what it writes, not the function what it calls.** Grepping for
+the callers of the safety net finds the paths that were designed to use it. It
+cannot find the paths that were written before it existed and never updated. The
+unconditional capture at delete time is exactly the net that catches those, so
+removing it trades a wrong message for lost work — a bad trade, and one that no
+test in the suite would have caught, since no test deletes a book whose only edit
+came through the comic series editor.
+
+**The fix that was applied instead.** Keep capturing everything, and stop letting
+the capture decide what gets reported. `metadata_overrides` gains a `hand_edited`
+column: the ten genuine edit paths mark it, the delete-time capture does not, and
+the upsert keeps it with `MAX(metadata_overrides.hand_edited, excluded.hand_edited)`
+so a later delete cannot erase an earlier edit. `restore_overrides` then reports
+`hand_edited != 0` **or** the saved values differ from what the file just
+produced. The second half is what covers the four writers that never stash: their
+work still comes back, and it is still reported, without anyone having to find
+them all first.
+
+The column was added with `add_column_if_missing` in the always-run part of
+`migrate()`, not behind a version gate, so existing libraries get it and fresh
+ones get it from `CREATE TABLE`. `SCHEMA_VERSION` stays at 23, the same precedent
+as `books.restore_pending`.
+
+**Tests that assert the wrong thing survive a wrong implementation.** Two tests in
+`reading_stash.rs` re-seed a book under a *different* title and then force its
+`file_hash` back to the original, as a shortcut for re-importing a file. That
+shortcut makes the stashed metadata genuinely differ from the fresh import, so
+those tests report an edit no reader made. They are not wrong — they test the
+reading half — but they cannot test the metadata claim, and one of them had a
+comment asserting that the over-claim was expected behaviour. A new test re-seeds
+under the *same* title, which is what a real re-import does, and that is the only
+shape that can tell the two cases apart.
+
+**The second defect was straightforward by comparison.** The hover card's remove
+button sent `BookFloatMsg::Remove`, which deleted the book on the spot while
+quietly putting every note and mark aside. Three other places — the book page, the
+bulk delete, the PDF reader — ask first. The hover card is the easiest button in
+the app to hit by accident and was the one place that asked nothing. It now sends
+`ConfirmRemove`, which opens the same `delete_book_dialog`, and the deletion moved
+to `Remove(ReadingKinds)` calling `delete_book_keeping`.
+
+`remote_detail.rs` has a similar-looking call that was deliberately left alone: it
+replaces a stale download with a fresh copy of the same book, which is internal
+housekeeping rather than a reader asking to lose a book.
+

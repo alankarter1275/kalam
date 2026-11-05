@@ -1203,11 +1203,12 @@ mod tests {
             )
             .unwrap();
         }
-        // `outcome.metadata` is deliberately not asserted here. Deleting a book
-        // remembers its metadata unconditionally, edited or not, so a re-import
-        // reports a metadata restore for every book that was ever deleted. The
-        // two halves are therefore not mutually exclusive, and the pending flag
-        // has to key off `reading` alone -- which is what this asserts.
+        // `outcome.metadata` is deliberately not asserted here. This book is
+        // re-seeded under a different title, so the stashed metadata genuinely
+        // does differ from what the re-import produced and is reported as kept.
+        // A realistic re-import -- same file, same title -- reports nothing; see
+        // `a_delete_of_an_unedited_book_claims_no_metadata_edits`. What
+        // matters here is that the pending flag keys off `reading` alone.
         let outcome = cat.restore_overrides(read_again).unwrap();
         assert!(outcome.reading);
         assert!(

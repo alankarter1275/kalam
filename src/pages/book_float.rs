@@ -29,7 +29,7 @@
 //!
 //! See `docs/pitfalls.md` §3 and §4.
 
-use crate::db::Catalog;
+use crate::db::{Catalog, ReadingKinds};
 use crate::models::Book;
 use crate::pages::metadata_editor::open_metadata_editor;
 use crate::service::{BookDetailSnapshot, LibraryService};
@@ -49,6 +49,7 @@ use crate::widgets::book_row::{
     cache_decoded_cover, cover_widget_deferred, invalidate_cover_cache,
 };
 use crate::widgets::charts::star_picker;
+use crate::widgets::reading_choice::delete_book_dialog;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -126,7 +127,11 @@ pub enum BookFloatMsg {
     Read,
     OpenInBubble,
     OpenAuthor(String),
-    Remove,
+    /// The remove button was clicked. Nothing is deleted yet: the reader is
+    /// asked first, the same question the book page and the PDF reader ask.
+    ConfirmRemove,
+    /// The reader answered, and this is what they chose to keep.
+    Remove(ReadingKinds),
     ToggleReadingList,
     ToggleFinished,
     SetRating(u8),
@@ -666,7 +671,7 @@ impl Component for BookFloatModel {
                             set_valign: gtk::Align::Center,
                             set_vexpand: false,
                             set_tooltip_text: Some("Remove"),
-                            connect_clicked => BookFloatMsg::Remove,
+                            connect_clicked => BookFloatMsg::ConfirmRemove,
                         },
                     },
                 },
@@ -788,7 +793,29 @@ impl Component for BookFloatModel {
             BookFloatMsg::OpenAuthor(name) => {
                 sender.output(BookFloatOut::OpenAuthor { name }).ok();
             }
-            BookFloatMsg::Remove => {
+            BookFloatMsg::ConfirmRemove => {
+                if let Some(book) = &self.book {
+                    let title = book.title.clone();
+                    let s = sender.input_sender().clone();
+                    // Not `confirmation_dialog`: this question carries a
+                    // checkbox plus a link to five finer choices, so it needs
+                    // the shell the book page and the reader already use. One
+                    // click here used to remove the book outright and keep
+                    // everything aside without ever saying so -- the same
+                    // question is asked in three other places, and the hover
+                    // card was the one that skipped it.
+                    let dialog = delete_book_dialog(root, &title, move |keep| {
+                        let _ = s.send(BookFloatMsg::Remove(keep));
+                    });
+                    if dialog.is_none() {
+                        crate::notify::error(
+                            "Could not remove the book",
+                            "The confirmation dialog could not be opened.",
+                        );
+                    }
+                }
+            }
+            BookFloatMsg::Remove(keep) => {
                 if let Some(book) = &self.book {
                     // Drop the cached texture on the main thread (it is a
                     // GTK texture cache) before the worker removes the book
@@ -804,7 +831,9 @@ impl Component for BookFloatModel {
                     // other, and the panel must not block on it (2.20).
                     crate::tasks::spawn(
                         format!("Deleting {title}"),
-                        move |_reporter| catalog.delete_book(id).map_err(|e| e.to_string()),
+                        move |_reporter| {
+                            catalog.delete_book_keeping(id, keep).map_err(|e| e.to_string())
+                        },
                         |_| {},
                         move |res| {
                             let _ = s.send(BookFloatMsg::RemoveDone { id, title, res });

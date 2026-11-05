@@ -1365,6 +1365,10 @@ impl Catalog {
                 tags         TEXT,
                 rating       INTEGER,
                 cover_name   TEXT,
+                -- Whether the reader ever edited this book by hand. A delete
+                -- captures the metadata of every removed book, so the row alone
+                -- cannot say an edit happened; see `restore_overrides`.
+                hand_edited  INTEGER NOT NULL DEFAULT 0,
                 updated_at   TEXT NOT NULL
             );
 
@@ -1696,6 +1700,15 @@ impl Catalog {
             "author_profiles",
             "manual_fields_json",
             "TEXT NOT NULL DEFAULT '[]'",
+        )?;
+        // Existing rows default to 0, which reads as "not known to be an edit".
+        // Nothing is lost by that: `restore_overrides` also compares the saved
+        // values against the fresh import, so a real change is still reported.
+        add_column_if_missing(
+            &conn,
+            "metadata_overrides",
+            "hand_edited",
+            "INTEGER NOT NULL DEFAULT 0",
         )?;
 
         // v22: fetched comic-series metadata and its hand-edited
@@ -2471,9 +2484,13 @@ impl Catalog {
             Some(b) => b,
             None => return Ok(()),
         };
-        // Capture any hand-edited metadata first: the row is about to go, and
-        // re-importing the same file should not lose your work.
-        let _ = self.remember_overrides(id);
+        // Capture the metadata first: the row is about to go, and re-importing
+        // the same file should not lose your work. This runs for every deleted
+        // book, edited or not, and it has to -- not every edit path stashes on
+        // its own (the comic series editor does not), so making the capture
+        // conditional would lose real work. What the capture must not do is
+        // decide what gets *reported* later; see `restore_overrides`.
+        let _ = self.capture_overrides_before_delete(id);
         // And the reading data, which the cascade below destroys and which
         // cannot be derived from the file again: the place in the book, the
         // bookmarks, the highlights, the PDF ink, the shelf it sat on.
@@ -4145,6 +4162,44 @@ mod tests {
         let _ = std::fs::remove_dir_all(&fresh_dir);
         let _ = std::fs::remove_dir_all(&dir);
         let _ = cat.forget_overrides(id);
+    }
+
+    /// The import summary tells the reader how many books "kept your earlier
+    /// metadata edits", and that count comes from `RestoreOutcome::metadata`. A
+    /// delete used to stash metadata for every book and report all of it as an
+    /// edit on the way back, so the claim was made for books nobody had touched.
+    /// Re-seeding under the same title is what a real re-import does: same file,
+    /// same fingerprint, same metadata.
+    #[test]
+    fn a_delete_of_an_unedited_book_claims_no_metadata_edits() {
+        let cat = Catalog::open_in_memory().unwrap();
+
+        // Read but never edited: the position comes back, the claim does not.
+        let plain = seed(&cat, "Plain", "x", &[]);
+        cat.set_reading_progress(plain, 3, 0.5, 10).unwrap();
+        cat.delete_book(plain).unwrap();
+
+        let plain_again = seed(&cat, "Plain", "x", &[]);
+        let outcome = cat.restore_overrides(plain_again).unwrap();
+        assert!(outcome.reading, "the reading position still comes back");
+        assert!(
+            !outcome.metadata,
+            "nothing was ever edited, so no edit can have been kept"
+        );
+        assert_eq!(cat.get_book(plain_again).unwrap().unwrap().title, "Plain");
+
+        // Edited by hand: the capture marks it, and the rename comes back.
+        let edited = seed(&cat, "Edited", "x", &[]);
+        cat.update_book_metadata(edited, "Renamed", "x", None, 0.0, "", "", "", &[])
+            .unwrap();
+        cat.delete_book(edited).unwrap();
+
+        let edited_again = seed(&cat, "Edited", "x", &[]);
+        assert!(
+            cat.restore_overrides(edited_again).unwrap().metadata,
+            "a real edit is still remembered across the delete"
+        );
+        assert_eq!(cat.get_book(edited_again).unwrap().unwrap().title, "Renamed");
     }
 
     #[test]

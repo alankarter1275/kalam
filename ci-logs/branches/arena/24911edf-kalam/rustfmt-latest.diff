@@ -1,2 +1,32 @@
-clean
---- run 41781038096 ---
+diff --git a/src/db.rs b/src/db.rs
+index 19baa2a..09cd0ec 100644
+--- a/src/db.rs
++++ b/src/db.rs
+@@ -4199,7 +4199,10 @@ mod tests {
+             cat.restore_overrides(edited_again).unwrap().metadata,
+             "a real edit is still remembered across the delete"
+         );
+-        assert_eq!(cat.get_book(edited_again).unwrap().unwrap().title, "Renamed");
++        assert_eq!(
++            cat.get_book(edited_again).unwrap().unwrap().title,
++            "Renamed"
++        );
+     }
+ 
+     #[test]
+diff --git a/src/pages/book_float.rs b/src/pages/book_float.rs
+index 7d010f5..654894f 100644
+--- a/src/pages/book_float.rs
++++ b/src/pages/book_float.rs
+@@ -832,7 +832,9 @@ impl Component for BookFloatModel {
+                     crate::tasks::spawn(
+                         format!("Deleting {title}"),
+                         move |_reporter| {
+-                            catalog.delete_book_keeping(id, keep).map_err(|e| e.to_string())
++                            catalog
++                                .delete_book_keeping(id, keep)
++                                .map_err(|e| e.to_string())
+                         },
+                         |_| {},
+                         move |res| {
+--- run 42049081015 ---

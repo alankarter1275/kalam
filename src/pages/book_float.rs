@@ -1331,32 +1331,59 @@ mod tests {
     #[test]
     fn a_description_is_stripped_of_markup_and_trimmed() {
         assert_eq!(clean_description(&float_book(0, 0, "Plain")), "Plain");
-        assert_eq!(clean_description(&float_book(0, 0, "<p>Hello</p>")), "Hello");
+        assert_eq!(
+            clean_description(&float_book(0, 0, "<p>Hello</p>")),
+            "Hello"
+        );
     }
 
     #[test]
     fn an_empty_description_says_so_instead_of_leaving_a_gap() {
         assert_eq!(clean_description(&float_book(0, 0, "")), "No description.");
-        assert_eq!(clean_description(&float_book(0, 0, "   ")), "No description.");
-        assert_eq!(clean_description(&float_book(0, 0, "<p></p>")), "No description.");
+        assert_eq!(
+            clean_description(&float_book(0, 0, "   ")),
+            "No description."
+        );
+        assert_eq!(
+            clean_description(&float_book(0, 0, "<p></p>")),
+            "No description."
+        );
     }
 
     #[test]
     fn the_location_line_names_the_chapter_when_one_is_known() {
         // The stored chapter is zero-based; the reader counts from one.
-        assert_eq!(progress_location_text(Some((2, 0.5)), &float_book(40, 0, "")), "Ch. 3");
-        assert_eq!(progress_location_text(Some((0, 0.0)), &float_book(1, 0, "")), "Ch. 1");
+        assert_eq!(
+            progress_location_text(Some((2, 0.5)), &float_book(40, 0, "")),
+            "Ch. 3"
+        );
+        assert_eq!(
+            progress_location_text(Some((0, 0.0)), &float_book(1, 0, "")),
+            "Ch. 1"
+        );
     }
 
     #[test]
     fn a_finished_book_says_finished_whatever_the_chapter() {
-        assert_eq!(progress_location_text(Some((2, 0.5)), &float_book(100, 0, "")), "Finished");
-        assert_eq!(progress_location_text(None, &float_book(100, 0, "")), "Finished");
+        assert_eq!(
+            progress_location_text(Some((2, 0.5)), &float_book(100, 0, "")),
+            "Finished"
+        );
+        assert_eq!(
+            progress_location_text(None, &float_book(100, 0, "")),
+            "Finished"
+        );
     }
 
     #[test]
     fn without_a_chapter_the_location_falls_back_to_the_percentage() {
-        assert_eq!(progress_location_text(None, &float_book(40, 0, "")), "In progress");
-        assert_eq!(progress_location_text(None, &float_book(0, 0, "")), "Not started");
+        assert_eq!(
+            progress_location_text(None, &float_book(40, 0, "")),
+            "In progress"
+        );
+        assert_eq!(
+            progress_location_text(None, &float_book(0, 0, "")),
+            "Not started"
+        );
     }
 }

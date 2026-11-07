@@ -611,7 +611,10 @@ mod tests {
 
     #[test]
     fn average_blurb_follows_the_minute_bands() {
-        assert_eq!(avg_blurb(0), "No sessions logged yet — open a book to start tracking.");
+        assert_eq!(
+            avg_blurb(0),
+            "No sessions logged yet — open a book to start tracking."
+        );
         assert_eq!(avg_blurb(1), "Short and steady. Every page counts.");
         assert_eq!(avg_blurb(14), "Short and steady. Every page counts.");
         assert_eq!(avg_blurb(15), "A solid daily habit. Keep the momentum!");
@@ -629,12 +632,24 @@ mod tests {
 
     #[test]
     fn finished_blurb_checks_the_total_before_it_checks_the_month() {
-        assert_eq!(finished_blurb(0, 0), "Finish your first book to start the count.");
+        assert_eq!(
+            finished_blurb(0, 0),
+            "Finish your first book to start the count."
+        );
         // The zero total wins even when the month has entries, because the
         // first branch never looks at `last_30`.
-        assert_eq!(finished_blurb(0, 4), "Finish your first book to start the count.");
-        assert_eq!(finished_blurb(9, 0), "Nothing finished this month — pick one up again?");
-        assert_eq!(finished_blurb(9, 4), "4 finished in the last 30 days. Great progress!");
+        assert_eq!(
+            finished_blurb(0, 4),
+            "Finish your first book to start the count."
+        );
+        assert_eq!(
+            finished_blurb(9, 0),
+            "Nothing finished this month — pick one up again?"
+        );
+        assert_eq!(
+            finished_blurb(9, 4),
+            "4 finished in the last 30 days. Great progress!"
+        );
     }
 
     #[test]

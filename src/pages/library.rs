@@ -1001,3 +1001,42 @@ fn section(
     wrap.append(&content);
     wrap
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recent_days_are_counted_back_from_today() {
+        assert_eq!(relative_days(&crate::db::iso_days_ago(0)), "today");
+        assert_eq!(relative_days(&crate::db::iso_days_ago(1)), "yesterday");
+        assert_eq!(relative_days(&crate::db::iso_days_ago(2)), "2 days ago");
+        assert_eq!(relative_days(&crate::db::iso_days_ago(40)), "40 days ago");
+    }
+
+    #[test]
+    fn a_day_beyond_ninety_falls_back_to_the_dated_form() {
+        // The scan stops at 90, so anything older is handed to `pretty_day`.
+        let old = crate::db::iso_days_ago(91);
+        assert_eq!(relative_days(&old), pretty_day(&old));
+        assert_eq!(relative_days("1999-12-31"), "31 Dec 1999");
+    }
+
+    #[test]
+    fn a_string_too_short_to_be_a_date_is_handed_back() {
+        assert_eq!(relative_days(""), "");
+        assert_eq!(relative_days("1999-12"), "1999-12");
+    }
+
+    #[test]
+    fn a_feed_stamp_shows_the_day_and_the_clock_together() {
+        assert_eq!(feed_time("1999-12-31T14:30:00"), "31 Dec 1999 · 14:30");
+        assert_eq!(feed_time("1999-12-31 14:30"), "31 Dec 1999 · 14:30");
+    }
+
+    #[test]
+    fn a_feed_stamp_with_no_clock_shows_the_day_alone() {
+        assert_eq!(feed_time("1999-12-31"), "31 Dec 1999");
+        assert_eq!(feed_time(""), "");
+    }
+}

@@ -604,3 +604,70 @@ fn short_month(ym: &str) -> String {
         .unwrap_or("")
         .to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn average_blurb_follows_the_minute_bands() {
+        assert_eq!(avg_blurb(0), "No sessions logged yet — open a book to start tracking.");
+        assert_eq!(avg_blurb(1), "Short and steady. Every page counts.");
+        assert_eq!(avg_blurb(14), "Short and steady. Every page counts.");
+        assert_eq!(avg_blurb(15), "A solid daily habit. Keep the momentum!");
+        assert_eq!(avg_blurb(44), "A solid daily habit. Keep the momentum!");
+        assert_eq!(avg_blurb(45), "Deep focus sessions — impressive stamina.");
+    }
+
+    #[test]
+    fn a_negative_average_falls_through_to_the_top_band() {
+        // A `match` on i64 has no arm below zero, so a negative average lands
+        // in the catch-all. It cannot happen from real data; this pins what the
+        // code does rather than pretending the case cannot arise.
+        assert_eq!(avg_blurb(-1), "Deep focus sessions — impressive stamina.");
+    }
+
+    #[test]
+    fn finished_blurb_checks_the_total_before_it_checks_the_month() {
+        assert_eq!(finished_blurb(0, 0), "Finish your first book to start the count.");
+        // The zero total wins even when the month has entries, because the
+        // first branch never looks at `last_30`.
+        assert_eq!(finished_blurb(0, 4), "Finish your first book to start the count.");
+        assert_eq!(finished_blurb(9, 0), "Nothing finished this month — pick one up again?");
+        assert_eq!(finished_blurb(9, 4), "4 finished in the last 30 days. Great progress!");
+    }
+
+    #[test]
+    fn streak_blurb_only_celebrates_a_record_longer_than_one_day() {
+        assert_eq!(streak_blurb(0, 12), "Read today to start a new streak.");
+        assert_eq!(streak_blurb(7, 7), "This is your longest streak yet!");
+        assert_eq!(streak_blurb(8, 7), "This is your longest streak yet!");
+        assert_eq!(streak_blurb(3, 12), "Longest so far: 12 days. Keep going!");
+        // A first-ever one-day streak ties the record but is not celebrated,
+        // because `current > 1` is part of the condition.
+        assert_eq!(streak_blurb(1, 1), "Longest so far: 1 days. Keep going!");
+    }
+
+    #[test]
+    fn a_duration_never_reads_as_zero_minutes() {
+        assert_eq!(human_duration(0), "—");
+        assert_eq!(human_duration(-30), "—");
+        // Under a minute still reads "1m": `minutes.max(1)`.
+        assert_eq!(human_duration(1), "1m");
+        assert_eq!(human_duration(59), "1m");
+        assert_eq!(human_duration(60), "1m");
+        assert_eq!(human_duration(3599), "59m");
+        assert_eq!(human_duration(3600), "1h");
+        assert_eq!(human_duration(3660), "1h 1m");
+        assert_eq!(human_duration(7200), "2h");
+    }
+
+    #[test]
+    fn short_day_takes_the_day_digits_or_hands_the_input_back() {
+        assert_eq!(short_day("2026-11-08"), "08");
+        assert_eq!(short_day("2026-11-08T21:40:00"), "08");
+        // Too short for the slice, so the whole string comes back unchanged.
+        assert_eq!(short_day("2026-11"), "2026-11");
+        assert_eq!(short_day(""), "");
+    }
+}

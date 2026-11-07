@@ -516,3 +516,102 @@ fn author_card(entry: &AuthorIndexEntry, sender: &ComponentSender<AuthorsModel>)
     });
     button
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `AuthorIndexEntry` derives `Default`, so a case sets only the field it
+    /// is about and leaves the other eleven alone.
+    fn entry(sort_name: &str) -> AuthorIndexEntry {
+        AuthorIndexEntry {
+            sort_name: sort_name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_group_letter_is_the_first_letter_uppercased() {
+        assert_eq!(group_letter(&entry("Tolkien")), "T");
+        assert_eq!(group_letter(&entry("tolkien")), "T");
+        assert_eq!(group_letter(&entry("  Adams")), "A");
+        assert_eq!(group_letter(&entry("éluard")), "É");
+    }
+
+    #[test]
+    fn a_particle_is_not_skipped_when_grouping() {
+        // The scan takes the first alphabetic character it meets, so this
+        // groups under D rather than T. Pinned as the behaviour the index has:
+        // a redesign would otherwise change it without anyone deciding to.
+        assert_eq!(group_letter(&entry("de Tocqueville")), "D");
+    }
+
+    #[test]
+    fn a_name_with_no_letter_falls_into_the_hash_group() {
+        assert_eq!(group_letter(&entry("")), "#");
+        assert_eq!(group_letter(&entry("1234")), "#");
+        assert_eq!(group_letter(&entry("...")), "#");
+    }
+
+    #[test]
+    fn the_lifespan_reads_all_four_shapes() {
+        let mut e = entry("Tolkien");
+        e.birth_year = Some(1892);
+        e.death_year = Some(1973);
+        assert_eq!(lifespan(&e), Some("1892–1973".to_string()));
+
+        e.death_year = None;
+        assert_eq!(lifespan(&e), Some("Born 1892".to_string()));
+
+        e.birth_year = None;
+        e.death_year = Some(1973);
+        assert_eq!(lifespan(&e), Some("Died 1973".to_string()));
+
+        e.death_year = None;
+        assert_eq!(lifespan(&e), None);
+    }
+
+    #[test]
+    fn the_detail_line_prefers_a_bio_and_collapses_its_spaces() {
+        let mut e = entry("Tolkien");
+        e.bio = "  Wrote   about  dragons. ".to_string();
+        assert_eq!(detail_line(&e), "Wrote about dragons.");
+    }
+
+    #[test]
+    fn with_no_bio_the_detail_line_shows_up_to_three_subjects() {
+        let mut e = entry("Tolkien");
+        e.top_subjects = vec![
+            "Fantasy".to_string(),
+            "Myth".to_string(),
+            "War".to_string(),
+            "Language".to_string(),
+        ];
+        assert_eq!(detail_line(&e), "Fantasy · Myth · War");
+    }
+
+    #[test]
+    fn blank_subjects_are_dropped_before_the_three_are_taken() {
+        let mut e = entry("Tolkien");
+        e.top_subjects = vec!["  ".to_string(), "Myth".to_string(), String::new()];
+        assert_eq!(detail_line(&e), "Myth");
+    }
+
+    #[test]
+    fn with_no_bio_or_subjects_an_alias_is_offered() {
+        let mut e = entry("Ann Leckie");
+        e.name = "Ann Leckie".to_string();
+        e.aliases = vec!["A. Leckie".to_string()];
+        assert_eq!(detail_line(&e), "Also as A. Leckie");
+    }
+
+    #[test]
+    fn an_alias_that_only_respells_the_name_is_not_offered() {
+        // Both normalise to the same key, so there is nothing new to tell the
+        // reader and the line comes out empty rather than redundant.
+        let mut e = entry("Ann Leckie");
+        e.name = "Ann Leckie".to_string();
+        e.aliases = vec!["ann  leckie".to_string()];
+        assert_eq!(detail_line(&e), "");
+    }
+}

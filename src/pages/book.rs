@@ -3553,3 +3553,80 @@ pub fn build_shelves_panel(
 
     root
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_whole_series_index_loses_its_decimal_point() {
+        assert_eq!(format_series_index(3.0), "3");
+        assert_eq!(format_series_index(0.0), "0");
+        assert_eq!(format_series_index(12.0), "12");
+        assert_eq!(format_series_index(-1.0), "-1");
+    }
+
+    #[test]
+    fn a_fractional_series_index_keeps_its_fraction() {
+        assert_eq!(format_series_index(2.5), "2.5");
+        assert_eq!(format_series_index(1.25), "1.25");
+    }
+
+    #[test]
+    fn a_title_within_the_budget_is_left_alone() {
+        assert_eq!(shorten_title("Hello", 10), "Hello");
+        assert_eq!(shorten_title("Hello", 5), "Hello");
+        assert_eq!(shorten_title("", 5), "");
+    }
+
+    #[test]
+    fn a_long_title_is_cut_to_the_budget_and_gains_an_ellipsis() {
+        // One character of the budget pays for the ellipsis itself.
+        assert_eq!(shorten_title("Hello", 4), "Hel…");
+        assert_eq!(shorten_title("Hello", 2), "H…");
+        assert_eq!(shorten_title("Hello", 1), "…");
+        assert_eq!(shorten_title("Hello", 0), "…");
+    }
+
+    #[test]
+    fn the_cut_counts_characters_and_not_bytes() {
+        assert_eq!(shorten_title("日本語タイトル", 4), "日本語…");
+    }
+
+    #[test]
+    fn a_cut_that_would_end_in_a_space_ends_cleanly() {
+        assert_eq!(shorten_title("Hi  there", 5), "Hi…");
+    }
+
+    #[test]
+    fn a_year_is_the_first_four_digits_inside_a_plausible_range() {
+        assert_eq!(extract_year("2012"), Some("2012".to_string()));
+        assert_eq!(extract_year("February 15, 2012"), Some("2012".to_string()));
+        assert_eq!(extract_year("1900"), Some("1900".to_string()));
+        assert_eq!(extract_year("2030"), Some("2030".to_string()));
+        // Out of range at first, so the scan carries on and finds the next one.
+        assert_eq!(extract_year("1850 and 1950"), Some("1950".to_string()));
+    }
+
+    #[test]
+    fn no_year_comes_out_of_a_short_or_out_of_range_string() {
+        assert_eq!(extract_year(""), None);
+        assert_eq!(extract_year("abc"), None);
+        assert_eq!(extract_year("1899"), None);
+        assert_eq!(extract_year("2031"), None);
+        // Read four digits at a time, so a longer run yields nothing in range.
+        assert_eq!(extract_year("12345678"), None);
+    }
+
+    #[test]
+    fn a_file_size_steps_up_at_each_unit() {
+        assert_eq!(human_size(0), "0 B");
+        assert_eq!(human_size(1023), "1023 B");
+        assert_eq!(human_size(1024), "1 KB");
+        assert_eq!(human_size(2048), "2 KB");
+        assert_eq!(human_size(1024 * 1024), "1.0 MB");
+        assert_eq!(human_size(1536 * 1024), "1.5 MB");
+        assert_eq!(human_size(1024 * 1024 * 1024), "1.0 GB");
+        assert_eq!(human_size(3 * 1024 * 1024 * 1024), "3.0 GB");
+    }
+}

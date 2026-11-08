@@ -150,7 +150,9 @@ impl RailTip {
         let extra_in = extra.clone();
         motion.connect_enter(move |_, _, _| {
             tip.cancel();
-            let tip = tip.clone();
+            // A second name, not a shadow: the timeout closure moves what it
+            // is given, and the line storing its id still needs the original.
+            let shown_tip = tip.clone();
             let item = item.clone();
             let shown = shown.clone();
             let extra_in = extra_in.clone();
@@ -159,8 +161,8 @@ impl RailTip {
                 move || {
                     // Clear the slot first: the source has fired, and removing
                     // a spent id makes glib complain loudly.
-                    *tip.pending.borrow_mut() = None;
-                    tip.show_for(&item, &shown, action, extra_in.as_ref());
+                    *shown_tip.pending.borrow_mut() = None;
+                    shown_tip.show_for(&item, &shown, action, extra_in.as_ref());
                 },
             );
             *tip.pending.borrow_mut() = Some(id);
@@ -221,13 +223,16 @@ impl RailTip {
         // until it has been shown once, and a tip that jumps a line lower on
         // its second appearance is a tip nobody trusts.
         let (_, card_h, _, _) = self.card.measure(gtk::Orientation::Vertical, -1);
-        let placed = button.translate_coordinates(&self.host, 0.0, 0.0);
-        if let Some((x, y)) = placed {
+        // `compute_bounds`, not `translate_coordinates`, which GTK deprecated
+        // in 4.12. It gives the item's whole rectangle in the overlay's
+        // coordinates in one call, so the card is placed against the item as
+        // laid out rather than as requested.
+        if let Some(rect) = button.compute_bounds(&self.host) {
             let (start, top) = margins(
-                x,
-                y,
-                button.width() as f64,
-                button.height() as f64,
+                rect.x() as f64,
+                rect.y() as f64,
+                rect.width() as f64,
+                rect.height() as f64,
                 card_h as f64,
             );
             self.card.set_margin_start(start);

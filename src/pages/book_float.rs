@@ -29,7 +29,7 @@
 //!
 //! See `docs/pitfalls.md` §3 and §4.
 
-use crate::db::Catalog;
+use crate::db::{Catalog, ReadingKinds};
 use crate::models::Book;
 use crate::pages::metadata_editor::open_metadata_editor;
 use crate::service::{BookDetailSnapshot, LibraryService};
@@ -49,6 +49,7 @@ use crate::widgets::book_row::{
     cache_decoded_cover, cover_widget_deferred, invalidate_cover_cache,
 };
 use crate::widgets::charts::star_picker;
+use crate::widgets::reading_choice::delete_book_dialog;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -126,7 +127,11 @@ pub enum BookFloatMsg {
     Read,
     OpenInBubble,
     OpenAuthor(String),
-    Remove,
+    /// The remove button was clicked. Nothing is deleted yet: the reader is
+    /// asked first, the same question the book page and the PDF reader ask.
+    ConfirmRemove,
+    /// The reader answered, and this is what they chose to keep.
+    Remove(ReadingKinds),
     ToggleReadingList,
     ToggleFinished,
     SetRating(u8),
@@ -666,7 +671,7 @@ impl Component for BookFloatModel {
                             set_valign: gtk::Align::Center,
                             set_vexpand: false,
                             set_tooltip_text: Some("Remove"),
-                            connect_clicked => BookFloatMsg::Remove,
+                            connect_clicked => BookFloatMsg::ConfirmRemove,
                         },
                     },
                 },
@@ -788,7 +793,29 @@ impl Component for BookFloatModel {
             BookFloatMsg::OpenAuthor(name) => {
                 sender.output(BookFloatOut::OpenAuthor { name }).ok();
             }
-            BookFloatMsg::Remove => {
+            BookFloatMsg::ConfirmRemove => {
+                if let Some(book) = &self.book {
+                    let title = book.title.clone();
+                    let s = sender.input_sender().clone();
+                    // Not `confirmation_dialog`: this question carries a
+                    // checkbox plus a link to five finer choices, so it needs
+                    // the shell the book page and the reader already use. One
+                    // click here used to remove the book outright and keep
+                    // everything aside without ever saying so -- the same
+                    // question is asked in three other places, and the hover
+                    // card was the one that skipped it.
+                    let dialog = delete_book_dialog(root, &title, move |keep| {
+                        let _ = s.send(BookFloatMsg::Remove(keep));
+                    });
+                    if dialog.is_none() {
+                        crate::notify::error(
+                            "Could not remove the book",
+                            "The confirmation dialog could not be opened.",
+                        );
+                    }
+                }
+            }
+            BookFloatMsg::Remove(keep) => {
                 if let Some(book) = &self.book {
                     // Drop the cached texture on the main thread (it is a
                     // GTK texture cache) before the worker removes the book
@@ -804,7 +831,11 @@ impl Component for BookFloatModel {
                     // other, and the panel must not block on it (2.20).
                     crate::tasks::spawn(
                         format!("Deleting {title}"),
-                        move |_reporter| catalog.delete_book(id).map_err(|e| e.to_string()),
+                        move |_reporter| {
+                            catalog
+                                .delete_book_keeping(id, keep)
+                                .map_err(|e| e.to_string())
+                        },
                         |_| {},
                         move |res| {
                             let _ = s.send(BookFloatMsg::RemoveDone { id, title, res });
@@ -1246,5 +1277,113 @@ fn chip(text: &str, class: &str) -> gtk::Label {
 fn clear_box(host: &gtk::Box) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::BookFormat;
+    use std::path::PathBuf;
+
+    /// `Book` has no `Default`, so its nineteen fields are spelled out once
+    /// here and each case varies only what it is actually about.
+    fn float_book(progress: u8, rating: u8, description: &str) -> Book {
+        Book {
+            id: 1,
+            uuid: "uuid-Test".to_string(),
+            title: "Test".to_string(),
+            authors: "Nobody".to_string(),
+            series: None,
+            description: description.to_string(),
+            format: BookFormat::Epub,
+            file_name: "book.epub".to_string(),
+            file_hash: "hash-Test".to_string(),
+            cover_name: None,
+            added_at: "2026-01-01".to_string(),
+            progress,
+            rating,
+            publisher: String::new(),
+            published: String::new(),
+            series_index: 0.0,
+            tags: Vec::new(),
+            cover_path: None,
+            file_path: PathBuf::from("book.epub"),
+        }
+    }
+
+    #[test]
+    fn a_blank_field_reads_as_a_dash_and_not_as_nothing() {
+        assert_eq!(blank_dash("Ursula"), "Ursula");
+        assert_eq!(blank_dash("  Ursula  "), "Ursula");
+        assert_eq!(blank_dash(""), "—");
+        assert_eq!(blank_dash("   "), "—");
+    }
+
+    #[test]
+    fn the_rating_reads_as_stars_out_of_five() {
+        assert_eq!(rating_text(&float_book(0, 0, "")), "Not rated yet");
+        assert_eq!(rating_text(&float_book(0, 1, "")), "0.5 / 5");
+        assert_eq!(rating_text(&float_book(0, 7, "")), "3.5 / 5");
+        assert_eq!(rating_text(&float_book(0, 10, "")), "5.0 / 5");
+    }
+
+    #[test]
+    fn a_description_is_stripped_of_markup_and_trimmed() {
+        assert_eq!(clean_description(&float_book(0, 0, "Plain")), "Plain");
+        assert_eq!(
+            clean_description(&float_book(0, 0, "<p>Hello</p>")),
+            "Hello"
+        );
+    }
+
+    #[test]
+    fn an_empty_description_says_so_instead_of_leaving_a_gap() {
+        assert_eq!(clean_description(&float_book(0, 0, "")), "No description.");
+        assert_eq!(
+            clean_description(&float_book(0, 0, "   ")),
+            "No description."
+        );
+        assert_eq!(
+            clean_description(&float_book(0, 0, "<p></p>")),
+            "No description."
+        );
+    }
+
+    #[test]
+    fn the_location_line_names_the_chapter_when_one_is_known() {
+        // The stored chapter is zero-based; the reader counts from one.
+        assert_eq!(
+            progress_location_text(Some((2, 0.5)), &float_book(40, 0, "")),
+            "Ch. 3"
+        );
+        assert_eq!(
+            progress_location_text(Some((0, 0.0)), &float_book(1, 0, "")),
+            "Ch. 1"
+        );
+    }
+
+    #[test]
+    fn a_finished_book_says_finished_whatever_the_chapter() {
+        assert_eq!(
+            progress_location_text(Some((2, 0.5)), &float_book(100, 0, "")),
+            "Finished"
+        );
+        assert_eq!(
+            progress_location_text(None, &float_book(100, 0, "")),
+            "Finished"
+        );
+    }
+
+    #[test]
+    fn without_a_chapter_the_location_falls_back_to_the_percentage() {
+        assert_eq!(
+            progress_location_text(None, &float_book(40, 0, "")),
+            "In progress"
+        );
+        assert_eq!(
+            progress_location_text(None, &float_book(0, 0, "")),
+            "Not started"
+        );
     }
 }

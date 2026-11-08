@@ -2039,6 +2039,27 @@ impl Component for AppModel {
                             &crate::pages::all_books::import_summary(&tally),
                         );
                     }
+                    // No All Books page to hand this to, but the question is
+                    // still owed: a shortcut import is something the reader
+                    // started, not a background scan, so it asks rather than
+                    // deferring to the first-open dialog. The window is right
+                    // here, and `ask_about_restored` is the same call the three
+                    // import pages make, so the wording cannot drift.
+                    //
+                    // Settling refreshes whichever page is showing, because the
+                    // books it lists may have just gained or lost their marks.
+                    if !tally.restored_books.is_empty() {
+                        let service = crate::service::LibraryService::new(self.catalog.clone());
+                        let s = sender.input_sender().clone();
+                        crate::pages::all_books::ask_about_restored(
+                            &widgets.content_host,
+                            &service,
+                            &tally.restored_books,
+                            move || {
+                                let _ = s.send(AppMsg::RefreshCurrentPage);
+                            },
+                        );
+                    }
                     let refresh_listing = matches!(
                         self.route,
                         Route::Module(

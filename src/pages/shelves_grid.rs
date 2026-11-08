@@ -194,11 +194,10 @@ fn summary_line(shelves: &[Shelf]) -> String {
         .filter(|s| s.kind == ShelfKind::Smart)
         .count();
     let manual = shelves.len() - smart;
-    format!(
-        "{} shelf{} · {manual} manual · {smart} smart",
-        shelves.len(),
-        if shelves.len() == 1 { "" } else { "es" }
-    )
+    let total = shelves.len();
+    // The plural is irregular: "shelf" + "es" would print "shelfes".
+    let noun = if total == 1 { "shelf" } else { "shelves" };
+    format!("{total} {noun} · {manual} manual · {smart} smart")
 }
 
 /// Surface read failures instead of rendering them as an empty shelf grid.
@@ -381,5 +380,55 @@ fn confirm_delete(anchor: &gtk::Box, shelf_name: &str, on_confirm: impl Fn() + '
             on_confirm();
             dialog.close();
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `Shelf` has no `Default`, so every field is filled in and only the
+    /// kind varies: the summary counts kinds and reads nothing else.
+    fn shelf_of(kind: ShelfKind) -> Shelf {
+        Shelf {
+            id: 1,
+            name: "Shelf".to_string(),
+            kind,
+            description: String::new(),
+            rules: String::new(),
+            position: 0,
+            created_at: String::new(),
+            updated_at: String::new(),
+            book_count: 0,
+        }
+    }
+
+    #[test]
+    fn an_empty_grid_explains_what_a_shelf_can_be() {
+        let got = summary_line(&[]);
+        assert_eq!(
+            got,
+            "Smart filters and manual collections — like Calibre virtual libraries."
+        );
+    }
+
+    #[test]
+    fn one_shelf_does_not_read_as_a_plural() {
+        let one = [shelf_of(ShelfKind::Manual)];
+        let got = summary_line(&one);
+        assert_eq!(got, "1 shelf · 1 manual · 0 smart");
+    }
+
+    #[test]
+    fn anything_not_smart_is_counted_as_manual() {
+        // The manual count is the total minus the smart count, so a shelf
+        // whose kind is ever unreadable lands in the manual column.
+        let shelves = [
+            shelf_of(ShelfKind::Smart),
+            shelf_of(ShelfKind::Manual),
+            shelf_of(ShelfKind::Smart),
+        ];
+        let got = summary_line(&shelves);
+        assert_eq!(got, "3 shelves · 1 manual · 2 smart");
     }
 }

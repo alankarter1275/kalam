@@ -525,3 +525,53 @@ fn status_line(running: &[TaskInfo], recent: &[FinishedTask]) -> String {
         n => format!("{n} tasks running. {} finished recently.", recent.len()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Neither task record derives `Default`, and the status line reads only
+    /// how many of each there are, so every field is a stand-in.
+    fn task_running() -> TaskInfo {
+        TaskInfo {
+            id: 1,
+            label: "Importing EPUBs".to_string(),
+            done: 0,
+            total: 0,
+            detail: String::new(),
+            items: Vec::new(),
+            hidden: false,
+        }
+    }
+
+    fn task_finished() -> FinishedTask {
+        FinishedTask {
+            id: 2,
+            label: "Importing EPUBs".to_string(),
+            cancelled: false,
+            failed: false,
+            detail: String::new(),
+            items: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn an_idle_panel_says_so_plainly() {
+        let got = status_line(&[], &[]);
+        assert_eq!(got, "Nothing running in the background.");
+    }
+
+    #[test]
+    fn the_running_count_picks_the_word_and_the_finished_count_follows() {
+        // One running reads "1 task"; two reads "2 tasks". The finished
+        // count is printed even when it is zero, so the sentence always has
+        // both halves.
+        let one = status_line(&[task_running()], &[]);
+        assert_eq!(one, "1 task running. 0 finished recently.");
+
+        let runs = [task_running(), task_running()];
+        let dones = [task_finished(), task_finished(), task_finished()];
+        let two = status_line(&runs, &dones);
+        assert_eq!(two, "2 tasks running. 3 finished recently.");
+    }
+}

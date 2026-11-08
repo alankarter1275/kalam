@@ -1,4 +1,4 @@
-use crate::db::Catalog;
+use crate::db::{Catalog, StashEntry};
 use crate::dict;
 use crate::paths::{catalog_db, data_dir, dictionaries_dir};
 use crate::service::{LibraryService, SettingsSnapshot};
@@ -16,6 +16,7 @@ pub enum SettingsTab {
     Reading,
     Libraries,
     DataExport,
+    RememberedData,
     BookFiles,
     WatchFolders,
     Dictionaries,
@@ -34,6 +35,7 @@ impl SettingsTab {
             Self::Reading => "reading",
             Self::Libraries => "libraries",
             Self::DataExport => "data-export",
+            Self::RememberedData => "remembered-data",
             Self::BookFiles => "book-files",
             Self::WatchFolders => "watch-folders",
             Self::Dictionaries => "dictionaries",
@@ -50,6 +52,7 @@ impl SettingsTab {
             Self::Reading,
             Self::Libraries,
             Self::DataExport,
+            Self::RememberedData,
             Self::BookFiles,
             Self::WatchFolders,
             Self::Dictionaries,
@@ -68,6 +71,7 @@ impl SettingsTab {
             Self::Reading => "Reading",
             Self::Libraries => "Libraries and storage",
             Self::DataExport => "Data and export",
+            Self::RememberedData => "Remembered data",
             Self::BookFiles => "Book files",
             Self::WatchFolders => "Watch folders",
             Self::Dictionaries => "Dictionaries",
@@ -90,6 +94,9 @@ impl SettingsTab {
                 "Every library has its own books and database. Settings and dictionaries are shared."
             }
             Self::DataExport => "Where Kalam keeps your data, and how to take it with you.",
+            Self::RememberedData => {
+                "Notes and marks kept from books you removed, in case the same file comes back."
+            }
             Self::BookFiles => "What Kalam may write inside your EPUB files.",
             Self::WatchFolders => "Folders Kalam checks for new books.",
             Self::Dictionaries => {
@@ -114,6 +121,7 @@ const PANE_GROUPS: &[(&str, &[SettingsTab])] = &[
         &[
             SettingsTab::Libraries,
             SettingsTab::DataExport,
+            SettingsTab::RememberedData,
             SettingsTab::BookFiles,
             SettingsTab::WatchFolders,
             SettingsTab::Dictionaries,
@@ -135,6 +143,12 @@ pub enum SettingsMsg {
     MoveDict(i64, i64),
     /// Bring back any removed packs shipped in the binary (decision 152).
     RestoreBundledDicts,
+    /// Let go of one rescue copy, named by the fingerprint it is filed under.
+    /// An orphaned copy has no book id left to go by, so the fingerprint is the
+    /// only handle on it.
+    ForgetStash(String),
+    /// Let go of every rescue copy — the pane's clear-all.
+    ForgetAllStash,
     Refresh,
     /// A library-list or backups change needs the disk reads redone:
     /// the FS worker runs again and `FsLoaded` rebuilds the panes
@@ -281,6 +295,14 @@ impl Component for SettingsPageModel {
                         add_css_class: "kalam-settings-pane",
                         #[watch]
                         set_visible: model.active_tab == SettingsTab::DataExport,
+                    },
+
+                    #[name = "remembered_content"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        add_css_class: "kalam-settings-pane",
+                        #[watch]
+                        set_visible: model.active_tab == SettingsTab::RememberedData,
                     },
 
                     #[name = "book_files_content"]
@@ -595,6 +617,39 @@ impl Component for SettingsPageModel {
                 );
                 request_snapshot(&self.service, &sender);
             }
+            SettingsMsg::ForgetStash(file_hash) => {
+                // One DELETE, so it stays inline like the dictionary removal
+                // beside it. What it drops is a spare, never the live data in a
+                // book that is still in the library.
+                match self.catalog.forget_stash_by_hash(&file_hash) {
+                    Ok(true) => crate::notify::success(
+                        "Let go",
+                        "That copy will not come back with the file again.",
+                    ),
+                    Ok(false) => {
+                        crate::notify::info("Already gone", "That copy was let go earlier.")
+                    }
+                    Err(err) => {
+                        crate::notify::error("Could not let go of the copy", &err.to_string())
+                    }
+                }
+                request_snapshot(&self.service, &sender);
+            }
+            SettingsMsg::ForgetAllStash => {
+                match self.catalog.forget_all_stash() {
+                    Ok(n) => crate::notify::success(
+                        "Let go of every copy",
+                        &format!(
+                            "{n} cop{} let go. Books still in your library are untouched.",
+                            if n == 1 { "y was" } else { "ies were" }
+                        ),
+                    ),
+                    Err(err) => {
+                        crate::notify::error("Could not let go of the copies", &err.to_string())
+                    }
+                }
+                request_snapshot(&self.service, &sender);
+            }
             SettingsMsg::MoveDict(id, delta) => {
                 if let Err(err) = self.catalog.move_dictionary_priority(id, delta) {
                     crate::notify::error("Could not reorder dictionaries", &err.to_string());
@@ -765,6 +820,7 @@ fn settings_fill_label(tab: SettingsTab) -> &'static str {
         SettingsTab::Reading => "settings_fill:reading",
         SettingsTab::Libraries => "settings_fill:libraries",
         SettingsTab::DataExport => "settings_fill:data_export",
+        SettingsTab::RememberedData => "settings_fill:remembered_data",
         SettingsTab::BookFiles => "settings_fill:book_files",
         SettingsTab::WatchFolders => "settings_fill:watch_folders",
         SettingsTab::Dictionaries => "settings_fill:dictionaries",
@@ -822,6 +878,10 @@ impl SettingsPageModel {
             SettingsTab::DataExport => {
                 clear_box(&widgets.data_content);
                 build_data_pane(&widgets.data_content, &self.catalog);
+            }
+            SettingsTab::RememberedData => {
+                clear_box(&widgets.remembered_content);
+                build_remembered_pane(&widgets.remembered_content, snap, sender);
             }
             SettingsTab::BookFiles => {
                 clear_box(&widgets.book_files_content);
@@ -906,6 +966,7 @@ use crate::widgets::dialog::{
 use crate::widgets::dropdown::{dropdown, DropdownOption};
 use crate::widgets::in_app_dialog::DialogExit;
 use crate::widgets::pill_button::{boxed_ghost_button, ghost_button, icon_button, primary_button};
+use crate::widgets::reading_choice::describe_cleared;
 use crate::widgets::segmented::{segmented_control, SegmentedSize};
 
 /// Append one outlined section (design-system sections 14 and 41) to
@@ -2547,6 +2608,189 @@ fn cache_row(rows: &gtk::Box) {
     row.append(&clear);
 }
 
+/// What one rescue copy holds, in the same words a clear uses.
+///
+/// Reusing `describe_cleared` rather than writing a second description matters:
+/// the panel and the toast that follows a clear are talking about the same five
+/// numbers, and two phrasings of one fact eventually disagree.
+fn stash_contents_line(entry: &StashEntry) -> String {
+    let held = describe_cleared(entry.contents);
+    if !entry.placement {
+        return held;
+    }
+    // Shelf and reading-list placement is always put back and never offered as
+    // a choice, so it is not counted above — but a copy holding only that is
+    // not empty, and "nothing" would be a lie about it.
+    if entry.contents.is_empty() {
+        "Where it was shelved".to_string()
+    } else {
+        format!("{held}, and where it was shelved")
+    }
+}
+
+/// The date a copy was filed, shortened the way the rest of the app shortens
+/// dates. The stored stamp is a full UTC instant; a row only has room for a day.
+fn stash_day(entry: &StashEntry) -> String {
+    let stamp = entry.updated_at.as_str();
+    crate::pages::history::pretty_day(stamp.get(..10).unwrap_or(stamp))
+}
+
+/// The Remembered data pane: every rescue copy on file, split by whether the
+/// book it belongs to is still in the library.
+///
+/// Both halves are here on purpose. A copy whose book is gone is the familiar
+/// case — it is what makes a later import of the same file bring the marks
+/// back. A copy whose book is *still there* is less obvious and easy to mistake
+/// for a bug: a restore deliberately does not prune the stash, so after a
+/// remove-and-reimport the book has its data back and the copy is still filed,
+/// which is what makes a second remove-and-reimport work. Hiding those would
+/// leave the reader unable to let go of one.
+///
+/// Letting go of a copy never touches live data. It removes the safety net:
+/// after it, removing the book and importing the same file again starts clean.
+fn build_remembered_pane(
+    host: &gtk::Box,
+    snap: &SettingsSnapshot,
+    sender: &ComponentSender<SettingsPageModel>,
+) {
+    if let Some(err) = snap.stash_error.as_deref() {
+        let rows = pane_section(host, "Remembered data");
+        pane_row_alert(&rows, "Could not read the list", err);
+        return;
+    }
+
+    if snap.stash.is_empty() {
+        let rows = pane_section(host, "Remembered data");
+        pane_row(
+            &rows,
+            "Nothing is being kept",
+            Some(
+                "When you remove a book, its notes and marks are kept here in case \
+                  you import the same file again.",
+            ),
+        );
+        return;
+    }
+
+    // Split three ways. "Waiting" comes first because it is the only group with
+    // something the reader is being asked to do; the other two are storage.
+    let waiting: Vec<&StashEntry> = snap.stash.iter().filter(|e| e.pending).collect();
+    let orphaned: Vec<&StashEntry> = snap.stash.iter().filter(|e| e.book_id.is_none()).collect();
+    let live: Vec<&StashEntry> = snap
+        .stash
+        .iter()
+        .filter(|e| !e.pending && e.book_id.is_some())
+        .collect();
+
+    let forget = |rows: &gtk::Box, entry: &StashEntry, label: &str, caption: String| {
+        let hash = entry.file_hash.clone();
+        let s = sender.clone();
+        let button = boxed_ghost_button("Let go", move || {
+            s.input(SettingsMsg::ForgetStash(hash.clone()));
+        });
+        pane_row_with(rows, label, Some(&caption), &button);
+    };
+
+    if !waiting.is_empty() {
+        let rows = pane_section(host, "Waiting for your answer");
+        for entry in waiting {
+            let title = entry
+                .book_title
+                .clone()
+                .unwrap_or_else(|| "A book in your library".to_string());
+            forget(
+                &rows,
+                entry,
+                &title,
+                format!(
+                    "{} came back with it. Open the book to choose what to keep.",
+                    stash_contents_line(entry)
+                ),
+            );
+        }
+    }
+
+    if !live.is_empty() {
+        let rows = pane_section(host, "Books still in your library");
+        for entry in live {
+            let title = entry
+                .book_title
+                .clone()
+                .unwrap_or_else(|| "A book in your library".to_string());
+            forget(
+                &rows,
+                entry,
+                &title,
+                format!("{} · kept {}", stash_contents_line(entry), stash_day(entry)),
+            );
+        }
+    }
+
+    if !orphaned.is_empty() {
+        let rows = pane_section(host, "Books no longer in your library");
+        for entry in orphaned {
+            // No title is left to show, so the row leads with what was saved.
+            // The fingerprint is the copy's identity but is noise to a reader,
+            // and the date is what tells two copies of the same book apart.
+            forget(
+                &rows,
+                entry,
+                &stash_contents_line(entry),
+                format!("Removed · kept {}", stash_day(entry)),
+            );
+        }
+    }
+
+    // The list is capped, so say when the cap bit. A shortened list that looks
+    // complete would understate what is on file.
+    let rows = pane_section(host, "Let go of everything");
+    if snap.stash_total > snap.stash.len() {
+        pane_row(
+            &rows,
+            &format!(
+                "Showing the newest {} of {}",
+                snap.stash.len(),
+                snap.stash_total
+            ),
+            Some("Clearing lets go of all of them, not only the ones listed here."),
+        );
+    } else {
+        pane_row(
+            &rows,
+            &format!(
+                "{} cop{} on file",
+                snap.stash_total,
+                if snap.stash_total == 1 { "y" } else { "ies" }
+            ),
+            Some(
+                "Books still in your library keep their notes and marks. \
+                  Only the copies go.",
+            ),
+        );
+    }
+    let anchor = rows.clone();
+    let s = sender.clone();
+    let all = boxed_ghost_button("Let go of every copy", move || {
+        let s = s.clone();
+        let _ = confirmation_dialog(
+            &anchor,
+            "Let go of every copy?",
+            "Every copy of a removed book's notes and marks goes, including the \
+             ones belonging to books still in your library. Those books keep what \
+             they have — but if you remove one later, importing the same file \
+             again will start clean.",
+            "Cancel",
+            "Let go of everything",
+            ConfirmationKind::Destructive,
+            move || s.input(SettingsMsg::ForgetAllStash),
+        );
+    });
+    all.set_halign(gtk::Align::Start);
+    all.set_margin_top(10);
+    all.set_margin_bottom(4);
+    rows.append(&all);
+}
+
 fn build_data_pane(host: &gtk::Box, catalog: &Arc<Catalog>) {
     // The four places Kalam keeps things (decision 149): read-only
     // rows, each with a Show that opens the file manager there. The
@@ -3757,4 +4001,186 @@ fn today_stamp() -> String {
         .and_then(|d| d.format("%Y-%m-%d"))
         .map(|s| s.to_string())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{iso_days_ago, ClearTally};
+
+    /// A rescue copy holding only what a case is about. `StashEntry` derives
+    /// `Default`, so the fields no test reads stay at their defaults.
+    fn stash_copy(contents: ClearTally, placement: bool) -> StashEntry {
+        StashEntry {
+            contents,
+            placement,
+            ..Default::default()
+        }
+    }
+
+    /// A tally of nothing held, so each case sets only the kinds it is about.
+    fn tally_of_nothing() -> ClearTally {
+        ClearTally::default()
+    }
+
+    /// Colours as four-decimal text, so no case has to compare floats.
+    fn colour_text(c: (f64, f64, f64)) -> String {
+        format!("{:.4} {:.4} {:.4}", c.0, c.1, c.2)
+    }
+
+    #[test]
+    fn hex_components_reads_a_six_digit_theme_colour() {
+        let got = hex_components("#ff8000");
+        assert_eq!(colour_text(got), "1.0000 0.5020 0.0000");
+    }
+
+    #[test]
+    fn the_hash_in_front_of_a_colour_is_optional() {
+        assert_eq!(
+            colour_text(hex_components("ffffff")),
+            "1.0000 1.0000 1.0000"
+        );
+        assert_eq!(
+            colour_text(hex_components("#000000")),
+            "0.0000 0.0000 0.0000"
+        );
+    }
+
+    #[test]
+    fn a_pair_that_is_not_hex_falls_back_to_mid_grey() {
+        // Each pair falls back on its own, so one bad pair does not grey out
+        // the other two. The doc comment calls the fallback a way to keep a
+        // theme bug impossible to miss.
+        assert_eq!(colour_text(hex_components("")), "0.5000 0.5000 0.5000");
+        assert_eq!(
+            colour_text(hex_components("nope!!")),
+            "0.5000 0.5000 0.5000"
+        );
+        assert_eq!(
+            colour_text(hex_components("#gg0000")),
+            "0.5000 0.0000 0.0000"
+        );
+    }
+
+    #[test]
+    fn three_digit_shorthand_is_read_as_pairs_and_not_expanded() {
+        // `#fff` is valid CSS for white, but this reads two characters at a
+        // time, and a slice that runs off the end yields nothing rather than
+        // the one character left: the red pair is read, then green and blue
+        // both fall to mid-grey. Pinned as it is — shorthand paints a colour
+        // nobody chose (full red at half grey) instead of white.
+        let got = hex_components("#fff");
+        assert_eq!(colour_text(got), "1.0000 0.5000 0.5000");
+    }
+
+    #[test]
+    fn every_settings_pane_has_a_span_name_of_its_own() {
+        const PANES: &[(SettingsTab, &str)] = &[
+            (SettingsTab::Appearance, "settings_fill:appearance"),
+            (SettingsTab::Reading, "settings_fill:reading"),
+            (SettingsTab::Libraries, "settings_fill:libraries"),
+            (SettingsTab::DataExport, "settings_fill:data_export"),
+            (SettingsTab::RememberedData, "settings_fill:remembered_data"),
+            (SettingsTab::BookFiles, "settings_fill:book_files"),
+            (SettingsTab::WatchFolders, "settings_fill:watch_folders"),
+            (SettingsTab::Dictionaries, "settings_fill:dictionaries"),
+            (SettingsTab::Metadata, "settings_fill:metadata"),
+            (SettingsTab::Integrations, "settings_fill:integrations"),
+            (SettingsTab::Shortcuts, "settings_fill:shortcuts"),
+            (SettingsTab::About, "settings_fill:about"),
+        ];
+        // Twelve today. A thirteenth pane needs a row here, or its build runs
+        // under no name at all.
+        assert_eq!(PANES.len(), 12);
+        for (tab, want) in PANES {
+            assert_eq!(settings_fill_label(*tab), *want);
+        }
+    }
+
+    #[test]
+    fn the_span_name_and_the_pane_id_disagree_about_separators() {
+        // `SettingsTab::id` is the name the screenshot hook uses and it is
+        // hyphenated. The timing span is underscored. Four of the twelve
+        // panes therefore carry two spellings. Pinned, not endorsed: a
+        // redesign that renames one and not the other splits a pane in two.
+        assert_eq!(SettingsTab::DataExport.id(), "data-export");
+        assert_eq!(SettingsTab::RememberedData.id(), "remembered-data");
+        assert_eq!(SettingsTab::BookFiles.id(), "book-files");
+        assert_eq!(SettingsTab::WatchFolders.id(), "watch-folders");
+
+        let export = settings_fill_label(SettingsTab::DataExport);
+        assert_eq!(export, "settings_fill:data_export");
+
+        let remembered = settings_fill_label(SettingsTab::RememberedData);
+        assert_eq!(remembered, "settings_fill:remembered_data");
+    }
+
+    #[test]
+    fn an_empty_rescue_copy_is_described_as_nothing() {
+        let got = stash_contents_line(&stash_copy(tally_of_nothing(), false));
+        assert_eq!(got, "nothing");
+    }
+
+    #[test]
+    fn the_kinds_are_listed_in_one_fixed_order() {
+        // The order comes from `describe_cleared`, which the toast after a
+        // clear uses too. One description serving both is the point: two
+        // phrasings of the same five numbers eventually disagree.
+        let mut tally = tally_of_nothing();
+        tally.quotes = 3;
+        tally.position = true;
+        tally.bookmarks = 1;
+        let got = stash_contents_line(&stash_copy(tally, false));
+        assert_eq!(got, "your place in the book, 1 bookmark and 3 quotes");
+    }
+
+    #[test]
+    fn counts_read_singular_at_one_and_plural_above_it() {
+        let mut tally = tally_of_nothing();
+        tally.highlights = 1;
+        let one = stash_contents_line(&stash_copy(tally, false));
+        assert_eq!(one, "1 highlight");
+
+        tally.highlights = 2;
+        tally.ink = 1;
+        let two = stash_contents_line(&stash_copy(tally, false));
+        assert_eq!(two, "2 highlights and 1 ink mark");
+    }
+
+    #[test]
+    fn placement_is_named_only_when_it_has_something_to_join() {
+        // Placement is always put back and never offered, so it is not in the
+        // tally. A copy holding nothing else is still not "nothing", and the
+        // two cases read differently.
+        let only = stash_contents_line(&stash_copy(tally_of_nothing(), true));
+        assert_eq!(only, "Where it was shelved");
+
+        let mut tally = tally_of_nothing();
+        tally.ink = 2;
+        let both = stash_contents_line(&stash_copy(tally, true));
+        assert_eq!(both, "2 ink marks, and where it was shelved");
+    }
+
+    #[test]
+    fn the_filed_day_is_shortened_the_way_the_history_page_does_it() {
+        let mut stashed = stash_copy(tally_of_nothing(), false);
+        stashed.updated_at = format!("{}T09:30:00Z", iso_days_ago(0));
+        assert_eq!(stash_day(&stashed), "Today");
+
+        stashed.updated_at = format!("{}T23:59:59Z", iso_days_ago(1));
+        assert_eq!(stash_day(&stashed), "Yesterday");
+
+        stashed.updated_at = "2026-10-02T09:30:00Z".to_string();
+        assert_eq!(stash_day(&stashed), "02 Oct 2026");
+    }
+
+    #[test]
+    fn a_stamp_shorter_than_a_day_reaches_the_reader_untouched() {
+        // `stash_day` cuts to ten characters and `pretty_day` passes anything
+        // shorter straight through, so a truncated stamp is shown as it is
+        // rather than guessed at.
+        let mut stashed = stash_copy(tally_of_nothing(), false);
+        stashed.updated_at = "2026-10".to_string();
+        assert_eq!(stash_day(&stashed), "2026-10");
+    }
 }

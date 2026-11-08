@@ -615,6 +615,23 @@ impl Component for RemoteDetailModel {
                                 )?;
                                 let res = crate::epub::import_epub(&catalog, &temp_file)?;
                                 let _ = std::fs::remove_file(&temp_file);
+                                // This path builds a book from a web source and
+                                // hands back only its id, so the import result
+                                // would otherwise be dropped here. Marks that
+                                // came back with it still leave the book owing
+                                // an answer, and `notify` bounces to the main
+                                // thread itself, so the pointer can be sent from
+                                // the worker.
+                                if res.reading_restored {
+                                    crate::notify::info(
+                                        "Your notes came back",
+                                        &format!(
+                                            "\u{201c}{}\u{201d} brought back your notes and marks. \
+                                             Open it to choose what to keep.",
+                                            res.title
+                                        ),
+                                    );
+                                }
                                 let _ = catalog.set_reading_progress(
                                     res.book_id,
                                     target_idx,

@@ -3623,3 +3623,222 @@ fifteen minutes of a sandbox and would have cost hours of CI. Each now carries
 an iteration backstop alongside the deadline. The backstop is not the intended
 exit and should never fire; it exists because a hung step is expensive in a way
 a wrong answer is not.
+
+## §101 — a guardrail that counts text found a real bug, and two ways an insertion strands an attribute
+
+The keep/restore work (the chooser, the import question, the first-open
+question, the Settings pane) cost seven failed CI runs. Four of the seven are
+what this section is about, and three of those four are the same class of
+mistake: an edit that inserts something *above* an existing line, and thereby
+changes what that line belongs to. The fourth was a guardrail firing on a count
+of literal text — and it was right.
+
+The other three failures are recorded where they belong: `.ok()` on a call that
+returns unit, a function only tests reached counting as dead code in a binary
+crate, and a Python edit script whose match spanned an attribute and a
+declaration and so deleted both.
+
+**A guardrail that counts a type name as text is still a real review.**
+`tests/guardrails.rs` has `pages_do_not_gain_catalog_handles`, which greps
+`src/pages/` for the literal string `Arc<Catalog>` and fails past
+`MAX_ARC_CATALOG_IN_PAGES = 44`. Adding a helper that took `Arc<Catalog>` moved
+the count to 46 and failed the build. The escape hatch is raising the constant,
+and that is exactly the wrong move: the ratchet exists so a page cannot gain a
+raw database handle, because a page holding one can query on the UI thread and
+nothing stops it.
+
+The count was also pointing at a genuine defect that no compiler would have
+caught. The helper was reading a book's author line *while building a dialog*,
+which is UI-thread work. The fix was to take `&LibraryService` instead and move
+the read into the import worker, where every other read already happens. The
+guardrail did not just police a style; it found the query. **Grep
+`tests/guardrails.rs` before adding a type name anywhere under `src/pages/`** —
+and when it fires, read what it is protecting before reaching for the constant.
+
+**Inserting a test above a `fn` line strands the attribute and the doc comment.**
+Five new tests were spliced in above an existing test's `fn` line. The `#[test]`
+and the nine-line doc comment above that `fn` stayed where they were, so they
+landed on top of the *first new* test. Two errors followed, and they point in
+opposite directions, which is what makes the pair worth remembering:
+
+- `error: duplicated attribute` — the stranded `#[test]` and the new test's own
+  `#[test]` were now adjacent.
+- `function ... is never used` — the displaced test had lost its `#[test]`, so
+  it was no longer a test at all. It compiled as a private function nobody
+  calls, which `-D warnings --all-targets` turns into a build failure.
+
+The second error is the dangerous one. Had `-D warnings` not been set, that test
+would have **silently stopped running** and the suite would still have reported
+green. A passing build is not evidence that a test ran. When a test's name
+disappears from the per-test verdicts in `ci-logs/.../test-full.txt`, that is
+the same failure with the errors turned off.
+
+The same shape bit earlier in the unit with a `#[derive]`: inserting
+`const IMPORT_BUTTONS` between `#[derive(Debug, Default)]` and
+`pub struct ImportTally` silently re-targeted the derive onto a `const`, which
+does not accept it. **An attribute belongs to the next item, not to the line it
+sits above.** Any insertion anchored on a `fn`/`struct` line must carry that
+item's attributes and doc comment with it, or land below them.
+
+**A `Fn` callback cannot move a captured value out.** Two dialog callbacks took
+an `Arc<Catalog>` and passed it onward. `restored_reading_dialog` and
+`choose_kinds_table` both take `impl Fn(...)`, not `FnOnce`, because a dialog
+button can in principle fire twice — so the closure must still own everything
+after the first call, and `arc` has to become `arc.clone()`. The compiler says
+"cannot move out of captured variable"; the fix is not to change the bound.
+
+**`(&impl Fn()).clone()` clones the reference.** A completion callback was
+stored as `&impl Fn() + 'static` and then `.clone()`d to hand to
+`tasks::spawn`. Cloning a `&F` yields another `&F`, which borrows and so is not
+`'static`, and the `D: FnOnce(T) + 'static` bound rejects it. Wrap in
+`Rc<dyn Fn()>` and call it as `(*cb)()`. Worth knowing on the same page:
+`tasks::spawn`'s `work` closure is `Send`, but its `on_done` callback is **not**
+— only `work` crosses the thread — so `Rc` is acceptable in a completion
+callback and would not be in the worker.
+
+**A correct assertion can still assert the wrong behaviour.** The new Settings
+listing test seeded a book called `ReturnedAgain`, re-imported it, and asserted
+the panel showed that title. It showed `Returned`. The code was right and the
+test was wrong: a delete stashes the book's *metadata* alongside its reading
+data, and a re-import puts both back, so the rescued copy renamed the book to
+what it was called before. The assertion now expects `Returned` and says why at
+the assertion site, because to anyone else `Returned` where the test seeded
+`ReturnedAgain` reads like the bug. When a test fails on a value that looks
+plainly wrong, establish which of the two is lying before changing either.
+
+**A conditional query breaks a statement budget.** `settings()` is held to a
+fixed number of SQL statements by `settings_statement_count_is_fixed`, so a page
+cannot get slower as the library grows. The first draft of the rescue-copy
+listing ran one query for the rows and a second for their titles *only when
+there were titles to fetch* — which makes the statement count depend on what is
+in the library, and would have failed that test on any machine with a rescue
+copy on file. It became one statement with correlated subqueries. The same
+reasoning ruled out a join: a join returns two rows for one copy if two books
+ever share a fingerprint.
+
+**`origin_hash` can read the disk, so a listing must not call it.** Matching a
+rescue copy to a live book wants the same rule `origin_hash` uses. Calling it
+per book would hash backup files off disk to draw a Settings pane. The pane
+resolves the match in SQL with `COALESCE(NULLIF(import_hash, ''), file_hash)`,
+which agrees with `origin_hash` except for the never-frozen-and-since-changed
+case, where a copy shows as orphaned. Letting go of an orphan is safe — it
+removes a spare, never live data — so the approximation costs nothing, and the
+function documents the case it gets wrong.
+
+## §102 — the obvious fix for a lying message would have destroyed real work
+
+Two defects came out of the audit of the keep/restore work. Both were reported,
+and the owner said "fix them". The first one had a trap in it.
+
+**The message.** `import_summary` said "N kept your earlier metadata edits".
+Every deleted book got a row in `metadata_overrides`, because `delete_book_single`
+called `remember_overrides` unconditionally, and `restore_overrides` returned
+`metadata: true` whenever it found a row at all. So the count was really "how many
+books came back", not "how many books had edits".
+
+**The obvious fix, and why it is wrong.** Make the delete-time capture
+conditional: only refresh a row that already exists, since every genuine edit path
+calls `remember_overrides` itself. A grep confirms ten call sites —
+`update_book_metadata`, `add_book_tag`, `remove_book_tag`, `set_cover_name`,
+`set_book_rating`, `refresh_renamed_author_books`, and four in `tags.rs`. That
+list looks complete.
+
+It is not. Scanning for `UPDATE books` statements that touch a metadata column
+instead of scanning for callers of the stash turns up four more writers that never
+stash at all: `set_book_series`, `apply_comic_series_metadata`,
+`update_comic_series_details` and `set_book_file_names`. One of them is reached
+from `src/pages/comic_series_metadata.rs` — a page whose whole purpose is editing
+metadata by hand. Under the conditional capture, editing a comic series and then
+deleting it would have thrown the edit away silently, because no row existed to
+refresh.
+
+**Ask the database what it writes, not the function what it calls.** Grepping for
+the callers of the safety net finds the paths that were designed to use it. It
+cannot find the paths that were written before it existed and never updated. The
+unconditional capture at delete time is exactly the net that catches those, so
+removing it trades a wrong message for lost work — a bad trade, and one that no
+test in the suite would have caught, since no test deletes a book whose only edit
+came through the comic series editor.
+
+**The fix that was applied instead.** Keep capturing everything, and stop letting
+the capture decide what gets reported. `metadata_overrides` gains a `hand_edited`
+column: the ten genuine edit paths mark it, the delete-time capture does not, and
+the upsert keeps it with `MAX(metadata_overrides.hand_edited, excluded.hand_edited)`
+so a later delete cannot erase an earlier edit. `restore_overrides` then reports
+`hand_edited != 0` **or** the saved values differ from what the file just
+produced. The second half is what covers the four writers that never stash: their
+work still comes back, and it is still reported, without anyone having to find
+them all first.
+
+The column was added with `add_column_if_missing` in the always-run part of
+`migrate()`, not behind a version gate, so existing libraries get it and fresh
+ones get it from `CREATE TABLE`. `SCHEMA_VERSION` stays at 23, the same precedent
+as `books.restore_pending`.
+
+**Tests that assert the wrong thing survive a wrong implementation.** Two tests in
+`reading_stash.rs` re-seed a book under a *different* title and then force its
+`file_hash` back to the original, as a shortcut for re-importing a file. That
+shortcut makes the stashed metadata genuinely differ from the fresh import, so
+those tests report an edit no reader made. They are not wrong — they test the
+reading half — but they cannot test the metadata claim, and one of them had a
+comment asserting that the over-claim was expected behaviour. A new test re-seeds
+under the *same* title, which is what a real re-import does, and that is the only
+shape that can tell the two cases apart.
+
+**The second defect was straightforward by comparison.** The hover card's remove
+button sent `BookFloatMsg::Remove`, which deleted the book on the spot while
+quietly putting every note and mark aside. Three other places — the book page, the
+bulk delete, the PDF reader — ask first. The hover card is the easiest button in
+the app to hit by accident and was the one place that asked nothing. It now sends
+`ConfirmRemove`, which opens the same `delete_book_dialog`, and the deletion moved
+to `Remove(ReadingKinds)` calling `delete_book_keeping`.
+
+`remote_detail.rs` has a similar-looking call that was deliberately left alone: it
+replaces a stale download with a fresh copy of the same book, which is internal
+housekeeping rather than a reader asking to lose a book.
+
+
+## §103 — a slice that runs off the end yields nothing, and "shelf" does not pluralise by suffix
+
+The second batch of characterization tests for the page modules went red twice,
+and the two failures sit on opposite sides of the same question: when a test and
+the code disagree, which one is lying?
+
+**`str::get(a..b)` returns `None` when `b` is past the end — it does not clamp.**
+The test for `hex_components("#fff")` expected the green channel to be the one
+leftover character (`"f"` → 15/255 = 0.0588) and only the blue channel to reach
+the mid-grey fallback. The real answer is `(1.0, 0.5, 0.5)`: `"fff".get(2..4)` is
+out of bounds, so it is `None`, and `unwrap_or(0.5)` fires for green as well as
+blue. The wrong expectation came from Python slicing, which clamps. The
+neighbouring case in the same test module — `#gg0000` greying out only the red
+channel, because the fallback is per pair — was reasoned about the same way and
+happened to be right.
+
+So: when an expected value comes from reasoning about a standard-library call
+rather than from running the code, name the call the reasoning rests on in the
+comment. "a slice that runs off the end yields nothing" survives a reader;
+"the green pair gets one character" does not.
+
+**An irregular plural cannot be built by suffixing.** `summary_line` in
+`shelves_grid.rs` printed `format!("{} shelf{}", n, if n == 1 { "" } else { "es" })`,
+which gives "1 shelf" and "3 shelfes" — a spelling mistake on the shelves page
+for any reader with more than one shelf. The test asserted the correct word and
+failed. Here the assertion was right and the code was wrong, so the code moved:
+the plural is now chosen whole, `"shelf"` or `"shelves"`.
+
+**The tie-breaker.** This is the second time a red characterization test has
+forced the question (the first was the metadata over-claim in §102, where the
+code was right to keep capturing and the *report* was what lied). The rule that
+separates them:
+
+- a mismatch in the **spelling or grammar of reader-facing text** means the code
+  is wrong. Nobody chose "shelfes"; there is no behaviour to preserve.
+- a mismatch in **policy** — what gets counted, which fallback fires, what a
+  message claims — means the test is wrong. Pin what the code does today, say in
+  a comment that it is pinned rather than endorsed, and tell the owner. Four such
+  behaviours went in with this batch and were left alone for the redesign to
+  decide.
+
+Fixing a typo inside a batch whose stated discipline is "change no behaviour" is
+not a contradiction. The discipline exists so a redesign cannot silently change
+what a reader sees; a reported one-word spelling fix is a change somebody chose.

@@ -522,3 +522,166 @@ fn chrono_like_now() -> String {
         .unwrap_or(0);
     format!("{secs}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `Annotation` mirrors a database row and has no `Default`. Only the
+    /// fields the export reads ever vary, so the rest are stand-ins.
+    fn quote_row(text: &str) -> Annotation {
+        Annotation {
+            id: 1,
+            book_id: 2,
+            kind: "quote".to_string(),
+            chapter_index: 2,
+            start_path: String::new(),
+            start_offset: 0,
+            end_path: String::new(),
+            end_offset: 0,
+            color: "#ffd400".to_string(),
+            style: String::new(),
+            text_excerpt: text.to_string(),
+            note: String::new(),
+            cfi: None,
+            created_at: "2026-10-02T09:30:00Z".to_string(),
+            updated_at: "2026-10-02T09:30:00Z".to_string(),
+        }
+    }
+
+    /// `Book` has no `Default` either, and the export reads only its title
+    /// and its authors.
+    fn book_dune() -> Book {
+        Book {
+            id: 2,
+            uuid: "uuid-dune".to_string(),
+            title: "Dune".to_string(),
+            authors: "Frank Herbert".to_string(),
+            series: None,
+            description: String::new(),
+            format: crate::models::BookFormat::Epub,
+            file_name: "dune.epub".to_string(),
+            file_hash: "hash-dune".to_string(),
+            cover_name: None,
+            added_at: "2026-10-01T00:00:00Z".to_string(),
+            progress: 0,
+            rating: 0,
+            publisher: String::new(),
+            published: String::new(),
+            series_index: 0.0,
+            tags: Vec::new(),
+            cover_path: None,
+            file_path: std::path::PathBuf::from("dune.epub"),
+        }
+    }
+
+    /// One quote from one book, which is what most of these cases export.
+    fn export_one(row: Annotation) -> String {
+        export_quotes_markdown(&[(row, Some(book_dune()))])
+    }
+
+    #[test]
+    fn the_quotes_line_reads_singular_at_one() {
+        let empty = status_line(0, "");
+        assert_eq!(
+            empty,
+            "No saved quotes yet — highlight or save quotes while reading."
+        );
+        assert_eq!(status_line(1, ""), "1 quote saved");
+        assert_eq!(status_line(12, ""), "12 quotes saved");
+    }
+
+    #[test]
+    fn a_search_replaces_the_count_with_the_query() {
+        assert_eq!(status_line(1, "dune"), "1 result for \"dune\"");
+        assert_eq!(status_line(0, "dune"), "0 results for \"dune\"");
+        assert_eq!(status_line(7, "spice"), "7 results for \"spice\"");
+    }
+
+    #[test]
+    fn a_query_of_only_spaces_counts_as_no_query() {
+        // The emptiness test trims; the echoed query does not. Both halves
+        // are pinned because they disagree about the same string.
+        let blank = status_line(2, "   ");
+        assert_eq!(blank, "2 quotes saved");
+
+        let echoed = status_line(2, " spice ");
+        assert_eq!(echoed, "2 results for \" spice \"");
+    }
+
+    #[test]
+    fn the_export_stamp_is_epoch_seconds_in_plain_digits() {
+        // The document and the file name both carry this stamp, so its shape
+        // is worth pinning even though its value cannot be.
+        let stamp = chrono_like_now();
+        assert!(!stamp.is_empty());
+        assert!(stamp.chars().all(|c| c.is_ascii_digit()));
+
+        let secs = stamp.parse::<u64>().unwrap_or(0);
+        // After 2023 and before 2286. A move to milliseconds, or to a date
+        // string, fails here rather than in a reader's file name.
+        assert!(secs > 1_700_000_000);
+        assert!(secs < 10_000_000_000);
+    }
+
+    #[test]
+    fn an_export_with_no_quotes_is_still_a_titled_document() {
+        let md = export_quotes_markdown(&[]);
+        assert!(md.starts_with("# Kalam — Saved Quotes\n\nExported "));
+        assert!(md.ends_with("\n\n"));
+        assert_eq!(md.matches("## ").count(), 0);
+    }
+
+    #[test]
+    fn one_quote_exports_under_its_book_with_a_chapter_and_a_colour() {
+        let md = export_one(quote_row("The spice must flow."));
+        assert!(md.contains("## Dune — Frank Herbert"));
+        assert!(md.contains("> The spice must flow."));
+        // The chapter is stored zero-based and shown one-based, and the
+        // colour is the stored hex rather than a word.
+        let line = "*Chapter 3, #ffd400 — 2026-10-02T09:30:00Z*";
+        assert!(md.contains(line));
+        assert!(md.contains("\n\n---\n\n"));
+        assert!(!md.contains("**Note:**"));
+    }
+
+    #[test]
+    fn a_highlight_says_so_and_a_plain_quote_does_not() {
+        let mut row = quote_row("The spice must flow.");
+        row.kind = "highlight".to_string();
+        let md = export_one(row);
+        assert!(md.contains(" · highlight*"));
+
+        let plain = export_one(quote_row("The same words."));
+        assert!(!plain.contains(" · highlight"));
+    }
+
+    #[test]
+    fn a_note_is_added_only_when_the_reader_wrote_one() {
+        let mut row = quote_row("The spice must flow.");
+        row.note = "   ".to_string();
+        let blank = export_one(row.clone());
+        assert!(!blank.contains("**Note:**"));
+
+        row.note = "First meeting with the Fremen.".to_string();
+        let md = export_one(row);
+        let want = "**Note:** First meeting with the Fremen.";
+        assert!(md.contains(want));
+    }
+
+    #[test]
+    fn every_line_of_a_multi_line_excerpt_stays_in_the_blockquote() {
+        let md = export_one(quote_row("First line.\nSecond line."));
+        let want = "> First line.\n> Second line.";
+        assert!(md.contains(want));
+    }
+
+    #[test]
+    fn a_quote_whose_book_is_gone_still_exports() {
+        // The annotation row outlives its book, so the export has to name
+        // something. It names the gap rather than dropping the quote.
+        let md = export_quotes_markdown(&[(quote_row("Orphaned line."), None)]);
+        assert!(md.contains("## Unknown Book — Unknown"));
+        assert!(md.contains("> Orphaned line."));
+    }
+}

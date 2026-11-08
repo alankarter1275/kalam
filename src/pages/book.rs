@@ -17,7 +17,7 @@
 //!
 //! The series link opens the series page (`series.rs`, decision 94).
 
-use crate::db::{Catalog, HighlightColor, ShelfKind};
+use crate::db::{Catalog, HighlightColor, ReadingKinds, ShelfKind};
 use crate::models::{Book, BookFormat};
 use crate::pages::history::pretty_day;
 use crate::pages::metadata_editor::open_metadata_editor;
@@ -32,9 +32,13 @@ use crate::widgets::{
     },
     in_app_dialog::{DialogExit, InAppDialog},
     menu::{menu_button, menu_popover, MenuWidth},
-    pill_button::{boxed_ghost_button, icon_button, primary_button},
+    pill_button::{boxed_ghost_button, icon_button, primary_button, PillButtonKind},
     progress::linear_progress,
     rating::rating_control,
+    reading_choice::{
+        choose_kinds_dialog, delete_book_dialog, describe_cleared, restored_reading_dialog,
+        RESTORE_BUTTONS,
+    },
     segmented::{segmented_control, SegmentedSize},
     slide_out_pill::slide_out_pill,
     surface::{hairline, outlined_section, quiet_notice, state_card},
@@ -93,7 +97,8 @@ pub enum BookPageMsg {
     /// `Loaded` (it is only requested once the book's format is known)
     /// and is applied whenever it lands — titles are per book id.
     ChaptersLoaded(Vec<String>),
-    Delete,
+    /// Remove the book, keeping the parts of its reading data named here.
+    Delete(ReadingKinds),
     /// The single-book delete finished on its worker.
     DeleteDone {
         id: i64,
@@ -122,6 +127,21 @@ pub enum BookPageMsg {
     ToggleDescription,
     /// Ask before removing the book (the ⋯ menu's destructive item).
     ConfirmDelete,
+    /// Ask which notes and marks to wipe from a book that stays in the library.
+    ConfirmClearNotes,
+    /// The reader answered the question a re-import left behind: keep these
+    /// kinds, wipe the rest, and stop the book owing an answer.
+    ///
+    /// Carries what to keep, where `ClearNotes` carries what to wipe. They are
+    /// complements of one call, and both go through `settle_restore` so the
+    /// rescue copy is spent in one place rather than two.
+    SettleRestored(ReadingKinds),
+    /// The chooser was answered: wipe these kinds, keep the book.
+    ClearNotes {
+        id: i64,
+        title: String,
+        kinds: ReadingKinds,
+    },
     /// Open the deep editor on this book (the ⋯ menu's Edit book…).
     EditBook,
     /// Reveal the book's folder — the file footer's button, the ⋯ menu
@@ -171,6 +191,13 @@ pub struct BookPageModel {
     /// A chapter-titles parse is in flight; Contents says
     /// "Loading chapter list…" rather than vanishing while it is.
     chapters_loading: bool,
+    /// The first-open question has been asked during this page's life.
+    ///
+    /// The database flag says a book owes an answer, and answering it clears
+    /// that flag — but "ask me later" deliberately does not. Without this, a
+    /// reader who deferred would be asked again by every refresh the page does
+    /// afterwards, which is the nagging the deferral exists to avoid.
+    restore_asked: bool,
     // The snapshot state below replaced live reads in the fill functions
     // (7.1 step 2a): rebuild is now pure view-from-model.
     progress: Option<(usize, f64)>,
@@ -368,6 +395,7 @@ impl Component for BookPageModel {
             chapter_titles_for: 0,
             loading: true,
             chapters_loading: false,
+            restore_asked: false,
             progress: None,
             stats: Default::default(),
             annotations: Vec::new(),
@@ -429,6 +457,7 @@ impl Component for BookPageModel {
                     series_position,
                     series_total,
                     file_size,
+                    restore_pending,
                 } = snap;
                 report_errors(&detail.errors);
                 report_errors(&stats.errors);
@@ -450,6 +479,33 @@ impl Component for BookPageModel {
                 self.series_position = series_position;
                 self.series_total = series_total;
                 self.file_size = file_size;
+
+                // The first-open question. This is the other half of "ask me
+                // later": the import put the notes back and left the decision
+                // open, and opening the book is when the reader is asked. It is
+                // also the only path a background import has — a watched folder
+                // and a download both restore with no window to ask from, so
+                // they leave the flag set and let this pick it up.
+                if restore_pending && !self.restore_asked {
+                    self.restore_asked = true;
+                    if let Some(book) = &self.book {
+                        let title = book.title.clone();
+                        let s = sender.input_sender().clone();
+                        let dialog =
+                            restored_reading_dialog(root, &title, RESTORE_BUTTONS, move |keep| {
+                                let _ = s.send(BookPageMsg::SettleRestored(keep));
+                            });
+                        if dialog.is_none() {
+                            // The flag stays set, so this is not a lost question
+                            // — the next open asks again. But the reader is
+                            // owed the reason nothing appeared.
+                            crate::notify::error(
+                                "Could not ask about your notes",
+                                "The question will come back the next time this book is opened.",
+                            );
+                        }
+                    }
+                }
 
                 // CI screenshot hook, the dialog counterpart of
                 // KALAM_ROUTE: `KALAM_DIALOG=tags|annotations` opens that
@@ -496,7 +552,7 @@ impl Component for BookPageModel {
                     self.chapter_titles_for = book.id;
                 }
             }
-            BookPageMsg::Delete => {
+            BookPageMsg::Delete(keep) => {
                 if let Some(book) = &self.book {
                     let id = book.id;
                     let title = book.title.clone();
@@ -513,7 +569,11 @@ impl Component for BookPageModel {
                     // book's directory.
                     crate::tasks::spawn(
                         format!("Deleting {title}"),
-                        move |_reporter| catalog.delete_book(id).map_err(|e| e.to_string()),
+                        move |_reporter| {
+                            catalog
+                                .delete_book_keeping(id, keep)
+                                .map_err(|e| e.to_string())
+                        },
                         |_| {},
                         move |res| {
                             s.send(BookPageMsg::DeleteDone { id, title, res }).ok();
@@ -659,20 +719,12 @@ impl Component for BookPageModel {
                 if let Some(book) = &self.book {
                     let title = book.title.clone();
                     let s = sender.input_sender().clone();
-                    let dialog = confirmation_dialog(
-                        root,
-                        "Remove this book?",
-                        &format!(
-                            "“{title}” will be removed from your library and its files \
-                             deleted. This cannot be undone."
-                        ),
-                        "Keep book",
-                        "Remove book",
-                        ConfirmationKind::Destructive,
-                        move || {
-                            let _ = s.send(BookPageMsg::Delete);
-                        },
-                    );
+                    // Not `confirmation_dialog`: that shape is a message and two
+                    // buttons, and this question has a checkbox in it plus a link
+                    // to five more choices.
+                    let dialog = delete_book_dialog(root, &title, move |keep| {
+                        let _ = s.send(BookPageMsg::Delete(keep));
+                    });
                     if dialog.is_none() {
                         crate::notify::error(
                             "Could not remove the book",
@@ -680,6 +732,123 @@ impl Component for BookPageModel {
                         );
                     }
                 }
+            }
+            BookPageMsg::ConfirmClearNotes => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    let title = book.title.clone();
+                    let s = sender.input_sender().clone();
+                    let dialog = choose_kinds_dialog(
+                        root,
+                        "Clear notes and marks?",
+                        &format!(
+                            "“{title}” stays in your library. Choose what to clear \
+                             from it. This cannot be undone."
+                        ),
+                        ReadingKinds::ALL,
+                        "Clear",
+                        PillButtonKind::Danger,
+                        move |kinds| {
+                            let _ = s.send(BookPageMsg::ClearNotes {
+                                id,
+                                title: title.clone(),
+                                kinds,
+                            });
+                        },
+                    );
+                    if dialog.is_none() {
+                        crate::notify::error(
+                            "Could not clear the notes",
+                            "The chooser could not be opened.",
+                        );
+                    }
+                }
+            }
+            BookPageMsg::ClearNotes { id, title, kinds } => {
+                let catalog = self.service.catalog().clone();
+                let s = sender.input_sender().clone();
+                // A clear touches several tables and then rewrites the book's
+                // sidecar, so it is a task like the delete beside it and not
+                // work for the UI thread — the page would freeze for the length
+                // of the sidecar write.
+                crate::tasks::spawn(
+                    format!("Clearing notes in {title}"),
+                    // `kinds` is what to wipe; `settle_restore` is written in
+                    // terms of what to keep, so it takes the complement. This
+                    // used to spell out the same three steps `settle_restore`
+                    // does — clear the rows, drop the rescue copy, close the
+                    // flag — and two copies of an invariant is how one of them
+                    // gets left behind.
+                    move |_reporter| {
+                        catalog
+                            .settle_restore(id, kinds.complement())
+                            .map_err(|e| e.to_string())
+                    },
+                    |_| {},
+                    move |res| {
+                        let tally = match res {
+                            Ok(tally) => tally,
+                            Err(err) => {
+                                crate::notify::error("Could not clear the notes", &err);
+                                return;
+                            }
+                        };
+                        if tally.is_empty() {
+                            crate::notify::info("Nothing to clear", &title);
+                        } else {
+                            crate::notify::success(
+                                "Notes cleared",
+                                &format!("{title} — removed {}.", describe_cleared(tally)),
+                            );
+                        }
+                        // The cards on this page count annotations and
+                        // bookmarks; those numbers just changed.
+                        let _ = s.send(BookPageMsg::Refresh);
+                    },
+                );
+            }
+            BookPageMsg::SettleRestored(keep) => {
+                // The book this page is showing. `settle_restore` takes an id,
+                // and the page already knows its own — carrying the id through
+                // the dialog callback would be a second copy of a fact that can
+                // only disagree with the first.
+                let id = self.book_id;
+                let title = self
+                    .book
+                    .as_ref()
+                    .map(|b| b.title.clone())
+                    .unwrap_or_else(|| "This book".to_string());
+                let catalog = self.service.catalog().clone();
+                let s = sender.input_sender().clone();
+                crate::tasks::spawn(
+                    format!("Applying your choice for {title}"),
+                    move |_reporter| catalog.settle_restore(id, keep).map_err(|e| e.to_string()),
+                    |_| {},
+                    move |res| {
+                        let tally = match res {
+                            Ok(tally) => tally,
+                            Err(err) => {
+                                crate::notify::error("Could not save your choice", &err);
+                                return;
+                            }
+                        };
+                        // Keeping everything is a real answer, not a non-event:
+                        // it spends the rescue copy and closes the flag, so the
+                        // reader is told what changed even when nothing was
+                        // removed.
+                        if tally.is_empty() {
+                            crate::notify::success("Keeping everything", &title);
+                        } else {
+                            crate::notify::success(
+                                "Your choice is saved",
+                                &format!("{title} — removed {}.", describe_cleared(tally)),
+                            );
+                        }
+                        // The page's cards count annotations and bookmarks, and
+                        // the flag that opened the question is now spent.
+                        let _ = s.send(BookPageMsg::Refresh);
+                    },
+                );
             }
             BookPageMsg::LocateFile => {
                 if let Some(book) = &self.book {
@@ -1534,10 +1703,20 @@ fn fill_actions(host: &gtk::Box, model: &BookPageModel, sender: &ComponentSender
         s.input(BookPageMsg::LocateFile);
     });
     menu.add_separator();
+    // A submenu rather than one item, because "remove from library" carries two
+    // different intentions: get rid of the book, or get rid of the work done
+    // inside it and keep the book. Guessing wrong either way costs the reader
+    // something they cannot get back, so the menu asks which they meant.
+    let remove_menu = menu_popover(MenuWidth::Wide);
     let s = sender.clone();
-    menu.add_destructive_item("Remove from library", move || {
+    remove_menu.add_destructive_item("Remove the book…", move || {
         s.input(BookPageMsg::ConfirmDelete);
     });
+    let s = sender.clone();
+    remove_menu.add_item("Clear my notes and marks…", move || {
+        s.input(BookPageMsg::ConfirmClearNotes);
+    });
+    menu.add_submenu("Remove from library", remove_menu);
 
     let more = menu_button("view-more-symbolic", "More actions", menu);
     more.add_css_class("kalam-bookpage-more");
@@ -3373,4 +3552,81 @@ pub fn build_shelves_panel(
     }
 
     root
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_whole_series_index_loses_its_decimal_point() {
+        assert_eq!(format_series_index(3.0), "3");
+        assert_eq!(format_series_index(0.0), "0");
+        assert_eq!(format_series_index(12.0), "12");
+        assert_eq!(format_series_index(-1.0), "-1");
+    }
+
+    #[test]
+    fn a_fractional_series_index_keeps_its_fraction() {
+        assert_eq!(format_series_index(2.5), "2.5");
+        assert_eq!(format_series_index(1.25), "1.25");
+    }
+
+    #[test]
+    fn a_title_within_the_budget_is_left_alone() {
+        assert_eq!(shorten_title("Hello", 10), "Hello");
+        assert_eq!(shorten_title("Hello", 5), "Hello");
+        assert_eq!(shorten_title("", 5), "");
+    }
+
+    #[test]
+    fn a_long_title_is_cut_to_the_budget_and_gains_an_ellipsis() {
+        // One character of the budget pays for the ellipsis itself.
+        assert_eq!(shorten_title("Hello", 4), "Hel…");
+        assert_eq!(shorten_title("Hello", 2), "H…");
+        assert_eq!(shorten_title("Hello", 1), "…");
+        assert_eq!(shorten_title("Hello", 0), "…");
+    }
+
+    #[test]
+    fn the_cut_counts_characters_and_not_bytes() {
+        assert_eq!(shorten_title("日本語タイトル", 4), "日本語…");
+    }
+
+    #[test]
+    fn a_cut_that_would_end_in_a_space_ends_cleanly() {
+        assert_eq!(shorten_title("Hi  there", 5), "Hi…");
+    }
+
+    #[test]
+    fn a_year_is_the_first_four_digits_inside_a_plausible_range() {
+        assert_eq!(extract_year("2012"), Some("2012".to_string()));
+        assert_eq!(extract_year("February 15, 2012"), Some("2012".to_string()));
+        assert_eq!(extract_year("1900"), Some("1900".to_string()));
+        assert_eq!(extract_year("2030"), Some("2030".to_string()));
+        // Out of range at first, so the scan carries on and finds the next one.
+        assert_eq!(extract_year("1850 and 1950"), Some("1950".to_string()));
+    }
+
+    #[test]
+    fn no_year_comes_out_of_a_short_or_out_of_range_string() {
+        assert_eq!(extract_year(""), None);
+        assert_eq!(extract_year("abc"), None);
+        assert_eq!(extract_year("1899"), None);
+        assert_eq!(extract_year("2031"), None);
+        // Read four digits at a time, so a longer run yields nothing in range.
+        assert_eq!(extract_year("12345678"), None);
+    }
+
+    #[test]
+    fn a_file_size_steps_up_at_each_unit() {
+        assert_eq!(human_size(0), "0 B");
+        assert_eq!(human_size(1023), "1023 B");
+        assert_eq!(human_size(1024), "1 KB");
+        assert_eq!(human_size(2048), "2 KB");
+        assert_eq!(human_size(1024 * 1024), "1.0 MB");
+        assert_eq!(human_size(1536 * 1024), "1.5 MB");
+        assert_eq!(human_size(1024 * 1024 * 1024), "1.0 GB");
+        assert_eq!(human_size(3 * 1024 * 1024 * 1024), "3.0 GB");
+    }
 }

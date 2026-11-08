@@ -53,7 +53,7 @@
 use crate::db::{
     Annotation, AuthorProfile, Catalog, ComicSeriesMetadataPatch, ComicSeriesUpdateOutcome,
     DictLookup, Dictionary, EventKind, LibrarySession, LibraryStats, QuoteRef, ReadingBookmark,
-    ReadingEvent, ReadingListEntry, SavedWord, SessionRow, Shelf, SortKey,
+    ReadingEvent, ReadingListEntry, SavedWord, SessionRow, Shelf, SortKey, StashEntry,
 };
 use crate::models::{
     Book, BookFormat, ComicCredit, COMIC_SERIES_FIELD_COVER, COMIC_SERIES_FIELD_CREDITS,
@@ -226,6 +226,17 @@ pub struct BookPageSnapshot {
     /// this with the file's `fs::metadata` size on its way back, so the
     /// stat also stays off the UI thread.
     pub file_size: Option<u64>,
+    /// Whether this book is still waiting for the reader to say what to keep.
+    ///
+    /// Set when a re-import brought reading data back and the question went
+    /// unanswered — the reader chose "ask me later", or the import ran with no
+    /// window to ask from, which a watched folder and a download both do.
+    ///
+    /// Carried in the snapshot rather than read when the dialog is built,
+    /// because building a dialog is UI-thread work. A page that reached for the
+    /// database handle there could query while the page waits to be painted,
+    /// which is what `LibraryService` exists to prevent.
+    pub restore_pending: bool,
 }
 
 /// One volume on the series page: a cached listing entry, an owned book
@@ -325,6 +336,14 @@ pub struct SettingsSnapshot {
     pub reader_justify: bool,
     pub reader_word_memory_scope: String,
     pub reader_ask_impression: bool,
+    /// Rescue copies of deleted books' reading data, newest first, capped at
+    /// `STASH_PAGE`. The Remembered data pane lists them.
+    pub stash: Vec<StashEntry>,
+    /// How many copies exist in total, including any the cap left off, so the
+    /// pane can say the list is shortened rather than implying it is complete.
+    pub stash_total: usize,
+    /// Why `stash` is empty when its read failed.
+    pub stash_error: Option<String>,
 }
 
 /// One work on the author page: a cached bibliography entry, an owned book
@@ -356,6 +375,14 @@ pub struct AuthorGroupSnapshot {
 /// `:linked` suffix when the name switch was on, so a future author
 /// rename can follow it — decision 113).
 pub const AUTHOR_SHELF_PREF_PREFIX: &str = "author.shelf.";
+
+/// How many rescue copies the Remembered data pane lists.
+///
+/// A cap, not a page: the pane shows the newest of them and says how many were
+/// left off. Every listed copy has its payload decoded to count what it holds,
+/// and a reader with years of deleted books could have thousands — drawing all
+/// of them to describe a list nobody scrolls is not a trade worth making.
+pub const STASH_PAGE: usize = 200;
 
 /// The author page: profile, owned books, the grouped bibliography
 /// (cached works merged with owned books, the series page's join widened
@@ -830,6 +857,11 @@ impl LibraryService {
         let (next_in_series, next_series_title, series_position, series_total) =
             self.next_in_series(book_id, detail.book.as_ref(), &mut detail.errors);
 
+        // A failed read means "do not ask", not "ask": a book whose flag cannot
+        // be read is not a book the reader is being pestered about, and the
+        // error itself is already reported through `detail.errors`.
+        let restore_pending = self.catalog.restore_pending(book_id).unwrap_or(false);
+
         BookPageSnapshot {
             detail,
             progress,
@@ -846,6 +878,7 @@ impl LibraryService {
             series_total,
             // The service is DB-pure; the page's worker fills this.
             file_size: None,
+            restore_pending,
         }
     }
 
@@ -1098,6 +1131,14 @@ impl LibraryService {
             crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::MyAnimeList),
             crate::metadata::source_enabled(&self.catalog, crate::metadata::SourceId::ComicVine),
         );
+        let (stash, stash_total, stash_error) = match self.catalog.list_reading_stash(STASH_PAGE) {
+            Ok(rows) => match self.catalog.count_reading_stash() {
+                Ok(total) => (rows, total, None),
+                Err(err) => (Vec::new(), 0, Some(err.to_string())),
+            },
+            Err(err) => (Vec::new(), 0, Some(err.to_string())),
+        };
+
         SettingsSnapshot {
             dicts,
             dicts_error,
@@ -1161,6 +1202,12 @@ impl LibraryService {
                 .get_pref_i64("reader.column_px", 620)
                 .clamp(400, 860),
             reader_justify: self.catalog.get_pref_i64("reader.justify", 0) != 0,
+            // Capped, and read here rather than in the pane: decoding a few
+            // hundred payloads is worker work, and a pane that read it while
+            // being built would do it on the UI thread.
+            stash,
+            stash_total,
+            stash_error,
             reader_word_memory_scope: self
                 .catalog
                 .get_pref("reader.word_memory_scope")

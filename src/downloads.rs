@@ -215,8 +215,23 @@ impl DownloadManager {
         )?;
 
         // Import into Kalam Library
-        let _import_res = crate::epub::import_epub(&catalog, &out_path)?;
+        let import_res = crate::epub::import_epub(&catalog, &out_path)?;
         let _ = std::fs::remove_file(&out_path);
+
+        // A download finishes in the background with no window to ask from, so
+        // any marks that came back with it leave the book owing an answer. The
+        // book page asks on first open; this points the reader at that
+        // question rather than offering an undo, because the marks are already
+        // back in the book and there is nothing to take back.
+        if import_res.reading_restored {
+            crate::notify::info(
+                "Your notes came back",
+                &format!(
+                    "\u{201c}{}\u{201d} brought back your notes and marks. Open it to choose what to keep.",
+                    import_res.title
+                ),
+            );
+        }
 
         locked(&jobs, |map| {
             if let Some(j) = map.get_mut(&id) {

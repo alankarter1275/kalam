@@ -564,3 +564,20 @@ fn open_picker(anchor: &gtk::Box, service: LibraryService, on_changed: impl Fn()
     // it replaces is the point of the fix.
     fill("");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_queue_line_reads_singular_at_one_book() {
+        let empty = status_line(0);
+        assert_eq!(
+            empty,
+            "Books you plan to read next, in the order you want them."
+        );
+        assert_eq!(status_line(1), "1 book queued up");
+        assert_eq!(status_line(2), "2 books queued up");
+        assert_eq!(status_line(30), "30 books queued up");
+    }
+}

@@ -3559,3 +3559,60 @@ fn author_words_page(
     root.append(&author_dialog_scroll(&list_host));
     root
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_year_is_the_first_four_digit_run_inside_a_wide_range() {
+        assert_eq!(parse_year("1892"), Some(1892));
+        assert_eq!(parse_year("1892-1973"), Some(1892));
+        assert_eq!(parse_year("circa 0800"), Some(800));
+        assert_eq!(parse_year("2999"), Some(2999));
+    }
+
+    #[test]
+    fn no_year_comes_out_of_a_short_or_out_of_range_string() {
+        assert_eq!(parse_year(""), None);
+        assert_eq!(parse_year("abc"), None);
+        // Three digits is one short of a year, however plausible it reads.
+        assert_eq!(parse_year("800"), None);
+        assert_eq!(parse_year("799"), None);
+        assert_eq!(parse_year("3000"), None);
+    }
+
+    #[test]
+    fn days_from_iso_counts_days_from_the_civil_epoch() {
+        // 719468 is the Howard Hinnant epoch offset: days from 0000-03-01 to
+        // the Unix epoch. Hand-checked against the arithmetic, not copied from
+        // a run of this function.
+        assert_eq!(days_from_iso("1970-01-01"), Some(719468));
+        assert_eq!(days_from_iso("2026-11-08"), Some(740233));
+        assert_eq!(days_from_iso("2026-11-07"), Some(740232));
+    }
+
+    #[test]
+    fn days_from_iso_knows_a_leap_february() {
+        let leap = days_from_iso("2024-03-01").unwrap() - days_from_iso("2024-02-28").unwrap();
+        assert_eq!(leap, 2, "2024 had a 29th between those two days");
+        let plain = days_from_iso("2023-03-01").unwrap() - days_from_iso("2023-02-28").unwrap();
+        assert_eq!(plain, 1, "2023 did not");
+    }
+
+    #[test]
+    fn days_from_iso_needs_ten_characters_of_date() {
+        assert_eq!(days_from_iso(""), None);
+        assert_eq!(days_from_iso("1970-01-0"), None);
+        assert_eq!(days_from_iso("abcdefghij"), None);
+    }
+
+    #[test]
+    fn days_from_iso_reads_positions_and_not_separators() {
+        // Neither the hyphen nor the dot is looked at: only the digit
+        // positions are. Pinned because it is what the code does, not
+        // because anyone intended it.
+        assert_eq!(days_from_iso("1970/01/01"), Some(719468));
+        assert_eq!(days_from_iso("1970.01.01"), Some(719468));
+    }
+}

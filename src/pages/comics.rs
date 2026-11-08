@@ -2,7 +2,7 @@
 
 use crate::db::{Catalog, SortKey};
 use crate::models::{Book, BookFormat, ComicSeries};
-use crate::pages::all_books::{import_summary, spawn_import, ImportTally};
+use crate::pages::all_books::{ask_about_restored, import_summary, spawn_import, ImportTally};
 use crate::service::LibraryService;
 use crate::widgets::book_row::{build_book_grid, cover_widget, cover_widget_deferred};
 use gtk::prelude::*;
@@ -1417,6 +1417,16 @@ impl Component for ComicsModel {
             ComicsMsg::ImportFinished(tally) => {
                 self.reload();
                 self.status = import_summary(&tally);
+
+                // A comic re-imported after a delete can bring back the marks
+                // drawn on its pages, so this page has to ask the same question
+                // All Books does rather than quietly keeping them.
+                if !tally.restored_books.is_empty() {
+                    let s = sender.input_sender().clone();
+                    ask_about_restored(root, &self.service, &tally.restored_books, move || {
+                        s.send(ComicsMsg::Refresh).ok();
+                    });
+                }
             }
             ComicsMsg::OpenComic(id) => {
                 let _ = sender.output(ComicsOut::OpenComic { book_id: id });

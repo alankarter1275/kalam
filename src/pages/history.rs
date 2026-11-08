@@ -390,3 +390,36 @@ pub(crate) fn pretty_day(day: &str) -> String {
     let month = MONTHS.get(month.saturating_sub(1)).copied().unwrap_or("");
     format!("{} {} {}", &day[8..10], month, &day[0..4])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn today_and_yesterday_are_named_rather_than_dated() {
+        assert_eq!(pretty_day(&crate::db::iso_days_ago(0)), "Today");
+        assert_eq!(pretty_day(&crate::db::iso_days_ago(1)), "Yesterday");
+    }
+
+    #[test]
+    fn an_older_day_reads_as_day_month_year() {
+        assert_eq!(pretty_day("1999-12-31"), "31 Dec 1999");
+        assert_eq!(pretty_day("1999-01-09"), "09 Jan 1999");
+        // A full timestamp is read by position, so the clock part is ignored.
+        assert_eq!(pretty_day("1999-07-04T18:00:00"), "04 Jul 1999");
+    }
+
+    #[test]
+    fn a_string_too_short_to_be_a_date_is_handed_back() {
+        assert_eq!(pretty_day(""), "");
+        assert_eq!(pretty_day("1999-12"), "1999-12");
+    }
+
+    #[test]
+    fn an_impossible_month_leaves_a_hole_rather_than_guessing() {
+        // Month 13 indexes past the end of the table, so it renders empty and
+        // the line carries two spaces. Pinned because that is what happens; a
+        // redesign may well prefer to fall back to January.
+        assert_eq!(pretty_day("1999-13-01"), "01  1999");
+    }
+}

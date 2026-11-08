@@ -551,18 +551,12 @@ mod tests {
         );
     }
 
-    /// Every rail entry needs an icon to draw. Online sources is a door that
-    /// promises nothing and reaches nothing until Part 2 (B4), so its copy
-    /// says so out loud rather than implying a working feature.
+    /// Every rail entry needs an icon to draw. The page copy for the two
+    /// entries that are not built yet is pinned in `pages::placeholder`.
     #[test]
-    fn rail_icons_exist_and_online_sources_promises_nothing() {
+    fn every_rail_entry_has_an_icon_to_draw() {
         for item in NavItem::ALL {
             assert!(!item.icon().is_empty(), "{item:?} has no icon to draw");
         }
-        let copy = crate::pages::placeholder::placeholder_copy(NavItem::Online);
-        assert!(
-            copy.contains("Part 2"),
-            "online sources copy should name Part 2: {copy}"
-        );
     }
 }

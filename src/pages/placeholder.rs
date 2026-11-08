@@ -49,7 +49,7 @@ impl SimpleComponent for PlaceholderPageModel {
     }
 }
 
-pub(crate) fn placeholder_copy(item: NavItem) -> String {
+fn placeholder_copy(item: NavItem) -> String {
     match item {
         NavItem::Downloads => {
             "Unified download queue for AO3, fanfiction, comics, and batch imports.\n\n\
@@ -115,14 +115,31 @@ mod tests {
         let home = placeholder_copy(NavItem::Home);
         assert_eq!(home, "Home — placeholder page.");
 
+        // The rail calls this "My Library" since build-decisions B1, and the
+        // fallback is built from the label, so the copy follows the rail.
         let library = placeholder_copy(NavItem::Library);
-        assert_eq!(library, "Library — placeholder page.");
+        assert_eq!(library, "My Library — placeholder page.");
+
+        let all_books = placeholder_copy(NavItem::AllBooks);
+        assert_eq!(all_books, "All books — placeholder page.");
 
         let authors = placeholder_copy(NavItem::Authors);
         assert_eq!(authors, "Authors — placeholder page.");
 
         let editor = placeholder_copy(NavItem::Editor);
         assert_eq!(editor, "Editor — placeholder page.");
+    }
+
+    #[test]
+    fn online_sources_says_it_reaches_nothing_yet() {
+        // B4: the rail entry is real, but the page behind it is a door that
+        // promises nothing until Part 2. Falling back to "placeholder page."
+        // would read as an unfinished screen rather than a deliberate
+        // boundary, so this one keeps its own copy.
+        let copy = placeholder_copy(NavItem::Online);
+        assert!(copy.starts_with("Downloads, AO3 browsing"));
+        assert!(copy.contains("Nothing reaches the internet yet"));
+        assert!(!copy.contains("placeholder page."));
     }
 
     #[test]

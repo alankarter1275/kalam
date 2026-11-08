@@ -1,2 +1,57 @@
-clean
---- run 42488764232 ---
+diff --git a/src/app.rs b/src/app.rs
+index 2050857..fafb2b0 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -474,8 +474,7 @@ impl AppModel {
+                 );
+                 PageSlot::Library(ctrl)
+             }
+-            Route::LibrarySection(LibrarySection::AllBooks)
+-            | Route::Module(NavItem::AllBooks) => {
++            Route::LibrarySection(LibrarySection::AllBooks) | Route::Module(NavItem::AllBooks) => {
+                 let ctrl = AllBooksModel::builder().launch(catalog.clone()).forward(
+                     sender.input_sender(),
+                     |out| match out {
+@@ -2113,10 +2112,10 @@ impl Component for AppModel {
+                         self.route,
+                         Route::Module(
+                             NavItem::Home
+-                            | NavItem::Library
+-                            | NavItem::AllBooks
+-                            | NavItem::Shelves
+-                            | NavItem::Comics,
++                                | NavItem::Library
++                                | NavItem::AllBooks
++                                | NavItem::Shelves
++                                | NavItem::Comics,
+                         ) | Route::ShelvesGrid
+                             | Route::LibrarySection(_)
+                             | Route::ComicSeries { .. }
+diff --git a/src/widgets/notification_panel.rs b/src/widgets/notification_panel.rs
+index 5a555e4..897a077 100644
+--- a/src/widgets/notification_panel.rs
++++ b/src/widgets/notification_panel.rs
+@@ -203,10 +203,8 @@ impl NotificationPanel {
+             self.tasks_list.remove(&child);
+         }
+ 
+-        let running: Vec<&crate::tasks::TaskInfo> =
+-            running.iter().filter(|t| !t.hidden).collect();
+-        let failed: Vec<&crate::tasks::FinishedTask> =
+-            recent.iter().filter(|t| t.failed).collect();
++        let running: Vec<&crate::tasks::TaskInfo> = running.iter().filter(|t| !t.hidden).collect();
++        let failed: Vec<&crate::tasks::FinishedTask> = recent.iter().filter(|t| t.failed).collect();
+ 
+         self.tasks_box
+             .set_visible(!running.is_empty() || !failed.is_empty());
+@@ -267,7 +265,8 @@ impl NotificationPanel {
+         } else {
+             "Notifications"
+         };
+-        self.button.set_tooltip_text(Some(&format!("{head}{tasks}")));
++        self.button
++            .set_tooltip_text(Some(&format!("{head}{tasks}")));
+     }
+ 
+     pub fn button(&self) -> gtk::Button {
+--- run 42496339107 ---

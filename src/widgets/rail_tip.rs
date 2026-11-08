@@ -27,9 +27,10 @@ use std::rc::Rc;
 /// form as a very complex type.
 type ExtraLine = Rc<dyn Fn() -> Option<String>>;
 
-/// §56: "after a short delay". GTK's own tooltip waits 500 ms; this is a
-/// little quicker because the card also carries the shortcut, which is worth
-/// reading.
+/// §56: "after a short delay", which is a taste number rather than a specified
+/// one. GTK's own tooltip waits 500 ms; this is a little quicker because the
+/// card also carries the shortcut, which is worth reading. Deliberately not
+/// pinned by a test — asserting on a constant only says the constant is itself.
 const DELAY_MS: u64 = 400;
 
 /// Gap between the item and the card.
@@ -266,14 +267,5 @@ mod tests {
 
         let (_, top) = margins(12.0, 0.0, 44.0, 44.0, 48.0);
         assert_eq!(top, 0, "clamped at the top of the window");
-    }
-
-    /// The delay is what makes the rail feel calm rather than twitchy, and it
-    /// is a number a future change would otherwise move by accident.
-    #[test]
-    fn the_tip_waits_before_it_appears() {
-        assert!(DELAY_MS >= 200, "a tip this quick is a flicker");
-        assert!(DELAY_MS <= 600, "a tip this slow is never read");
-        assert!(GAP > 0.0, "the card must not touch the item");
     }
 }

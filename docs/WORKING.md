@@ -49,6 +49,10 @@ when they change.
   explaining why it is needed and how it fits the existing design.
 - Update active documentation when user-visible behavior or architecture
   changes. Keep archival notes clearly identified as historical.
+- `docs/design/` is **read-only** for build work. The design set is maintained
+  by the design chats and arrives as uploads, so appending to it here would
+  clash with the next upload. Record rulings given during build work in
+  `docs/build-decisions.md`, numbered `B1`, `B2` and so on.
 
 ## Guardrails
 

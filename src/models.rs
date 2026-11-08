@@ -67,20 +67,28 @@ impl NavItem {
         }
     }
 
+    /// The key of this entry's bundled glyph, drawn by [`crate::rail_icons`].
+    ///
+    /// Not an icon-theme name: the rail's glyphs ship inside the binary
+    /// (build-decisions B6), because a theme rescan is too slow for the first
+    /// thing on screen and GTK recolours symbolic icons by fill, which erases
+    /// a stroke drawing. The four entries hidden from the rail keep a bundled
+    /// key too, so restoring one to `ALL` is still the one-line change its doc
+    /// promises.
     pub fn icon(self) -> &'static str {
         match self {
-            NavItem::Home => "go-home-symbolic",
-            NavItem::Library => "folder-documents-symbolic",
-            NavItem::AllBooks => "view-grid-symbolic",
-            NavItem::Authors => "avatar-default-symbolic",
-            NavItem::Shelves => "view-grid-symbolic",
-            NavItem::Downloads => "folder-download-symbolic",
-            NavItem::Comics => "image-x-generic-symbolic",
-            NavItem::Online => "network-workgroup-symbolic",
-            NavItem::Editor => "accessories-text-editor-symbolic",
-            NavItem::RemoteBrowse => "network-workgroup-symbolic",
-            NavItem::Fanfiction => "document-edit-symbolic",
-            NavItem::Settings => "emblem-system-symbolic",
+            NavItem::Home => "house",
+            NavItem::Library => "library",
+            NavItem::AllBooks => "layout-grid",
+            NavItem::Authors => "user-round",
+            NavItem::Shelves => "archive",
+            NavItem::Downloads => "download",
+            NavItem::Comics => "images",
+            NavItem::Online => "globe",
+            NavItem::Editor => "square-pen",
+            NavItem::RemoteBrowse => "compass",
+            NavItem::Fanfiction => "feather",
+            NavItem::Settings => "settings",
         }
     }
 

@@ -101,25 +101,40 @@ scrollbar slider:active {
     background-color: @kalam_accent;
 }
 
-/* ── nav rail (design-system §4) ────────────────────── */
-/* 68 wide, 44 circular items, the active item filled with accent-fill
-   carrying a white glyph (decision 49: white sits only on accent-fill,
-   never on plain accent). The rail's entries stay as they are — their
-   final composition is still a draft (decision 3). */
+/* ── nav rail (design-system §56) ───────────────────── */
+/* 68 wide with no fill and no border: the rail is the page colour behind it,
+   and the only line on it is the 2px rounded divider inset 28 from the top
+   and 24 from the bottom. Items are 44 discs 8 apart, glyphs 22 bundled from
+   Lucide (src/rail_icons.rs). Idle text-2, hover the border colour, active an
+   accent-fill disc with the glyph cut out in the page colour — the owner's
+   ruling, with both options' measured contrast in docs/build-decisions.md.
+   Supersedes the §4 note and decision 49's white glyph (decisions 179, 180). */
 .kalam-sidebar {
-    background: @kalam_sidebar;
-    border-right: 1px solid @kalam_border;
-    /* Icon-only rail: 44px disc + 12px either side. */
+    background: transparent;
+    /* Icon-only rail: 44px disc + 12px either side. The 24 below is §56's
+       bottom padding under the bell and Settings. */
     min-width: 68px;
-    padding: 12px 0;
+    padding: 0 0 24px 0;
 }
 
 .kalam-sidebar-inner {
     padding: 0;
 }
 
+/* §56: the logo 28 down from the top of the rail. No size here on purpose —
+   the exact size is set in code with gtk::Image::set_pixel_size, and a CSS
+   min-width would only act as a floor. */
 .kalam-brand {
-    padding: 4px 0 8px 0;
+    margin-top: 28px;
+    padding: 0;
+}
+
+/* The divider is a widget, not a border: §56 wants rounded ends and insets,
+   and a border is square and full height. */
+.kalam-rail-divider {
+    background: @kalam_border;
+    border-radius: 999px;
+    min-width: 2px;
 }
 
 /* No size here on purpose. The exact size is set in code with
@@ -142,13 +157,16 @@ scrollbar slider:active {
 }
 
 .kalam-nav-btn:hover {
-    background: @kalam_hover;
+    /* §56: hover is the border colour, not the text-alpha wash. */
+    background: @kalam_border;
     color: @kalam_text;
 }
 
 .kalam-nav-btn.active {
     background: @kalam_accent_fill;
-    color: white;
+    /* The glyph is a texture rasterized in @kalam_bg (rail_icons), so this
+       colour does not paint it; it is here so the two cannot drift apart. */
+    color: @kalam_bg;
 }
 
 .kalam-nav-btn.active:hover {
@@ -162,7 +180,10 @@ scrollbar slider:active {
 
 .kalam-nav-icon {
     color: inherit;
-    -gtk-icon-size: 20px;
+    /* §56: icons 22. A bundled glyph is a texture sized in code with
+       set_pixel_size; this only bites if a theme icon name is ever drawn
+       here again. */
+    -gtk-icon-size: 22px;
 }
 
 .kalam-nav-spacer {

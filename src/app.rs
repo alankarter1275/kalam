@@ -474,8 +474,7 @@ impl AppModel {
                 );
                 PageSlot::Library(ctrl)
             }
-            Route::LibrarySection(LibrarySection::AllBooks)
-            | Route::Module(NavItem::AllBooks) => {
+            Route::LibrarySection(LibrarySection::AllBooks) | Route::Module(NavItem::AllBooks) => {
                 let ctrl = AllBooksModel::builder().launch(catalog.clone()).forward(
                     sender.input_sender(),
                     |out| match out {
@@ -1234,15 +1233,27 @@ impl Component for AppModel {
                     #[watch]
                     set_can_target: model.floating.is_none(),
 
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
+                    gtk::Overlay {
                         add_css_class: "kalam-sidebar",
                         set_hexpand: false,
                         set_vexpand: true,
                         #[watch]
                         set_visible: !model.route.is_reader(),
 
-                        gtk::Box {
+                        // §56: a 2px divider with rounded ends on the rail's
+                        // right edge, inset 28 from the top and 24 from the
+                        // bottom. An overlay child rather than a border,
+                        // because a border is square and runs the full height.
+                        add_overlay = &gtk::Box {
+                            add_css_class: "kalam-rail-divider",
+                            set_halign: gtk::Align::End,
+                            set_valign: gtk::Align::Fill,
+                            set_margin_top: 28,
+                            set_margin_bottom: 24,
+                        },
+
+                        #[wrap(Some)]
+                        set_child = &gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
                             add_css_class: "kalam-sidebar-inner",
                             set_vexpand: true,
@@ -1705,12 +1716,26 @@ impl Component for AppModel {
         // The brand mark is rasterized in the accent colour (a texture
         // cannot inherit CSS), so it re-rasterizes on every theme install.
         // The listener lives as long as the process — so does the rail.
-        let brand_image = brand_logo(crate::theme::current(&model.catalog).accent);
+        let theme_now = crate::theme::current(&model.catalog);
+        let brand_image = brand_logo(theme_now.accent);
         widgets.brand.append(&brand_image);
         crate::theme::on_theme_applied(std::rc::Rc::new(move |theme: &crate::theme::Theme| {
             if let Some(texture) = brand_texture(theme.accent) {
                 brand_image.set_paintable(Some(&texture));
             }
+        }));
+
+        // The rail's glyphs are textures too, so they carry their colour with
+        // them: the theme in force decides idle `text-2` against the cut-out
+        // page colour, and a palette switch has to re-rasterize all of them.
+        // `repaint_all` here covers the bell, which was built before the
+        // theme was read; the rail entries are built after this line and take
+        // their first colour from it.
+        crate::rail_icons::set_theme(&theme_now);
+        crate::rail_icons::repaint_all();
+        crate::theme::on_theme_applied(std::rc::Rc::new(|theme: &crate::theme::Theme| {
+            crate::rail_icons::set_theme(theme);
+            crate::rail_icons::repaint_all();
         }));
 
         let popover_list = widgets.download_popover_list.clone();
@@ -2113,10 +2138,10 @@ impl Component for AppModel {
                         self.route,
                         Route::Module(
                             NavItem::Home
-                            | NavItem::Library
-                            | NavItem::AllBooks
-                            | NavItem::Shelves
-                            | NavItem::Comics,
+                                | NavItem::Library
+                                | NavItem::AllBooks
+                                | NavItem::Shelves
+                                | NavItem::Comics,
                         ) | Route::ShelvesGrid
                             | Route::LibrarySection(_)
                             | Route::ComicSeries { .. }
@@ -2268,6 +2293,9 @@ impl Component for AppModel {
         let active = self.sidebar_item();
         update_nav_styles(&widgets.top_nav, active);
         update_nav_styles(&widgets.bottom_nav, active);
+        // The glyphs are textures, so moving the `active` class recolours the
+        // disc but not the drawing inside it.
+        crate::rail_icons::repaint_all();
         self.update_view(widgets, sender);
     }
 }
@@ -2422,9 +2450,10 @@ fn collect_shortcut_import_files(root: std::path::PathBuf) -> Vec<std::path::Pat
 /// for free, but `icons::init` is deferred to idle for its theme-rescan
 /// cost, and the rail is on screen before that runs.)
 fn brand_logo(accent: &str) -> gtk::Image {
-    // design-system §5: the loop is a hairline, so check it at 32px. The
-    // 68px rail is drawn around this size.
-    const LOGO_PX: i32 = 32;
+    // §56: the logo is 38 x 37 in the 68px rail, 28 down from the top. §5
+    // asks for the loop's hairline to survive at this size, and at 38px it
+    // does — the mark was drawn at 32px before the rail was specified.
+    const LOGO_PX: i32 = 38;
 
     let image = gtk::Image::new();
     if let Some(texture) = brand_texture(accent) {
@@ -2454,10 +2483,15 @@ pub(crate) fn brand_texture(accent: &str) -> Option<gtk::gdk::Texture> {
 
 fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     // Icon only. The rail is too narrow for a readable caption, and the
-    // tooltip already carries the page name.
-    let icon = crate::icons::symbolic_with_classes(item.icon(), 20, &["kalam-nav-icon"]);
-    icon.set_halign(gtk::Align::Center);
-    icon.set_valign(gtk::Align::Center);
+    // tooltip already carries the page name. The glyph is a bundled Lucide
+    // drawing rasterized in the theme's colours (rail_icons), because a
+    // texture cannot inherit a CSS colour.
+    let face = if active {
+        crate::rail_icons::Face::CutOut
+    } else {
+        crate::rail_icons::Face::Idle
+    };
+    let icon = crate::rail_icons::image(item.icon(), face);
 
     let btn = gtk::Button::new();
     btn.set_child(Some(&icon));
@@ -2469,6 +2503,10 @@ fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     }
     btn.set_tooltip_text(Some(item.label()));
     btn.set_focus_on_click(false);
+    // Registered so a theme install can re-rasterize it: the class swap in
+    // `update_nav_styles` moves the disc's fill, and only this repaints the
+    // glyph inside it.
+    crate::rail_icons::remember(&btn, &icon, item.icon());
     btn
 }
 

@@ -41,6 +41,7 @@ mod pdf;
 mod pdf_ocr;
 mod perf;
 mod preload;
+mod rail_icons;
 mod service;
 mod shelf_rules;
 mod shortcuts;

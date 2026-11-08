@@ -52,22 +52,20 @@ pub struct NotificationPanel {
 impl NotificationPanel {
     pub fn new() -> Self {
         // The bell face: 22px glyph centred in the 44px rail disc,
-        // with the 8px new-event dot at its top-right (§45).
-        let icon = crate::icons::symbolic_with_classes(
-            "preferences-system-notifications-symbolic",
-            22,
-            &["kalam-bell-icon"],
-        );
-        icon.set_halign(gtk::Align::Center);
-        icon.set_valign(gtk::Align::Center);
+        // with the 8px new-event dot at its top-right (§45). The glyph is the
+        // bundled Lucide bell rasterized like the rest of the rail
+        // (`rail_icons`): idle in text-2, white while the panel is open.
+        let icon = crate::rail_icons::image("bell", crate::rail_icons::Face::Idle);
+        icon.add_css_class("kalam-bell-icon");
 
         let dot = gtk::Box::new(gtk::Orientation::Vertical, 0);
         dot.add_css_class("kalam-bell-dot");
         dot.set_size_request(8, 8);
         dot.set_halign(gtk::Align::End);
         dot.set_valign(gtk::Align::Start);
-        dot.set_margin_top(6);
-        dot.set_margin_end(6);
+        // §56: 8 from the top, 9 from the right.
+        dot.set_margin_top(8);
+        dot.set_margin_end(9);
         dot.set_can_target(false);
         dot.set_visible(false);
 
@@ -86,6 +84,9 @@ impl NotificationPanel {
         button.set_widget_name("nav-Bell");
         button.set_tooltip_text(Some("Notifications"));
         button.update_property(&[gtk::accessible::Property::Label("Notifications")]);
+        // Registered with the rail's glyphs so a theme install repaints the
+        // bell too; its `open` class is what picks the white face (§45).
+        crate::rail_icons::remember(&button, &icon, "bell");
 
         // Invisible outside-click catcher (no dim layer, decision 148).
         let catcher = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -213,10 +214,8 @@ impl NotificationPanel {
             self.tasks_list.remove(&child);
         }
 
-        let running: Vec<&crate::tasks::TaskInfo> =
-            running.iter().filter(|t| !t.hidden).collect();
-        let failed: Vec<&crate::tasks::FinishedTask> =
-            recent.iter().filter(|t| t.failed).collect();
+        let running: Vec<&crate::tasks::TaskInfo> = running.iter().filter(|t| !t.hidden).collect();
+        let failed: Vec<&crate::tasks::FinishedTask> = recent.iter().filter(|t| t.failed).collect();
 
         self.tasks_box
             .set_visible(!running.is_empty() || !failed.is_empty());
@@ -277,7 +276,8 @@ impl NotificationPanel {
         } else {
             "Notifications"
         };
-        self.button.set_tooltip_text(Some(&format!("{head}{tasks}")));
+        self.button
+            .set_tooltip_text(Some(&format!("{head}{tasks}")));
     }
 
     pub fn button(&self) -> gtk::Button {
@@ -404,6 +404,9 @@ impl NotificationPanel {
         } else {
             self.button.remove_css_class("open");
         }
+        // §45: the open bell is accent-fill with a white glyph. The glyph is a
+        // texture, so the class alone does not recolour it.
+        crate::rail_icons::repaint_all();
 
         // Re-ask on every toggle: the Appearance pane can flip the
         // reduce-motion choice while the shell lives.

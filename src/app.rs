@@ -226,10 +226,15 @@ pub struct AppModel {
     /// destroyed, so returning to one costs nothing.
     /// The sidebar's task button. Its face is the badge: a tick when idle, a
     /// count when busy, a warning when something recent failed.
-    tasks_btn: gtk::Button,
+    /// The rail bell, which since build-decisions B5 also carries
+    /// background work in a nested box at the bottom of its panel.
+    notifications: crate::widgets::notification_panel::NotificationPanel,
     /// Last badge painted, so an unchanged state does not rebuild the child
     /// widget twice a second.
     tasks_badge: crate::pages::task_manager::Badge,
+    /// Running and failed task ids as one string, so the bell's nested box
+    /// is only rebuilt when the set actually changes.
+    tasks_stamp: String,
     /// The `w` dialog's row host and its cancel callback, while it is open.
     tasks_dialog: Option<(gtk::Box, crate::pages::task_manager::CancelFn)>,
     /// Held, not used — hence the underscore, which is what exempts a field
@@ -458,6 +463,7 @@ impl AppModel {
                     sender.input_sender(),
                     |out| match out {
                         LibraryOut::Section(sec) => AppMsg::Push(Route::LibrarySection(sec)),
+                        LibraryOut::Shelves => AppMsg::Push(Route::ShelvesGrid),
                         LibraryOut::Book { book_id } => AppMsg::Push(Route::BookPage { book_id }),
                         LibraryOut::BookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
                         LibraryOut::Read { book_id } => AppMsg::OpenReader { book_id },
@@ -468,7 +474,8 @@ impl AppModel {
                 );
                 PageSlot::Library(ctrl)
             }
-            Route::LibrarySection(LibrarySection::AllBooks) => {
+            Route::LibrarySection(LibrarySection::AllBooks)
+            | Route::Module(NavItem::AllBooks) => {
                 let ctrl = AllBooksModel::builder().launch(catalog.clone()).forward(
                     sender.input_sender(),
                     |out| match out {
@@ -1018,6 +1025,14 @@ impl AppModel {
                     });
                 PageSlot::EpubEditor(ctrl)
             }
+            // B4: a door that promises nothing and fetches nothing until
+            // design chat 18 designs what is behind it.
+            Route::Module(NavItem::Online) => {
+                let ctrl = PlaceholderPageModel::builder()
+                    .launch(NavItem::Online)
+                    .detach();
+                PageSlot::Placeholder(ctrl)
+            }
         }
     }
 
@@ -1418,16 +1433,15 @@ impl Component for AppModel {
         float_host.set_visible(false);
 
         let cache_token = catalog.page_cache_token();
-        // Built before the model because the model owns both. Appended to the
-        // rail further down, once `widgets` exists.
-        let tasks_btn = gtk::Button::new();
-        tasks_btn.add_css_class("kalam-nav-btn");
-        tasks_btn.set_halign(gtk::Align::Center);
-        tasks_btn.set_hexpand(false);
-        tasks_btn.set_focus_on_click(false);
-        tasks_btn.set_widget_name("nav-Tasks");
         let badge0 = crate::pages::task_manager::badge();
-        crate::pages::task_manager::apply_badge(&tasks_btn, badge0);
+
+        // The rail bell (decision 148) and, since build-decisions B5, the
+        // home of background work: the tasks disc left the rail and its rows
+        // live in a nested box at the bottom of this panel. Built before the
+        // model because the model owns it — the TasksTick handler refreshes
+        // it — while the rail button itself joins the bottom stack later,
+        // once `widgets` exists.
+        let notifications = crate::widgets::notification_panel::NotificationPanel::new();
 
         let tick_sender = sender.input_sender().clone();
         let watch_sender = sender.input_sender().clone();
@@ -1453,8 +1467,9 @@ impl Component for AppModel {
             floating: None,
             float_scrim: float_scrim.clone(),
             float_host: float_host.clone(),
-            tasks_btn,
+            notifications: notifications.clone(),
             tasks_badge: badge0,
+            tasks_stamp: String::new(),
             tasks_dialog: None,
             _tasks_tick: tasks_tick,
             cache: Vec::new(),
@@ -1481,7 +1496,6 @@ impl Component for AppModel {
         // catcher float over the whole window beside the rail, so
         // they live on the root overlay. The button joins the rail's
         // bottom stack below, once it exists.
-        let notifications = crate::widgets::notification_panel::NotificationPanel::new();
         widgets.root_overlay.add_overlay(&notifications.catcher());
         widgets.root_overlay.add_overlay(&notifications.revealer());
         notifications.attach_escape(&root);
@@ -1746,19 +1760,22 @@ impl Component for AppModel {
                 }
             });
 
-        // Above Settings, on the same end of the rail. Prepended rather than
-        // appended so the order is Tasks, then the bell, then Settings;
-        // `bottom_nav` holds nothing else since Downloads was hidden.
+        // B5: the tasks disc is gone; its rows live inside the bell's
+        // panel, and the box's Open button (and each row) opens the tasks
+        // page. The bottom stack is bell then Settings, as designed (§56).
         {
-            let btn = model.tasks_btn.clone();
             let s = sender.clone();
-            btn.connect_clicked(move |_| {
+            notifications.on_open_tasks(move || {
                 s.input(AppMsg::Push(Route::LibrarySection(
                     LibrarySection::TaskManager,
-                )))
+                )));
             });
-            widgets.bottom_nav.prepend(&btn);
         }
+        notifications.set_tasks(
+            model.tasks_badge,
+            &crate::tasks::tasks(),
+            &crate::tasks::recent(),
+        );
         widgets.bottom_nav.append(&notifications.button());
 
         for item in NavItem::ALL {
@@ -1860,6 +1877,7 @@ impl Component for AppModel {
             AppMsg::Navigate(item) => {
                 let route = match item {
                     NavItem::Shelves => Route::ShelvesGrid,
+                    NavItem::AllBooks => Route::LibrarySection(LibrarySection::AllBooks),
                     NavItem::Authors => Route::AuthorsIndex,
                     other => Route::Module(other),
                 };
@@ -1937,6 +1955,37 @@ impl Component for AppModel {
                         self.swap_page(
                             &widgets.content_host,
                             Route::Module(NavItem::Library),
+                            false,
+                            &sender,
+                        );
+                    }
+                    ShortcutAction::GoAllBooks => {
+                        self.close_floating();
+                        self.swap_page(
+                            &widgets.content_host,
+                            Route::LibrarySection(LibrarySection::AllBooks),
+                            false,
+                            &sender,
+                        );
+                    }
+                    ShortcutAction::GoAuthors => {
+                        self.close_floating();
+                        self.swap_page(&widgets.content_host, Route::AuthorsIndex, false, &sender);
+                    }
+                    ShortcutAction::GoComics => {
+                        self.close_floating();
+                        self.swap_page(
+                            &widgets.content_host,
+                            Route::Module(NavItem::Comics),
+                            false,
+                            &sender,
+                        );
+                    }
+                    ShortcutAction::GoOnline => {
+                        self.close_floating();
+                        self.swap_page(
+                            &widgets.content_host,
+                            Route::Module(NavItem::Online),
                             false,
                             &sender,
                         );
@@ -2063,7 +2112,11 @@ impl Component for AppModel {
                     let refresh_listing = matches!(
                         self.route,
                         Route::Module(
-                            NavItem::Home | NavItem::Library | NavItem::Shelves | NavItem::Comics,
+                            NavItem::Home
+                            | NavItem::Library
+                            | NavItem::AllBooks
+                            | NavItem::Shelves
+                            | NavItem::Comics,
                         ) | Route::ShelvesGrid
                             | Route::LibrarySection(_)
                             | Route::ComicSeries { .. }
@@ -2098,9 +2151,21 @@ impl Component for AppModel {
             }
             AppMsg::TasksTick => {
                 let state = crate::pages::task_manager::badge();
-                if state != self.tasks_badge {
-                    crate::pages::task_manager::apply_badge(&self.tasks_btn, state);
+                let running = crate::tasks::tasks();
+                let recent = crate::tasks::recent();
+                // The stamp changes when a task starts, stops or fails; the
+                // badge alone would miss a second task joining a first.
+                let stamp = running
+                    .iter()
+                    .filter(|t| !t.hidden)
+                    .map(|t| t.id.to_string())
+                    .chain(recent.iter().filter(|t| t.failed).map(|t| t.id.to_string()))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                if state != self.tasks_badge || stamp != self.tasks_stamp {
                     self.tasks_badge = state;
+                    self.tasks_stamp = stamp;
+                    self.notifications.set_tasks(state, &running, &recent);
                 }
                 if let Some((list, on_cancel)) = &self.tasks_dialog {
                     crate::pages::task_manager::fill_tasks_dialog(list, on_cancel);
@@ -2680,6 +2745,7 @@ fn route_by_name(name: &str) -> Option<Route> {
         "fanfiction" => Route::Module(NavItem::Fanfiction),
         "settings" => Route::Module(NavItem::Settings),
         "components" => Route::ComponentPreview,
+        "online" => Route::Module(NavItem::Online),
         "shelves" => Route::ShelvesGrid,
         "all-books" | "allbooks" => Route::LibrarySection(LibrarySection::AllBooks),
         "reading-list" => Route::LibrarySection(LibrarySection::ReadingList),
@@ -2709,6 +2775,7 @@ fn known_route_names() -> Vec<&'static str> {
         "fanfiction",
         "settings",
         "components",
+        "online",
         "shelves",
         "all-books",
         "reading-list",
@@ -2748,6 +2815,10 @@ fn route_label(route: &Route) -> &'static str {
         Route::Module(NavItem::Home) => "route_open:home",
         Route::Module(NavItem::Library) => "route_open:library",
         Route::Module(NavItem::Authors) => "route_open:authors",
+        // The All books grid has two route spellings, but the watchdog needs
+        // distinct labels or a stall on one is blamed on the other.
+        Route::Module(NavItem::AllBooks) => "route_open:all_books_module",
+        Route::Module(NavItem::Online) => "route_open:online",
         Route::Module(NavItem::Shelves) => "route_open:shelves",
         Route::Module(NavItem::Downloads) => "route_open:downloads",
         Route::Module(NavItem::Comics) => "route_open:comics",

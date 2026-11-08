@@ -268,8 +268,6 @@ pub(crate) fn badge() -> Badge {
     Badge::Idle
 }
 
-/// Swap the sidebar button's face to match [`Badge`].
-///
 /// The mark *is* the button's child rather than an overlay, because there is
 /// nothing to overlay: idle shows a tick, busy shows a count, failure shows a
 /// warning. Three mutually exclusive states, one slot.
@@ -277,40 +275,6 @@ pub(crate) fn badge() -> Badge {
 /// Deliberately uses no new CSS. `resources/style.css` is under a ratchet
 /// (`tests/guardrails.rs`, 147 hex colours) and a badge does not justify
 /// spending any of that budget; the count inherits the nav button's own font.
-pub(crate) fn apply_badge(btn: &gtk::Button, state: Badge) {
-    match state {
-        Badge::Idle => {
-            let icon = crate::icons::symbolic_with_classes(
-                "object-select-symbolic",
-                20,
-                &["kalam-nav-icon"],
-            );
-            icon.set_halign(gtk::Align::Center);
-            icon.set_valign(gtk::Align::Center);
-            btn.set_child(Some(&icon));
-            btn.set_tooltip_text(Some("Tasks — nothing running"));
-        }
-        Badge::Running(n) => {
-            let label = gtk::Label::new(Some(&n.to_string()));
-            label.set_halign(gtk::Align::Center);
-            label.set_valign(gtk::Align::Center);
-            btn.set_child(Some(&label));
-            let noun = if n == 1 { "task" } else { "tasks" };
-            btn.set_tooltip_text(Some(&format!("{n} {noun} running")));
-        }
-        Badge::Failed => {
-            let icon = crate::icons::symbolic_with_classes(
-                "dialog-warning-symbolic",
-                20,
-                &["kalam-nav-icon"],
-            );
-            icon.set_halign(gtk::Align::Center);
-            icon.set_valign(gtk::Align::Center);
-            btn.set_child(Some(&icon));
-            btn.set_tooltip_text(Some("Tasks — something failed"));
-        }
-    }
-}
 
 /// Build the panel the `w` key opens.
 ///

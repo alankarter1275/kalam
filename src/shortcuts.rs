@@ -24,6 +24,10 @@ use crate::db::Catalog;
 pub enum ShortcutAction {
     GoHome,
     GoLibrary,
+    GoAllBooks,
+    GoAuthors,
+    GoComics,
+    GoOnline,
     GoEditor,
     OpenSettings,
     Back,
@@ -39,9 +43,13 @@ pub enum ShortcutAction {
 }
 
 impl ShortcutAction {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 18] = [
         Self::GoHome,
         Self::GoLibrary,
+        Self::GoAllBooks,
+        Self::GoAuthors,
+        Self::GoComics,
+        Self::GoOnline,
         Self::GoEditor,
         Self::OpenSettings,
         Self::Back,
@@ -62,6 +70,10 @@ impl ShortcutAction {
         match self {
             Self::GoHome => "nav-home",
             Self::GoLibrary => "nav-library",
+            Self::GoAllBooks => "nav-all-books",
+            Self::GoAuthors => "nav-authors",
+            Self::GoComics => "nav-comics",
+            Self::GoOnline => "nav-online",
             Self::GoEditor => "nav-editor",
             Self::OpenSettings => "nav-settings",
             Self::Back => "nav-back",
@@ -80,7 +92,11 @@ impl ShortcutAction {
     pub fn label(self) -> &'static str {
         match self {
             Self::GoHome => "Go to Home",
-            Self::GoLibrary => "Go to Library",
+            Self::GoLibrary => "Go to My Library",
+            Self::GoAllBooks => "Go to All books",
+            Self::GoAuthors => "Go to Authors",
+            Self::GoComics => "Go to Comics",
+            Self::GoOnline => "Go to Online sources",
             Self::GoEditor => "Go to Editor",
             Self::OpenSettings => "Open Settings",
             Self::Back => "Back",
@@ -100,7 +116,14 @@ impl ShortcutAction {
         match self {
             Self::GoHome => ShortcutBinding::alt(gdk::Key::_1),
             Self::GoLibrary => ShortcutBinding::alt(gdk::Key::_2),
-            Self::GoEditor => ShortcutBinding::alt(gdk::Key::_3),
+            // The numbers follow the rail top to bottom (build-decisions
+            // B7): Home, My Library, All books, Authors, Comics, Online
+            // sources, Editor.
+            Self::GoAllBooks => ShortcutBinding::alt(gdk::Key::_3),
+            Self::GoAuthors => ShortcutBinding::alt(gdk::Key::_4),
+            Self::GoComics => ShortcutBinding::alt(gdk::Key::_5),
+            Self::GoOnline => ShortcutBinding::alt(gdk::Key::_6),
+            Self::GoEditor => ShortcutBinding::alt(gdk::Key::_7),
             Self::OpenSettings => ShortcutBinding::ctrl(gdk::Key::comma),
             Self::Back => ShortcutBinding::alt(gdk::Key::Left),
             Self::Notifications => ShortcutBinding::ctrl_shift(gdk::Key::n),
@@ -127,6 +150,10 @@ pub const SHORTCUT_GROUPS: &[(&str, &[ShortcutAction])] = &[
         &[
             ShortcutAction::GoHome,
             ShortcutAction::GoLibrary,
+            ShortcutAction::GoAllBooks,
+            ShortcutAction::GoAuthors,
+            ShortcutAction::GoComics,
+            ShortcutAction::GoOnline,
             ShortcutAction::GoEditor,
             ShortcutAction::OpenSettings,
             ShortcutAction::Back,
@@ -490,8 +517,15 @@ mod tests {
     fn drawn_defaults_are_exact_and_unique() {
         let bindings = ShortcutBindings::defaults();
         let expected = [
+            // The rail keys run Alt+1..Alt+7 top to bottom, Editor last
+            // (build-decisions B7).
             (ShortcutAction::GoHome, "Alt+1"),
             (ShortcutAction::GoLibrary, "Alt+2"),
+            (ShortcutAction::GoAllBooks, "Alt+3"),
+            (ShortcutAction::GoAuthors, "Alt+4"),
+            (ShortcutAction::GoComics, "Alt+5"),
+            (ShortcutAction::GoOnline, "Alt+6"),
+            (ShortcutAction::GoEditor, "Alt+7"),
             (ShortcutAction::OpenSettings, "Ctrl+,"),
             (ShortcutAction::Back, "Alt+←"),
             (ShortcutAction::Notifications, "Ctrl+Shift+N"),

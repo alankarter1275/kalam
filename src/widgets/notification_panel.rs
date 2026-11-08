@@ -27,6 +27,15 @@ pub struct NotificationPanel {
     revealer: gtk::Revealer,
     list: gtk::Box,
     clear: gtk::Button,
+    /// Background work, nestled at the bottom of the panel (B5).
+    tasks_box: gtk::Box,
+    tasks_list: gtk::Box,
+    tasks_status: gtk::Label,
+    /// Shared, not per-clone: this struct is `Clone`, and the model's copy
+    /// and the copy the notify callback holds must agree. A plain `RefCell`
+    /// would let one clone forget the tasks the other just set.
+    tasks_state: Rc<std::cell::RefCell<crate::pages::task_manager::Badge>>,
+    open_tasks: Rc<std::cell::RefCell<Option<Rc<dyn Fn()>>>>,
     open: Rc<Cell<bool>>,
 }
 
@@ -104,6 +113,34 @@ impl NotificationPanel {
         scroller.set_child(Some(&list));
         panel.body().append(&scroller);
 
+        // B5: background work folds into the bell. The box sits at the
+        // bottom of the panel, under the history, and only appears while
+        // something is running or has failed — an idle bell panel that
+        // says "nothing running" twice would be noise.
+        let tasks_head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let tasks_title = gtk::Label::new(Some("BACKGROUND"));
+        tasks_title.add_css_class("kalam-ui-label");
+        tasks_title.add_css_class("kalam-notify-group");
+        tasks_title.set_halign(gtk::Align::Start);
+        tasks_title.set_xalign(0.0);
+        let tasks_status = gtk::Label::new(Some(""));
+        tasks_status.add_css_class("kalam-notify-tasks-status");
+        tasks_status.set_halign(gtk::Align::Start);
+        tasks_status.set_hexpand(true);
+        tasks_status.set_xalign(0.0);
+        let tasks_open = gtk::Button::with_label("Open");
+        tasks_open.add_css_class("kalam-notify-clear");
+        tasks_head.append(&tasks_title);
+        tasks_head.append(&tasks_status);
+        tasks_head.append(&tasks_open);
+        let tasks_list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        let tasks_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        tasks_box.add_css_class("kalam-notify-tasks");
+        tasks_box.append(&tasks_head);
+        tasks_box.append(&tasks_list);
+        tasks_box.set_visible(false);
+        panel.body().append(&tasks_box);
+
         let revealer = gtk::Revealer::new();
         revealer.set_transition_duration(PANEL_TRANSITION_MS);
         revealer.set_reveal_child(false);
@@ -124,11 +161,113 @@ impl NotificationPanel {
             revealer,
             list,
             clear,
+            tasks_box,
+            tasks_list,
+            tasks_status,
+            tasks_state: Rc::new(std::cell::RefCell::new(
+                crate::pages::task_manager::Badge::Idle,
+            )),
+            open_tasks: Rc::new(std::cell::RefCell::new(None)),
             open: Rc::new(Cell::new(false)),
         };
+        {
+            let p = panel.clone();
+            tasks_open.connect_clicked(move |_| {
+                if let Some(f) = p.open_tasks.borrow().as_ref() {
+                    f();
+                }
+            });
+        }
         panel.wire();
         panel.refresh();
         panel
+    }
+
+    /// Register what the nested tasks rows open (B5): the shell routes them
+    /// to the tasks page, which keeps its own place in My Library.
+    pub fn on_open_tasks(&self, f: impl Fn() + 'static) {
+        *self.open_tasks.borrow_mut() = Some(Rc::new(f));
+    }
+
+    /// Show background work in the nested box, and let the bell's tooltip
+    /// carry the running count now that the tasks disc is gone (B5).
+    pub fn set_tasks(
+        &self,
+        state: crate::pages::task_manager::Badge,
+        running: &[crate::tasks::TaskInfo],
+        recent: &[crate::tasks::FinishedTask],
+    ) {
+        *self.tasks_state.borrow_mut() = state;
+
+        while let Some(child) = self.tasks_list.first_child() {
+            self.tasks_list.remove(&child);
+        }
+
+        let running: Vec<&crate::tasks::TaskInfo> =
+            running.iter().filter(|t| !t.hidden).collect();
+        let failed: Vec<&crate::tasks::FinishedTask> =
+            recent.iter().filter(|t| t.failed).collect();
+
+        self.tasks_box
+            .set_visible(!running.is_empty() || !failed.is_empty());
+        self.tasks_status.set_label(&match state {
+            crate::pages::task_manager::Badge::Running(n) => format!("{n} running"),
+            crate::pages::task_manager::Badge::Failed => "failed".to_string(),
+            crate::pages::task_manager::Badge::Idle => String::new(),
+        });
+
+        for task in running.iter().take(3) {
+            let text = if task.detail.is_empty() {
+                task.label.clone()
+            } else {
+                format!("{} · {}", task.label, task.detail)
+            };
+            self.tasks_list.append(&self.task_row(&text, false));
+        }
+        for task in failed.iter().take(2) {
+            let text = format!("{} — failed", task.label);
+            self.tasks_list.append(&self.task_row(&text, true));
+        }
+        self.update_tooltip();
+    }
+
+    fn task_row(&self, text: &str, failed: bool) -> gtk::Button {
+        let label = gtk::Label::new(Some(text));
+        label.set_xalign(0.0);
+        label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        let btn = gtk::Button::new();
+        btn.set_child(Some(&label));
+        btn.add_css_class("kalam-notify-task-row");
+        if failed {
+            btn.add_css_class("failed");
+        }
+        btn.set_tooltip_text(Some("Open the tasks page"));
+        let panel = self.clone();
+        btn.connect_clicked(move |_| {
+            if let Some(f) = panel.open_tasks.borrow().as_ref() {
+                f();
+            }
+        });
+        btn
+    }
+
+    /// One tooltip for the two kinds of content the bell now owns (B5).
+    fn update_tooltip(&self) {
+        let unseen = crate::notify::has_unseen();
+        let tasks = match *self.tasks_state.borrow() {
+            crate::pages::task_manager::Badge::Running(n) => {
+                let noun = if n == 1 { "task" } else { "tasks" };
+                format!(" · {n} {noun} running")
+            }
+            crate::pages::task_manager::Badge::Failed => " · a task failed".to_string(),
+            crate::pages::task_manager::Badge::Idle => String::new(),
+        };
+        let head = if unseen {
+            "Notifications — new events"
+        } else {
+            "Notifications"
+        };
+        self.button.set_tooltip_text(Some(&format!("{head}{tasks}")));
     }
 
     pub fn button(&self) -> gtk::Button {
@@ -180,11 +319,7 @@ impl NotificationPanel {
     pub fn refresh(&self) {
         let unseen = crate::notify::has_unseen();
         self.dot.set_visible(!self.open.get() && unseen);
-        self.button.set_tooltip_text(Some(if unseen {
-            "Notifications — new events"
-        } else {
-            "Notifications"
-        }));
+        self.update_tooltip();
 
         while let Some(child) = self.list.first_child() {
             self.list.remove(&child);

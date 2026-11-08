@@ -15,6 +15,10 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub enum LibraryOut {
     Section(LibrarySection),
+    /// The shelves grid (build-decisions B2): Shelves left the rail, and
+    /// until the All books page carries its designed title dropdown this
+    /// quick link is the door that replaces it.
+    Shelves,
     Book {
         book_id: i64,
     },
@@ -959,6 +963,18 @@ fn quick_links(sender: &ComponentSender<LibraryPageModel>) -> gtk::Box {
         });
         row.append(&btn);
     }
+
+    // Shelves is not a LibrarySection: it is its own route, and since the
+    // rail entry left (build-decisions B2) this is the door to it until the
+    // All books page gains its designed title dropdown.
+    let shelves = gtk::Button::with_label("Shelves");
+    shelves.add_css_class("kalam-secondary-btn");
+    shelves.set_tooltip_text(Some("Your manual and smart shelves"));
+    let s = sender.clone();
+    shelves.connect_clicked(move |_| {
+        s.output(LibraryOut::Shelves).ok();
+    });
+    row.append(&shelves);
 
     row
 }

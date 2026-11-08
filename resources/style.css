@@ -192,6 +192,42 @@ scrollbar slider:active {
     border-radius: 999px;
 }
 
+/* B5: background work nestled at the bottom of the bell's panel. The box
+   itself only exists while something runs or has failed. */
+.kalam-notify-tasks {
+    border-top: 1px solid @kalam_border;
+    margin-top: 12px;
+    padding-top: 10px;
+}
+
+.kalam-notify-tasks-status {
+    color: @kalam_text_dim;
+    font-size: 12px;
+}
+
+button.kalam-notify-task-row {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    border-radius: 6px;
+    padding: 5px 6px;
+    color: @kalam_text_dim;
+}
+
+button.kalam-notify-task-row > label {
+    color: inherit;
+}
+
+button.kalam-notify-task-row:hover {
+    background: @kalam_hover;
+    color: @kalam_text;
+}
+
+button.kalam-notify-task-row.failed,
+button.kalam-notify-task-row.failed > label {
+    color: @kalam_accent;
+}
+
 .kalam-notify-catcher {
     background: transparent;
 }

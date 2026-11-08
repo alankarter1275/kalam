@@ -7,10 +7,12 @@ use std::path::PathBuf;
 pub enum NavItem {
     Home,
     Library,
+    AllBooks,
     Authors,
     Shelves,
     Downloads,
     Comics,
+    Online,
     Editor,
     RemoteBrowse,
     Fanfiction,
@@ -28,16 +30,22 @@ impl NavItem {
     ///   button advertises a feature the app cannot perform.
     /// * `RemoteBrowse` and `Fanfiction` — same reason, removed earlier.
     ///
-    /// All three stay in the enum, in `label`/`icon`, in `placeholder_copy`
+    /// All four stay in the enum, in `label`/`icon`, in `placeholder_copy`
     /// and in the `KALAM_ROUTE` map, so putting one back is a one-line change
     /// here and nothing else.
+    ///
+    /// `Shelves` left the rail on 2026-11-08 (build-decisions B1, B2): shelves
+    /// are reached from My Library's quick links for now, and from the All
+    /// books page's title dropdown once that page is redesigned (design
+    /// system §47). Its routes stay reachable, so the pages are not orphans.
     ///
     pub const ALL: &'static [NavItem] = &[
         NavItem::Home,
         NavItem::Library,
+        NavItem::AllBooks,
         NavItem::Authors,
-        NavItem::Shelves,
         NavItem::Comics,
+        NavItem::Online,
         NavItem::Editor,
         NavItem::Settings,
     ];
@@ -45,11 +53,13 @@ impl NavItem {
     pub fn label(self) -> &'static str {
         match self {
             NavItem::Home => "Home",
-            NavItem::Library => "Library",
+            NavItem::Library => "My Library",
+            NavItem::AllBooks => "All books",
             NavItem::Authors => "Authors",
             NavItem::Shelves => "Shelves",
             NavItem::Downloads => "Downloads",
             NavItem::Comics => "Comics",
+            NavItem::Online => "Online sources",
             NavItem::Editor => "Editor",
             NavItem::RemoteBrowse => "Browse",
             NavItem::Fanfiction => "Fanfic",
@@ -61,10 +71,12 @@ impl NavItem {
         match self {
             NavItem::Home => "go-home-symbolic",
             NavItem::Library => "folder-documents-symbolic",
+            NavItem::AllBooks => "view-grid-symbolic",
             NavItem::Authors => "avatar-default-symbolic",
             NavItem::Shelves => "view-grid-symbolic",
             NavItem::Downloads => "folder-download-symbolic",
             NavItem::Comics => "image-x-generic-symbolic",
+            NavItem::Online => "network-workgroup-symbolic",
             NavItem::Editor => "accessories-text-editor-symbolic",
             NavItem::RemoteBrowse => "network-workgroup-symbolic",
             NavItem::Fanfiction => "document-edit-symbolic",
@@ -148,6 +160,7 @@ impl Route {
             Route::Module(item) => *item,
             Route::ComponentPreview => NavItem::Settings,
             Route::ComicSeries { .. } => NavItem::Comics,
+            Route::LibrarySection(LibrarySection::AllBooks) => NavItem::AllBooks,
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
             Route::TagBooks { .. } => NavItem::Library,
@@ -485,5 +498,71 @@ impl ComicChapter {
         } else {
             format!("Ch. {}", self.chapter_number)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The rail the owner ruled on 2026-11-08 (docs/build-decisions.md B1):
+    /// seven entries above, the bell and Settings below. Labels are the
+    /// owner's own words — "My Library", not "Library".
+    #[test]
+    fn rail_entries_are_the_ruled_seven_plus_settings() {
+        let rail: Vec<&str> = NavItem::ALL.iter().map(NavItem::label).collect();
+        assert_eq!(
+            rail,
+            [
+                "Home",
+                "My Library",
+                "All books",
+                "Authors",
+                "Comics",
+                "Online sources",
+                "Editor",
+                "Settings",
+            ]
+        );
+    }
+
+    /// The bell is not a NavItem: it is a notification panel button, so only
+    /// Settings belongs in the rail's bottom stack (B1).
+    #[test]
+    fn only_settings_is_pinned_to_the_bottom_of_the_rail() {
+        let bottom: Vec<NavItem> = NavItem::ALL
+            .iter()
+            .copied()
+            .filter(NavItem::is_bottom)
+            .collect();
+        assert_eq!(bottom, [NavItem::Settings]);
+    }
+
+    /// Shelves left the rail (B2) but is still reachable: its route works and
+    /// its pages are not orphaned, and All books now highlights itself
+    /// instead of borrowing My Library's entry.
+    #[test]
+    fn shelves_left_the_rail_without_losing_its_routes() {
+        assert!(!NavItem::ALL.contains(&NavItem::Shelves));
+        assert_eq!(Route::ShelvesGrid.sidebar_item(), NavItem::Shelves);
+        assert_eq!(
+            Route::LibrarySection(LibrarySection::AllBooks).sidebar_item(),
+            NavItem::AllBooks
+        );
+    }
+
+    /// Every rail entry needs an icon to draw. Online sources is a door that
+    /// promises nothing and reaches nothing until Part 2 (B4), so its copy
+    /// says so out loud rather than implying a working feature.
+    #[test]
+    fn rail_icons_exist_and_online_sources_promises_nothing() {
+        for item in NavItem::ALL {
+            assert!(!item.icon().is_empty(), "{item:?} has no icon to draw");
+        }
+        let copy = crate::pages::placeholder::placeholder_copy(NavItem::Online);
+        assert!(
+            copy.contains("Part 2"),
+            "online sources copy should name Part 2: {copy}"
+        );
     }
 }

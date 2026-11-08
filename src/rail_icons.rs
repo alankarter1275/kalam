@@ -57,8 +57,11 @@ struct Drawn {
 thread_local! {
     /// The theme in force, so repainting costs no database read:
     /// `theme::current` resolves a stored preference, and the rail repaints on
-    /// every navigation as well as on every theme install.
-    static THEME: RefCell<crate::theme::Theme> = RefCell::new(crate::theme::DEFAULT);
+    /// every navigation as well as on every theme install. Seeded with the
+    /// first-run theme (`theme::DEFAULT` is test-only); `init` writes the real
+    /// one before the rail's entries are drawn.
+    static THEME: RefCell<crate::theme::Theme> =
+        const { RefCell::new(crate::theme::TERRACOTTA_DARK) };
 
     /// Rasterized glyphs by (key, colour). Thirteen keys and three colours, so
     /// this stays tiny; an entry for a theme no longer in force is simply
@@ -70,7 +73,7 @@ thread_local! {
     /// as does the brand mark's theme listener, so nothing here needs
     /// releasing; a widget left behind by a second window in one process
     /// repaints harmlessly.
-    static DRAWN: RefCell<Vec<Drawn>> = RefCell::new(Vec::new());
+    static DRAWN: RefCell<Vec<Drawn>> = const { RefCell::new(Vec::new()) };
 }
 
 /// A bundled glyph's SVG, or `None` for a key this build does not carry.

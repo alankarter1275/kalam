@@ -510,7 +510,7 @@ mod tests {
     /// owner's own words — "My Library", not "Library".
     #[test]
     fn rail_entries_are_the_ruled_seven_plus_settings() {
-        let rail: Vec<&str> = NavItem::ALL.iter().map(NavItem::label).collect();
+        let rail: Vec<&str> = NavItem::ALL.iter().map(|i| i.label()).collect();
         assert_eq!(
             rail,
             [
@@ -533,7 +533,7 @@ mod tests {
         let bottom: Vec<NavItem> = NavItem::ALL
             .iter()
             .copied()
-            .filter(NavItem::is_bottom)
+            .filter(|i| i.is_bottom())
             .collect();
         assert_eq!(bottom, [NavItem::Settings]);
     }

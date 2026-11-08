@@ -49,7 +49,7 @@ impl SimpleComponent for PlaceholderPageModel {
     }
 }
 
-fn placeholder_copy(item: NavItem) -> String {
+pub(crate) fn placeholder_copy(item: NavItem) -> String {
     match item {
         NavItem::Downloads => {
             "Unified download queue for AO3, fanfiction, comics, and batch imports.\n\n\

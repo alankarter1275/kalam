@@ -8,6 +8,12 @@
 //! (the design has no dim layer here) and only turns the first click
 //! outside the panel into a close. Esc closes through
 //! [`NotificationPanel::attach_escape`].
+//!
+//! Since build-decisions B5 the panel also owns background work: a nested
+//! box at the bottom lists what is running and what failed, because the
+//! tasks disc left the rail. The box stays hidden while nothing is
+//! happening, and the bell's tooltip carries the count the disc's badge
+//! used to.
 
 use super::surface::{hairline, side_panel};
 use gtk::prelude::*;
@@ -18,6 +24,10 @@ use std::rc::Rc;
 /// the last 25 (settings-spec §7), same as the retired Settings pane.
 const MAX_PANEL_ENTRIES: usize = 25;
 const PANEL_TRANSITION_MS: u32 = 180;
+
+/// What the nested tasks rows open, shared by every clone of the panel for
+/// the same reason as `tasks_state` below.
+type OpenTasks = Rc<std::cell::RefCell<Option<Rc<dyn Fn()>>>>;
 
 #[derive(Clone)]
 pub struct NotificationPanel {
@@ -35,7 +45,7 @@ pub struct NotificationPanel {
     /// and the copy the notify callback holds must agree. A plain `RefCell`
     /// would let one clone forget the tasks the other just set.
     tasks_state: Rc<std::cell::RefCell<crate::pages::task_manager::Badge>>,
-    open_tasks: Rc<std::cell::RefCell<Option<Rc<dyn Fn()>>>>,
+    open_tasks: OpenTasks,
     open: Rc<Cell<bool>>,
 }
 

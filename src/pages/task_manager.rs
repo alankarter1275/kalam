@@ -268,14 +268,6 @@ pub(crate) fn badge() -> Badge {
     Badge::Idle
 }
 
-/// The mark *is* the button's child rather than an overlay, because there is
-/// nothing to overlay: idle shows a tick, busy shows a count, failure shows a
-/// warning. Three mutually exclusive states, one slot.
-///
-/// Deliberately uses no new CSS. `resources/style.css` is under a ratchet
-/// (`tests/guardrails.rs`, 147 hex colours) and a badge does not justify
-/// spending any of that budget; the count inherits the nav button's own font.
-
 /// Build the panel the `w` key opens.
 ///
 /// Returns the panel and the box its rows go into, separately, so the caller

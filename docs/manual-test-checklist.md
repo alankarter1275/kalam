@@ -196,6 +196,10 @@ yet** — CI photographs the rail but cannot judge it.
   from the right; opening the panel clears it.
 - [ ] The bell while its panel is open is a filled disc with a **white** glyph
   (§45) — not the cut-out the active entry uses (B8).
+- [ ] In Settings → Shortcuts, the Navigation group lists ten rows: Home, My
+  Library, All books, Authors, Comics, Online sources, Editor, then Settings,
+  Back and Notifications. The seven rail rows show Alt+1 to Alt+7, and each is
+  still rebindable there.
 - [ ] Switch theme in Settings → Appearance with the rail in view. Every glyph
   changes colour with it, the cut-out active glyph included, and the brand mark
   follows the accent.

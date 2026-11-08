@@ -118,7 +118,6 @@ mod tests {
 
         let editor = placeholder_copy(NavItem::Editor);
         assert_eq!(editor, "Editor — placeholder page.");
-
     }
 
     #[test]

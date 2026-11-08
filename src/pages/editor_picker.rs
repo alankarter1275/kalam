@@ -314,7 +314,6 @@ mod tests {
 
         let dec = edited_label("2026-12-31T23:59:59Z");
         assert_eq!(dec, "Edited 31 Dec");
-
     }
 
     #[test]

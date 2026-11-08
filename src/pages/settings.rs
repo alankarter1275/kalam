@@ -4064,12 +4064,13 @@ mod tests {
 
     #[test]
     fn three_digit_shorthand_is_read_as_pairs_and_not_expanded() {
-        // `#fff` is valid CSS, but this reads two characters at a time: the
-        // green pair gets one character and the blue pair runs off the end.
-        // Pinned as it is. Shorthand never reaches the mid-grey fallback, so
-        // it paints a colour nobody chose.
+        // `#fff` is valid CSS for white, but this reads two characters at a
+        // time, and a slice that runs off the end yields nothing rather than
+        // the one character left: the red pair is read, then green and blue
+        // both fall to mid-grey. Pinned as it is — shorthand paints a colour
+        // nobody chose (full red at half grey) instead of white.
         let got = hex_components("#fff");
-        assert_eq!(colour_text(got), "1.0000 0.0588 0.5000");
+        assert_eq!(colour_text(got), "1.0000 0.5000 0.5000");
     }
 
     #[test]

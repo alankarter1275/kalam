@@ -31,6 +31,9 @@ Prepare a small library containing:
   changes appear there.
 - [ ] Create a manual shelf and a smart shelf. Add a book to the manual shelf,
   then confirm the smart shelf follows its saved rules.
+- [ ] With two or more shelves, confirm the line above the grid reads
+  "2 shelves · 1 manual · 1 smart". It used to print "shelfes"; with exactly one
+  shelf it should still read "1 shelf · 1 manual · 0 smart".
 - [ ] Add a book to a reading list and verify it remains there after leaving
   and reopening the page.
 - [ ] If multiple library folders are configured, switch libraries and confirm

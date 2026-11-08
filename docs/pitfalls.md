@@ -3797,3 +3797,48 @@ to `Remove(ReadingKinds)` calling `delete_book_keeping`.
 replaces a stale download with a fresh copy of the same book, which is internal
 housekeeping rather than a reader asking to lose a book.
 
+
+## §103 — a slice that runs off the end yields nothing, and "shelf" does not pluralise by suffix
+
+The second batch of characterization tests for the page modules went red twice,
+and the two failures sit on opposite sides of the same question: when a test and
+the code disagree, which one is lying?
+
+**`str::get(a..b)` returns `None` when `b` is past the end — it does not clamp.**
+The test for `hex_components("#fff")` expected the green channel to be the one
+leftover character (`"f"` → 15/255 = 0.0588) and only the blue channel to reach
+the mid-grey fallback. The real answer is `(1.0, 0.5, 0.5)`: `"fff".get(2..4)` is
+out of bounds, so it is `None`, and `unwrap_or(0.5)` fires for green as well as
+blue. The wrong expectation came from Python slicing, which clamps. The
+neighbouring case in the same test module — `#gg0000` greying out only the red
+channel, because the fallback is per pair — was reasoned about the same way and
+happened to be right.
+
+So: when an expected value comes from reasoning about a standard-library call
+rather than from running the code, name the call the reasoning rests on in the
+comment. "a slice that runs off the end yields nothing" survives a reader;
+"the green pair gets one character" does not.
+
+**An irregular plural cannot be built by suffixing.** `summary_line` in
+`shelves_grid.rs` printed `format!("{} shelf{}", n, if n == 1 { "" } else { "es" })`,
+which gives "1 shelf" and "3 shelfes" — a spelling mistake on the shelves page
+for any reader with more than one shelf. The test asserted the correct word and
+failed. Here the assertion was right and the code was wrong, so the code moved:
+the plural is now chosen whole, `"shelf"` or `"shelves"`.
+
+**The tie-breaker.** This is the second time a red characterization test has
+forced the question (the first was the metadata over-claim in §102, where the
+code was right to keep capturing and the *report* was what lied). The rule that
+separates them:
+
+- a mismatch in the **spelling or grammar of reader-facing text** means the code
+  is wrong. Nobody chose "shelfes"; there is no behaviour to preserve.
+- a mismatch in **policy** — what gets counted, which fallback fires, what a
+  message claims — means the test is wrong. Pin what the code does today, say in
+  a comment that it is pinned rather than endorsed, and tell the owner. Four such
+  behaviours went in with this batch and were left alone for the redesign to
+  decide.
+
+Fixing a typo inside a batch whose stated discipline is "change no behaviour" is
+not a contradiction. The discipline exists so a redesign cannot silently change
+what a reader sees; a reported one-word spelling fix is a change somebody chose.

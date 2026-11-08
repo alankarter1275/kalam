@@ -194,11 +194,10 @@ fn summary_line(shelves: &[Shelf]) -> String {
         .filter(|s| s.kind == ShelfKind::Smart)
         .count();
     let manual = shelves.len() - smart;
-    format!(
-        "{} shelf{} · {manual} manual · {smart} smart",
-        shelves.len(),
-        if shelves.len() == 1 { "" } else { "es" }
-    )
+    let total = shelves.len();
+    // The plural is irregular: "shelf" + "es" would print "shelfes".
+    let noun = if total == 1 { "shelf" } else { "shelves" };
+    format!("{total} {noun} · {manual} manual · {smart} smart")
 }
 
 /// Surface read failures instead of rendering them as an empty shelf grid.

@@ -1,2 +1,25 @@
-clean
---- run 42425046025 ---
+diff --git a/src/pages/editor_picker.rs b/src/pages/editor_picker.rs
+index 4ab0eeb..3bc0886 100644
+--- a/src/pages/editor_picker.rs
++++ b/src/pages/editor_picker.rs
+@@ -314,7 +314,6 @@ mod tests {
+ 
+         let dec = edited_label("2026-12-31T23:59:59Z");
+         assert_eq!(dec, "Edited 31 Dec");
+-
+     }
+ 
+     #[test]
+diff --git a/src/pages/placeholder.rs b/src/pages/placeholder.rs
+index b6f0855..b7679f0 100644
+--- a/src/pages/placeholder.rs
++++ b/src/pages/placeholder.rs
+@@ -118,7 +118,6 @@ mod tests {
+ 
+         let editor = placeholder_copy(NavItem::Editor);
+         assert_eq!(editor, "Editor — placeholder page.");
+-
+     }
+ 
+     #[test]
+--- run 42430670591 ---

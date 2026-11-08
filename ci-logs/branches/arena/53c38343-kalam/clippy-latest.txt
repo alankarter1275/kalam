@@ -1,7 +1,4 @@
-src/widgets/rail_tip.rs:275:9: [1m[91merror[0m: this assertion has a constant value
-src/widgets/rail_tip.rs:276:9: [1m[91merror[0m: this assertion has a constant value
-src/widgets/rail_tip.rs:277:9: [1m[91merror[0m: this assertion has a constant value
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -23,8 +20,5 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/widgets/rail_tip.rs:275:9: [1m[91merror[0m: this assertion has a constant value
-src/widgets/rail_tip.rs:276:9: [1m[91merror[0m: this assertion has a constant value
-src/widgets/rail_tip.rs:277:9: [1m[91merror[0m: this assertion has a constant value
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
---- run 42511258632 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 25.40s
+--- run 42511447377 ---

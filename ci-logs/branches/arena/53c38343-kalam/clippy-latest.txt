@@ -1,4 +1,12 @@
-(no lines matched; last 100 lines of output)
+src/pages/task_manager.rs:277:1: [1m[91merror[0m: empty line after doc comment
+src/models.rs:562:47: [1m[91merror[E0603][0m: function `placeholder_copy` is private: private function
+src/models.rs:513:55: [1m[91merror[E0631][0m: type mismatch in function arguments: expected due to this
+src/models.rs:513:71: [1m[91merror[E0599][0m: the method `collect` exists for struct `Map<Iter<'_, NavItem>, fn(NavItem) -> &str {NavItem::label}>`, but its trait bounds were not satisfied: method cannot be called due to unsatisfied trait bounds
+src/models.rs:536:21: [1m[91merror[E0631][0m: type mismatch in function arguments: expected due to this
+src/models.rs:537:14: [1m[91merror[E0599][0m: the method `collect` exists for struct `Filter<Copied<Iter<'_, NavItem>>, fn(NavItem) -> bool {_::is_bottom}>`, but its trait bounds were not satisfied: method cannot be called due to unsatisfied trait bounds
+src/widgets/notification_panel.rs:38:17: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -20,5 +28,14 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 16.34s
---- run 42488764232 ---
+src/pages/task_manager.rs:277:1: [1m[91merror[0m: empty line after doc comment
+src/models.rs:562:47: [1m[91merror[E0603][0m: function `placeholder_copy` is private: private function
+src/models.rs:513:55: [1m[91merror[E0631][0m: type mismatch in function arguments: expected due to this
+src/models.rs:513:71: [1m[91merror[E0599][0m: the method `collect` exists for struct `Map<Iter<'_, NavItem>, fn(NavItem) -> &str {NavItem::label}>`, but its trait bounds were not satisfied: method cannot be called due to unsatisfied trait bounds
+src/models.rs:536:21: [1m[91merror[E0631][0m: type mismatch in function arguments: expected due to this
+src/models.rs:537:14: [1m[91merror[E0599][0m: the method `collect` exists for struct `Filter<Copied<Iter<'_, NavItem>>, fn(NavItem) -> bool {_::is_bottom}>`, but its trait bounds were not satisfied: method cannot be called due to unsatisfied trait bounds
+src/widgets/notification_panel.rs:38:17: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 6 previous errors
+--- run 42496339107 ---

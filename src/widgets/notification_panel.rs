@@ -82,7 +82,10 @@ impl NotificationPanel {
         button.set_hexpand(false);
         button.set_focus_on_click(false);
         button.set_widget_name("nav-Bell");
-        button.set_tooltip_text(Some("Notifications"));
+        // No native tooltip: the rail draws §56's card instead, and the shell
+        // attaches it (with `tasks_line` as the third line) once the overlay
+        // exists. The accessible label stays — it is what a screen reader
+        // reads, and the drawn card is visual only.
         button.update_property(&[gtk::accessible::Property::Label("Notifications")]);
         // Registered with the rail's glyphs so a theme install repaints the
         // bell too; its `open` class is what picks the white face (§45).
@@ -237,7 +240,21 @@ impl NotificationPanel {
             let text = format!("{} — failed", task.label);
             self.tasks_list.append(&self.task_row(&text, true));
         }
-        self.update_tooltip();
+    }
+
+    /// The bell tip's third line: what the tasks disc's badge used to say
+    /// (build-decisions B5). `None` while nothing is running or failed, so the
+    /// card stays §56's single line. Fetched when the card shows, which is why
+    /// the count is never stale.
+    pub fn tasks_line(&self) -> Option<String> {
+        match *self.tasks_state.borrow() {
+            crate::pages::task_manager::Badge::Running(n) => {
+                let noun = if n == 1 { "task" } else { "tasks" };
+                Some(format!("{n} {noun} running"))
+            }
+            crate::pages::task_manager::Badge::Failed => Some("a task failed".to_string()),
+            crate::pages::task_manager::Badge::Idle => None,
+        }
     }
 
     fn task_row(&self, text: &str, failed: bool) -> gtk::Button {
@@ -258,26 +275,6 @@ impl NotificationPanel {
             }
         });
         btn
-    }
-
-    /// One tooltip for the two kinds of content the bell now owns (B5).
-    fn update_tooltip(&self) {
-        let unseen = crate::notify::has_unseen();
-        let tasks = match *self.tasks_state.borrow() {
-            crate::pages::task_manager::Badge::Running(n) => {
-                let noun = if n == 1 { "task" } else { "tasks" };
-                format!(" · {n} {noun} running")
-            }
-            crate::pages::task_manager::Badge::Failed => " · a task failed".to_string(),
-            crate::pages::task_manager::Badge::Idle => String::new(),
-        };
-        let head = if unseen {
-            "Notifications — new events"
-        } else {
-            "Notifications"
-        };
-        self.button
-            .set_tooltip_text(Some(&format!("{head}{tasks}")));
     }
 
     pub fn button(&self) -> gtk::Button {
@@ -329,7 +326,6 @@ impl NotificationPanel {
     pub fn refresh(&self) {
         let unseen = crate::notify::has_unseen();
         self.dot.set_visible(!self.open.get() && unseen);
-        self.update_tooltip();
 
         while let Some(child) = self.list.first_child() {
             self.list.remove(&child);

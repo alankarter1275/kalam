@@ -1042,6 +1042,11 @@ impl AppModel {
         push_history: bool,
         sender: &ComponentSender<Self>,
     ) {
+        // Navigating by key leaves the pointer over the rail, so the tip would
+        // otherwise describe an item the page no longer belongs to. A click
+        // hides it too, but this is the path that has no click.
+        crate::widgets::rail_tip::hide();
+
         if push_history {
             self.history.push(self.route.clone());
         } else {
@@ -1803,12 +1808,33 @@ impl Component for AppModel {
         );
         widgets.bottom_nav.append(&notifications.button());
 
+        // §56: the rail draws its own tooltip, a 32-high card to the right of
+        // the item carrying the name and its shortcut, because GTK's tooltip is
+        // text only. `shortcuts::shared` hands back the same table the key
+        // handler and the Settings pane use, so a rebind reaches the card. The
+        // bell's card also carries the background-work count the tasks disc's
+        // badge used to (build-decisions B5).
+        let rail_tip = crate::widgets::rail_tip::RailTip::new(
+            &widgets.root_overlay,
+            crate::shortcuts::shared(&model.catalog),
+        );
+        rail_tip.attach_with_extra(
+            &notifications.button(),
+            "Notifications",
+            Some(crate::shortcuts::ShortcutAction::Notifications),
+            Some(std::rc::Rc::new({
+                let panel = notifications.clone();
+                move || panel.tasks_line()
+            })),
+        );
+
         for item in NavItem::ALL {
             let btn = make_nav_button(*item, *item == NavItem::Home);
             let item_copy = *item;
             let s = sender.clone();
             btn.connect_clicked(move |_| s.input(AppMsg::Navigate(item_copy)));
             btn.set_widget_name(&format!("nav-{:?}", item));
+            rail_tip.attach(&btn, item.label(), rail_action(*item));
             if item.is_bottom() {
                 widgets.bottom_nav.append(&btn);
             } else {
@@ -2481,6 +2507,23 @@ pub(crate) fn brand_texture(accent: &str) -> Option<gtk::gdk::Texture> {
     gtk::gdk::Texture::from_bytes(&bytes).ok()
 }
 
+/// The shortcut a rail entry's drawn tip shows (§56), if it has one. Every
+/// entry in `NavItem::ALL` does; the hidden ones would show a name alone.
+fn rail_action(item: NavItem) -> Option<crate::shortcuts::ShortcutAction> {
+    use crate::shortcuts::ShortcutAction;
+    Some(match item {
+        NavItem::Home => ShortcutAction::GoHome,
+        NavItem::Library => ShortcutAction::GoLibrary,
+        NavItem::AllBooks => ShortcutAction::GoAllBooks,
+        NavItem::Authors => ShortcutAction::GoAuthors,
+        NavItem::Comics => ShortcutAction::GoComics,
+        NavItem::Online => ShortcutAction::GoOnline,
+        NavItem::Editor => ShortcutAction::GoEditor,
+        NavItem::Settings => ShortcutAction::OpenSettings,
+        _ => return None,
+    })
+}
+
 fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     // Icon only. The rail is too narrow for a readable caption, and the
     // tooltip already carries the page name. The glyph is a bundled Lucide
@@ -2501,7 +2544,8 @@ fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     if active {
         btn.add_css_class("active");
     }
-    btn.set_tooltip_text(Some(item.label()));
+    // No native tooltip: §56's card is drawn by `widgets::rail_tip`, which
+    // the rail attaches to this button once the shell's overlay exists.
     btn.set_focus_on_click(false);
     // Registered so a theme install can re-rasterize it: the class swap in
     // `update_nav_styles` moves the disc's fill, and only this repaints the

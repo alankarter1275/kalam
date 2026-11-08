@@ -3842,3 +3842,62 @@ separates them:
 Fixing a typo inside a batch whose stated discipline is "change no behaviour" is
 not a contradiction. The discipline exists so a redesign cannot silently change
 what a reader sees; a reported one-word spelling fix is a change somebody chose.
+
+## §104 — a test-only constant, a staged checkout, and a Clone that does not share
+
+Rebuilding the navigation rail (`docs/build-decisions.md` B1 to B11) produced
+five mistakes worth keeping. Four were caught by CI; the fifth by noticing a
+shape before it ran, which is the cheapest of the five.
+
+**`#[cfg(test)]` on a `pub const` makes it look like an API.** The rail's glyph
+colours come from the theme in force, so the module that draws them keeps one in
+a `thread_local` and seeded it with `crate::theme::DEFAULT` — a public constant
+with a doc comment, exactly what a seed wants. It is behind `#[cfg(test)]`:
+production reaches the same theme through `ThemeChoice::DEFAULT`, and the
+resolved alias exists for the tests that pin the two together. CI said `cannot
+find value DEFAULT in module crate::theme`, which is the compiler declining to
+explain that the name is only half there. Seeded instead with
+`TERRACOTTA_DARK`, the theme `DEFAULT` aliases, plus a comment saying `init`
+overwrites it before anything is drawn. When a constant reads like public API,
+check that it is compiled into the build you are writing.
+
+**`git checkout <ref> -- <path>` stages what it restores.** Reading a failed
+run's clippy log means fetching the report commits CI pushed and checking their
+`ci-logs/` out. That command does not only write files; it puts them in the
+index. The next commit — `git add -A src/ && git commit` — carried three
+`ci-logs` files along with the one source file it was for, and the only reason
+that did not land on the branch is that the push was rejected for being behind
+the remote. Restore report files *after* a `git reset --mixed FETCH_HEAD`, with
+no ref in the command (`git checkout -- ci-logs/`), so the index stays where the
+commit expects it.
+
+**A `Clone` widget struct does not share its `RefCell`s.** The bell's panel is
+`Clone` and two clones are live at once: the model holds one, and the callback
+that redraws the list when an event arrives holds another. Its gtk children are
+the same widgets under every clone — a gtk widget is a handle — so the panel
+looked shared and behaved shared. The `RefCell` fields were not. The clone that
+drew the tasks rows and the clone that wrote the bell's tooltip were keeping
+separate copies of one state, so a notification arriving between two task ticks
+would have wiped the task count from the tooltip. Anything two clones must agree
+on goes behind an `Rc`.
+
+**A characterization test can pin a *derived* value, and then it follows the
+ruling.** Renaming the rail's "Library" to "My Library" (B1) reddened
+`every_other_page_falls_back_to_its_sidebar_label`, which asserted
+`"Library — placeholder page."`. §103's tie-breaker splits a red
+characterization test into spelling (the code is wrong) and policy (pin what the
+code does). This is neither: the placeholder's fallback line is *built from* the
+rail label, so the expectation was a copy of a value the owner had just changed.
+The test moved with the ruling, and its comment now says why the copy reads "My
+Library". Before treating a red pin as a verdict on the code, ask whether the
+pinned value is derived from something else that just changed.
+
+**Two spellings of one route must not share a watchdog label.** The All books
+grid is reached as `Route::LibrarySection(AllBooks)` and, since the rail gained
+an entry for it, also as `Route::Module(AllBooks)`. Both build the same page, so
+the tempting label is one string — and `every_route_has_a_distinct_label` exists
+because the stall watchdog blames a construction block by that label, so two
+routes sharing one mis-attribute a stall. That test walks only the routes
+reachable by name, and the module spelling is not name-addressable, so it would
+not have caught this. Labelled separately anyway. A guard that cannot see a case
+is not a reason to leave the case unguarded.

@@ -190,6 +190,31 @@ scrollbar slider:active {
     min-height: 0;
 }
 
+/* The rail's drawn tooltip (§56): 32 high, card fill, 1px border, radius 10,
+   the name at 13 and the shortcut at 11 in the Meta style, to the right of the
+   item. GTK's own tooltip cannot draw any of that, so the shell does — see
+   src/widgets/rail_tip.rs. The bell's third line (B5) grows the card past 32;
+   min-height is a floor, not a ceiling. */
+.kalam-rail-tip {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+    box-shadow: none;
+    min-height: 32px;
+    padding: 0 10px;
+}
+
+.kalam-rail-tip-name {
+    color: @kalam_text;
+    font-size: 13px;
+}
+
+.kalam-rail-tip-key,
+.kalam-rail-tip-extra {
+    color: @kalam_text_dim;
+    font-size: 11px;
+}
+
 /* Rail bell and notification panel (§45, decision 148): the bell is a
    nav disc whose open state takes the active item's accent-fill; the
    8px dot is plain accent. The panel itself is the §9 side-panel

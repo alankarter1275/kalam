@@ -45,9 +45,10 @@ this — it records "more entries will be added later" as an owner ruling.
 Nine discs in total. The rail's vertical centring has to hold with seven
 entries in the top group rather than five.
 
-**To confirm:** All books is listed third, between My Library and Authors,
-because it is the grid behind My Library and shelves now hang off it. The
-owner added the entry without naming its position.
+**Confirmed by the owner (2026-11-08):** All books is third, between My
+Library and Authors — it is the grid behind My Library, and shelves hang off
+it. The owner added the entry without naming its position, then named it. The
+label reads "My Library", the owner's own wording and decision 173's.
 
 ## B2 — Shelves has no rail entry (2026-11-08)
 
@@ -163,40 +164,112 @@ Consequences to carry into the work:
 
 ---
 
-## Still open — needed before the rail can be built
+## B8 — the active rail glyph is the page colour (2026-11-08)
 
-Recorded so nothing is invented silently. None of these is ruled on yet.
+Design system §56 says the icon on the filled disc is the page colour, "so it
+reads as cut out". §11 says anything on an `accent-fill` surface is white and
+must reach 4.5 : 1. Both were measured on Terracotta and put to the owner:
 
-1. **The active glyph.** Design system §56 says the icon on the filled disc is
-   the page colour, "so it reads as cut out". §11 says anything on an
-   `accent-fill` surface is white and must reach 4.5 : 1. Measured on
-   Terracotta:
+| Glyph colour | Dark | Light |
+|---|---|---|
+| white | 4.64 : 1 | 5.12 : 1 |
+| page colour (cut out) | 3.90 : 1 | 4.63 : 1 |
 
-   | Glyph colour | Dark | Light |
-   |---|---|---|
-   | white | 4.64 : 1 | 5.12 : 1 |
-   | page colour (cut out) | 3.90 : 1 | 4.63 : 1 |
+**Ruling: the cut-out.** The page colour, as §56 drew it. It clears the 3 : 1
+an icon needs and misses the 4.5 : 1 text needs; the owner chose the board's
+look over the stricter number.
 
-   The cut-out look clears the 3 : 1 an icon needs and misses the 4.5 : 1 text
-   needs. It is a taste call, not a rules call. The code paints white today.
+This settles §56 against §11 **for the rail's active entry only**. §11 still
+rules everywhere else, and §45 says explicitly that the bell while its panel is
+open is `accent-fill` with a white icon — no ruling supersedes that. Two states
+on the rail therefore look alike and are not the same: the active entry is cut
+out, the open bell is white.
 
-2. **The rail's fill.** §56 says "no fill, no border". In dark mode the rail
-   carries its own darker fill; in light mode it already matches the page.
+## B9 — the shelves door is a quick link on My Library, for now (2026-11-08)
 
-3. **The divider.** §56 wants 2px with rounded ends, stopping 28 from the top
-   and 24 from the bottom. The code draws a 1px line the full height.
+B2 takes Shelves out of the rail and leaves it two doors, and when the work
+started neither existed: the All books title dropdown is designed (§47,
+decisions 159 to 172) but not built, and My Library's Shelves row is designed
+(§53, decision 173) but not built either, because My Library is still the old
+dashboard. Taking the disc out would have left shelves with no way in at all.
 
-4. **The tooltip.** Decision 180 wants a drawn card, 32 high, with the name
-   and its shortcut. The code uses the system tooltip with the name only.
+**Ruling:** My Library's quick-link row gains a Shelves link as a stopgap. It
+is a third door, not a replacement for the other two, and it goes when the All
+books page is built to its board.
 
-5. **The bell dot.** §56 places it 8 from the top and 9 from the right; the
-   code has 6 and 6.
+## B10 — the bundled glyphs, and why they are textures (2026-11-08)
 
-6. **Window controls.** Decision 181 wants three 32 round buttons at the top
+B6 agreed to ship Lucide. The thirteen glyphs bundled under `assets/icons/`,
+with Lucide's ISC notice beside them:
+
+| Entry | Glyph |
+|---|---|
+| Home | `house` |
+| My Library | `library` |
+| All books | `layout-grid` |
+| Authors | `user-round` |
+| Comics | `images` |
+| Online sources | `globe` |
+| Editor | `square-pen` |
+| the bell | `bell` |
+| Settings | `settings` |
+| Shelves — no rail entry (B2) | `archive` |
+| Downloads — hidden | `download` |
+| Browse — hidden | `compass` |
+| Fanfiction — hidden | `feather` |
+
+The four without a rail entry are bundled anyway, so restoring one stays the
+one-line change `NavItem::ALL`'s doc promises.
+
+They are rasterized to textures with the colour substituted into the SVG, not
+installed as symbolic theme icons. Two reasons, both measured here: the theme
+rescan `icons::init` needs costs 493–505 ms and is deferred to idle while the
+rail paints first, and GTK recolours a symbolic icon by its *fill*, which
+erases a stroke-only drawing. The price is repainting by hand when the theme
+changes, which the rail now does.
+
+## B11 — the rail's tooltip is drawn by the shell (2026-11-08)
+
+Decision 180 and §56 want a card, not a system tooltip: 32 high, `card` fill,
+1px `border`, radius 10, the name at 13 and its shortcut at 11 in the Meta
+style, to the right of the item after a short delay. GTK's tooltip is text
+only, so the shell draws the card in its own root overlay.
+
+It is an overlay card rather than a popover on purpose. A popover is its own
+surface and takes a grab, which would put Alt+1 to Alt+7 (B7) behind that grab
+for as long as a tip was showing.
+
+Two consequences worth recording:
+
+- the rail's native tooltips are gone, so anything a tooltip carried has to be
+  on the card. The bell's background-work count — the badge B5 took off the
+  tasks disc — is the card's third line, read when the card shows. That is the
+  one place a rail card grows past 32;
+- the shortcut on the card comes from the shared bindings table at show time,
+  so a rebind in the Shortcuts pane is on the card the next time the pointer
+  arrives.
+
+---
+
+## Still open
+
+1. **Window controls.** Decision 181 wants three 32 round buttons at the top
    right over the page. The app has no title bar — which the decision also
    wants — and no buttons at all, so Alt+F4 is the only way to close. Is that
    part of this shell work or a separate pass?
 
-7. **The label.** Decision 173 proposes the entry reads "My Library"; the code
-   says "Library". B1 assumes the design's wording, and the checklist already
-   asks the owner to confirm it.
+2. **The tasks box needs drawing.** B5 puts running and failed tasks in a
+   nested box at the bottom of the bell's panel. §45 and decision 148 describe
+   a panel with no such box. It is built in the panel's own language — a group
+   heading, hairline-separated rows, an Open link — until the design side draws
+   it. Design chat 17 owns background work and should be told.
+
+3. **The All books title dropdown.** §47 and decisions 159 to 172 design it and
+   nothing builds it yet. Until it exists, B9's quick link is the shelves door
+   the rail no longer provides.
+
+Settled while the rail was built, and built: the entries and their order (B1),
+the "My Library" label (B1, decision 173), the active glyph (B8), the rail's
+fill and divider (§56: no fill, no border, a 2px rounded divider inset 28 from
+the top and 24 from the bottom), the bell dot (§56: 8 from the top, 9 from the
+right), the bundled glyphs (B6, B10) and the drawn tooltip (B11).

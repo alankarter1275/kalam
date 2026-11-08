@@ -163,6 +163,43 @@ succeeded once.
   usable. Remote source browsing and downloads are not available because no
   online source implementation is registered.
 
+## The navigation rail
+
+Rebuilt on 2026-11-08 to design system §56 and the rulings in
+`docs/build-decisions.md` (B1 to B11). **None of this has been run by hand
+yet** — CI photographs the rail but cannot judge it.
+
+- [ ] The rail holds eight entries: Home, My Library, All books, Authors,
+  Comics, Online sources and Editor, then the bell and Settings at the bottom.
+  There is no Shelves disc and no Tasks disc.
+- [ ] Hover an entry. After a short delay a card appears to its right, 32 high,
+  with the entry's name and its shortcut (`Alt+1` to `Alt+7`; Settings shows
+  `Ctrl+,`). Moving the pointer away hides it; clicking hides it at once.
+- [ ] The active entry is a filled disc whose glyph is the page colour, so it
+  reads as cut out (B8). Hovering an idle entry fills its disc with the border
+  colour and the glyph does not change.
+- [ ] The rail has no fill of its own and no full-height line. The only line is
+  2px with rounded ends, stopping 28 from the top and 24 from the bottom.
+- [ ] `Alt+3` opens All books and `Alt+7` opens the Editor. The Editor used to
+  be `Alt+3`; if you rebound it, your own binding still fires (B7).
+- [ ] Shelves is reachable from My Library's quick links (B9), and from there
+  the grid, a shelf and both shelf editors still work.
+- [ ] Online sources opens a page saying nothing reaches the internet yet (B4),
+  and no request leaves the machine while it is open.
+- [ ] Start a background job (an import, or a watch-folder scan). Open the
+  bell: the panel has a nested box at the bottom listing what is running, and
+  both its Open button and each row go to the tasks page (B5).
+- [ ] Hover the bell while a job runs. Its card carries a third line —
+  "1 task running", "2 tasks running" — and the line is gone once nothing is
+  running.
+- [ ] With an unseen event the bell shows its dot, 8px, 8 from the top and 9
+  from the right; opening the panel clears it.
+- [ ] The bell while its panel is open is a filled disc with a **white** glyph
+  (§45) — not the cut-out the active entry uses (B8).
+- [ ] Switch theme in Settings → Appearance with the rail in view. Every glyph
+  changes colour with it, the cut-out active glyph included, and the brand mark
+  follows the accent.
+
 ## Keyboard shortcuts
 
 CI now has a keystroke probe (`KEYS=1` in `docs/ci/screenshot.sh`) that types

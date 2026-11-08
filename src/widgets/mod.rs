@@ -14,6 +14,7 @@ pub mod notification_panel;
 pub mod paint;
 pub mod pill_button;
 pub mod progress;
+pub mod rail_tip;
 pub mod rating;
 pub mod reading_choice;
 pub mod remaster_dialog;

@@ -4002,3 +4002,184 @@ fn today_stamp() -> String {
         .map(|s| s.to_string())
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{iso_days_ago, ClearTally};
+
+    /// A rescue copy holding only what a case is about. `StashEntry` derives
+    /// `Default`, so the fields no test reads stay at their defaults.
+    fn stash_copy(contents: ClearTally, placement: bool) -> StashEntry {
+        StashEntry {
+            contents,
+            placement,
+            ..Default::default()
+        }
+    }
+
+    /// A tally of nothing held, so each case sets only the kinds it is about.
+    fn tally_of_nothing() -> ClearTally {
+        ClearTally::default()
+    }
+
+    /// Colours as four-decimal text, so no case has to compare floats.
+    fn colour_text(c: (f64, f64, f64)) -> String {
+        format!("{:.4} {:.4} {:.4}", c.0, c.1, c.2)
+    }
+
+    #[test]
+    fn hex_components_reads_a_six_digit_theme_colour() {
+        let got = hex_components("#ff8000");
+        assert_eq!(colour_text(got), "1.0000 0.5020 0.0000");
+    }
+
+    #[test]
+    fn the_hash_in_front_of_a_colour_is_optional() {
+        assert_eq!(
+            colour_text(hex_components("ffffff")),
+            "1.0000 1.0000 1.0000"
+        );
+        assert_eq!(
+            colour_text(hex_components("#000000")),
+            "0.0000 0.0000 0.0000"
+        );
+    }
+
+    #[test]
+    fn a_pair_that_is_not_hex_falls_back_to_mid_grey() {
+        // Each pair falls back on its own, so one bad pair does not grey out
+        // the other two. The doc comment calls the fallback a way to keep a
+        // theme bug impossible to miss.
+        assert_eq!(colour_text(hex_components("")), "0.5000 0.5000 0.5000");
+        assert_eq!(
+            colour_text(hex_components("nope!!")),
+            "0.5000 0.5000 0.5000"
+        );
+        assert_eq!(
+            colour_text(hex_components("#gg0000")),
+            "0.5000 0.0000 0.0000"
+        );
+    }
+
+    #[test]
+    fn three_digit_shorthand_is_read_as_pairs_and_not_expanded() {
+        // `#fff` is valid CSS, but this reads two characters at a time: the
+        // green pair gets one character and the blue pair runs off the end.
+        // Pinned as it is. Shorthand never reaches the mid-grey fallback, so
+        // it paints a colour nobody chose.
+        let got = hex_components("#fff");
+        assert_eq!(colour_text(got), "1.0000 0.0588 0.5000");
+    }
+
+    #[test]
+    fn every_settings_pane_has_a_span_name_of_its_own() {
+        const PANES: &[(SettingsTab, &str)] = &[
+            (SettingsTab::Appearance, "settings_fill:appearance"),
+            (SettingsTab::Reading, "settings_fill:reading"),
+            (SettingsTab::Libraries, "settings_fill:libraries"),
+            (SettingsTab::DataExport, "settings_fill:data_export"),
+            (SettingsTab::RememberedData, "settings_fill:remembered_data"),
+            (SettingsTab::BookFiles, "settings_fill:book_files"),
+            (SettingsTab::WatchFolders, "settings_fill:watch_folders"),
+            (SettingsTab::Dictionaries, "settings_fill:dictionaries"),
+            (SettingsTab::Metadata, "settings_fill:metadata"),
+            (SettingsTab::Integrations, "settings_fill:integrations"),
+            (SettingsTab::Shortcuts, "settings_fill:shortcuts"),
+            (SettingsTab::About, "settings_fill:about"),
+        ];
+        // Twelve today. A thirteenth pane needs a row here, or its build runs
+        // under no name at all.
+        assert_eq!(PANES.len(), 12);
+        for (tab, want) in PANES {
+            assert_eq!(settings_fill_label(*tab), *want);
+        }
+    }
+
+    #[test]
+    fn the_span_name_and_the_pane_id_disagree_about_separators() {
+        // `SettingsTab::id` is the name the screenshot hook uses and it is
+        // hyphenated. The timing span is underscored. Four of the twelve
+        // panes therefore carry two spellings. Pinned, not endorsed: a
+        // redesign that renames one and not the other splits a pane in two.
+        assert_eq!(SettingsTab::DataExport.id(), "data-export");
+        assert_eq!(SettingsTab::RememberedData.id(), "remembered-data");
+        assert_eq!(SettingsTab::BookFiles.id(), "book-files");
+        assert_eq!(SettingsTab::WatchFolders.id(), "watch-folders");
+
+        let export = settings_fill_label(SettingsTab::DataExport);
+        assert_eq!(export, "settings_fill:data_export");
+
+        let remembered = settings_fill_label(SettingsTab::RememberedData);
+        assert_eq!(remembered, "settings_fill:remembered_data");
+    }
+
+    #[test]
+    fn an_empty_rescue_copy_is_described_as_nothing() {
+        let got = stash_contents_line(&stash_copy(tally_of_nothing(), false));
+        assert_eq!(got, "nothing");
+    }
+
+    #[test]
+    fn the_kinds_are_listed_in_one_fixed_order() {
+        // The order comes from `describe_cleared`, which the toast after a
+        // clear uses too. One description serving both is the point: two
+        // phrasings of the same five numbers eventually disagree.
+        let mut tally = tally_of_nothing();
+        tally.quotes = 3;
+        tally.position = true;
+        tally.bookmarks = 1;
+        let got = stash_contents_line(&stash_copy(tally, false));
+        assert_eq!(got, "your place in the book, 1 bookmark and 3 quotes");
+    }
+
+    #[test]
+    fn counts_read_singular_at_one_and_plural_above_it() {
+        let mut tally = tally_of_nothing();
+        tally.highlights = 1;
+        let one = stash_contents_line(&stash_copy(tally, false));
+        assert_eq!(one, "1 highlight");
+
+        tally.highlights = 2;
+        tally.ink = 1;
+        let two = stash_contents_line(&stash_copy(tally, false));
+        assert_eq!(two, "2 highlights and 1 ink mark");
+    }
+
+    #[test]
+    fn placement_is_named_only_when_it_has_something_to_join() {
+        // Placement is always put back and never offered, so it is not in the
+        // tally. A copy holding nothing else is still not "nothing", and the
+        // two cases read differently.
+        let only = stash_contents_line(&stash_copy(tally_of_nothing(), true));
+        assert_eq!(only, "Where it was shelved");
+
+        let mut tally = tally_of_nothing();
+        tally.ink = 2;
+        let both = stash_contents_line(&stash_copy(tally, true));
+        assert_eq!(both, "2 ink marks, and where it was shelved");
+    }
+
+    #[test]
+    fn the_filed_day_is_shortened_the_way_the_history_page_does_it() {
+        let mut stashed = stash_copy(tally_of_nothing(), false);
+        stashed.updated_at = format!("{}T09:30:00Z", iso_days_ago(0));
+        assert_eq!(stash_day(&stashed), "Today");
+
+        stashed.updated_at = format!("{}T23:59:59Z", iso_days_ago(1));
+        assert_eq!(stash_day(&stashed), "Yesterday");
+
+        stashed.updated_at = "2026-10-02T09:30:00Z".to_string();
+        assert_eq!(stash_day(&stashed), "02 Oct 2026");
+    }
+
+    #[test]
+    fn a_stamp_shorter_than_a_day_reaches_the_reader_untouched() {
+        // `stash_day` cuts to ten characters and `pretty_day` passes anything
+        // shorter straight through, so a truncated stamp is shown as it is
+        // rather than guessed at.
+        let mut stashed = stash_copy(tally_of_nothing(), false);
+        stashed.updated_at = "2026-10".to_string();
+        assert_eq!(stash_day(&stashed), "2026-10");
+    }
+}

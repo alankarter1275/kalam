@@ -299,3 +299,46 @@ fn clear_box(host: &gtk::Box) {
         host.remove(&child);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_edit_stamp_reads_as_a_short_day() {
+        let oct = edited_label("2026-10-02T10:00:00Z");
+        assert_eq!(oct, "Edited 2 Oct");
+
+        let jan = edited_label("2026-01-15");
+        assert_eq!(jan, "Edited 15 Jan");
+
+        let dec = edited_label("2026-12-31T23:59:59Z");
+        assert_eq!(dec, "Edited 31 Dec");
+
+    }
+
+    #[test]
+    fn the_day_is_not_padded_and_the_month_is_three_letters() {
+        // "Edited 5 Mar", not "Edited 05 March": the row this sits in has
+        // room for neither. Pinned because both halves are easy to tidy
+        // wrongly.
+        let got = edited_label("2026-03-05T00:00:00Z");
+        assert_eq!(got, "Edited 5 Mar");
+    }
+
+    #[test]
+    fn a_stamp_that_is_not_a_date_falls_back_to_the_bare_word() {
+        assert_eq!(edited_label(""), "Edited");
+        assert_eq!(edited_label("not a stamp"), "Edited");
+        // Month 13, month 0 and day 0 are all out of range, so none of them
+        // is guessed at.
+        let month_13 = edited_label("2026-13-01T00:00:00Z");
+        assert_eq!(month_13, "Edited");
+
+        let month_00 = edited_label("2026-00-01T00:00:00Z");
+        assert_eq!(month_00, "Edited");
+
+        let day_00 = edited_label("2026-10-00T00:00:00Z");
+        assert_eq!(day_00, "Edited");
+    }
+}

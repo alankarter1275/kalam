@@ -262,3 +262,22 @@ fn build_row(lookup: &DictLookup) -> gtk::Box {
 
     row
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_lookup_count_line_explains_itself_when_empty() {
+        // The empty case tells the reader which key does the thing, rather than
+        // just saying there is nothing to show.
+        let empty = status_line(0);
+        assert_eq!(
+            empty,
+            "No lookups recorded yet. Look up a word in the reader with the D key or a tap."
+        );
+        assert_eq!(status_line(1), "1 lookup recorded");
+        assert_eq!(status_line(2), "2 lookups recorded");
+        assert_eq!(status_line(57), "57 lookups recorded");
+    }
+}

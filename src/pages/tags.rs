@@ -724,3 +724,19 @@ fn rebuild_books(list: &gtk::Box, books: &[Book], sender: &ComponentSender<TagBo
     );
     list.append(&grid);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_tag_count_line_says_where_tags_come_from_when_empty() {
+        let empty = status_line(0);
+        assert_eq!(
+            empty,
+            "No tags yet — tags come from EPUB metadata on import."
+        );
+        assert_eq!(status_line(1), "1 tag in your library");
+        assert_eq!(status_line(9), "9 tags in your library");
+    }
+}

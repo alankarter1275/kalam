@@ -152,7 +152,7 @@ fn may_deliver(recorded: Option<std::thread::ThreadId>, current: std::thread::Th
 /// they cannot. The work runs either way; only the delivery needs the UI
 /// thread, and losing it quietly is what made §107 hard to see.
 fn delivery_reachable(label: &str) -> bool {
-    if may_deliver(MAIN_THREAD.get(), std::thread::current().id()) {
+    if may_deliver(MAIN_THREAD.get().copied(), std::thread::current().id()) {
         return true;
     }
     eprintln!(

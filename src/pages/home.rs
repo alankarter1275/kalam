@@ -90,15 +90,16 @@ pub struct HomePayload {
     cards: Vec<CardData>,
 }
 
-/// One pager card's worth of §60.
+/// One pager card's worth of §60. The chapter index the excerpt came from
+/// stays in the worker: nothing on this side of the message needs it —
+/// "resume" deliberately carries no chapter (see `HomeOut::Read`).
 #[derive(Debug)]
 struct CardData {
     book: Book,
-    /// The chapter the saved position is in, from `reading_progress`.
-    chapter_index: usize,
-    /// That chapter's title, from the FTS index; empty until indexed.
+    /// The saved position's chapter title, from the FTS index; empty until
+    /// the book is indexed.
     chapter_title: String,
-    /// Its first words; empty until indexed, and the card says so.
+    /// That chapter's first words; empty until indexed, and the card says so.
     excerpt: String,
 }
 
@@ -509,7 +510,6 @@ fn paint_right(
 fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> gtk::Widget {
     let CardData {
         book,
-        chapter_index,
         chapter_title,
         excerpt,
     } = card;
@@ -692,7 +692,6 @@ fn pager_cards(catalog: &Catalog) -> Vec<CardData> {
                     .unwrap_or_default();
             CardData {
                 book,
-                chapter_index,
                 chapter_title,
                 excerpt,
             }

@@ -2659,17 +2659,19 @@ impl Catalog {
             "SELECT book_id, chapter_index FROM reading_progress \
              ORDER BY updated_at DESC LIMIT ?1",
         )?;
-        let rows = stmt
-            .query_map(params![limit as i64], |r| {
-                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)? as usize))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        if rows.is_empty() {
+        let mut rows_out: Vec<(i64, usize)> = Vec::new();
+        let rows = stmt.query_map(params![limit as i64], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)? as usize))
+        })?;
+        for row in rows {
+            rows_out.push(row?);
+        }
+        if rows_out.is_empty() {
             return Ok(Vec::new());
         }
-        let ids: Vec<i64> = rows.iter().map(|(id, _)| *id).collect();
+        let ids: Vec<i64> = rows_out.iter().map(|(id, _)| *id).collect();
         let books = self.books_by_ids(&ids)?;
-        Ok(rows
+        Ok(rows_out
             .into_iter()
             .filter_map(|(id, chapter)| books.get(&id).map(|b| (b.clone(), chapter)))
             .collect())

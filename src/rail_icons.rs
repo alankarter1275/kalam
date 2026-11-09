@@ -295,14 +295,17 @@ mod tests {
         assert!(svg("bell").is_some(), "the rail bell has no bundled glyph");
     }
 
-    /// The glyph Home's stage 1 added — the book card's play button (§60) —
-    /// is bundled and stroked like the rail's, so the same two tests above
-    /// would catch an upstream redraw that filled it in. The four
-    /// window-control glyphs that shipped beside it left with the buttons
-    /// (B18), and this list is where a new 16px glyph belongs.
+    /// The 16px glyphs that are not the rail's: §60's play button today. The
+    /// four window-control glyphs that shipped beside it left with the buttons
+    /// (B18). A slice rather than an inline list so the next small drawing is
+    /// added here instead of in a second test.
+    const HOME_GLYPHS: &[&str] = &["play"];
+
+    /// Those glyphs are bundled and stroked like the rail's, so the two tests
+    /// above would catch an upstream redraw that filled them in.
     #[test]
     fn home_glyphs_are_bundled_outlines() {
-        for key in ["play"] {
+        for &key in HOME_GLYPHS {
             let body = svg(key).unwrap_or_else(|| panic!("{key} is not bundled"));
             assert!(
                 body.contains("stroke=\"currentColor\""),

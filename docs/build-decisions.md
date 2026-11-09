@@ -251,22 +251,82 @@ Two consequences worth recording:
 
 ---
 
+## B12 — Home is rebuilt in four stages, and the old dashboard goes at the first (2026-11-08)
+
+The Home board (`home-spec.md`, design system §60 to §66) is five pieces on one
+page: the search bar and its box, the greeting, the quote, the Your-shelf
+ruler, the open-book card with its pager, and the Updates timeline. A route
+draws one page, so the old dashboard and the new Home cannot share the
+address. **Owner's ruling:** the old dashboard goes the day stage 1 lands; the
+board's own empty and loading states cover what stage 1 does not have yet.
+
+The stages, in order:
+
+1. the page's skeleton — two columns, greeting, quote, the open-book card and
+   its pager, the state cards, and the window controls (§65), which the Home
+   board draws and which this app still lacks entirely (see B16);
+2. Your shelf — the ruler, one custom-drawn widget with its date maths, hover
+   card and zoom (§61);
+3. the search bar and its box (§57, decisions 196 to 201), including the
+   inside-books switch, which the full-text index already makes real;
+4. polish — motion, focus rings, the reduce-motion rules.
+
+**Owner's ruling:** search is stage 3 of this unit, not a unit of its own. The
+28px the bar occupies at the top is reserved from stage 1, so it drops in
+later without moving the columns.
+
+## B13 — the Home quote is a placeholder; its source is still to be settled (2026-11-08)
+
+The spec's note says the quote is "a separate offline collection, not the
+reader's highlights", and no such collection exists anywhere in the app.
+**Owner's ruling:** keep a placeholder on the line for now, and settle the real
+source in this session, later. The placeholder is drawn as the board draws the
+element — Quote large with its accent rule and an attribution — so swapping the
+source changes one function.
+
+## B14 — the greeting's name waits on a Settings customization area (2026-11-08)
+
+The greeting is the user's own name and no name is stored anywhere; first-run,
+which would ask, is undesigned (decision 207). **Owner's ruling:** the name
+becomes a setting in a customization area of Settings, to be discussed and
+added later — and that area is meant to carry more than the name, so it is
+worth designing as a small general home for dials rather than a one-row pane.
+Until it exists the greeting has no name: the time of day, then the date.
+
+## B15 — Updates is not drawn until something feeds it (2026-11-08)
+
+§62's timeline "comes from background checks", and the spec's own rule is that
+with no saved source Updates is not drawn. Online work stays off until Part 2
+(B4), so nothing feeds it today and Home ships without it. Feeding it from
+local events — imports, finishes, edits — is an open option the owner may pick
+later; that would be a new entry here, not a quiet change.
+
+## B16 — the window controls are built with Home (2026-11-08)
+
+Decision 181 wants three 32 round buttons at the top right over the page, and
+the Home board draws them. They were left open at the end of the rail work
+(the window has no title bar, which the decision also wants, and no buttons, so
+Alt+F4 is the only way out). They are shell-wide rather than Home's, but the
+board that shows them is this one, so they are built in Home's stage 1 and sit
+over every page.
+
+---
+
 ## Still open
 
-1. **Window controls.** Decision 181 wants three 32 round buttons at the top
-   right over the page. The app has no title bar — which the decision also
-   wants — and no buttons at all, so Alt+F4 is the only way to close. Is that
-   part of this shell work or a separate pass?
-
-2. **The tasks box needs drawing.** B5 puts running and failed tasks in a
+1. **The tasks box needs drawing.** B5 puts running and failed tasks in a
    nested box at the bottom of the bell's panel. §45 and decision 148 describe
    a panel with no such box. It is built in the panel's own language — a group
    heading, hairline-separated rows, an Open link — until the design side draws
    it. Design chat 17 owns background work and should be told.
 
-3. **The All books title dropdown.** §47 and decisions 159 to 172 design it and
+2. **The All books title dropdown.** §47 and decisions 159 to 172 design it and
    nothing builds it yet. Until it exists, B9's quick link is the shelves door
    the rail no longer provides.
+
+3. **The Home quote's real source** (B13) and **the customization area in
+   Settings** that will carry the greeting's name (B14). Both are to be
+   discussed in this session; both have placeholders until then.
 
 Settled while the rail was built, and built: the entries and their order (B1),
 the "My Library" label (B1, decision 173), the active glyph (B8), the rail's

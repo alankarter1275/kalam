@@ -1255,3 +1255,347 @@ fn the_shell_syntax_check_itself_can_fail() {
     assert_eq!(found[0].1, "a step", "the step name should be carried");
     assert_eq!(found[0].2, "echo hi", "the script should be dedented");
 }
+
+// ---------------------------------------------------------------------------
+// The catalog's one connection lock
+// ---------------------------------------------------------------------------
+
+/// The receivers a `Catalog` handle goes by in this tree.
+///
+/// Crude on purpose, like the rest of this file: the scan is a tripwire for
+/// the honest mistake — a guard typed at the top of a method, another
+/// `Catalog` call typed below it — not a proof about every way a handle can be
+/// spelled (pitfalls §106).
+const CATALOG_RECEIVERS: &[&str] = &["self", "cat", "catalog", "c"];
+
+/// Every method name whose body takes the catalog's connection lock.
+///
+/// Derived from the source rather than listed by hand, because the rule has to
+/// keep holding as methods are added: a hand-written list is a ratchet nobody
+/// remembers to turn, and the method that froze startup was a new one.
+fn catalog_locking_methods(files: &[(PathBuf, String)]) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    for (_path, text) in files {
+        let lines: Vec<&str> = text.lines().collect();
+        for start in 0..lines.len() {
+            let Some(name) = signature_name(lines[start]) else {
+                continue;
+            };
+            let end = body_end(&lines, start);
+            if lines[start..=end].join("\n").contains(".conn()") {
+                out.insert(name);
+            }
+        }
+    }
+    out
+}
+
+/// The name on a `fn` signature line, if the line is one.
+///
+/// Visibility and qualifier prefixes are skipped rather than matched exactly —
+/// `pub`, `pub(super)`, `pub(crate)`, `async`, `const` — because the scan only
+/// needs the name, and every spelling of the prefix ends in `fn `.
+fn signature_name(line: &str) -> Option<String> {
+    let mut s = line.trim_start();
+    loop {
+        if let Some(rest) = s.strip_prefix("pub") {
+            let rest = rest.trim_start();
+            s = match rest.strip_prefix('(') {
+                Some(inner) => match inner.find(')') {
+                    Some(close) => inner[close + 1..].trim_start(),
+                    None => rest,
+                },
+                None => rest,
+            };
+            continue;
+        }
+        let mut moved = false;
+        for kw in ["async ", "const ", "unsafe ", "default "] {
+            if let Some(rest) = s.strip_prefix(kw) {
+                s = rest.trim_start();
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+    let rest = s.strip_prefix("fn ")?;
+    let end = rest.find(|c: char| c == '(' || c == '<')?;
+    let name = rest[..end].trim();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
+/// The line that closes the body opening at `start`, or the last line.
+fn body_end(lines: &[&str], start: usize) -> usize {
+    let mut depth: i32 = 0;
+    let mut opened = false;
+    let mut idx = start;
+    while idx < lines.len() {
+        let code = code_part(lines[idx]);
+        depth += code.matches('{').count() as i32;
+        depth -= code.matches('}').count() as i32;
+        if code.contains('{') {
+            opened = true;
+        }
+        if opened && depth <= 0 {
+            return idx;
+        }
+        idx += 1;
+    }
+    lines.len().saturating_sub(1).max(start)
+}
+
+/// One line, minus its comment and minus the braces that are *data*: `'{'` in
+/// `src/comics.rs` is a character being searched for, not a block opening.
+/// Comment stripping is the same crude `split("//")` the neighbouring scanners
+/// use.
+fn code_part(line: &str) -> String {
+    let code = line.split("//").next().unwrap_or("");
+    code.replace("'{'", " ").replace("'}'", " ")
+}
+
+/// The `receiver.method(` calls on one line, for the receivers a catalog goes
+/// by. Method calls that are not followed by `(` on the same line are missed,
+/// which is fine: the shape being looked for is a call.
+fn catalog_calls(code: &str) -> Vec<String> {
+    let chars: Vec<char> = code.chars().collect();
+    let mut out = Vec::new();
+    for (i, ch) in chars.iter().enumerate() {
+        if *ch != '.' || i == 0 {
+            continue;
+        }
+        let mut s = i;
+        while s > 0 && (chars[s - 1].is_alphanumeric() || chars[s - 1] == '_') {
+            s -= 1;
+        }
+        let recv: String = chars[s..i].iter().collect();
+        if !CATALOG_RECEIVERS.contains(&recv.as_str()) {
+            continue;
+        }
+        let mut e = i + 1;
+        while e < chars.len() && (chars[e].is_alphanumeric() || chars[e] == '_') {
+            e += 1;
+        }
+        if e == i + 1 {
+            continue;
+        }
+        let mut p = e;
+        while p < chars.len() && chars[p].is_whitespace() {
+            p += 1;
+        }
+        if p < chars.len() && chars[p] == '(' {
+            out.push(chars[i + 1..e].iter().collect());
+        }
+    }
+    out
+}
+
+/// The variable a line binds a `.conn()` guard to.
+///
+/// A guard taken without a binding — `self.conn().execute(…)` — is a temporary
+/// that dies with its statement and cannot outlive a later call, so those lines
+/// report nothing.
+fn guard_var(code: &str) -> Option<String> {
+    if !code.contains(".conn()") {
+        return None;
+    }
+    let after = code.split("let ").nth(1)?;
+    let mut words = after.split_whitespace();
+    let mut name = words.next()?;
+    if name == "mut" {
+        name = words.next()?;
+    }
+    let name = name.split(':').next()?.trim();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
+/// The variable a `drop(x)` on this line releases.
+fn drop_target(code: &str) -> Option<String> {
+    let at = code.find("drop(")?;
+    let rest = &code[at + "drop(".len()..];
+    let end = rest.find(')')?;
+    let name = rest[..end].trim();
+    if name.is_empty() || name.contains('(') {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
+/// `(line, method, callee)` for every place a connection guard is still live
+/// when another locking method is called on the same handle.
+///
+/// A guard lives from the line that binds it until the block that bound it
+/// closes, or until `drop` names it. Those are not concessions to the scan —
+/// they are the two ways the rest of the tree already keeps the rule
+/// (`delete_comic_series_keeping`, `auto_finish_if_complete` and
+/// `get_comic_series_by_title` scope theirs; `add_book_tag` drops by name).
+fn nested_catalog_lock_hits(
+    text: &str,
+    lockers: &std::collections::HashSet<String>,
+) -> Vec<(usize, String, String)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut hits = Vec::new();
+    for start in 0..lines.len() {
+        let Some(name) = signature_name(lines[start]) else {
+            continue;
+        };
+        let end = body_end(&lines, start);
+        let mut depth: i32 = 0;
+        let mut live: Vec<(String, i32)> = Vec::new();
+        for idx in start..=end {
+            let code = code_part(lines[idx]);
+            if !live.is_empty() {
+                for callee in catalog_calls(&code) {
+                    if callee != "conn" && lockers.contains(&callee) {
+                        hits.push((idx + 1, name.clone(), callee));
+                    }
+                }
+            }
+            if let Some(var) = drop_target(&code) {
+                live.retain(|(held, _)| *held != var);
+            }
+            if let Some(var) = guard_var(&code) {
+                live.push((var, depth));
+            }
+            depth += code.matches('{').count() as i32;
+            depth -= code.matches('}').count() as i32;
+            live.retain(|(_, taken)| *taken <= depth);
+        }
+    }
+    hits
+}
+
+#[test]
+fn the_connection_guard_is_never_held_across_another_catalog_call() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let files = sources_under(&root);
+    let lockers = catalog_locking_methods(&files);
+
+    // The locker pass has to have recognised the lock-taking methods at all,
+    // or an empty result below would mean "the scanner saw nothing" rather
+    // than "nothing breaks the rule" — the failure mode §99 exists for.
+    assert!(
+        lockers.contains("get_book") && lockers.contains("books_by_ids"),
+        "the locker pass found {} methods and missed the two it is checked \
+         against",
+        lockers.len()
+    );
+
+    let mut hits = Vec::new();
+    for (path, text) in &files {
+        for (line, func, callee) in nested_catalog_lock_hits(text, &lockers) {
+            hits.push(format!(
+                "{}:{} — {}() holds the guard across {}()",
+                path.display(),
+                line,
+                func,
+                callee
+            ));
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "{} method(s) take the catalog's one connection lock while already \
+         holding it. That mutex is not reentrant, so the thread waits for \
+         itself forever and every later reader of the catalog — starting with \
+         the first page build — waits behind it: the startup freeze of pitfalls \
+         §106. End the guard's scope, or `drop` it, before the call:\n{}",
+        hits.len(),
+        hits.join("\n")
+    );
+}
+
+/// The scanner has to see the shape it exists for, and has to accept the two
+/// shapes that fix it — otherwise the empty result above proves nothing.
+#[test]
+fn nested_lock_scanner_sees_the_shape_that_froze_startup() {
+    // pitfalls §106 in miniature: the guard at the top of the method, another
+    // locking method called below it.
+    let bad = r#"
+impl Catalog {
+    pub fn books_in_progress(&self, limit: usize) -> Result<Vec<(Book, usize)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached("SELECT book_id FROM reading_progress")?;
+        let books = self.books_by_ids(&ids)?;
+        Ok(vec![])
+    }
+
+    pub fn books_by_ids(&self, ids: &[i64]) -> Result<HashMap<i64, Book>> {
+        let conn = self.conn();
+        Ok(HashMap::new())
+    }
+}
+"#;
+    // A guard whose block ends before the next call.
+    let scoped = r#"
+impl Catalog {
+    pub fn series_by_title(&self, title: &str) -> Result<Option<ComicSeries>> {
+        let id: Option<i64> = {
+            let conn = self.conn();
+            conn.query_row("SELECT id FROM comic_series", [], |r| r.get(0)).optional()?
+        };
+        match id {
+            Some(id) => self.get_comic_series(id),
+            None => Ok(None),
+        }
+    }
+
+    pub fn get_comic_series(&self, id: i64) -> Result<Option<ComicSeries>> {
+        let conn = self.conn();
+        Ok(None)
+    }
+}
+"#;
+    // And a guard released by name.
+    let dropped = r#"
+impl Catalog {
+    pub fn add_book_tag(&self, book_id: i64, tag: &str) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("INSERT OR IGNORE INTO tags (name) VALUES (?1)", params![tag])?;
+        drop(conn);
+        self.prune_orphan_tags()?;
+        Ok(())
+    }
+
+    pub fn prune_orphan_tags(&self) -> Result<()> {
+        let conn = self.conn();
+        Ok(())
+    }
+}
+"#;
+    let path = PathBuf::from("src/db.rs");
+    let files = vec![
+        (path.clone(), bad.to_string()),
+        (path.clone(), scoped.to_string()),
+        (path, dropped.to_string()),
+    ];
+    let lockers = catalog_locking_methods(&files);
+
+    let found = nested_catalog_lock_hits(bad, &lockers);
+    assert_eq!(
+        found.len(),
+        1,
+        "the deadlock shape must be caught exactly once: {found:?}"
+    );
+    assert_eq!(found[0].1, "books_in_progress", "named by its method");
+    assert_eq!(found[0].2, "books_by_ids", "named by the call it waits on");
+
+    assert!(
+        nested_catalog_lock_hits(scoped, &lockers).is_empty(),
+        "a scoped guard is the fix, not a violation"
+    );
+    assert!(
+        nested_catalog_lock_hits(dropped, &lockers).is_empty(),
+        "`drop(conn)` releases the guard before the next call"
+    );
+}

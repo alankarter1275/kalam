@@ -3934,12 +3934,17 @@ others.
 The new function was called from Home's snapshot worker, so the worker froze
 holding the lock, and the first page build froze behind it. The presentation
 was identical to §105's: splash on screen, no window, no housekeeping lines in
-the log. Two reasons no check caught it — the seeded CI library has no saved
-reading positions, so the `rows_out.is_empty()` early-return skipped the nested
-call entirely; and a hang is invisible to a unit test that never runs the
-function. The regression test now seeds a position and calls it on a worker
-thread against a ten-second deadline, because a test that hangs on regression
-is worse than no test.
+the log — the housekeeping's first act needs the same lock, which is why the
+window never got as far as realizing.
+
+No unit test caught it, because no unit test called the method. What the smoke
+group caught, and what nobody read, is in §108: the `keys` group starts the app
+on Home against a seeded library that *does* have books in progress, and its
+report for that run published four frames at 0.8% lit — "essentially black; the
+window probably never drew" — after 26 s of settling. The freeze was
+photographed the day it shipped. The regression test now seeds a position and
+calls the read on a worker thread against a ten-second deadline, because a test
+that hangs on regression is worse than no test.
 
 **Two bugs can wear one symptom, and fixing the first hides the second.** The
 FTS scan (§105) was real and was fixed; the deadlock was behind it, and only
@@ -3956,3 +3961,64 @@ g_signal_emit → g_closure_invoke` says the block is inside the app's `startup`
 handler, and relm4 builds the whole component in `connect_startup` — so "before
 the window exists" meant "inside `AppModel::init`", which cut the search space
 to a few hundred lines. Take the backtrace before reasoning further.
+
+## §107 — a task started from a worker thread panics, and takes the worker's own result with it
+
+`tasks::spawn`, `spawn_internal` and `spawn_stream_internal` deliver progress
+and completion by spawning a local future onto the default main context, and
+only the thread that owns that context may do it. Called from a worker, glib
+panics with `Spawning local futures only allowed on the thread owning the
+MainContext … already acquired by another thread`, naming `main_context.rs` and
+never the task.
+
+The message is the small part. The panic unwinds the *calling* worker halfway
+through its own closure. Home's snapshot worker warmed the pager's covers
+inside the closure that builds the payload, so the panic landed before the
+payload was returned: `HomeMsg::Loaded` never arrived and the card stayed a
+skeleton for the life of the page, and `finish(id)` never ran, so the task sat
+in the running list forever. Two details make this easy to misread as harmless
+— `spawn_with` starts the worker thread *before* it spawns the delivery future,
+so the task's own work still runs; and whether glib panics at all depends on
+whether the UI thread happens to hold the context at that instant, so the same
+call can panic on one run and quietly spawn a UI future from a worker on the
+next.
+
+`preload::warm_covers` already said "Call this from the main thread" in its own
+doc comment. As in §106, the rule was in the tree and the new code did not know
+it. The fix is in two halves: the warming moved to the apply half
+(`warm_pager_covers`, called from `HomeMsg::Loaded`), and `tasks.rs` now
+records the UI thread at startup and, when a task is started anywhere else,
+prints one line naming the task and runs the work without delivery. Degrading
+beats panicking here — the work is the part the user asked for, and a named
+line is a bug report while a dead worker is a mystery. `may_deliver(None, …)`
+answers *yes*, deliberately: the tests drive the loop from their own thread
+with `block_on`, so requiring a recorded thread would break the shape they run
+in.
+
+Read the frames, not the run: the branch's Home shots went from 0.8% lit (the
+window never drew, §106) to 100% lit and 0.2% coloured once the lock was fixed
+— drawn, but empty, which is this bug's signature. Colour returning to those
+frames is the check that this one is closed.
+
+## §108 — the branch publishes its own smoke reports, and a green run never reads them
+
+The smoke job is `continue-on-error`, so a page that freezes does not redden a
+run. Its evidence is published anyway, to `ci-logs/branches/<branch>/*-latest.txt`,
+and it is the only place the pages appear: `build (ubuntu)` covers compiling and
+the unit tests, and a unit test that never calls a function cannot see it hang.
+
+`settled_screenshots_are_not_black` reads `ci-logs/*.txt` — the top-level
+copies, which on a branch are *main's* last reports. So the one check built to
+fail on a black frame was looking at another branch's pictures while this
+branch's Home frames sat four directories down, at 0.8% lit, reading "the
+window probably never drew". Three runs published them. The numbers, for
+calibration: main's healthy Home is 16.9% coloured and 100% lit; the frozen
+Home was 0.0% coloured, 0.8% lit, "stable after 26s"; the drawn-but-empty Home
+of §107 was 0.2% coloured, 100% lit, "stable after 3s". Lit says the window
+drew. Coloured says the page filled.
+
+**The rule this leaves behind:** after touching a page, open that page's frames
+in the branch's own report and read `lit=`, `coloured=` and the settle time. A
+green run means it compiled and the tests passed; it has never meant a page
+drew. The durable half — pointing the black-frame guardrail at the branch's own
+copies, newest `--- run <id> ---` per report — is queued behind this entry.

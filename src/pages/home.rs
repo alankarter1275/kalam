@@ -305,6 +305,9 @@ impl Component for HomePageModel {
                 if self.current >= self.cards.len() {
                     self.current = 0;
                 }
+                // Here and not in the worker that read them — see
+                // `warm_pager_covers`.
+                warm_pager_covers(&self.cards, self.current);
                 paint_right(
                     widgets,
                     &self.cards,
@@ -690,14 +693,21 @@ fn pager_cards(catalog: &Catalog) -> Vec<CardData> {
         })
         .collect();
 
-    // The card shows covers, and covers decode lazily; warm every book the
-    // pager can land on, not just the visible one (the dashboard warmed its
-    // strips the same way).
+    cards
+}
+
+/// Warm the covers the pager can land on, not just the visible one (§60).
+///
+/// Called from the apply half, never from the worker that read the cards:
+/// warming starts a task, starting a task spawns onto the UI loop, and only
+/// the UI thread may do that. From a worker, glib panics — and takes the
+/// worker with it, so the snapshot it was building never arrives and the card
+/// stays a skeleton for the life of the page (pitfalls §107).
+fn warm_pager_covers(cards: &[CardData], visible_from: usize) {
     let books: Vec<Book> = cards.iter().map(|c| c.book.clone()).collect();
     if !books.is_empty() {
-        crate::preload::warm_books(&books, 0, COVER_W, COVER_H);
+        crate::preload::warm_books(&books, visible_from, COVER_W, COVER_H);
     }
-    cards
 }
 
 /// The local clock, or UTC when the system has no local time configured.

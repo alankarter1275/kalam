@@ -4645,10 +4645,15 @@ mod tests {
     /// the first page build, froze with it. The app showed its splash screen
     /// and never got a window.
     ///
-    /// Every check stayed green because CI's seeded library has no saved
-    /// reading positions, and the empty early-return skipped the nested call:
-    /// the bug needs a book somebody has actually read. So seed one, and read
-    /// it back through the same path Home takes.
+    /// No unit test caught it because nothing called the method. The check
+    /// that does build Home — the `keys` smoke group, on a seeded library that
+    /// *does* have books in progress — froze, and published the proof: four
+    /// frames at 0.8% lit, "essentially black; the window probably never
+    /// drew", 26 s to settle. Nothing reddened, because the smoke job is
+    /// allowed to fail without failing the run and the black-frame guardrail
+    /// reads the top-level `ci-logs/` copies, which on a branch hold main's
+    /// reports (pitfalls §106, §108). So: seed a position, and read it back
+    /// through the same path Home takes.
     ///
     /// A regression here would *hang* rather than fail, which is worse than no
     /// test at all, so the call runs on its own thread against a deadline —

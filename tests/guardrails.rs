@@ -1321,7 +1321,7 @@ fn signature_name(line: &str) -> Option<String> {
         }
     }
     let rest = s.strip_prefix("fn ")?;
-    let end = rest.find(|c: char| c == '(' || c == '<')?;
+    let end = rest.find(['(', '<'])?;
     let name = rest[..end].trim();
     if name.is_empty() {
         None

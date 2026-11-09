@@ -66,6 +66,14 @@ fn main() {
     // chapter-turn / dict-lookup milliseconds to the terminal (no-op otherwise).
     timing::start();
 
+    // Record this as the UI thread, before anything can start a task: a task's
+    // progress and completion callbacks are delivered by spawning onto this
+    // thread's loop, and only this thread may do that. Knowing which thread it
+    // is turns a worker-thread mistake into one readable line naming the task,
+    // instead of a glib panic that kills the worker and takes its own result
+    // with it (pitfalls §107). See src/tasks.rs.
+    tasks::note_main_thread();
+
     // Register the bundled UI fonts (Playfair Display + DM Sans) as
     // fontconfig application fonts. This must precede RelmApp::new: Pango
     // builds its font map at GTK init and never rescans, so faces added

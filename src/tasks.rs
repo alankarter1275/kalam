@@ -121,6 +121,49 @@ static RUNNING: OnceLock<Registry> = OnceLock::new();
 static FINISHED: OnceLock<Mutex<VecDeque<FinishedTask>>> = OnceLock::new();
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
+/// The thread that owns the UI loop, recorded by `main()` before anything can
+/// spawn a task.
+///
+/// A task's progress and completion callbacks run on the UI thread, and
+/// reaching them means spawning a local future onto the default main context —
+/// which only that thread may do. Called from anywhere else, glib panics with a
+/// complaint about its own internals that never names the task, and the panic
+/// kills the *calling* worker part-way through its own closure. That is how
+/// Home came to show its skeleton forever: the worker reading the snapshot
+/// warmed the pager's covers, warming starts a task, and the panic took the
+/// snapshot down with it (pitfalls §107).
+static MAIN_THREAD: OnceLock<std::thread::ThreadId> = OnceLock::new();
+
+/// Record the UI thread. `main()` calls this once, before the first task.
+pub fn note_main_thread() {
+    let _ = MAIN_THREAD.set(std::thread::current().id());
+}
+
+/// Whether `current` is a thread that may spawn onto the UI loop.
+///
+/// `None` — nothing recorded yet — answers yes, and that is what keeps the
+/// tests honest: they drive the loop from their own thread through `block_on`,
+/// so the thread that owns the context is whichever thread the test runs on.
+fn may_deliver(recorded: Option<std::thread::ThreadId>, current: std::thread::ThreadId) -> bool {
+    recorded.is_none_or(|main| main == current)
+}
+
+/// Say whether this task's callbacks can be delivered, and name the task when
+/// they cannot. The work runs either way; only the delivery needs the UI
+/// thread, and losing it quietly is what made §107 hard to see.
+fn delivery_reachable(label: &str) -> bool {
+    if may_deliver(MAIN_THREAD.get(), std::thread::current().id()) {
+        return true;
+    }
+    eprintln!(
+        "kalam: the task \"{label}\" was started from a worker thread. Its work \
+         still runs, but its progress and completion callbacks belong to the UI \
+         thread and will not — start the task from the UI thread instead \
+         (pitfalls §107)."
+    );
+    false
+}
+
 fn registry() -> &'static Registry {
     RUNNING.get_or_init(|| Mutex::new(Vec::new()))
 }
@@ -406,6 +449,12 @@ fn spawn_with<T, W, P, D>(
     // flood of items and everything else is now bought on the producer
     // side (see preload.rs's per-cover pacing), and any drain-side
     // change reopens only with a local reproduction.
+    // Only the UI thread may spawn the delivery future below. From a worker
+    // the callbacks are unreachable, so the work runs alone and says so
+    // instead of panicking the caller's thread out of existence (§107).
+    if !delivery_reachable(&label) {
+        return;
+    }
     gtk::glib::spawn_future_local(async move {
         while let Ok(update) = progress_rx.recv().await {
             let _a = crate::timing::activity(format!("task_progress:{label}"));
@@ -494,7 +543,12 @@ where
     });
 
     // Same as `spawn_with`: the plain, proven delivery (see the note
-    // there; pitfalls §50).
+    // there; pitfalls §50), and the same rule about who may start it (§107).
+    // A worker's items have nowhere to land, so `Emit::send` answers false
+    // and the worker stops early rather than decoding into nothing.
+    if !delivery_reachable(&label) {
+        return;
+    }
     gtk::glib::spawn_future_local(async move {
         // Ends when the worker drops its `Emit`, which closes the channel.
         while let Ok(item) = item_rx.recv().await {
@@ -595,6 +649,30 @@ mod tests {
             // A panic in one test must not make the rest unrunnable.
             Err(poisoned) => poisoned.into_inner(),
         }
+    }
+
+    /// §107: a task started off the UI thread cannot deliver its callbacks,
+    /// and the rule that decides it is pinned here rather than left to glib's
+    /// panic. `None` — nothing recorded, which is the state every test runs in
+    /// — has to answer *yes*, or the tests' own `block_on` shape would break:
+    /// there the thread that owns the context is whichever thread runs the test.
+    #[test]
+    fn delivery_needs_the_recorded_ui_thread() {
+        let here = std::thread::current().id();
+        let elsewhere = std::thread::spawn(|| std::thread::current().id())
+            .join()
+            .expect("the other thread reported its id");
+        assert_ne!(here, elsewhere, "two threads reported one identity");
+
+        assert!(
+            may_deliver(None, here),
+            "before main() records the thread, the caller is the UI thread"
+        );
+        assert!(may_deliver(Some(here), here), "the UI thread itself");
+        assert!(
+            !may_deliver(Some(elsewhere), here),
+            "a worker may not spawn onto the UI loop"
+        );
     }
 
     /// Build a reporter without going through `spawn`, which needs a GLib main

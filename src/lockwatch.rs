@@ -226,7 +226,10 @@ fn worth_a_hold_line(held: i64, reported_since: i64, since: i64) -> bool {
 
 /// One `[lock]` line for a hold that has run long, waited for or not.
 fn hold_line(holder: &str, held: i64) -> String {
-    format!("{holder} has held the catalogue lock for {} ms", millis(held))
+    format!(
+        "{holder} has held the catalogue lock for {} ms",
+        millis(held)
+    )
 }
 
 /// The tail of a stall line when nothing holds the catalogue lock — which is
@@ -237,7 +240,10 @@ fn free_line() -> String {
 
 /// The tail of a stall line when something holds it, naming the holder.
 fn held_line(holder: &str, held: i64) -> String {
-    format!(" — catalogue lock: held by {holder} for {} ms", millis(held))
+    format!(
+        " — catalogue lock: held by {holder} for {} ms",
+        millis(held)
+    )
 }
 
 /// One `[lock]` line: who waited, how long, and who they waited for.

@@ -164,7 +164,10 @@ fn watch() {
                 );
             } else if last_line.elapsed() >= UPDATE {
                 last_line = Instant::now();
-                report(&format!("UI thread still blocked — at least {blocked_for} ms now"), true);
+                report(
+                    &format!("UI thread still blocked — at least {blocked_for} ms now"),
+                    true,
+                );
             }
         }
     }

@@ -1,5 +1,5 @@
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index 94ddf60..3ed4920 100644
+index fb9bf3e..bc9d3bc 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
 @@ -52,16 +52,12 @@ const PLACEHOLDER_QUOTE: (&str, &str) = (
@@ -37,4 +37,4 @@ index aa987ad..4042ea1 100644
      };
      let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
      let a = rows(&few, &ra);
---- run 42550240536 ---
+--- run 42550616393 ---

@@ -447,17 +447,10 @@ impl AppModel {
                     sender.input_sender(),
                     |out| match out {
                         HomeOut::Book { book_id } => AppMsg::Push(Route::BookPage { book_id }),
-                        HomeOut::Read { book_id, chapter } => AppMsg::OpenReaderAt {
-                            book_id,
-                            chapter: Some(chapter),
-                        },
-                        HomeOut::BookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
-                        HomeOut::AllBooks => {
-                            AppMsg::Push(Route::LibrarySection(LibrarySection::AllBooks))
-                        }
-                        HomeOut::ComicSeries { series_name } => {
-                            AppMsg::Push(Route::ComicSeries { series_name })
-                        }
+                        // The play button (§60): open the reader with no
+                        // chapter override, which resumes the saved position
+                        // instead of resetting the fraction inside it.
+                        HomeOut::Read { book_id } => AppMsg::OpenReader { book_id },
                     },
                 );
                 PageSlot::Home(ctrl)

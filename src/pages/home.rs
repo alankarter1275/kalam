@@ -46,28 +46,21 @@ const PLACEHOLDER_QUOTE: (&str, &str) = (
 
 /// Navigation requests from Home. Variants are named for their destination
 /// rather than sharing an `Open` prefix (clippy::enum_variant_names) -- the
-/// same convention `LibraryOut` uses. `BookDialog`, `AllBooks` and
-/// `ComicSeries` are the shell contract the dashboard had; stage 1 emits
-/// only `Book` (the cover click) and `Read` (the play button), and the
-/// others stay wired so later stages can use them without touching `app.rs`.
+/// same convention `LibraryOut` uses. The dashboard's `BookDialog`,
+/// `AllBooks` and `ComicSeries` left with it (B12); a later stage adds back
+/// whatever it emits, and `app.rs` grows an arm for it then.
 #[derive(Debug)]
 pub enum HomeOut {
+    /// The cover click (§60): open the book's details page.
     Book {
         book_id: i64,
     },
-    BookDialog {
-        book_id: i64,
-    },
-    /// My Library → All books (the full searchable/sortable grid).
-    AllBooks,
-    /// Open a comic series in the Comics hub
-    ComicSeries {
-        series_name: String,
-    },
     /// The play button (§60): resume in the reader at the saved position.
+    /// No chapter rides along — `OpenReaderAt` with one *resets* the
+    /// fraction inside the chapter, and resuming must not move the position
+    /// the card was just showing. `None` opens at the stored spot.
     Read {
         book_id: i64,
-        chapter: usize,
     },
 }
 
@@ -75,12 +68,6 @@ pub enum HomeOut {
 pub enum HomeMsg {
     AddBooks,
     FilesChosen(Vec<PathBuf>),
-    /// One file finished importing: 1-based index, total, and its title.
-    ImportStep {
-        done: usize,
-        total: usize,
-        title: String,
-    },
     /// The whole import finished.
     ImportFinished(ImportTally),
     /// Re-read the snapshot — after an import answer changes what is in a
@@ -411,24 +398,19 @@ impl Component for HomePageModel {
                 // part of the read-snapshot seam (they belong to the task
                 // manager, A0 step 4).
                 let catalog = self.service.catalog().clone();
-                let step_tx = sender.input_sender().clone();
                 let done_tx = sender.input_sender().clone();
                 spawn_import(
                     catalog,
                     paths,
-                    move |done, total, title| {
-                        let _ = step_tx.send(HomeMsg::ImportStep { done, total, title });
-                    },
+                    // The design gives Home no in-flight status line, so the
+                    // per-file reports go nowhere; the completion toast
+                    // carries the outcome. Stage 4 decides whether a quiet
+                    // progress element is worth proposing to the designer.
+                    |_done, _total, _title| {},
                     move |tally| {
                         let _ = done_tx.send(HomeMsg::ImportFinished(tally));
                     },
                 );
-            }
-            HomeMsg::ImportStep { .. } => {
-                // The design gives Home no in-flight status line, so the
-                // per-file reports are acknowledged and dropped; the
-                // completion toast below carries the outcome. The variant
-                // stays because `spawn_import` reports per file.
             }
             HomeMsg::ImportFinished(tally) => {
                 self.importing = false;
@@ -633,13 +615,9 @@ fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> 
     play.set_margin_end(20);
     play.set_margin_bottom(20);
     let s = sender.clone();
-    let (id, ch) = (book.id, *chapter_index);
+    let id = book.id;
     play.connect_clicked(move |_| {
-        s.output(HomeOut::Read {
-            book_id: id,
-            chapter: ch,
-        })
-        .ok();
+        s.output(HomeOut::Read { book_id: id }).ok();
     });
     overlay.add_overlay(&play);
 
@@ -684,7 +662,7 @@ fn request_snapshot(service: &LibraryService, sender: &ComponentSender<HomePageM
         "Reading home",
         move |_reporter| {
             let snap = service.home();
-            let cards = pager_cards(&snap, service.catalog());
+            let cards = pager_cards(service.catalog());
             Box::new(HomePayload { snap, cards })
         },
         |_| {},
@@ -694,30 +672,18 @@ fn request_snapshot(service: &LibraryService, sender: &ComponentSender<HomePageM
     );
 }
 
-/// The pager's books (§60): the snapshot's continue-reading list, cut to
-/// the five that actually have a saved position — the service's fallback
-/// chain ends at "first book in the library" when nothing is in progress,
-/// and a book nobody opened does not belong on the card. Chapter and
-/// excerpt come from `reading_progress` and the FTS index (v15), so no book
-/// file is opened and nothing runs on the UI thread.
-///
-/// Takes `&Catalog`, not the service's `Arc`: pages ask services, they do
-/// not pass database handles around (tests/guardrails.rs), and the worker
-/// only reads.
-fn pager_cards(snap: &HomeSnapshot, catalog: &Catalog) -> Vec<CardData> {
-    let ids: Vec<i64> = snap.continue_reading.iter().map(|b| b.id).collect();
-    let progress = catalog.reading_progress_by_ids(&ids).unwrap_or_default();
-
-    let cards: Vec<CardData> = snap
-        .continue_reading
-        .iter()
-        .filter(|b| progress.contains_key(&b.id))
-        .take(PAGER_MAX)
-        .map(|book| {
-            let chapter_index = progress
-                .get(&book.id)
-                .map(|(chapter, _)| *chapter)
-                .unwrap_or(0);
+/// The pager's books (§60): every book with a saved reading position, most
+/// recently read first, up to the five dots. `reading_progress` is the
+/// truth about "in progress" — the dashboard's fallback chain could end at
+/// "newest book in the library", and a book nobody opened does not belong
+/// on this card (B12). Chapter title and excerpt come from the FTS index
+/// (v15), so no book file is opened and no read happens on the UI thread.
+fn pager_cards(catalog: &Catalog) -> Vec<CardData> {
+    let cards: Vec<CardData> = catalog
+        .books_in_progress(PAGER_MAX)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(book, chapter_index)| {
             let (chapter_title, excerpt) =
                 crate::content_index::chapter_text(catalog, book.id, chapter_index)
                     .ok()
@@ -725,7 +691,7 @@ fn pager_cards(snap: &HomeSnapshot, catalog: &Catalog) -> Vec<CardData> {
                     .map(|(title, content)| (title, first_words(&content, EXCERPT_WORDS)))
                     .unwrap_or_default();
             CardData {
-                book: book.clone(),
+                book,
                 chapter_index,
                 chapter_title,
                 excerpt,

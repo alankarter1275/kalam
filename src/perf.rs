@@ -658,8 +658,9 @@ fn home_snapshot_does_not_scale_with_reading_list_size() {
         }
     });
     let rows = |svc: &LibraryService, out: &std::cell::Cell<usize>| {
-        svc.catalog()
-            .count_queries(|| out.set(svc.home().reading_list.len()))
+        svc.catalog().count_queries(|| {
+            out.set(usize::try_from(svc.home().stats.reading_list).unwrap_or(0))
+        })
     };
     let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
     let a = rows(&few, &ra);

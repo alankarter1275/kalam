@@ -2647,6 +2647,34 @@ impl Catalog {
         Ok(out)
     }
 
+    /// Books that have a saved reading position, most recently saved first,
+    /// each paired with the chapter the position sits in — Home's pager
+    /// source (§60). The `reading_progress` row is the truth about "in
+    /// progress": it exists once a reader saves a position and goes when the
+    /// position is cleared, which is exactly the card's contract. Books are
+    /// re-sequenced by hand because `books_by_ids` answers with a map.
+    pub fn books_in_progress(&self, limit: usize) -> Result<Vec<(Book, usize)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT book_id, chapter_index FROM reading_progress \
+             ORDER BY updated_at DESC LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![limit as i64], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)? as usize))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        if rows.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids: Vec<i64> = rows.iter().map(|(id, _)| *id).collect();
+        let books = self.books_by_ids(&ids)?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(id, chapter)| books.get(&id).map(|b| (b.clone(), chapter)))
+            .collect())
+    }
+
     /// Save position and update the books.progress percent (0–100).
     ///
     /// For readers whose saved positions start at zero, which is most of them:

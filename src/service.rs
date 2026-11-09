@@ -89,17 +89,14 @@ pub struct ComicSeriesMetadataApplyOutcome {
     pub cover_error: Option<String>,
 }
 
-/// Everything the Home page draws, fetched together.
+/// Everything the Home page draws, fetched together. The pager's books are
+/// not in here: they come from `Catalog::books_in_progress` on the page's
+/// own worker (§60). The dashboard's fallback chain — recently opened, else
+/// in progress, else newest — left with the dashboard (B12); the card shows
+/// a book only when a saved position exists.
 #[derive(Debug, Default)]
 pub struct HomeSnapshot {
     pub stats: LibraryStats,
-    /// Recently added — bounded; Home shows a dozen covers, not the library.
-    pub recent: Vec<Book>,
-    /// "Continue reading", already resolved through Home's fallback chain
-    /// (recently opened → in-progress → first book) so the page does not have
-    /// to know the rule.
-    pub continue_reading: Vec<Book>,
-    pub reading_list: Vec<ReadingListEntry>,
     pub errors: Errors,
 }
 
@@ -655,31 +652,13 @@ impl LibraryService {
 
     // -- snapshots ---------------------------------------------------------
 
-    /// Home: counts strip, continue row, reading-list peek, recently added.
+    /// Home: the counts the state cards quote (§64). One query — the pager's
+    /// books ride the page's own worker, not this snapshot.
     pub fn home(&self) -> HomeSnapshot {
         let _t = crate::timing::measure("service_home");
         let mut errors = Errors::new();
         let stats = take(self.catalog.library_stats(), "library stats", &mut errors);
-        // Bounded on purpose: Home shows a dozen covers, not the whole library.
-        let recent = take(self.catalog.recent_books(12), "recent books", &mut errors);
-        let opened = take(
-            self.catalog.recently_opened(4),
-            "recently opened",
-            &mut errors,
-        );
-        let reading_list = take(
-            self.catalog.list_reading_list(),
-            "reading list",
-            &mut errors,
-        );
-
-        HomeSnapshot {
-            continue_reading: continue_row(opened, &recent),
-            stats,
-            recent,
-            reading_list,
-            errors,
-        }
+        HomeSnapshot { stats, errors }
     }
 
     /// Analytics: totals, streaks, goal progress, this week's activity.
@@ -2311,26 +2290,6 @@ fn take<T: Default>(result: crate::db::Result<T>, what: &str, errors: &mut Error
     }
 }
 
-/// Home's "continue reading" rule, extracted so it is testable and so the page
-/// does not carry query logic: prefer genuinely recently-opened books, else any
-/// book in progress, else the newest book so the row is never empty in a
-/// freshly-imported library.
-fn continue_row(recently_opened: Vec<Book>, recent: &[Book]) -> Vec<Book> {
-    if !recently_opened.is_empty() {
-        return recently_opened;
-    }
-    let in_progress: Vec<Book> = recent
-        .iter()
-        .filter(|b| b.progress > 0 && b.progress < 100)
-        .take(4)
-        .cloned()
-        .collect();
-    if !in_progress.is_empty() {
-        return in_progress;
-    }
-    recent.first().cloned().into_iter().collect()
-}
-
 /// The merged history feed (events + reading sessions), fully resolved on
 /// the worker: the per-event progress and format lookups the page used to
 /// do while building are baked into `sub` here (7.1 step 2b).
@@ -3695,32 +3654,8 @@ mod tests {
 
     /// A `Book` with only the fields the continue-row rule reads. Building one
     /// by hand keeps those tests free of the database entirely.
-    fn book(title: &str, progress: u8) -> Book {
-        Book {
-            id: 0,
-            uuid: String::new(),
-            title: title.into(),
-            authors: String::new(),
-            series: None,
-            description: String::new(),
-            format: BookFormat::Epub,
-            file_name: String::new(),
-            file_hash: String::new(),
-            cover_name: None,
-            added_at: String::new(),
-            progress,
-            rating: 0,
-            publisher: String::new(),
-            published: String::new(),
-            series_index: 0.0,
-            tags: Vec::new(),
-            cover_path: None,
-            file_path: std::path::PathBuf::new(),
-        }
-    }
-
     #[test]
-    fn home_reports_counts_and_recent_books() {
+    fn home_reports_counts() {
         let cat = Catalog::open_in_memory().unwrap();
         seed(&cat, "Dune", &["scifi"]);
         seed(&cat, "Emma", &["classic"]);
@@ -3733,7 +3668,6 @@ mod tests {
             snap.errors
         );
         assert_eq!(snap.stats.total_books, 2);
-        assert_eq!(snap.recent.len(), 2);
     }
 
     #[test]
@@ -4288,54 +4222,6 @@ mod tests {
         let snap = svc.reading_list();
         assert!(snap.entries.is_empty());
         assert!(snap.errors.is_empty(), "empty is not an error");
-    }
-
-    #[test]
-    fn continue_row_falls_back_to_the_newest_book() {
-        // Nothing opened and nothing part-read: the row would be empty, which
-        // reads as "this app is broken" in a freshly imported library.
-        let cat = Catalog::open_in_memory().unwrap();
-        seed(&cat, "Dune", &[]);
-        let svc = LibraryService::new(Arc::new(cat));
-
-        let snap = svc.home();
-        assert_eq!(snap.continue_reading.len(), 1);
-        assert_eq!(snap.continue_reading[0].title, "Dune");
-    }
-
-    #[test]
-    fn continue_row_prefers_in_progress_over_newest() {
-        // `recent` is newest-first, so the untouched book leads the list; the
-        // rule must still pick the one actually being read.
-        let row = continue_row(Vec::new(), &[book("Untouched", 0), book("Half read", 42)]);
-        assert_eq!(row.len(), 1);
-        assert_eq!(row[0].title, "Half read");
-    }
-
-    #[test]
-    fn continue_row_ignores_finished_books() {
-        // 100% is done, not "continue". Without the upper bound the row would
-        // keep offering a book the user has already finished.
-        let row = continue_row(Vec::new(), &[book("Finished", 100)]);
-        assert_eq!(row.len(), 1, "falls back to the newest book");
-        assert_eq!(
-            row[0].title, "Finished",
-            "the fallback is allowed to show it, but not as 'in progress'"
-        );
-
-        let row = continue_row(Vec::new(), &[book("Finished", 100), book("Reading", 10)]);
-        assert_eq!(row.len(), 1);
-        assert_eq!(row[0].title, "Reading");
-    }
-
-    #[test]
-    fn continue_row_keeps_recently_opened_when_present() {
-        let row = continue_row(
-            vec![book("Opened last night", 5)],
-            &[book("Newer import", 0)],
-        );
-        assert_eq!(row.len(), 1);
-        assert_eq!(row[0].title, "Opened last night");
     }
 
     #[test]

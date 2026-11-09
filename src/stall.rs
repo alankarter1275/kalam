@@ -143,6 +143,10 @@ fn watch() {
                 );
                 reported = false;
             }
+            // A healthy beat closes the window: whatever the screen spent
+            // waiting for the catalogue in it belongs to no stall, and must
+            // not ride along on the next one.
+            let _ = crate::lockwatch::drain_screen_wait();
             last_value = value;
             last_advance = Instant::now();
             loop_seen = true;
@@ -180,14 +184,19 @@ fn millis(d: Duration) -> u64 {
 
 /// One report line: to stderr and to `kalam.log`, with attribution.
 ///
-/// `name_the_holder` adds `lockwatch`'s read of the catalogue lock. Only the
-/// lines printed *during* a block ask for it: by the time the loop resumes,
-/// whoever held the lock has let go, and "free" would be a fact about the
-/// present rather than about the freeze.
+/// `name_the_holder` decides which half of `lockwatch`'s record the line
+/// carries. A line printed *during* a block gets the holder's name as well,
+/// because that is the only moment the name means anything: by the time the
+/// loop resumes, whoever held the lock has let go and "free" would be a fact
+/// about the present rather than about the freeze. Both get the screen's
+/// accumulated wait, which is the number that says whether the block was the
+/// database's fault at all.
 fn report(headline: &str, name_the_holder: bool) {
     let mut attribution = attribution();
     if name_the_holder {
         attribution.push_str(&crate::lockwatch::catalogue_state());
+    } else {
+        attribution.push_str(&crate::lockwatch::screen_wait_summary());
     }
     emit("stall", &format!("{headline}{attribution}"));
 }

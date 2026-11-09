@@ -26,6 +26,13 @@
 //! screen to actually freeze to hear about it is how §105 and §106 were both
 //! found a season late.
 //!
+//! And every stall line carries the screen's *accumulated* wait, because a
+//! threshold per wait cannot see a convoy: twenty waits of 20 ms freeze the
+//! screen for 400 ms and not one of them is long enough to report itself. The
+//! first run with this instrument showed exactly that — every contended stall
+//! in CI named `"Checking dictionary packs"` holding the lock for 0 to 15 ms,
+//! with no single wait worth a line.
+//!
 //! ## Cost, stated because it sits on the hot path
 //!
 //! Every read of the catalogue goes through `conn()`, so the record has to be
@@ -80,6 +87,12 @@ const MAX_LINES: u64 = 400;
 /// two lines arrive at the same cadence and read as one story.
 const LONG_HOLD: Duration = Duration::from_secs(2);
 
+/// A wait at least this long counts toward the screen's total. Shorter is the
+/// lock doing its job; counting it would turn the number into a measure of how
+/// often the screen reads the catalogue rather than of how long it was made to
+/// wait.
+const COUNTED_WAIT: Duration = Duration::from_millis(1);
+
 /// The clock every number here is measured against: microseconds since the
 /// first call. `Instant` cannot live in an atomic, and these records are read
 /// by threads other than the one that wrote them.
@@ -115,6 +128,14 @@ static NEXT_THREAD: AtomicU64 = AtomicU64::new(1);
 /// one line rather than one per poll. Minus one because a real `since` starts
 /// at zero and must never be mistaken for "already reported".
 static REPORTED_HOLD: AtomicI64 = AtomicI64::new(-1);
+
+/// What the screen has spent waiting for the catalogue since a stall line last
+/// read it: total microseconds, and how many separate waits. Written by the
+/// screen alone, read and reset by the watchdog, so no window mixes two
+/// blocks. `swap` rather than a load-and-store: a wait landing between the two
+/// belongs to the next window, which is where it would be reported anyway.
+static SCREEN_WAIT_TOTAL: AtomicI64 = AtomicI64::new(0);
+static SCREEN_WAIT_COUNT: AtomicU64 = AtomicU64::new(0);
 
 /// Number to name. Written once per thread and once more if that thread names
 /// its own job later; read only while a line is being printed.
@@ -164,6 +185,8 @@ pub(crate) fn name_this_thread(label: &str) {
 pub(crate) fn note_acquire(started: i64) {
     let now = now_micros();
     let waiter = me();
+    let screen = waiter == UI_THREAD.load(Ordering::Relaxed);
+    let waited = now - started;
     // Read the old record before overwriting it: that is the holder this
     // thread waited for, and the only witness to how long it held on.
     let holder = HOLDER.load(Ordering::Relaxed);
@@ -171,11 +194,18 @@ pub(crate) fn note_acquire(started: i64) {
     HOLDER.store(waiter, Ordering::Relaxed);
     HELD_SINCE.store(now, Ordering::Relaxed);
 
+    // The screen's waits are counted whether or not any of them is long
+    // enough to earn its own line: a convoy is only visible as a total.
+    if screen && waited >= micros(COUNTED_WAIT) {
+        SCREEN_WAIT_TOTAL.fetch_add(waited, Ordering::Relaxed);
+        SCREEN_WAIT_COUNT.fetch_add(1, Ordering::Relaxed);
+    }
+
     // Nobody held it, so there was nothing to wait for — the ordinary case.
     if holder == 0 {
         return;
     }
-    report_wait(waiter, now - started, holder, now - since, now);
+    report_wait(waiter, waited, holder, now - since, now, screen);
 }
 
 /// Called when the guard drops. The compare-exchange matters: a thread that
@@ -189,11 +219,40 @@ pub(crate) fn note_release() {
 /// in progress. Two atomics and, when the lock is held, one short table scan.
 pub(crate) fn catalogue_state() -> String {
     let holder = HOLDER.load(Ordering::Relaxed);
-    if holder == 0 {
-        return free_line();
+    let state = if holder == 0 {
+        free_line()
+    } else {
+        let held = now_micros() - HELD_SINCE.load(Ordering::Relaxed);
+        held_line(&who(holder), held)
+    };
+    // Drained here, so the number belongs to this block and the resumed line
+    // that follows reports only what came after it.
+    format!("{state}{}", screen_wait_summary())
+}
+
+/// What the screen spent waiting for the catalogue since the last line that
+/// asked. Empty when the window holds nothing, so a healthy run's lines read
+/// exactly as they did before this module existed.
+pub(crate) fn screen_wait_summary() -> String {
+    let (total, count) = drain_screen_wait();
+    if count == 0 {
+        return String::new();
     }
-    let held = now_micros() - HELD_SINCE.load(Ordering::Relaxed);
-    held_line(&who(holder), held)
+    wait_summary(total, count)
+}
+
+/// Read the screen's accumulated wait and close the window. The watchdog also
+/// calls this whenever the heartbeat advances, so waits from a healthy moment
+/// never ride along on the next stall's line.
+pub(crate) fn drain_screen_wait() -> (i64, u64) {
+    let total = SCREEN_WAIT_TOTAL.swap(0, Ordering::Relaxed);
+    let count = SCREEN_WAIT_COUNT.swap(0, Ordering::Relaxed);
+    (millis(total), count)
+}
+
+/// The accumulated-wait tail, on its own so the wording can be pinned.
+fn wait_summary(total: i64, count: u64) -> String {
+    format!("; the screen waited {total} ms for the catalogue lock in {count} separate waits")
 }
 
 /// Called by the stall watchdog on every poll: name a hold that has run past
@@ -288,8 +347,7 @@ fn micros(d: Duration) -> i64 {
 }
 
 /// Print one wait, if [`worth_reporting`] says it earned the line.
-fn report_wait(waiter: u64, waited: i64, holder: u64, held: i64, now: i64) {
-    let screen = waiter == UI_THREAD.load(Ordering::Relaxed);
+fn report_wait(waiter: u64, waited: i64, holder: u64, held: i64, now: i64, screen: bool) {
     let since_last_line = now - LAST_LINE.load(Ordering::Relaxed);
     let printed = LINES.load(Ordering::Relaxed);
     if !worth_reporting(waited, screen, since_last_line, printed) {
@@ -461,6 +519,18 @@ mod tests {
             hold_line("\"Rebuilding cover thumbnails\"", 10_400_900),
             "\"Rebuilding cover thumbnails\" has held the catalogue lock for 10400 ms"
         );
+    }
+
+    /// The convoy number has to read as a total, not as one wait: it is the
+    /// answer to "was the screen frozen *on the database*", which no single
+    /// hold in the first instrumented run was long enough to answer.
+    #[test]
+    fn the_accumulated_wait_reads_as_a_total() {
+        assert_eq!(
+            wait_summary(412, 27),
+            "; the screen waited 412 ms for the catalogue lock in 27 separate waits"
+        );
+        assert_eq!(screen_wait_summary(), "", "an empty window adds nothing");
     }
 
     /// The stall watchdog's tail is the other half of the instrument: "free"

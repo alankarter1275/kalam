@@ -4078,6 +4078,20 @@ A block longer than two seconds also gets a fresh line every two seconds rather
 than one snapshot at 150 ms, because a 27 second freeze changes hands: the job
 holding the lock at the start is often not the one holding it at the end.
 
+The first run with the instrument answered its own question and immediately
+raised the next one. Every contended stall line in CI named the same holder —
+`"Checking dictionary packs"`, the first-launch job that decompresses and
+imports the bundled dictionary packs — holding the lock for 0 to 15 ms at a
+time. Not one `[lock]` line fired, because no single wait reached the 100 ms
+the screen's own line asks for. So the record could say the dictionary install
+was constantly inside the lock and could not say whether the screen was frozen
+*on* it. The screen's waits are therefore accumulated as well: total
+milliseconds and how many separate waits of at least 1 ms, since a stall line
+last read them, with a healthy heartbeat closing the window so ordinary waits
+never ride along on the next stall's line. Twenty waits of 20 ms now read as
+`the screen waited 400 ms for the catalogue lock in 20 separate waits`, which
+is the number that separates a convoy from a screen busy with its own work.
+
 The costs, stated rather than left to be discovered. Every catalogue read now
 costs one monotonic clock read and two relaxed atomic stores on the way in and
 one compare-exchange on the way out — cheaper than the query it measures, but

@@ -757,27 +757,32 @@ fn first_words(content: &str, words: usize) -> String {
     out
 }
 
-/// The local clock, or UTC when the system has no local time configured —
-/// a greeting that fails to build would be worse than one an hour off.
-fn local_now() -> gtk::glib::DateTime {
-    gtk::glib::DateTime::now_local().unwrap_or_else(|_| gtk::glib::DateTime::now_utc())
+/// The local clock, or UTC when the system has no local time configured.
+/// Every glib `DateTime` constructor is fallible, so the honest floor is
+/// `None`: a machine that cannot read its own clock at all gets a neutral
+/// greeting and no date line — not a panic, and not a wrong time of day.
+fn local_now() -> Option<gtk::glib::DateTime> {
+    gtk::glib::DateTime::now_local()
+        .or_else(|_| gtk::glib::DateTime::now_utc())
+        .ok()
 }
 
 /// The greeting's first line (home-spec §1). No name on the second line
 /// until the customization area in Settings exists (B14).
 fn greeting_line() -> String {
-    match local_now().hour() {
-        5..=11 => "Good morning".to_string(),
-        12..=17 => "Good afternoon".to_string(),
-        _ => "Good evening".to_string(),
+    match local_now().map(|now| now.hour()) {
+        Some(5..=11) => "Good morning".to_string(),
+        Some(12..=17) => "Good afternoon".to_string(),
+        Some(_) => "Good evening".to_string(),
+        None => "Hello".to_string(),
     }
 }
 
 /// The greeting's second line: today's date standing in for the name (B14),
-/// e.g. "Saturday, 08 November".
+/// e.g. "Saturday, 08 November". Empty only when the clock is unreadable.
 fn date_line() -> String {
     local_now()
-        .format("%A, %d %B")
+        .and_then(|now| now.format("%A, %d %B").ok())
         .map(|s| s.to_string())
         .unwrap_or_default()
 }
@@ -806,11 +811,14 @@ mod tests {
         assert!(!PLACEHOLDER_QUOTE.1.is_empty());
     }
 
-    /// The date line must not be empty on a machine with no local timezone
-    /// configured — the UTC fallback exists for exactly that, and the
-    /// greeting's second line has nothing else to stand on (B14).
+    /// The date line must not be empty wherever a clock reads at all — the
+    /// UTC fallback exists for machines with no local timezone configured,
+    /// and the greeting's second line has nothing else to stand on (B14).
+    /// Only an unreadable clock may produce "".
     #[test]
     fn date_line_is_never_empty() {
-        assert!(!date_line().is_empty());
+        if gtk::glib::DateTime::now_utc().is_ok() {
+            assert!(!date_line().is_empty());
+        }
     }
 }

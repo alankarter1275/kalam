@@ -37,4 +37,4 @@ index aa987ad..4042ea1 100644
      };
      let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
      let a = rows(&few, &ra);
---- run 42562225198 ---
+--- run 42583906727 ---

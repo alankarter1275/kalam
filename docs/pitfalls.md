@@ -4078,19 +4078,39 @@ A block longer than two seconds also gets a fresh line every two seconds rather
 than one snapshot at 150 ms, because a 27 second freeze changes hands: the job
 holding the lock at the start is often not the one holding it at the end.
 
-The first run with the instrument answered its own question and immediately
-raised the next one. Every contended stall line in CI named the same holder —
+The first run with the instrument answered a question and immediately raised
+the next one. Every contended stall line in CI named the same holder —
 `"Checking dictionary packs"`, the first-launch job that decompresses and
 imports the bundled dictionary packs — holding the lock for 0 to 15 ms at a
-time. Not one `[lock]` line fired, because no single wait reached the 100 ms
-the screen's own line asks for. So the record could say the dictionary install
-was constantly inside the lock and could not say whether the screen was frozen
-*on* it. The screen's waits are therefore accumulated as well: total
-milliseconds and how many separate waits of at least 1 ms, since a stall line
-last read them, with a healthy heartbeat closing the window so ordinary waits
-never ride along on the next stall's line. Twenty waits of 20 ms now read as
-`the screen waited 400 ms for the catalogue lock in 20 separate waits`, which
-is the number that separates a convoy from a screen busy with its own work.
+time, and not one `[lock]` line fired. Read one way that says the dictionary
+install is constantly inside the lock in short holds, and the screen's blocks
+are its own work with the lock merely sampled at a busy moment. Read another
+way it says the instrument is broken. So the screen's waits were accumulated
+as well — total milliseconds and how many separate waits of at least 1 ms,
+since a stall line last read them, with a healthy heartbeat closing the window
+so ordinary waits never ride along on the next stall's line — and the second
+run settled it:
+
+```text
+[stall] UI thread unblocked — was blocked for at least 1050 ms — after
+        task_done:Rebuilding cover thumbnails (took 0 ms, ended 49 ms ago);
+        the screen waited 1110 ms for the catalogue lock in 1 separate waits
+```
+
+Not a convoy. One wait, essentially the whole block, repeated across the
+editor and comic groups at 427 to 1110 ms. The screen *was* frozen on the
+database, and the instrument was broken: it read the previous holder *after*
+acquiring the lock, and a release clears that record, so every wait in the run
+read "nobody held it" and stayed silent. The holder is now recorded by the
+thread that is leaving — it still has the mutex, so the record is complete
+before anybody can read it — which also makes the hold's duration exact rather
+than a lower bound.
+
+**The rule this leaves behind, twice over:** an instrument that reports nothing
+is not evidence of nothing, and the first thing to check is whether it can
+report at all. Here the proof was a number that contradicted the silence — a
+1110 ms wait with no line about it — and the only reason that number existed is
+that the accumulated counter was added for a different reason entirely.
 
 The costs, stated rather than left to be discovered. Every catalogue read now
 costs one monotonic clock read and two relaxed atomic stores on the way in and

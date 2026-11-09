@@ -11,13 +11,16 @@
 //! reports both ends of every acquisition:
 //!
 //! - **on the way in**, the moment it started waiting and the moment the lock
-//!   landed. That gives the wait, and the record it overwrites gives the
-//!   holder it waited for — so the job that froze the screen is named at the
-//!   instant somebody else was made to wait for it.
-//! - **on the way out**, when the guard drops, so the record says honestly
-//!   whether the lock is held *right now*. That is what lets a stall line end
-//!   with `catalogue lock: free` and point the hunt back at the UI thread's
-//!   own work instead of at contention.
+//!   landed. That gives the wait, and the hold that has just *finished* gives
+//!   the job it waited for — named at the instant somebody else was made to
+//!   wait for it. Not the record of who holds it now: a release clears that,
+//!   so by the time the lock lands it always reads "nobody", which is the bug
+//!   that made the first version of this module report nothing at all.
+//! - **on the way out**, when the guard drops and while the mutex is still
+//!   this thread's. That writes the hold's exact length where the next thread
+//!   in can read it, and clears the live record — which is what lets a stall
+//!   line end with `catalogue lock: free` and point the hunt back at the UI
+//!   thread's own work instead of at contention.
 //!
 //! The watchdog also asks the record on every poll, which produces a third
 //! line: a hold that runs past [`LONG_HOLD`] is named once, whether or not
@@ -29,15 +32,19 @@
 //! And every stall line carries the screen's *accumulated* wait, because a
 //! threshold per wait cannot see a convoy: twenty waits of 20 ms freeze the
 //! screen for 400 ms and not one of them is long enough to report itself. The
-//! first run with this instrument showed exactly that — every contended stall
-//! in CI named `"Checking dictionary packs"` holding the lock for 0 to 15 ms,
-//! with no single wait worth a line.
+//! convoy turned out not to be the shape CI had — the accumulated number said
+//! the screen spent 427 to 1110 ms of its blocks in *one* wait each, which is
+//! one long hold, and the reason no `[lock]` line named it was the bug above.
+//! The counter stays: it is what turned "somebody held the lock for 5 ms when
+//! I looked" into a number that could not be argued with.
 //!
 //! ## Cost, stated because it sits on the hot path
 //!
 //! Every read of the catalogue goes through `conn()`, so the record has to be
 //! cheaper than the query it measures: one monotonic clock read and two
-//! relaxed atomic stores on the way in, one compare-exchange on the way out.
+//! relaxed atomic stores on the way in, one compare-exchange, a second clock
+//! read and two more stores on the way out. Tens of nanoseconds against a
+//! query that costs microseconds.
 //! The thread-name table is a `Mutex`, but it is taken once per thread and
 //! again only while a line is actually being printed, and it is never held
 //! across a catalogue call — so it cannot join the connection lock in a
@@ -129,6 +136,19 @@ static NEXT_THREAD: AtomicU64 = AtomicU64::new(1);
 /// at zero and must never be mistaken for "already reported".
 static REPORTED_HOLD: AtomicI64 = AtomicI64::new(-1);
 
+/// The last *completed* hold: who held it, and for exactly how long.
+///
+/// Written on the way out and read on the way in, because that is the only
+/// pairing that works. A release clears [`HOLDER`], so the obvious place to
+/// look for the thread this one waited for — after the lock is in hand — is
+/// always empty, and the first version of this module reported nothing at all
+/// for that reason: every wait in a CI run, including one of 1110 ms, read
+/// "nobody held it" and stayed silent. Both writes happen while the releasing
+/// thread still has the mutex, so the next thread in cannot see them half
+/// done.
+static LAST_HOLDER: AtomicU64 = AtomicU64::new(0);
+static LAST_HOLD: AtomicI64 = AtomicI64::new(0);
+
 /// What the screen has spent waiting for the catalogue since a stall line last
 /// read it: total microseconds, and how many separate waits. Written by the
 /// screen alone, read and reset by the watchdog, so no window mixes two
@@ -187,10 +207,10 @@ pub(crate) fn note_acquire(started: i64) {
     let waiter = me();
     let screen = waiter == UI_THREAD.load(Ordering::Relaxed);
     let waited = now - started;
-    // Read the old record before overwriting it: that is the holder this
-    // thread waited for, and the only witness to how long it held on.
-    let holder = HOLDER.load(Ordering::Relaxed);
-    let since = HELD_SINCE.load(Ordering::Relaxed);
+    // The hold this thread waited out is the one that has just finished, not
+    // the one on `HOLDER` — that is always clear by now, see `LAST_HOLDER`.
+    let holder = LAST_HOLDER.load(Ordering::Relaxed);
+    let held = LAST_HOLD.load(Ordering::Relaxed);
     HOLDER.store(waiter, Ordering::Relaxed);
     HELD_SINCE.store(now, Ordering::Relaxed);
 
@@ -201,18 +221,32 @@ pub(crate) fn note_acquire(started: i64) {
         SCREEN_WAIT_COUNT.fetch_add(1, Ordering::Relaxed);
     }
 
-    // Nobody held it, so there was nothing to wait for — the ordinary case.
+    // No hold has ever finished, so this is the first acquisition of the run
+    // and there was nothing to wait for.
     if holder == 0 {
         return;
     }
-    report_wait(waiter, waited, holder, now - since, now, screen);
+    report_wait(waiter, waited, holder, held, now, screen);
 }
 
-/// Called when the guard drops. The compare-exchange matters: a thread that
-/// released long ago must not erase the record of whoever holds it now.
+/// Called when the guard drops, which is before the mutex itself lets go: the
+/// thread still has it, so the record it leaves behind is complete by the time
+/// anybody else can read it.
+///
+/// The compare-exchange matters twice over — a thread that released long ago
+/// must not erase the record of whoever holds it now, and must not overwrite
+/// the finished hold that thread is about to hand on.
 pub(crate) fn note_release() {
     let n = me();
-    let _ = HOLDER.compare_exchange(n, 0, Ordering::Relaxed, Ordering::Relaxed);
+    let released = HOLDER.compare_exchange(n, 0, Ordering::Relaxed, Ordering::Relaxed);
+    if released.is_err() {
+        // Somebody else holds it already: a late release must neither erase
+        // their record nor hand on a hold that was not this thread's.
+        return;
+    }
+    let held = now_micros() - HELD_SINCE.load(Ordering::Relaxed);
+    LAST_HOLDER.store(n, Ordering::Relaxed);
+    LAST_HOLD.store(held, Ordering::Relaxed);
 }
 
 /// What the stall watchdog appends to its line, read while the block is still
@@ -252,7 +286,12 @@ pub(crate) fn drain_screen_wait() -> (i64, u64) {
 
 /// The accumulated-wait tail, on its own so the wording can be pinned.
 fn wait_summary(total: i64, count: u64) -> String {
-    format!("; the screen waited {total} ms for the catalogue lock in {count} separate waits")
+    let shape = if count == 1 {
+        "1 wait".to_string()
+    } else {
+        format!("{count} separate waits")
+    };
+    format!("; the screen waited {total} ms for the catalogue lock in {shape}")
 }
 
 /// Called by the stall watchdog on every poll: name a hold that has run past
@@ -307,13 +346,11 @@ fn held_line(holder: &str, held: i64) -> String {
 
 /// One `[lock]` line: who waited, how long, and who they waited for.
 ///
-/// The holder's duration is a lower bound and says so — the record holds when
-/// the holder *took* the lock, not when it let go, and by the time the waiter
-/// prints, the holder may have released a moment ago or may still be inside.
+/// The holder's duration is exact rather than a bound, because it is written
+/// by the holder on its way out and read by the waiter on its way in.
 fn wait_line(waiter: &str, waited: i64, holder: &str, held: i64) -> String {
     format!(
-        "{waiter} waited {} ms for the catalogue lock — {holder} had held it \
-         for at least {} ms",
+        "{waiter} waited {} ms for the catalogue lock — {holder} held it for {} ms",
         millis(waited),
         millis(held)
     )
@@ -489,7 +526,7 @@ mod tests {
         assert_eq!(
             line,
             "the UI thread waited 4657 ms for the catalogue lock — \
-             \"Organizing comic series folders\" had held it for at least 4702 ms"
+             \"Organizing comic series folders\" held it for 4702 ms"
         );
     }
 
@@ -529,6 +566,11 @@ mod tests {
         assert_eq!(
             wait_summary(412, 27),
             "; the screen waited 412 ms for the catalogue lock in 27 separate waits"
+        );
+        assert_eq!(
+            wait_summary(777, 1),
+            "; the screen waited 777 ms for the catalogue lock in 1 wait",
+            "one wait is not several, and the line should not say so"
         );
         assert_eq!(screen_wait_summary(), "", "an empty window adds nothing");
     }

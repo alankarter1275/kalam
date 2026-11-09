@@ -47,7 +47,10 @@ Prepare a small library containing:
   holder. A freeze with neither line is a bug in the instrument itself
   (B19, pitfalls §109). A `[lock]` line can also appear with no freeze at all:
   it means some job held the catalogue for over two seconds, which is worth
-  reporting on its own. A long freeze also repeats its line every two seconds,
+  reporting on its own. And a `[lock]` line naming a wait of hundreds of
+  milliseconds behind a hold of a few — with a large handover count between
+  them — means background jobs are queueing the screen out again, which is the
+  shape the give-way flag exists to stop. A long freeze also repeats its line every two seconds,
   so the job holding the lock at the end is visible even when it was not the
   one holding it at the start.
 

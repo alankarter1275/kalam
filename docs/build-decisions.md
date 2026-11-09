@@ -385,10 +385,25 @@ CI smoke report prints `[lock]` beside `[stall]`, so contention on a seeded
 library is visible without anybody's terminal. Pitfalls §109 carries the
 reasoning and the costs.
 
-This is an instrument, not a fix: nothing that froze has been unfrozen by it.
-What it buys is that the next report from the owner's machine names the job to
-go and fix instead of a stale guess. The work it interrupts is queued and
-unchanged — Step B's chapter heads, then stage 2.
+The instrument was an instrument first, and it paid for itself in three runs.
+The first named a holder at all. The second proved the screen's blocks really
+were waits for the database rather than its own work — 427 to 1110 ms of a
+block spent waiting, in one wait each. The third named the shape: half a second
+of waiting behind holds of 0 to 4 ms, which is a queue rather than a slow job.
+Linux hands an unfair mutex to whoever asks next, and the two housekeeping jobs
+that start when the window is realized — the bundled-dictionary install and the
+thumbnail backfill — asked a hundred times each while the screen asked once.
+
+So the fix is that the screen asks to go first: `Catalog::conn` raises a flag
+before it blocks, a worker about to take the lock sleeps two milliseconds at a
+time while that flag is set, and the screen lowers it the instant the lock
+lands. The sleep is capped at 50 ms per acquisition and the cap is pinned by a
+test, because an unbounded one would turn a single stuck flag into a library
+that never loads. This is the owner's principle from roadmap 7.1 applied to the
+lock rather than to the work: the screen does not queue behind housekeeping.
+
+The work B19 interrupted is queued and unchanged — Step B's chapter heads, then
+stage 2.
 
 ## Still open
 

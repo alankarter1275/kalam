@@ -1056,9 +1056,12 @@ pub(crate) struct ConnGuard<'a> {
 }
 
 impl<'a> ConnGuard<'a> {
-    /// Record the wait `started` measures, then this thread as the holder.
-    fn new(inner: std::sync::MutexGuard<'a, Connection>, started: i64) -> Self {
-        crate::lockwatch::note_acquire(started);
+    /// Record the wait `waiting` measures, then this thread as the holder.
+    fn new(
+        inner: std::sync::MutexGuard<'a, Connection>,
+        waiting: crate::lockwatch::Waiting,
+    ) -> Self {
+        crate::lockwatch::note_acquire(waiting);
         Self { inner }
     }
 }
@@ -1100,13 +1103,19 @@ impl Catalog {
     /// both ends of a wait are recorded. A screen frozen on this lock then
     /// names the job holding it, instead of blaming whatever activity label
     /// happened to run last (pitfalls §109).
+    ///
+    /// `before_blocking` is also where the screen asks to go first: it raises
+    /// a flag that makes a worker about to take this lock sleep instead, for
+    /// as long as the screen is waiting and no longer. Linux hands an unfair
+    /// mutex to whoever asks next, and two background jobs asking a hundred
+    /// times each kept the screen out for half a second at a stretch.
     pub(crate) fn conn(&self) -> ConnGuard<'_> {
-        let started = crate::lockwatch::now_micros();
+        let waiting = crate::lockwatch::before_blocking();
         let guard = self.conn.lock().unwrap_or_else(|poisoned| {
             eprintln!("kalam: recovered a poisoned database lock");
             poisoned.into_inner()
         });
-        ConnGuard::new(guard, started)
+        ConnGuard::new(guard, waiting)
     }
 
     pub fn open() -> Result<Self> {

@@ -29,6 +29,23 @@
 //! screen to actually freeze to hear about it is how §105 and §106 were both
 //! found a season late.
 //!
+//! ## The screen goes first
+//!
+//! Recording who holds the lock produced an answer nobody had guessed. The
+//! screen's waits in CI ran 370 to 625 ms, and the hold each one waited out
+//! was 0 to 4 ms long: `std::sync::Mutex` on Linux gives the lock to whoever
+//! asks next, not to whoever has waited longest, so two background jobs taking
+//! it a hundred times each kept the screen's single request out for half a
+//! second. Naming that is not enough, so the screen raises a flag before it
+//! blocks and a worker that sees the flag sleeps instead of asking. Bounded,
+//! so a flag left set by a bug costs the workers 50 ms and not the session.
+//!
+//! Every wait line also counts the handovers it waited through, because that
+//! number is the difference between a queue (many short holds — give way and
+//! it goes away) and a thread that was simply not scheduled (no holds at all —
+//! which no lock record can fix, and which would be a lie to pretend
+//! otherwise).
+//!
 //! And every stall line carries the screen's *accumulated* wait, because a
 //! threshold per wait cannot see a convoy: twenty waits of 20 ms freeze the
 //! screen for 400 ms and not one of them is long enough to report itself. The
@@ -63,7 +80,7 @@
 //! prints both tags in its stall section, so a contention regression shows up
 //! in `ci-logs/` on the day it happens.
 
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -93,6 +110,15 @@ const MAX_LINES: u64 = 400;
 /// seconds is the watchdog's own repeat interval for a frozen screen, so the
 /// two lines arrive at the same cadence and read as one story.
 const LONG_HOLD: Duration = Duration::from_secs(2);
+
+/// How long a worker gives way on one acquisition before taking the lock
+/// anyway. Bounded so that a flag left set by a bug costs the workers 50 ms
+/// rather than the rest of the session.
+const YIELD_CAP: Duration = Duration::from_millis(50);
+
+/// One step of that sleep. Two milliseconds is under the shortest hold the
+/// instrument has seen, so a worker that gives way once misses nothing.
+const YIELD_STEP: Duration = Duration::from_millis(2);
 
 /// A wait at least this long counts toward the screen's total. Shorter is the
 /// lock doing its job; counting it would turn the number into a measure of how
@@ -136,6 +162,13 @@ static NEXT_THREAD: AtomicU64 = AtomicU64::new(1);
 /// at zero and must never be mistaken for "already reported".
 static REPORTED_HOLD: AtomicI64 = AtomicI64::new(-1);
 
+/// Set while the screen is waiting for the lock, so the workers can give way.
+static SCREEN_WAITING: AtomicBool = AtomicBool::new(false);
+
+/// How many times the lock has changed hands. A waiter reads it before and
+/// after, and the difference is the queue it waited through.
+static HANDOVERS: AtomicU64 = AtomicU64::new(0);
+
 /// The last *completed* hold: who held it, and for exactly how long.
 ///
 /// Written on the way out and read on the way in, because that is the only
@@ -168,8 +201,61 @@ thread_local! {
 
 /// Microseconds on the shared clock. One `Instant` read; the epoch is written
 /// once by whichever thread gets here first.
-pub(crate) fn now_micros() -> i64 {
+fn now_micros() -> i64 {
     EPOCH.get_or_init(Instant::now).elapsed().as_micros() as i64
+}
+
+/// What `Catalog::conn` records before it blocks on the lock, and hands back
+/// to [`note_acquire`] the moment the lock lands.
+pub(crate) struct Waiting {
+    started: i64,
+    handovers: u64,
+    /// Whether this thread raised the screen's flag, and so must lower it.
+    raised: bool,
+}
+
+/// The whole of `conn()`'s business before the blocking call: note the clock
+/// and the handover count, then either raise the screen's flag or give way to
+/// it.
+pub(crate) fn before_blocking() -> Waiting {
+    let handovers = HANDOVERS.load(Ordering::Relaxed);
+    let raised = if is_screen() {
+        SCREEN_WAITING.store(true, Ordering::Relaxed);
+        true
+    } else {
+        give_way();
+        false
+    };
+    Waiting {
+        started: now_micros(),
+        handovers,
+        raised,
+    }
+}
+
+/// Whether this is the thread that owns the UI loop. Zero means `main()` has
+/// not recorded it yet, so nothing is the screen — which is the right answer
+/// during startup, when the loop has not begun and no flag should be raised.
+fn is_screen() -> bool {
+    let ui = UI_THREAD.load(Ordering::Relaxed);
+    ui != 0 && me() == ui
+}
+
+/// A worker's half of the handover: while the screen is waiting, sleep instead
+/// of asking for the lock, so the screen's wait ends with the current holder
+/// rather than with the whole queue behind it.
+fn give_way() {
+    let mut yielded = 0;
+    while keep_yielding(SCREEN_WAITING.load(Ordering::Relaxed), yielded) {
+        std::thread::sleep(YIELD_STEP);
+        yielded += micros(YIELD_STEP);
+    }
+}
+
+/// Whether a worker should keep giving way. Pure so the cap can be pinned: an
+/// unbounded sleep here would turn one stuck flag into a frozen library.
+fn keep_yielding(screen_waiting: bool, yielded: i64) -> bool {
+    screen_waiting && yielded < micros(YIELD_CAP)
 }
 
 /// Whole milliseconds, for the lines people read.
@@ -199,14 +285,21 @@ pub(crate) fn name_this_thread(label: &str) {
 /// Called by `Catalog::conn` once the lock is in hand: report the wait this
 /// thread just served, then record it as the new holder.
 ///
-/// `started` is the [`now_micros`] reading taken before the blocking call, so
-/// an uncontended acquisition measures the lock itself — tens of nanoseconds,
+/// [`Waiting`] carries the reading taken before the blocking call, so an
+/// uncontended acquisition measures the lock itself — tens of nanoseconds,
 /// never worth a line.
-pub(crate) fn note_acquire(started: i64) {
+pub(crate) fn note_acquire(waiting: Waiting) {
+    // Lowered before anything else: every microsecond this stays set is a
+    // microsecond the workers are asleep on the screen's behalf.
+    if waiting.raised {
+        SCREEN_WAITING.store(false, Ordering::Relaxed);
+    }
     let now = now_micros();
     let waiter = me();
     let screen = waiter == UI_THREAD.load(Ordering::Relaxed);
-    let waited = now - started;
+    let waited = now - waiting.started;
+    // The handovers this thread waited through, not counting its own.
+    let others = HANDOVERS.fetch_add(1, Ordering::Relaxed) - waiting.handovers;
     // The hold this thread waited out is the one that has just finished, not
     // the one on `HOLDER` — that is always clear by now, see `LAST_HOLDER`.
     let holder = LAST_HOLDER.load(Ordering::Relaxed);
@@ -226,7 +319,7 @@ pub(crate) fn note_acquire(started: i64) {
     if holder == 0 {
         return;
     }
-    report_wait(waiter, waited, holder, held, now, screen);
+    report_wait(waiter, waited, others, holder, held, now, screen);
 }
 
 /// Called when the guard drops, which is before the mutex itself lets go: the
@@ -344,16 +437,31 @@ fn held_line(holder: &str, held: i64) -> String {
     )
 }
 
-/// One `[lock]` line: who waited, how long, and who they waited for.
+/// One `[lock]` line: who waited, how long, how many handovers they waited
+/// through, and who held it last.
 ///
 /// The holder's duration is exact rather than a bound, because it is written
-/// by the holder on its way out and read by the waiter on its way in.
-fn wait_line(waiter: &str, waited: i64, holder: &str, held: i64) -> String {
-    format!(
-        "{waiter} waited {} ms for the catalogue lock — {holder} held it for {} ms",
-        millis(waited),
-        millis(held)
-    )
+/// by the holder on its way out and read by the waiter on its way in. The
+/// handover count is what separates the two shapes a long wait can have: a
+/// queue of short holds, which giving way fixes, and no holds at all, which
+/// means the thread was not scheduled and no lock record can help it.
+fn wait_line(waiter: &str, waited: i64, others: u64, holder: &str, held: i64) -> String {
+    let waited_ms = millis(waited);
+    let held_ms = millis(held);
+    match others {
+        0 => format!(
+            "{waiter} waited {waited_ms} ms for the catalogue lock — {holder} held it \
+             for {held_ms} ms and nothing else took it in between"
+        ),
+        1 => format!(
+            "{waiter} waited {waited_ms} ms for the catalogue lock — 1 other hold in \
+             between, the last by {holder} for {held_ms} ms"
+        ),
+        _ => format!(
+            "{waiter} waited {waited_ms} ms for the catalogue lock — {others} other \
+             holds in between, the last by {holder} for {held_ms} ms"
+        ),
+    }
 }
 
 /// Whether one wait earns a line.
@@ -384,7 +492,15 @@ fn micros(d: Duration) -> i64 {
 }
 
 /// Print one wait, if [`worth_reporting`] says it earned the line.
-fn report_wait(waiter: u64, waited: i64, holder: u64, held: i64, now: i64, screen: bool) {
+fn report_wait(
+    waiter: u64,
+    waited: i64,
+    others: u64,
+    holder: u64,
+    held: i64,
+    now: i64,
+    screen: bool,
+) {
     let since_last_line = now - LAST_LINE.load(Ordering::Relaxed);
     let printed = LINES.load(Ordering::Relaxed);
     if !worth_reporting(waited, screen, since_last_line, printed) {
@@ -392,7 +508,8 @@ fn report_wait(waiter: u64, waited: i64, holder: u64, held: i64, now: i64, scree
     }
     LAST_LINE.store(now, Ordering::Relaxed);
     LINES.store(printed + 1, Ordering::Relaxed);
-    crate::stall::emit("lock", &wait_line(&who(waiter), waited, &who(holder), held));
+    let line = wait_line(&who(waiter), waited, others, &who(holder), held);
+    crate::stall::emit("lock", &line);
 }
 
 /// How a thread reads in a line: the screen as prose, a job as a quoted label.
@@ -514,19 +631,73 @@ mod tests {
     }
 
     /// Both halves of a line have to be readable on their own: the waiter is
-    /// the thing that was frozen, the holder is the thing to go and fix.
+    /// the thing that was frozen, the holder is the thing to go and fix. The
+    /// handover count is the third thing, and it is what says whether the wait
+    /// was a queue or a single hold.
     #[test]
-    fn a_wait_line_names_both_sides_in_whole_milliseconds() {
-        let line = wait_line(
+    fn a_wait_line_names_both_sides_and_the_queue_between_them() {
+        let queue = wait_line(
             "the UI thread",
             4_657_400,
+            214,
             "\"Organizing comic series folders\"",
             4_702_900,
         );
         assert_eq!(
-            line,
-            "the UI thread waited 4657 ms for the catalogue lock — \
-             \"Organizing comic series folders\" held it for 4702 ms"
+            queue,
+            "the UI thread waited 4657 ms for the catalogue lock — 214 other \
+             holds in between, the last by \"Organizing comic series folders\" \
+             for 4702 ms"
+        );
+
+        let single = wait_line(
+            "the UI thread",
+            620_000,
+            1,
+            "\"Checking dictionary packs\"",
+            4_100,
+        );
+        assert_eq!(
+            single,
+            "the UI thread waited 620 ms for the catalogue lock — 1 other hold in \
+             between, the last by \"Checking dictionary packs\" for 4 ms"
+        );
+
+        let alone = wait_line(
+            "the UI thread",
+            620_000,
+            0,
+            "\"Checking dictionary packs\"",
+            604_000,
+        );
+        assert_eq!(
+            alone,
+            "the UI thread waited 620 ms for the catalogue lock — \
+             \"Checking dictionary packs\" held it for 604 ms and nothing else \
+             took it in between",
+            "no handovers means one hold, and the line must not imply a queue"
+        );
+    }
+
+    /// Giving way has to stop. A worker that sleeps while a flag is set is one
+    /// stuck flag away from a library that never loads, so the cap is the
+    /// whole safety of the idea and it is pinned here.
+    #[test]
+    fn a_worker_gives_way_until_the_screen_is_through_or_the_cap_says_stop() {
+        let ms = |n: i64| n * 1000;
+
+        assert!(keep_yielding(true, 0), "the screen is waiting, so sleep");
+        assert!(
+            keep_yielding(true, ms(48)),
+            "still under the cap, still giving way"
+        );
+        assert!(
+            !keep_yielding(true, ms(50)),
+            "at the cap a worker takes the lock anyway"
+        );
+        assert!(
+            !keep_yielding(false, 0),
+            "with the screen through, a worker does not sleep at all"
         );
     }
 

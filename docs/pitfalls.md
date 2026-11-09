@@ -4106,11 +4106,44 @@ thread that is leaving — it still has the mutex, so the record is complete
 before anybody can read it — which also makes the hold's duration exact rather
 than a lower bound.
 
-**The rule this leaves behind, twice over:** an instrument that reports nothing
-is not evidence of nothing, and the first thing to check is whether it can
-report at all. Here the proof was a number that contradicted the silence — a
+With the waiter's line working, the third run named the shape, and it was
+neither of the two anybody had guessed:
+
+```text
+[lock] the UI thread waited 625 ms for the catalogue lock — "Checking
+       dictionary packs" held it for 4 ms
+[lock] the UI thread waited 370 ms for the catalogue lock — "Rebuilding
+       cover thumbnails" held it for 0 ms
+```
+
+Half a second of waiting, behind a hold of four milliseconds. Not one long job
+and not a screen busy with its own work: a *queue*. `std::sync::Mutex` on Linux
+hands the lock to whoever asks next, not to whoever has waited longest, so the
+two housekeeping jobs that start the moment the window is realized — the
+bundled-dictionary install and the thumbnail backfill — could take the lock a
+hundred times each while the screen's single request stayed out. Every hold was
+polite. Together they were half a second of frozen UI, and the same arithmetic
+on the owner's larger library is a plausible route to the 4657 ms in his log,
+which no single job ever accounted for.
+
+So the screen asks to go first: `Catalog::conn` raises a flag before it blocks,
+a worker about to take the lock sees the flag and sleeps two milliseconds at a
+time instead of asking, and the screen lowers the flag the instant the lock
+lands. The sleep is capped at 50 ms per acquisition, because an unbounded one
+would turn a single stuck flag into a library that never loads, and the cap is
+pinned by a test rather than by a comment. Each wait line now also counts the
+handovers it waited through, which is what separates a queue from the one shape
+no lock record can explain — a thread that was never scheduled, where the count
+reads zero and the fix is somewhere else entirely.
+
+**The rule this leaves behind, three times over:** an instrument that reports
+nothing is not evidence of nothing, and the first thing to check is whether it
+can report at all. Here the proof was a number that contradicted the silence — a
 1110 ms wait with no line about it — and the only reason that number existed is
-that the accumulated counter was added for a different reason entirely.
+that the accumulated counter was added for a different reason entirely. And
+when the line did come, the answer was not a slow job but a fair-looking one:
+the duration of a hold says nothing about the wait it causes, so count the
+handovers as well.
 
 The costs, stated rather than left to be discovered. Every catalogue read now
 costs one monotonic clock read and two relaxed atomic stores on the way in and

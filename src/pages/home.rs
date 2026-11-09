@@ -97,12 +97,14 @@ pub enum HomeMsg {
 /// What the worker hands the apply half: the library snapshot plus the
 /// per-book data §60's card needs (chapter line, excerpt), all read off
 /// the UI thread.
+#[derive(Debug)]
 pub struct HomePayload {
     snap: HomeSnapshot,
     cards: Vec<CardData>,
 }
 
 /// One pager card's worth of §60.
+#[derive(Debug)]
 struct CardData {
     book: Book,
     /// The chapter the saved position is in, from `reading_progress`.
@@ -149,7 +151,7 @@ impl Component for HomePageModel {
                 set_margin_top: 28,
                 set_margin_start: 56,
                 set_halign: gtk::Align::Start,
-            }
+            },
 
             // The two columns (home-spec §1).
             gtk::Box {
@@ -172,13 +174,13 @@ impl Component for HomePageModel {
                         set_label: &greeting_line(),
                         add_css_class: "kalam-home-greeting",
                         set_halign: gtk::Align::Start,
-                    }
+                    },
                     gtk::Label {
                         set_label: &date_line(),
                         add_css_class: "kalam-home-greeting-date",
                         set_halign: gtk::Align::Start,
                         set_margin_top: 6,
-                    }
+                    },
 
                     // Quote (§63): Quote large behind a 1.5px accent rule,
                     // attribution 8 below. Placeholder until B13 settles —
@@ -195,14 +197,14 @@ impl Component for HomePageModel {
                             set_wrap: true,
                             set_max_width_chars: 36,
                             set_xalign: 0.0,
-                        }
+                        },
                         gtk::Label {
                             set_label: PLACEHOLDER_QUOTE.1,
                             add_css_class: "kalam-quote-large-source",
                             set_margin_top: 8,
                             set_halign: gtk::Align::Start,
-                        }
-                    }
+                        },
+                    },
 
                     // Your shelf (§61): the heading and Arrange-by chip now;
                     // the ruler itself is stage 2 (B12), and the dashed card
@@ -217,21 +219,21 @@ impl Component for HomePageModel {
                             add_css_class: "kalam-home-heading",
                             set_hexpand: true,
                             set_halign: gtk::Align::Start,
-                        }
+                        },
                         gtk::Label {
                             set_label: "Arrange by · Most recent",
                             add_css_class: "kalam-chip",
                             set_valign: gtk::Align::Center,
-                        }
-                    }
+                        },
+                    },
 
                     #[name = "shelf_host"]
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
                         set_size_request: (-1, 340),
                         set_margin_top: 12,
-                    }
-                }
+                    },
+                },
 
                 // Right column: 600 wide, its top 52 below the search row.
                 // The board nudges the column 24 past the page's right
@@ -252,14 +254,14 @@ impl Component for HomePageModel {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_spacing: 12,
                         set_halign: gtk::Align::End,
-                    }
+                    },
 
                     // No Updates block: §62's timeline is not drawn until
                     // something feeds it (B15). Online sources are off
                     // until Part 2 (B4); a local-events feed is an open
                     // option, not a promise.
-                }
-            }
+                },
+            },
         }
     }
 
@@ -289,7 +291,7 @@ impl Component for HomePageModel {
         shelf_card.set_vexpand(true);
         widgets.shelf_host.append(&shelf_card);
 
-        let skeleton = gtk::Box::new();
+        let skeleton = gtk::Box::new(gtk::Orientation::Vertical, 0);
         skeleton.add_css_class("kalam-placeholder");
         skeleton.set_size_request(560, 360);
         widgets.card_host.append(&skeleton);
@@ -322,12 +324,24 @@ impl Component for HomePageModel {
                 if self.current >= self.cards.len() {
                     self.current = 0;
                 }
-                paint_right(widgets, &self.cards, self.current, self.library_empty, &sender);
+                paint_right(
+                    widgets,
+                    &self.cards,
+                    self.current,
+                    self.library_empty,
+                    &sender,
+                );
             }
             HomeMsg::Switch(i) => {
                 if i < self.cards.len() {
                     self.current = i;
-                    paint_right(widgets, &self.cards, self.current, self.library_empty, &sender);
+                    paint_right(
+                        widgets,
+                        &self.cards,
+                        self.current,
+                        self.library_empty,
+                        &sender,
+                    );
                 }
             }
             HomeMsg::Refresh => {
@@ -582,7 +596,7 @@ fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> 
     text.set_yalign(0.0);
     text.set_valign(gtk::Align::Start);
     excerpt_box.set_child(Some(&text));
-    let fade = gtk::Box::new();
+    let fade = gtk::Box::new(gtk::Orientation::Vertical, 0);
     fade.add_css_class("kalam-home-excerpt-fade");
     fade.set_size_request(-1, 96);
     fade.set_valign(gtk::Align::End);
@@ -596,7 +610,7 @@ fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> 
     // Ribbon: 18×36 accent, 32 from the right (§60). The board's notched
     // bottom would need a clip path, which GTK CSS does not have; the
     // rounded rectangle is the honest approximation.
-    let ribbon = gtk::Box::new();
+    let ribbon = gtk::Box::new(gtk::Orientation::Vertical, 0);
     ribbon.add_css_class("kalam-home-ribbon");
     ribbon.set_size_request(18, 36);
     ribbon.set_halign(gtk::Align::End);
@@ -635,7 +649,11 @@ fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> 
 /// The pager column (§60): five dots, gap 10; the current one an 8×22
 /// accent pill, the rest 8px circles at 45% of text-2. Dots are buttons, so
 /// the pager is keyboard-reachable for free.
-fn build_pager(cards: &[CardData], current: usize, sender: &ComponentSender<HomePageModel>) -> gtk::Widget {
+fn build_pager(
+    cards: &[CardData],
+    current: usize,
+    sender: &ComponentSender<HomePageModel>,
+) -> gtk::Widget {
     let pager = gtk::Box::new(gtk::Orientation::Vertical, 10);
     pager.set_valign(gtk::Align::Center);
     for (i, card) in cards.iter().enumerate().take(PAGER_MAX) {
@@ -696,7 +714,10 @@ fn pager_cards(snap: &HomeSnapshot, catalog: &Catalog) -> Vec<CardData> {
         .filter(|b| progress.contains_key(&b.id))
         .take(PAGER_MAX)
         .map(|book| {
-            let chapter_index = progress.get(&book.id).map(|(chapter, _)| *chapter).unwrap_or(0);
+            let chapter_index = progress
+                .get(&book.id)
+                .map(|(chapter, _)| *chapter)
+                .unwrap_or(0);
             let (chapter_title, excerpt) =
                 crate::content_index::chapter_text(catalog, book.id, chapter_index)
                     .ok()
@@ -739,7 +760,7 @@ fn first_words(content: &str, words: usize) -> String {
 /// The local clock, or UTC when the system has no local time configured —
 /// a greeting that fails to build would be worse than one an hour off.
 fn local_now() -> gtk::glib::DateTime {
-    gtk::glib::DateTime::now_local().unwrap_or_else(gtk::glib::DateTime::now_utc)
+    gtk::glib::DateTime::now_local().unwrap_or_else(|_| gtk::glib::DateTime::now_utc())
 }
 
 /// The greeting's first line (home-spec §1). No name on the second line

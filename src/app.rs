@@ -447,12 +447,10 @@ impl AppModel {
                     sender.input_sender(),
                     |out| match out {
                         HomeOut::Book { book_id } => AppMsg::Push(Route::BookPage { book_id }),
-                        HomeOut::Read { book_id, chapter } => {
-                            AppMsg::OpenReaderAt {
-                                book_id,
-                                chapter: Some(chapter),
-                            }
-                        }
+                        HomeOut::Read { book_id, chapter } => AppMsg::OpenReaderAt {
+                            book_id,
+                            chapter: Some(chapter),
+                        },
                         HomeOut::BookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
                         HomeOut::AllBooks => {
                             AppMsg::Push(Route::LibrarySection(LibrarySection::AllBooks))
@@ -1244,8 +1242,6 @@ impl Component for AppModel {
                     // the reader, which brings its own chrome. The buttons
                     // themselves are built in init — they need the window
                     // handle, which the view macro does not have yet.
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 4,
                     set_halign: gtk::Align::End,
                     set_valign: gtk::Align::Start,
                     set_margin_top: 12,
@@ -1254,6 +1250,10 @@ impl Component for AppModel {
                     set_visible: !model.route.is_reader(),
 
                     #[name = "window_controls"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 4,
+                    },
                 },
 
                 #[wrap(Some)]
@@ -2403,7 +2403,11 @@ fn maximize_button(window: &gtk::Window) -> gtk::Button {
         } else {
             w.maximize();
         }
-        k.set(if was_maximized { "maximize-2" } else { "minimize-2" });
+        k.set(if was_maximized {
+            "maximize-2"
+        } else {
+            "minimize-2"
+        });
         crate::rail_icons::paint(&i, k.get(), crate::rail_icons::Face::Idle);
     });
     button

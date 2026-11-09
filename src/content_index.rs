@@ -300,7 +300,11 @@ struct RawMatch {
 /// stores the saved position as (chapter, fraction), so Home never opens a
 /// book file for this. `None` when the book is not indexed yet; the card
 /// then shows its quiet fallback.
-pub fn chapter_text(catalog: &Catalog, book_id: i64, chapter_index: usize) -> Result<Option<(String, String)>> {
+pub fn chapter_text(
+    catalog: &Catalog,
+    book_id: i64,
+    chapter_index: usize,
+) -> Result<Option<(String, String)>> {
     let conn = catalog.conn();
     let mut stmt = conn.prepare_cached(
         "SELECT chapter_title, content FROM book_content_fts \

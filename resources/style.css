@@ -631,12 +631,146 @@ button.kalam-author-link-reader:hover {
     color: @kalam_text_dim;
 }
 
-.kalam-home-continue {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 16px;
-    padding: 20px;
+/* ── Home, stage 1 (home-spec §1; design-system §57–§66) ────────
+   The dashboard's card died with the page it belonged to (B12). */
+
+/* The greeting: Display (design-system §3) over a Meta date line, which
+   stands in for a name until the Settings customization area exists (B14). */
+.kalam-home-greeting {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-weight: 500;
+    font-size: 46px;
+    letter-spacing: -0.7px;
+    color: @kalam_text;
 }
+
+.kalam-home-greeting-date {
+    font-size: 12.5px;
+    color: @kalam_text_dim;
+}
+
+/* §63: Quote large — Playfair italic 18 behind a 1.5px accent rule,
+   attribution 11 below. GTK CSS has no line-height, so the 1.6 of the
+   spec rides on the font's own leading. */
+.kalam-quote-large {
+    border-left: 1.5px solid @kalam_accent;
+    padding: 0 0 0 20px;
+}
+
+.kalam-quote-large-text {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-style: italic;
+    font-size: 18px;
+    color: @kalam_text;
+}
+
+.kalam-quote-large-source {
+    font-size: 11px;
+    color: @kalam_text_dim;
+}
+
+/* Section style (§3): DM Sans 500 11, uppercase, 0.14em tracking. */
+.kalam-home-heading {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: @kalam_text_dim;
+}
+
+/* §60: the Home book card — one 560×360 surface: cover page left,
+   reading page right, ribbon and play button over it. */
+.kalam-home-book-card {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+}
+
+.kalam-home-cover {
+    padding: 0;
+    border: none;
+    background: none;
+    border-radius: 10px 0 0 10px;
+}
+
+.kalam-home-book-page {
+    padding: 40px 32px;
+}
+
+/* Label (§3) for the book line, Card title (§3) for the chapter name. */
+.kalam-home-book-line {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: @kalam_text_dim;
+}
+
+.kalam-home-book-chapter {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-weight: 600;
+    font-size: 16px;
+    color: @kalam_text;
+}
+
+.kalam-home-book-excerpt {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-size: 13px;
+    color: @kalam_text;
+}
+
+/* The 96px fade to the card colour over the excerpt's bottom (§60). */
+.kalam-home-excerpt-fade {
+    background: linear-gradient(to bottom, alpha(@kalam_card, 0) 0%, @kalam_card 100%);
+}
+
+.kalam-home-ribbon {
+    background: @kalam_accent;
+    border-radius: 0 0 2px 2px;
+}
+
+.kalam-home-play {
+    background: @kalam_accent;
+    border: none;
+    border-radius: 999px;
+    padding: 0;
+    min-width: 40px;
+    min-height: 40px;
+}
+
+/* §60's pager: 8px circles at 45% of text-2; the current one an 8×22
+   accent pill. */
+.kalam-home-pager-dot {
+    background: alpha(@kalam_text_dim, 0.45);
+    border: none;
+    border-radius: 999px;
+    padding: 0;
+    min-width: 8px;
+    min-height: 8px;
+}
+
+.kalam-home-pager-dot.current {
+    background: @kalam_accent;
+    border-radius: 4px;
+    min-height: 22px;
+}
+
+/* §65: the window's own minimize/maximize/close — 32 round, a 1px
+   transparent border at rest so hover's border+fill cannot move them. */
+.kalam-window-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 0;
+    min-width: 32px;
+    min-height: 32px;
+}
+
+.kalam-window-btn:hover {
+    background: @kalam_hover;
+    border-color: @kalam_border;
+}
+
 
 .kalam-section-label {
     font-size: 0.75rem;

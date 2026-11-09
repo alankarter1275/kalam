@@ -204,6 +204,59 @@ yet** — CI photographs the rail but cannot judge it.
   changes colour with it, the cut-out active glyph included, and the brand mark
   follows the accent.
 
+## Home
+
+Stage 1 of the rebuild (four stages, `docs/build-decisions.md` B12), to
+`docs/design/home-spec.md` and design-system §57–§66. **None of this has been
+run by hand yet** — CI photographs Home but cannot judge it. The reading
+ruler (§61) and the search bar (§57) are stages 2 and 3: their absence is
+deliberate, not a defect.
+
+- [ ] Top left: the greeting on two lines — "Good morning", "Good afternoon"
+  or "Good evening" by the hour, in the big serif face — with today's date
+  under it. No name yet: that waits on the customization area in Settings
+  (B14).
+- [ ] Under it the quote: an italic serif couplet behind a thin accent rule,
+  attribution below (§63). It is the placeholder — Dickinson — until the real
+  source is settled (B13).
+- [ ] "YOUR SHELF" heading with an "Arrange by · Most recent" chip at its
+  right, and below them a dashed card filling the ruler's 340px band saying
+  the ruler arrives next stage (B12). The chip does nothing yet.
+- [ ] Right column: a 560×360 card — left half the cover of the book last
+  read, right half its title in small capitals, the chapter name the saved
+  position sits in, and that chapter's first words fading out towards the
+  card's bottom (§60).
+- [ ] A round accent play button at the card's bottom-right resumes the
+  reader at the saved position; an 18×36 accent ribbon hangs at its top,
+  32 from the right.
+- [ ] Clicking the cover opens the book's details page.
+- [ ] With several books in progress, a column of up to five dots stands
+  right of the card: the current one an accent pill, the rest faint circles.
+  Clicking a dot swaps the card to that book and moves the pill (§60).
+- [ ] A book still being indexed shows "Where you left off" and a line saying
+  the excerpt appears once indexing finishes — never a blank card, never an
+  error.
+- [ ] With an empty library: a dashed "Your library is empty" card whose
+  "Add books" button opens the import chooser; after importing, Home refreshes
+  without leaving the page (§64).
+- [ ] With books but none opened: a dashed "Nothing in progress" card — the
+  pager shows only books with a saved position, never a forced first book
+  (§64).
+- [ ] Above the left column: 28px of air, then an empty 520×40 strip — the
+  search row §57 reserves from stage 1 (B12). Nothing below it moves when the
+  bar arrives in stage 3.
+- [ ] No Updates block anywhere on the page: §62 draws nothing until something
+  feeds it (B15).
+- [ ] Top-right over the page: three round 32px buttons — minimize, maximize,
+  close (§65, B16). Minimize shrinks the window; maximize fills the screen
+  and its glyph swaps to the restore pair; close quits, cancelling running
+  jobs as before.
+- [ ] The three buttons show on every page except inside the reader, which
+  brings its own chrome. Hovering any of them gives the same border and fill.
+- [ ] Switching theme in Settings recolours the quote rule, the play triangle,
+  the ribbon and the window glyphs along with everything else — the glyphs
+  are textures and repaint through the rail's machinery (B6).
+
 ## Keyboard shortcuts
 
 CI now has a keystroke probe (`KEYS=1` in `docs/ci/screenshot.sh`) that types

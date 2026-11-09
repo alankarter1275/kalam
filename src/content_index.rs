@@ -295,6 +295,24 @@ struct RawMatch {
 /// Execute a library-wide full-text content search.
 ///
 /// Returns matching books with snippets and match counts, ordered by match rank.
+/// The title and plain text of one chapter, read back from the FTS index
+/// (v15) — the Home book card's chapter line and excerpt (§60). The reader
+/// stores the saved position as (chapter, fraction), so Home never opens a
+/// book file for this. `None` when the book is not indexed yet; the card
+/// then shows its quiet fallback.
+pub fn chapter_text(catalog: &Catalog, book_id: i64, chapter_index: usize) -> Result<Option<(String, String)>> {
+    let conn = catalog.conn();
+    let mut stmt = conn.prepare_cached(
+        "SELECT chapter_title, content FROM book_content_fts \
+         WHERE book_id = ?1 AND chapter_index = ?2 LIMIT 1",
+    )?;
+    let mut rows = stmt.query(params![book_id, chapter_index as i64])?;
+    match rows.next()? {
+        Some(row) => Ok(Some((row.get(0)?, row.get(1)?))),
+        None => Ok(None),
+    }
+}
+
 pub fn search_content(catalog: &Catalog, query: &str) -> Result<Vec<BookContentSearchResult>> {
     let fts_query = sanitize_fts5_query(query);
     if fts_query.is_empty() {

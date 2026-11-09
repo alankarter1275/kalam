@@ -27,8 +27,9 @@
 //! look alike and deliberately are not.
 
 use gtk::prelude::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// §56: icons 22. A 24-grid Lucide drawing at 22px is stroke 1.83.
 pub const GLYPH_PX: i32 = 22;
@@ -38,7 +39,9 @@ pub const GLYPH_PX: i32 = 22;
 pub enum Face {
     /// Idle: `text-2` (§56).
     Idle,
-    /// The rail's active entry: the page colour, cut out of accent-fill (§56).
+    /// The rail's active entry: the page colour, cut out of accent-fill
+    /// (§56). Also the Home book card's play triangle on its accent disc
+    /// (§60) — same cut-out, different page.
     CutOut,
     /// The bell while its panel is open: white (§45).
     OnAccent,
@@ -48,10 +51,18 @@ pub enum Face {
 struct Drawn {
     /// The state lives on the button's CSS classes, which the rail already
     /// maintains; reading it back from there means this module cannot
-    /// disagree with the shell about which entry is active.
-    button: gtk::Button,
+    /// disagree with the shell about which entry is active. `None` for
+    /// glyphs whose face is fixed instead (the play button is always cut
+    /// out, whatever its classes say).
+    button: Option<gtk::Button>,
     image: gtk::Image,
-    key: &'static str,
+    /// A cell rather than a plain key so the maximize button can swap its
+    /// own glyph ("maximize-2" when restorable, "minimize-2" when
+    /// maximized) and still repaint the right drawing after a theme
+    /// install.
+    key: Rc<Cell<&'static str>>,
+    /// A face that overrides the button's CSS classes.
+    forced: Option<Face>,
 }
 
 thread_local! {
@@ -100,6 +111,14 @@ fn svg(key: &'static str) -> Option<&'static str> {
         "download" => include_str!("../assets/icons/download.svg"),
         "compass" => include_str!("../assets/icons/compass.svg"),
         "feather" => include_str!("../assets/icons/feather.svg"),
+        // Window controls (§65, build-decisions B16) and the Home book
+        // card's play button (§60): drawn at 16px through `image_px`,
+        // rasterized from the same 24 grid as everything else.
+        "minus" => include_str!("../assets/icons/minus.svg"),
+        "maximize-2" => include_str!("../assets/icons/maximize-2.svg"),
+        "minimize-2" => include_str!("../assets/icons/minimize-2.svg"),
+        "x" => include_str!("../assets/icons/x.svg"),
+        "play" => include_str!("../assets/icons/play.svg"),
         _ => return None,
     })
 }
@@ -148,9 +167,18 @@ pub fn texture(key: &'static str, colour: &str) -> Option<gtk::gdk::Texture> {
 /// `min-width` are only floors — that is how the brand mark once stretched the
 /// whole rail (see `brand_logo` in `app.rs`).
 pub fn image(key: &'static str, face: Face) -> gtk::Image {
-    let image = gtk::Image::new();
+    let image = image_px(key, face, GLYPH_PX);
     image.add_css_class("kalam-nav-icon");
-    image.set_pixel_size(GLYPH_PX);
+    image
+}
+
+/// A glyph at any pixel size, without the rail's CSS class — the window
+/// controls (§65) and the Home book card's play button (§60) draw at 16px,
+/// not §56's 22px. Same texture cache: the raster is 24px and
+/// `set_pixel_size` scales it, so a size is free.
+pub fn image_px(key: &'static str, face: Face, px: i32) -> gtk::Image {
+    let image = gtk::Image::new();
+    image.set_pixel_size(px);
     image.set_halign(gtk::Align::Center);
     image.set_valign(gtk::Align::Center);
     paint(&image, key, face);
@@ -173,11 +201,31 @@ pub fn paint(image: &gtk::Image, key: &'static str, face: Face) -> bool {
 
 /// Remember a rail glyph so [`repaint_all`] can re-rasterize it later.
 pub fn remember(button: &gtk::Button, image: &gtk::Image, key: &'static str) {
+    remember_key(button, image, Rc::new(Cell::new(key)));
+}
+
+/// Like [`remember`], but the caller keeps the key cell — for glyphs that
+/// swap their drawing while the app runs (the window's maximize button).
+pub fn remember_key(button: &gtk::Button, image: &gtk::Image, key: Rc<Cell<&'static str>>) {
     DRAWN.with(|drawn| {
         drawn.borrow_mut().push(Drawn {
-            button: button.clone(),
+            button: Some(button.clone()),
             image: image.clone(),
             key,
+            forced: None,
+        })
+    });
+}
+
+/// Remember a glyph whose face never follows button state — the Home book
+/// card's play triangle (§60) is always cut out of its accent disc.
+pub fn remember_fixed(image: &gtk::Image, key: &'static str, face: Face) {
+    DRAWN.with(|drawn| {
+        drawn.borrow_mut().push(Drawn {
+            button: None,
+            image: image.clone(),
+            key: Rc::new(Cell::new(key)),
+            forced: Some(face),
         })
     });
 }
@@ -191,7 +239,12 @@ pub fn remember(button: &gtk::Button, image: &gtk::Image, key: &'static str) {
 pub fn repaint_all() {
     DRAWN.with(|drawn| {
         for entry in drawn.borrow().iter() {
-            paint(&entry.image, entry.key, face_of(&entry.button));
+            let face = match (entry.forced, entry.button.as_ref()) {
+                (Some(face), _) => face,
+                (None, Some(button)) => face_of(button),
+                (None, None) => Face::Idle,
+            };
+            paint(&entry.image, entry.key.get(), face);
         }
     });
 }
@@ -241,6 +294,22 @@ mod tests {
             );
         }
         assert!(svg("bell").is_some(), "the rail bell has no bundled glyph");
+    }
+
+    /// The glyphs Home's stage 1 added — the window controls (§65) and the
+    /// book card's play button (§60) — are bundled and stroked like the
+    /// rail's, so the same two tests above would catch an upstream redraw
+    /// that filled them in.
+    #[test]
+    fn home_glyphs_are_bundled_outlines() {
+        for key in ["minus", "maximize-2", "minimize-2", "x", "play"] {
+            let body = svg(key).unwrap_or_else(|| panic!("{key} is not bundled"));
+            assert!(
+                body.contains("stroke=\"currentColor\""),
+                "{key} is not stroked in currentColor"
+            );
+            assert!(body.contains("fill=\"none\""), "{key} is not an outline");
+        }
     }
 
     /// The glyphs are recoloured by substituting `currentColor` into a stroke.

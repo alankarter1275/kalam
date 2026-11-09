@@ -3901,3 +3901,18 @@ routes sharing one mis-attribute a stall. That test walks only the routes
 reachable by name, and the module spelling is not name-addressable, so it would
 not have caught this. Labelled separately anyway. A guard that cannot see a case
 is not a reason to leave the case unguarded.
+
+## §105 — FTS5 UNINDEXED columns do not filter; they scan, behind the one shared lock
+
+`SELECT … FROM book_content_fts WHERE book_id = ? AND chapter_index = ?` reads
+like a lookup and is a full scan. Only the `content` column is indexed — that
+is what `MATCH` uses — and the id columns are `UNINDEXED`: stored, never
+searchable. SQLite reads every stored row, full chapter text included, to
+reject it. Two multipliers made it worse in the Home card: five books meant
+five scans, and `Catalog::conn()` is one connection behind one mutex, so a
+scan on a worker thread queues every UI-thread read behind it — at startup
+that presents as "the splash screen never goes away". The unit tests and all
+six smoke groups passed because CI's seeded library is a handful of chapters;
+only the owner's real library was big enough to show it. The fix was not a
+bigger timeout or a faster machine: per-book reads never go through the FTS
+table, they go through a keyed table of their own (build-decisions B17).

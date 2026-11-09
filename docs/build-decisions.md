@@ -310,6 +310,25 @@ Alt+F4 is the only way out). They are shell-wide rather than Home's, but the
 board that shows them is this one, so they are built in Home's stage 1 and sit
 over every page.
 
+## B17 — the card's chapter text waits for a store of its own (2026-11-09)
+
+Stage 1 read the Home card's chapter name and first lines straight out of the
+full-text index. That was wrong twice over. The index stores book and chapter
+as *unindexed* columns — only words are indexed — so "one chapter of one
+book" is not a lookup but a scan of every word of every indexed book, up to
+five scans per Home visit. And the catalog is one connection behind one lock,
+so a scan holds the whole app's database access: on the owner's real library
+it froze startup at the splash screen. CI's seeded library is a few chapters
+wide and hid it completely; every smoke test passed over the fault.
+
+**Ruling:** Home never queries the FTS index by book or chapter again — the
+scan is banned on principle, not on size. The chapter heads get their own
+small table keyed (book, chapter), filled at index time and backfilled once
+in the background, the shape the thumbnail backfill already set. Until that
+lands the card shows "Where you left off" and a quiet line naming what will
+stand there. The trap itself is recorded as pitfalls §105, because "just
+read it from the FTS table" will sound reasonable again someday.
+
 ---
 
 ## Still open

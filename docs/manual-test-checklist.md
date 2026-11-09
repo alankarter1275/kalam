@@ -223,9 +223,9 @@ deliberate, not a defect.
   right, and below them a dashed card filling the ruler's 340px band saying
   the ruler arrives next stage (B12). The chip does nothing yet.
 - [ ] Right column: a 560×360 card — left half the cover of the book last
-  read, right half its title in small capitals, the chapter name the saved
-  position sits in, and that chapter's first words fading out towards the
-  card's bottom (§60).
+  read, right half its title in small capitals and, under it, "Where you
+  left off" with a quiet line: the chapter name and its first words wait
+  for their own store (B17) and return in a later stage (§60).
 - [ ] A round accent play button at the card's bottom-right resumes the
   reader at the saved position; an 18×36 accent ribbon hangs at its top,
   32 from the right.
@@ -233,9 +233,9 @@ deliberate, not a defect.
 - [ ] With several books in progress, a column of up to five dots stands
   right of the card: the current one an accent pill, the rest faint circles.
   Clicking a dot swaps the card to that book and moves the pill (§60).
-- [ ] A book still being indexed shows "Where you left off" and a line saying
-  the excerpt appears once indexing finishes — never a blank card, never an
-  error.
+- [ ] Home opens at once on a real library: no freeze at the splash screen,
+  no stall lines in the terminal. The card's reads are small keyed queries
+  only (B17) — this is the check that the startup freeze stays fixed.
 - [ ] With an empty library: a dashed "Your library is empty" card whose
   "Add books" button opens the import chooser; after importing, Home refreshes
   without leaving the page (§64).

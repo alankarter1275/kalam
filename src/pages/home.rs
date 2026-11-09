@@ -12,8 +12,9 @@
 //! the empty-library state card's "Add books" action is a real import path.
 //!
 //! Same skeleton → worker → apply shape the dashboard used (7.1 step 2b):
-//! `init` paints placeholders, a worker reads the snapshot *and* the card
-//! excerpts, `Loaded` paints. Home never touches the network (decision 110).
+//! `init` paints placeholders, a worker reads the snapshot and the
+//! in-progress books, `Loaded` paints. Home never touches the network
+//! (decision 110), and never queries the FTS index (B17, pitfalls §105).
 
 use crate::db::Catalog;
 use crate::models::Book;
@@ -32,10 +33,6 @@ const COVER_W: i32 = 280;
 const COVER_H: i32 = 360;
 /// How many in-progress books the pager holds (§60: five dots).
 const PAGER_MAX: usize = 5;
-/// Excerpt length in words. The card fades out at 96px (§60), so more text
-/// than this is never visible; the cap keeps the label cheap to lay out.
-const EXCERPT_WORDS: usize = 70;
-
 /// The placeholder quote (B13): §63's element drawn in full, so the real
 /// source drops into this one constant when the owner settles it. Public
 /// domain — Dickinson's couplet about what a book does.
@@ -90,16 +87,16 @@ pub struct HomePayload {
     cards: Vec<CardData>,
 }
 
-/// One pager card's worth of §60. The chapter index the excerpt came from
-/// stays in the worker: nothing on this side of the message needs it —
-/// "resume" deliberately carries no chapter (see `HomeOut::Read`).
+/// One pager card's worth of §60. Both text fields are empty until the
+/// chapter-head store lands (B17); the card's fallbacks cover them. The
+/// chapter *index* stays on the worker side — "resume" deliberately
+/// carries no chapter (see `HomeOut::Read`).
 #[derive(Debug)]
 struct CardData {
     book: Book,
-    /// The saved position's chapter title, from the FTS index; empty until
-    /// the book is indexed.
+    /// The saved position's chapter title; empty until B17's store lands.
     chapter_title: String,
-    /// That chapter's first words; empty until indexed, and the card says so.
+    /// That chapter's first words; empty until B17's store lands.
     excerpt: String,
 }
 
@@ -564,13 +561,14 @@ fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> 
     excerpt_box.set_margin_top(20);
     excerpt_box.set_vexpand(true);
     let text = gtk::Label::new(Some(if excerpt.is_empty() {
-        "The excerpt appears once this book finishes indexing."
+        // B17: the chapter head's store is not built yet. Honest and
+        // temporary — the line names what will stand here.
+        "The chapter name and its first lines appear here once their store lands."
     } else {
         excerpt
     }));
     text.add_css_class("kalam-home-book-excerpt");
     if excerpt.is_empty() {
-        // Not an error — indexing runs in the background after import.
         text.add_css_class("kalam-muted");
     }
     text.set_wrap(true);
@@ -676,25 +674,23 @@ fn request_snapshot(service: &LibraryService, sender: &ComponentSender<HomePageM
 /// recently read first, up to the five dots. `reading_progress` is the
 /// truth about "in progress" — the dashboard's fallback chain could end at
 /// "newest book in the library", and a book nobody opened does not belong
-/// on this card (B12). Chapter title and excerpt come from the FTS index
-/// (v15), so no book file is opened and no read happens on the UI thread.
+/// on this card (B12).
+///
+/// The chapter name and excerpt stay empty for now (B17): the FTS index
+/// cannot answer "one chapter of one book" without scanning every word of
+/// every book — its book and chapter columns are stored *unindexed* — and
+/// one such scan behind the catalog's single connection lock froze startup
+/// on a real library. They return when chapter heads get a small keyed
+/// store of their own; until then the card shows its quiet fallbacks.
 fn pager_cards(catalog: &Catalog) -> Vec<CardData> {
     let cards: Vec<CardData> = catalog
         .books_in_progress(PAGER_MAX)
         .unwrap_or_default()
         .into_iter()
-        .map(|(book, chapter_index)| {
-            let (chapter_title, excerpt) =
-                crate::content_index::chapter_text(catalog, book.id, chapter_index)
-                    .ok()
-                    .flatten()
-                    .map(|(title, content)| (title, first_words(&content, EXCERPT_WORDS)))
-                    .unwrap_or_default();
-            CardData {
-                book,
-                chapter_title,
-                excerpt,
-            }
+        .map(|(book, _chapter_index)| CardData {
+            book,
+            chapter_title: String::new(),
+            excerpt: String::new(),
         })
         .collect();
 
@@ -706,20 +702,6 @@ fn pager_cards(catalog: &Catalog) -> Vec<CardData> {
         crate::preload::warm_books(&books, 0, COVER_W, COVER_H);
     }
     cards
-}
-
-/// The excerpt: the first `words` words of the chapter, whitespace
-/// collapsed — the FTS content column carries the raw text, newlines and
-/// all, and the card shows prose, not a transcript.
-fn first_words(content: &str, words: usize) -> String {
-    let mut out = String::new();
-    for word in content.split_whitespace().take(words) {
-        if !out.is_empty() {
-            out.push(' ');
-        }
-        out.push_str(word);
-    }
-    out
 }
 
 /// The local clock, or UTC when the system has no local time configured.
@@ -755,17 +737,6 @@ fn date_line() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The excerpt collapses the FTS text's newlines and stops at the word
-    /// budget — the card fades out at 96px (§60), so anything longer is
-    /// dead weight in the label's layout.
-    #[test]
-    fn excerpt_collapses_whitespace_and_stops_at_the_budget() {
-        let raw = "One two\n\nthree   four\nfive six seven";
-        assert_eq!(first_words(raw, 4), "One two three four");
-        assert_eq!(first_words(raw, 100), "One two three four five six seven");
-        assert_eq!(first_words("", 10), "");
-    }
 
     /// B13: the placeholder must stay a real text/attribution pair, so
     /// §63's element never renders with an empty byline while the real

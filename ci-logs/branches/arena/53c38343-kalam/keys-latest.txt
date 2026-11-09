@@ -1,14 +1,14 @@
 === kalam screenshot run ===
 books=20 out=ci-shots-keys settle=25 output=1600x1000
 config home: /home/runner/work/kalam/kalam/ci-shots-keys/config-home
-binary: 74607088 bytes
+binary: 74682672 bytes
 
 === seeding 20 books ===
 seed-library: 20 books, 18 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.4973.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.4776.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,9 +32,9 @@ windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 readiness: min=2s max=35s stable_max_changed=0.5%
 readiness: route/window signal not seen within 25s; photographing anyway
 toplevel windows seen: 1
-  shot: 01-home (9875 bytes)
+  shot: 01-home (9881 bytes)
 focused: 1
-  shot: 02-home-settling (9875 bytes)
+  shot: 02-home-settling (9881 bytes)
   shot: 03-home-settled (stable after 26s)
 
 === keystroke probe (KEYS=1) ===
@@ -43,35 +43,35 @@ keys: focused windows before starting: 1
 keys: sent Alt+2 (GoLibrary)
 keys: sent Alt+2 (GoLibrary), second attempt
 keys: FAILED -- chord 1: Alt+2 opened no page in two attempts
-  shot: 05-keys-library (9875 bytes)
+  shot: 05-keys-library (9881 bytes)
 keys: sent Alt+1 (GoHome)
 keys: sent Alt+1 (GoHome), second attempt
 keys: FAILED -- chord 2: Alt+1 opened no page in two attempts
-  shot: 06-keys-home (9875 bytes)
+  shot: 06-keys-home (9881 bytes)
 keys: sent Ctrl+comma (OpenSettings)
 keys: sent Ctrl+comma (OpenSettings), second attempt
 keys: FAILED -- Ctrl+comma opened no page in two attempts
-  shot: 07-keys-settings (9875 bytes)
+  shot: 07-keys-settings (9881 bytes)
 keys: sent Ctrl+slash (ShowShortcuts)
 keys: sent Ctrl+slash (ShowShortcuts), second attempt
 keys: FAILED -- Ctrl+slash logged no settings_fill:shortcuts in two attempts
-  shot: 08-keys-shortcuts (9875 bytes)
+  shot: 08-keys-shortcuts (9881 bytes)
 keys: sent Alt+1 (GoHome, second time)
 keys: sent Alt+1 (GoHome, second time), second attempt
 keys: FAILED -- the second Alt+1 opened no page in two attempts
 keys: sent Ctrl+f (SearchLibrary)
 keys: sent Ctrl+f (SearchLibrary), second attempt
 keys: FAILED -- Ctrl+f opened no page in two attempts
-  shot: 09-keys-search (9875 bytes)
+  shot: 09-keys-search (9881 bytes)
 keys: sent Alt+Left (Back)
 keys: sent Alt+Left (Back), second attempt
 keys: FAILED -- Alt+Left opened no page in two attempts
        Ctrl+f did not get us to the search box, so there may have
        been no history to pop. Uninterpretable.
-  shot: 10-keys-back (9875 bytes)
+  shot: 10-keys-back (9881 bytes)
 keys: sent F11 (Fullscreen)
 keys: OK -- sway reports fullscreen_mode=1 after F11
-  shot: 11-keys-fullscreen (9875 bytes)
+  shot: 11-keys-fullscreen (9881 bytes)
 keys: sent F11 again (leave fullscreen)
 keys: sent F11 again (leave fullscreen), second attempt
 keys: NOTE -- still fullscreen_mode=1 after two
@@ -92,23 +92,23 @@ navigation: 'home' is not a grid page; no grid_build expected
 navigation: NOT PROVEN -- do not trust the page names below
 
 === timing lines from the app ===
-  [timing] startup_fonts           4.2 ms
-  [timing] startup_gtk_init       76.7 ms
-  [timing] startup_splash_show      1.6 ms
+  [timing] startup_fonts           2.7 ms
+  [timing] startup_gtk_init       49.2 ms
+  [timing] startup_splash_show      1.3 ms
   [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
   [timing] icons_init              0.3 ms
-  [timing] startup_splash_pump    121.9 ms
+  [timing] startup_splash_pump    122.4 ms
   [timing] startup_libraries       0.3 ms
-  [timing] startup_db_open        13.2 ms
-  [timing] startup_theme          97.2 ms
-  [timing] pre_run               315.3 ms
+  [timing] startup_db_open         8.3 ms
+  [timing] startup_theme          56.9 ms
+  [timing] pre_run               241.2 ms
   [timing] route_open:home         0.3 ms
   [timing] startup_first_page      0.3 ms
-  [timing] service_home            0.7 ms
+  [timing] service_home            0.4 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 165 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 210 ms ago)
   stalls seen -- name the screen and fix it before it spreads
 
 === screenshot pixel sample ===
@@ -126,45 +126,45 @@ navigation: NOT PROVEN -- do not trust the page names below
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  1af3e3590f1e2874f9829fd69a6f0081  ci-shots-keys/01-home.png
-  1af3e3590f1e2874f9829fd69a6f0081  ci-shots-keys/02-home-settling.png
-  1af3e3590f1e2874f9829fd69a6f0081  ci-shots-keys/03-home-settled.png
-  1af3e3590f1e2874f9829fd69a6f0081  ci-shots-keys/05-keys-library.png
-  1af3e3590f1e2874f9829fd69a6f0081  ci-shots-keys/06-keys-home.png
-  1af3e3590f1e2874f9829fd69a6f0081  ci-shots-keys/07-keys-settings.png
-  1af3e3590f1e2874f9829fd69a6f0081  ci-shots-keys/08-keys-shortcuts.png
-  1af3e3590f1e2874f9829fd69a6f0081  ci-shots-keys/09-keys-search.png
-  1af3e3590f1e2874f9829fd69a6f0081  ci-shots-keys/10-keys-back.png
-  1af3e3590f1e2874f9829fd69a6f0081  ci-shots-keys/11-keys-fullscreen.png
+  a5ae45949aa2327c565bab4144f45764  ci-shots-keys/01-home.png
+  a5ae45949aa2327c565bab4144f45764  ci-shots-keys/02-home-settling.png
+  a5ae45949aa2327c565bab4144f45764  ci-shots-keys/03-home-settled.png
+  a5ae45949aa2327c565bab4144f45764  ci-shots-keys/05-keys-library.png
+  a5ae45949aa2327c565bab4144f45764  ci-shots-keys/06-keys-home.png
+  a5ae45949aa2327c565bab4144f45764  ci-shots-keys/07-keys-settings.png
+  a5ae45949aa2327c565bab4144f45764  ci-shots-keys/08-keys-shortcuts.png
+  a5ae45949aa2327c565bab4144f45764  ci-shots-keys/09-keys-search.png
+  a5ae45949aa2327c565bab4144f45764  ci-shots-keys/10-keys-back.png
+  a5ae45949aa2327c565bab4144f45764  ci-shots-keys/11-keys-fullscreen.png
 
 === app stderr (non-timing lines) ===
   
-  (process:5029): Gtk-WARNING **: 02:33:48.591: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 165 ms ago)
+  (process:4832): Gtk-WARNING **: 04:40:25.124: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 210 ms ago)
 
 === peak memory ===
-books=20 peak_rss_kb=77104 peak_rss_mb=75
+books=20 peak_rss_kb=77380 peak_rss_mb=75
 
 === shutting down ===
 
 === artifacts ===
   total 156
-  drwxr-xr-x  3 runner runner 4096 Nov  9 02:37 .
-  drwxr-xr-x 19 runner runner 4096 Nov  9 02:33 ..
-  -rw-r--r--  1 runner runner 9875 Nov  9 02:34 01-home.png
-  -rw-r--r--  1 runner runner 9875 Nov  9 02:34 02-home-settling.png
-  -rw-r--r--  1 runner runner 9875 Nov  9 02:34 03-home-settled.png
-  -rw-r--r--  1 runner runner 9875 Nov  9 02:34 05-keys-library.png
-  -rw-r--r--  1 runner runner 9875 Nov  9 02:35 06-keys-home.png
-  -rw-r--r--  1 runner runner 9875 Nov  9 02:35 07-keys-settings.png
-  -rw-r--r--  1 runner runner 9875 Nov  9 02:35 08-keys-shortcuts.png
-  -rw-r--r--  1 runner runner 9875 Nov  9 02:36 09-keys-search.png
-  -rw-r--r--  1 runner runner 9875 Nov  9 02:37 10-keys-back.png
-  -rw-r--r--  1 runner runner 9875 Nov  9 02:37 11-keys-fullscreen.png
-  drwxr-xr-x  3 runner runner 4096 Nov  9 02:33 config-home
-  -rw-r--r--  1 runner runner    0 Nov  9 02:34 grim.log
-  -rw-r--r--  1 runner runner  989 Nov  9 02:33 kalam.log
-  -rw-r--r--  1 runner runner 7165 Nov  9 02:38 report.txt
-  -rw-r--r--  1 runner runner   88 Nov  9 02:33 sway.log
-  -rw-r--r--  1 runner runner 7188 Nov  9 02:34 tree.json
---- run 42550616393 ---
+  drwxr-xr-x  3 runner runner 4096 Nov  9 04:43 .
+  drwxr-xr-x 19 runner runner 4096 Nov  9 04:40 ..
+  -rw-r--r--  1 runner runner 9881 Nov  9 04:40 01-home.png
+  -rw-r--r--  1 runner runner 9881 Nov  9 04:40 02-home-settling.png
+  -rw-r--r--  1 runner runner 9881 Nov  9 04:40 03-home-settled.png
+  -rw-r--r--  1 runner runner 9881 Nov  9 04:41 05-keys-library.png
+  -rw-r--r--  1 runner runner 9881 Nov  9 04:41 06-keys-home.png
+  -rw-r--r--  1 runner runner 9881 Nov  9 04:42 07-keys-settings.png
+  -rw-r--r--  1 runner runner 9881 Nov  9 04:42 08-keys-shortcuts.png
+  -rw-r--r--  1 runner runner 9881 Nov  9 04:43 09-keys-search.png
+  -rw-r--r--  1 runner runner 9881 Nov  9 04:43 10-keys-back.png
+  -rw-r--r--  1 runner runner 9881 Nov  9 04:43 11-keys-fullscreen.png
+  drwxr-xr-x  3 runner runner 4096 Nov  9 04:40 config-home
+  -rw-r--r--  1 runner runner    0 Nov  9 04:40 grim.log
+  -rw-r--r--  1 runner runner  989 Nov  9 04:40 kalam.log
+  -rw-r--r--  1 runner runner 7165 Nov  9 04:44 report.txt
+  -rw-r--r--  1 runner runner   88 Nov  9 04:40 sway.log
+  -rw-r--r--  1 runner runner 7188 Nov  9 04:40 tree.json
+--- run 42562225198 ---

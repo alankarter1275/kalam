@@ -1,14 +1,14 @@
 === kalam screenshot run ===
 books=20 out=ci-shots-settings-shortcuts-recording-dark settle=10 output=1600x1200
 config home: /home/runner/work/kalam/kalam/ci-shots-settings-shortcuts-recording-dark/config-home
-binary: 74607088 bytes
+binary: 74682672 bytes
 
 === seeding 20 books ===
 seed-library: 20 books, 18 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.8517.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.8702.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,36 +32,36 @@ windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 readiness: min=2s max=20s stable_max_changed=0.5%
 readiness: route/window signal not seen within 10s; photographing anyway
 toplevel windows seen: 1
-  shot: 01-settings (10806 bytes)
+  shot: 01-settings (10812 bytes)
 focused: 1
-  shot: 02-settings-settling (10806 bytes)
+  shot: 02-settings-settling (10812 bytes)
   shot: 03-settings-settled (stable after 11s)
 navigation: FAILED -- no KALAM_ROUTE line; binary predates the flag?
 navigation: 'settings' is not a grid page; no grid_build expected
 readiness: Home route/window signal not seen within 10s; photographing anyway
-  shot: 04-home-for-comparison (10804 bytes)
+  shot: 04-home-for-comparison (10807 bytes)
 readiness: Home latest frame used; no stable pair within 10s
 navigation: 'settings' differs from Home -- the page really did change
 navigation: NOT PROVEN -- do not trust the page names below
 
 === timing lines from the app ===
-  [timing] startup_fonts           2.8 ms
-  [timing] startup_gtk_init       49.0 ms
-  [timing] startup_splash_show      1.7 ms
+  [timing] startup_fonts           4.2 ms
+  [timing] startup_gtk_init       77.5 ms
+  [timing] startup_splash_show      1.6 ms
   [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
   [timing] icons_init              0.3 ms
-  [timing] startup_splash_pump    120.1 ms
-  [timing] startup_libraries       0.3 ms
-  [timing] startup_db_open         8.7 ms
-  [timing] startup_theme          62.0 ms
-  [timing] pre_run               244.9 ms
+  [timing] startup_splash_pump    122.1 ms
+  [timing] startup_libraries       0.4 ms
+  [timing] startup_db_open        13.7 ms
+  [timing] startup_theme          95.7 ms
+  [timing] pre_run               315.3 ms
   [timing] route_open:home         0.3 ms
   [timing] startup_first_page      0.3 ms
-  [timing] service_home            0.6 ms
+  [timing] service_home            0.7 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 206 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 165 ms ago)
   stalls seen -- name the screen and fix it before it spreads
 
 === screenshot pixel sample ===
@@ -73,35 +73,35 @@ navigation: NOT PROVEN -- do not trust the page names below
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  b8bbaf13b7571449971c477d9df5cd19  ci-shots-settings-shortcuts-recording-dark/01-settings.png
-  b8bbaf13b7571449971c477d9df5cd19  ci-shots-settings-shortcuts-recording-dark/02-settings-settling.png
-  b8bbaf13b7571449971c477d9df5cd19  ci-shots-settings-shortcuts-recording-dark/03-settings-settled.png
-  061d8473c04441bf8515d8007d424565  ci-shots-settings-shortcuts-recording-dark/04-home-for-comparison.png
+  3a57e32b7ec198880c4e0092aac52028  ci-shots-settings-shortcuts-recording-dark/01-settings.png
+  3a57e32b7ec198880c4e0092aac52028  ci-shots-settings-shortcuts-recording-dark/02-settings-settling.png
+  3a57e32b7ec198880c4e0092aac52028  ci-shots-settings-shortcuts-recording-dark/03-settings-settled.png
+  ce8f25d02686be3b4717819a602454d5  ci-shots-settings-shortcuts-recording-dark/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (process:8573): Gtk-WARNING **: 02:35:30.218: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:8758): Gtk-WARNING **: 04:42:05.595: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-dark — applying terracotta-dark for this run (not saved)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 206 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 165 ms ago)
 
 === peak memory ===
-books=20 peak_rss_kb=77260 peak_rss_mb=75
+books=20 peak_rss_kb=77564 peak_rss_mb=75
 
 === shutting down ===
 
 === artifacts ===
   total 88
-  drwxr-xr-x  3 runner runner  4096 Nov  9 02:35 .
-  drwxr-xr-x 24 runner runner  4096 Nov  9 02:35 ..
-  -rw-r--r--  1 runner runner 10806 Nov  9 02:35 01-settings.png
-  -rw-r--r--  1 runner runner 10806 Nov  9 02:35 02-settings-settling.png
-  -rw-r--r--  1 runner runner 10806 Nov  9 02:35 03-settings-settled.png
-  -rw-r--r--  1 runner runner 10804 Nov  9 02:35 04-home-for-comparison.png
-  drwxr-xr-x  3 runner runner  4096 Nov  9 02:35 config-home
-  -rw-r--r--  1 runner runner     0 Nov  9 02:35 grim.log
-  -rw-r--r--  1 runner runner  1078 Nov  9 02:35 kalam-home.log
-  -rw-r--r--  1 runner runner  1078 Nov  9 02:35 kalam.log
-  -rw-r--r--  1 runner runner  4298 Nov  9 02:35 report.txt
-  -rw-r--r--  1 runner runner    88 Nov  9 02:35 sway.log
-  -rw-r--r--  1 runner runner  7188 Nov  9 02:35 tree.json
---- run 42550616393 ---
+  drwxr-xr-x  3 runner runner  4096 Nov  9 04:42 .
+  drwxr-xr-x 24 runner runner  4096 Nov  9 04:42 ..
+  -rw-r--r--  1 runner runner 10812 Nov  9 04:42 01-settings.png
+  -rw-r--r--  1 runner runner 10812 Nov  9 04:42 02-settings-settling.png
+  -rw-r--r--  1 runner runner 10812 Nov  9 04:42 03-settings-settled.png
+  -rw-r--r--  1 runner runner 10807 Nov  9 04:42 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner  4096 Nov  9 04:42 config-home
+  -rw-r--r--  1 runner runner     0 Nov  9 04:42 grim.log
+  -rw-r--r--  1 runner runner  1078 Nov  9 04:42 kalam-home.log
+  -rw-r--r--  1 runner runner  1078 Nov  9 04:42 kalam.log
+  -rw-r--r--  1 runner runner  4298 Nov  9 04:42 report.txt
+  -rw-r--r--  1 runner runner    88 Nov  9 04:42 sway.log
+  -rw-r--r--  1 runner runner  7188 Nov  9 04:42 tree.json
+--- run 42562225198 ---

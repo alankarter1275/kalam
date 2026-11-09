@@ -1,7 +1,7 @@
 === kalam screenshot run ===
 books=20 out=ci-shots-pdf-rotated-dark settle=20 output=1600x1000
 config home: /home/runner/work/kalam/kalam/ci-shots-pdf-rotated-dark/config-home
-binary: 74607088 bytes
+binary: 74682672 bytes
 
 === seeding 20 books ===
 pdf fixture: book 21 (route pdf-read-21, normal)
@@ -9,7 +9,7 @@ seed-library: 21 books, 19 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.25035.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.25069.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -33,36 +33,36 @@ windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 readiness: min=5s max=30s stable_max_changed=0.5%
 readiness: route/window signal not seen within 20s; photographing anyway
 toplevel windows seen: 1
-  shot: 01-pdf-read-21 (9879 bytes)
+  shot: 01-pdf-read-21 (9880 bytes)
 focused: 1
-  shot: 02-pdf-read-21-settling (9879 bytes)
+  shot: 02-pdf-read-21-settling (9880 bytes)
   shot: 03-pdf-read-21-settled (stable after 21s)
 navigation: FAILED -- no KALAM_ROUTE line; binary predates the flag?
 navigation: 'pdf-read-21' is not a grid page; no grid_build expected
 readiness: Home route/window signal not seen within 10s; photographing anyway
-  shot: 04-home-for-comparison (9876 bytes)
+  shot: 04-home-for-comparison (9870 bytes)
 readiness: Home latest frame used; no stable pair within 10s
 navigation: 'pdf-read-21' differs from Home -- the page really did change
 navigation: NOT PROVEN -- do not trust the page names below
 
 === timing lines from the app ===
   [timing] startup_fonts           3.3 ms
-  [timing] startup_gtk_init       61.7 ms
+  [timing] startup_gtk_init       61.4 ms
   [timing] startup_splash_show      1.6 ms
   [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
   [timing] icons_init              0.3 ms
-  [timing] startup_splash_pump    120.7 ms
-  [timing] startup_libraries       0.3 ms
-  [timing] startup_db_open        10.0 ms
-  [timing] startup_theme          77.0 ms
-  [timing] pre_run               274.9 ms
+  [timing] startup_splash_pump    120.4 ms
+  [timing] startup_libraries       0.2 ms
+  [timing] startup_db_open         9.9 ms
+  [timing] startup_theme          77.3 ms
+  [timing] pre_run               274.3 ms
   [timing] route_open:home         0.3 ms
   [timing] startup_first_page      0.3 ms
-  [timing] service_home            0.6 ms
+  [timing] service_home            0.5 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 189 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 190 ms ago)
   stalls seen -- name the screen and fix it before it spreads
 
 === screenshot pixel sample ===
@@ -74,35 +74,35 @@ navigation: NOT PROVEN -- do not trust the page names below
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  2e62e554a893b94e82c857095892aa90  ci-shots-pdf-rotated-dark/01-pdf-read-21.png
-  2e62e554a893b94e82c857095892aa90  ci-shots-pdf-rotated-dark/02-pdf-read-21-settling.png
-  2e62e554a893b94e82c857095892aa90  ci-shots-pdf-rotated-dark/03-pdf-read-21-settled.png
-  bd4854f803c13b81e341077cd85b7a6f  ci-shots-pdf-rotated-dark/04-home-for-comparison.png
+  b998a331040ba56bcec33f4e7bedc4ee  ci-shots-pdf-rotated-dark/01-pdf-read-21.png
+  b998a331040ba56bcec33f4e7bedc4ee  ci-shots-pdf-rotated-dark/02-pdf-read-21-settling.png
+  b998a331040ba56bcec33f4e7bedc4ee  ci-shots-pdf-rotated-dark/03-pdf-read-21-settled.png
+  72fe05eb6795ae9a870476900ad08717  ci-shots-pdf-rotated-dark/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (process:25091): Gtk-WARNING **: 02:44:10.216: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:25128): Gtk-WARNING **: 04:50:39.295: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-dark — applying terracotta-dark for this run (not saved)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 189 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 190 ms ago)
 
 === peak memory ===
-books=20 peak_rss_kb=77520 peak_rss_mb=75
+books=20 peak_rss_kb=77784 peak_rss_mb=75
 
 === shutting down ===
 
 === artifacts ===
   total 88
-  drwxr-xr-x  3 runner runner 4096 Nov  9 02:44 .
-  drwxr-xr-x 38 runner runner 4096 Nov  9 02:44 ..
-  -rw-r--r--  1 runner runner 9879 Nov  9 02:44 01-pdf-read-21.png
-  -rw-r--r--  1 runner runner 9879 Nov  9 02:44 02-pdf-read-21-settling.png
-  -rw-r--r--  1 runner runner 9879 Nov  9 02:44 03-pdf-read-21-settled.png
-  -rw-r--r--  1 runner runner 9876 Nov  9 02:44 04-home-for-comparison.png
-  drwxr-xr-x  3 runner runner 4096 Nov  9 02:44 config-home
-  -rw-r--r--  1 runner runner    0 Nov  9 02:44 grim.log
-  -rw-r--r--  1 runner runner 1079 Nov  9 02:44 kalam-home.log
-  -rw-r--r--  1 runner runner 1079 Nov  9 02:44 kalam.log
-  -rw-r--r--  1 runner runner 4269 Nov  9 02:44 report.txt
-  -rw-r--r--  1 runner runner   88 Nov  9 02:44 sway.log
-  -rw-r--r--  1 runner runner 7189 Nov  9 02:44 tree.json
---- run 42550616393 ---
+  drwxr-xr-x  3 runner runner 4096 Nov  9 04:51 .
+  drwxr-xr-x 38 runner runner 4096 Nov  9 04:50 ..
+  -rw-r--r--  1 runner runner 9880 Nov  9 04:50 01-pdf-read-21.png
+  -rw-r--r--  1 runner runner 9880 Nov  9 04:50 02-pdf-read-21-settling.png
+  -rw-r--r--  1 runner runner 9880 Nov  9 04:51 03-pdf-read-21-settled.png
+  -rw-r--r--  1 runner runner 9870 Nov  9 04:51 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner 4096 Nov  9 04:50 config-home
+  -rw-r--r--  1 runner runner    0 Nov  9 04:50 grim.log
+  -rw-r--r--  1 runner runner 1079 Nov  9 04:51 kalam-home.log
+  -rw-r--r--  1 runner runner 1079 Nov  9 04:50 kalam.log
+  -rw-r--r--  1 runner runner 4269 Nov  9 04:51 report.txt
+  -rw-r--r--  1 runner runner   88 Nov  9 04:50 sway.log
+  -rw-r--r--  1 runner runner 7189 Nov  9 04:50 tree.json
+--- run 42562225198 ---

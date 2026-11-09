@@ -1,14 +1,14 @@
 === kalam screenshot run ===
 books=20 out=ci-shots-comics-pages-dark settle=25 output=1600x1000
 config home: /home/runner/work/kalam/kalam/ci-shots-comics-pages-dark/config-home
-binary: 74607088 bytes
+binary: 74682672 bytes
 
 === seeding 20 books ===
 seed-library: 22 books, 20 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.7056.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.6899.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,36 +32,36 @@ windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 readiness: min=5s max=35s stable_max_changed=0.5%
 readiness: route/window signal not seen within 25s; photographing anyway
 toplevel windows seen: 1
-  shot: 01-comic-read-22 (9876 bytes)
+  shot: 01-comic-read-22 (9886 bytes)
 focused: 1
-  shot: 02-comic-read-22-settling (9876 bytes)
+  shot: 02-comic-read-22-settling (9886 bytes)
   shot: 03-comic-read-22-settled (stable after 26s)
 navigation: FAILED -- no KALAM_ROUTE line; binary predates the flag?
 navigation: 'comic-read-22' is not a grid page; no grid_build expected
 readiness: Home route/window signal not seen within 10s; photographing anyway
-  shot: 04-home-for-comparison (9887 bytes)
+  shot: 04-home-for-comparison (9892 bytes)
 readiness: Home latest frame used; no stable pair within 10s
 navigation: 'comic-read-22' differs from Home -- the page really did change
 navigation: NOT PROVEN -- do not trust the page names below
 
 === timing lines from the app ===
-  [timing] startup_fonts           4.2 ms
-  [timing] startup_gtk_init       76.6 ms
-  [timing] startup_splash_show      1.5 ms
+  [timing] startup_fonts           3.3 ms
+  [timing] startup_gtk_init       62.0 ms
+  [timing] startup_splash_show      1.6 ms
   [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
   [timing] icons_init              0.3 ms
-  [timing] startup_splash_pump    121.8 ms
+  [timing] startup_splash_pump    121.0 ms
   [timing] startup_libraries       0.3 ms
-  [timing] startup_db_open        13.2 ms
-  [timing] startup_theme          96.7 ms
-  [timing] pre_run               314.4 ms
+  [timing] startup_db_open        13.5 ms
+  [timing] startup_theme          77.3 ms
+  [timing] pre_run               279.3 ms
   [timing] route_open:home         0.3 ms
   [timing] startup_first_page      0.3 ms
-  [timing] service_home            0.7 ms
+  [timing] service_home            0.6 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 165 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 185 ms ago)
   stalls seen -- name the screen and fix it before it spreads
 
 === screenshot pixel sample ===
@@ -73,35 +73,35 @@ navigation: NOT PROVEN -- do not trust the page names below
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  9f615b7ad9de89a12d2bffc7d6ba1765  ci-shots-comics-pages-dark/01-comic-read-22.png
-  9f615b7ad9de89a12d2bffc7d6ba1765  ci-shots-comics-pages-dark/02-comic-read-22-settling.png
-  9f615b7ad9de89a12d2bffc7d6ba1765  ci-shots-comics-pages-dark/03-comic-read-22-settled.png
-  825208f3080dfad6795fa16ce349a732  ci-shots-comics-pages-dark/04-home-for-comparison.png
+  06d558e6dbf28d804acff1d77d25ee4a  ci-shots-comics-pages-dark/01-comic-read-22.png
+  06d558e6dbf28d804acff1d77d25ee4a  ci-shots-comics-pages-dark/02-comic-read-22-settling.png
+  06d558e6dbf28d804acff1d77d25ee4a  ci-shots-comics-pages-dark/03-comic-read-22-settled.png
+  6d0ce4fe5ebd16079b52cf05777cbe36  ci-shots-comics-pages-dark/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (process:7113): Gtk-WARNING **: 02:35:06.948: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:6956): Gtk-WARNING **: 04:41:51.411: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-dark — applying terracotta-dark for this run (not saved)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 165 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 185 ms ago)
 
 === peak memory ===
-books=20 peak_rss_kb=77640 peak_rss_mb=75
+books=20 peak_rss_kb=77608 peak_rss_mb=75
 
 === shutting down ===
 
 === artifacts ===
   total 88
-  drwxr-xr-x  3 runner runner 4096 Nov  9 02:35 .
-  drwxr-xr-x 21 runner runner 4096 Nov  9 02:35 ..
-  -rw-r--r--  1 runner runner 9876 Nov  9 02:35 01-comic-read-22.png
-  -rw-r--r--  1 runner runner 9876 Nov  9 02:35 02-comic-read-22-settling.png
-  -rw-r--r--  1 runner runner 9876 Nov  9 02:35 03-comic-read-22-settled.png
-  -rw-r--r--  1 runner runner 9887 Nov  9 02:35 04-home-for-comparison.png
-  drwxr-xr-x  3 runner runner 4096 Nov  9 02:35 config-home
-  -rw-r--r--  1 runner runner    0 Nov  9 02:35 grim.log
-  -rw-r--r--  1 runner runner 1078 Nov  9 02:35 kalam-home.log
-  -rw-r--r--  1 runner runner 1078 Nov  9 02:35 kalam.log
-  -rw-r--r--  1 runner runner 4246 Nov  9 02:35 report.txt
-  -rw-r--r--  1 runner runner   88 Nov  9 02:35 sway.log
-  -rw-r--r--  1 runner runner 7188 Nov  9 02:35 tree.json
---- run 42550616393 ---
+  drwxr-xr-x  3 runner runner 4096 Nov  9 04:42 .
+  drwxr-xr-x 21 runner runner 4096 Nov  9 04:41 ..
+  -rw-r--r--  1 runner runner 9886 Nov  9 04:42 01-comic-read-22.png
+  -rw-r--r--  1 runner runner 9886 Nov  9 04:42 02-comic-read-22-settling.png
+  -rw-r--r--  1 runner runner 9886 Nov  9 04:42 03-comic-read-22-settled.png
+  -rw-r--r--  1 runner runner 9892 Nov  9 04:42 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner 4096 Nov  9 04:41 config-home
+  -rw-r--r--  1 runner runner    0 Nov  9 04:42 grim.log
+  -rw-r--r--  1 runner runner 1078 Nov  9 04:42 kalam-home.log
+  -rw-r--r--  1 runner runner 1078 Nov  9 04:41 kalam.log
+  -rw-r--r--  1 runner runner 4246 Nov  9 04:42 report.txt
+  -rw-r--r--  1 runner runner   88 Nov  9 04:41 sway.log
+  -rw-r--r--  1 runner runner 7188 Nov  9 04:42 tree.json
+--- run 42562225198 ---

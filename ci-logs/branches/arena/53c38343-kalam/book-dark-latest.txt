@@ -1,14 +1,14 @@
 === kalam screenshot run ===
 books=20 out=ci-shots-book-dark settle=20 output=1600x1200
 config home: /home/runner/work/kalam/kalam/ci-shots-book-dark/config-home
-binary: 74607088 bytes
+binary: 74682672 bytes
 
 === seeding 20 books ===
 seed-library: 20 books, 18 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.14177.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.14031.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -39,30 +39,29 @@ focused: 1
 navigation: FAILED -- no KALAM_ROUTE line; binary predates the flag?
 navigation: 'book-1' is not a grid page; no grid_build expected
 readiness: Home route/window signal not seen within 10s; photographing anyway
-  shot: 04-home-for-comparison (10803 bytes)
+  shot: 04-home-for-comparison (10808 bytes)
 readiness: Home latest frame used; no stable pair within 10s
-navigation: FAILED -- 'book-1' is pixel-identical to Home.
-  The app reported navigating but the screen never changed.
+navigation: 'book-1' differs from Home -- the page really did change
 navigation: NOT PROVEN -- do not trust the page names below
 
 === timing lines from the app ===
-  [timing] startup_fonts           4.2 ms
-  [timing] startup_gtk_init       79.1 ms
-  [timing] startup_splash_show      1.7 ms
+  [timing] startup_fonts           2.6 ms
+  [timing] startup_gtk_init       45.4 ms
+  [timing] startup_splash_show      1.2 ms
   [timing] icons_write             0.2 ms
-  [timing] icons_theme             0.1 ms
+  [timing] icons_theme             0.0 ms
   [timing] icons_init              0.3 ms
-  [timing] startup_splash_pump    121.8 ms
+  [timing] startup_splash_pump    121.9 ms
   [timing] startup_libraries       0.3 ms
-  [timing] startup_db_open        13.2 ms
-  [timing] startup_theme          96.2 ms
-  [timing] pre_run               316.7 ms
-  [timing] route_open:home         0.3 ms
+  [timing] startup_db_open         8.1 ms
+  [timing] startup_theme          55.5 ms
+  [timing] pre_run               235.1 ms
+  [timing] route_open:home         0.2 ms
   [timing] startup_first_page      0.3 ms
-  [timing] service_home            0.7 ms
+  [timing] service_home            0.5 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 166 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 212 ms ago)
   stalls seen -- name the screen and fix it before it spreads
 
 === screenshot pixel sample ===
@@ -74,35 +73,35 @@ navigation: NOT PROVEN -- do not trust the page names below
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  60f9a4aebd93f607304671d9e307abde  ci-shots-book-dark/01-book-1.png
-  60f9a4aebd93f607304671d9e307abde  ci-shots-book-dark/02-book-1-settling.png
-  60f9a4aebd93f607304671d9e307abde  ci-shots-book-dark/03-book-1-settled.png
-  60f9a4aebd93f607304671d9e307abde  ci-shots-book-dark/04-home-for-comparison.png
+  ccf7f3a40ca9e7ada61defb11e82278d  ci-shots-book-dark/01-book-1.png
+  ccf7f3a40ca9e7ada61defb11e82278d  ci-shots-book-dark/02-book-1-settling.png
+  ccf7f3a40ca9e7ada61defb11e82278d  ci-shots-book-dark/03-book-1-settled.png
+  c17851da55fb0a1b7a2c65b38925a640  ci-shots-book-dark/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (process:14233): Gtk-WARNING **: 02:39:42.463: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:14087): Gtk-WARNING **: 04:46:15.934: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-dark — applying terracotta-dark for this run (not saved)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 166 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 212 ms ago)
 
 === peak memory ===
-books=20 peak_rss_kb=77656 peak_rss_mb=75
+books=20 peak_rss_kb=77520 peak_rss_mb=75
 
 === shutting down ===
 
 === artifacts ===
   total 88
-  drwxr-xr-x  3 runner runner  4096 Nov  9 02:40 .
-  drwxr-xr-x 23 runner runner  4096 Nov  9 02:39 ..
-  -rw-r--r--  1 runner runner 10803 Nov  9 02:40 01-book-1.png
-  -rw-r--r--  1 runner runner 10803 Nov  9 02:40 02-book-1-settling.png
-  -rw-r--r--  1 runner runner 10803 Nov  9 02:40 03-book-1-settled.png
-  -rw-r--r--  1 runner runner 10803 Nov  9 02:40 04-home-for-comparison.png
-  drwxr-xr-x  3 runner runner  4096 Nov  9 02:39 config-home
-  -rw-r--r--  1 runner runner     0 Nov  9 02:40 grim.log
-  -rw-r--r--  1 runner runner  1079 Nov  9 02:40 kalam-home.log
-  -rw-r--r--  1 runner runner  1079 Nov  9 02:39 kalam.log
-  -rw-r--r--  1 runner runner  4170 Nov  9 02:40 report.txt
-  -rw-r--r--  1 runner runner    88 Nov  9 02:39 sway.log
-  -rw-r--r--  1 runner runner  7189 Nov  9 02:40 tree.json
---- run 42550616393 ---
+  drwxr-xr-x  3 runner runner  4096 Nov  9 04:46 .
+  drwxr-xr-x 23 runner runner  4096 Nov  9 04:46 ..
+  -rw-r--r--  1 runner runner 10803 Nov  9 04:46 01-book-1.png
+  -rw-r--r--  1 runner runner 10803 Nov  9 04:46 02-book-1-settling.png
+  -rw-r--r--  1 runner runner 10803 Nov  9 04:46 03-book-1-settled.png
+  -rw-r--r--  1 runner runner 10808 Nov  9 04:46 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner  4096 Nov  9 04:46 config-home
+  -rw-r--r--  1 runner runner     0 Nov  9 04:46 grim.log
+  -rw-r--r--  1 runner runner  1079 Nov  9 04:46 kalam-home.log
+  -rw-r--r--  1 runner runner  1079 Nov  9 04:46 kalam.log
+  -rw-r--r--  1 runner runner  4120 Nov  9 04:46 report.txt
+  -rw-r--r--  1 runner runner    88 Nov  9 04:46 sway.log
+  -rw-r--r--  1 runner runner  7189 Nov  9 04:46 tree.json
+--- run 42562225198 ---

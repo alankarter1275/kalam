@@ -1277,8 +1277,8 @@ fn catalog_locking_methods(files: &[(PathBuf, String)]) -> std::collections::Has
     let mut out = std::collections::HashSet::new();
     for (_path, text) in files {
         let lines: Vec<&str> = text.lines().collect();
-        for start in 0..lines.len() {
-            let Some(name) = signature_name(lines[start]) else {
+        for (start, line) in lines.iter().enumerate() {
+            let Some(name) = signature_name(line) else {
                 continue;
             };
             let end = body_end(&lines, start);
@@ -1373,7 +1373,7 @@ fn catalog_calls(code: &str) -> Vec<String> {
         while s > 0 && (chars[s - 1].is_alphanumeric() || chars[s - 1] == '_') {
             s -= 1;
         }
-        let recv: String = chars[s..i].iter().collect();
+        let recv: String = chars[s..i].iter().copied().collect();
         if !CATALOG_RECEIVERS.contains(&recv.as_str()) {
             continue;
         }
@@ -1389,7 +1389,7 @@ fn catalog_calls(code: &str) -> Vec<String> {
             p += 1;
         }
         if p < chars.len() && chars[p] == '(' {
-            out.push(chars[i + 1..e].iter().collect());
+            out.push(chars[i + 1..e].iter().copied().collect());
         }
     }
     out
@@ -1445,19 +1445,20 @@ fn nested_catalog_lock_hits(
 ) -> Vec<(usize, String, String)> {
     let lines: Vec<&str> = text.lines().collect();
     let mut hits = Vec::new();
-    for start in 0..lines.len() {
-        let Some(name) = signature_name(lines[start]) else {
+    for (start, line) in lines.iter().enumerate() {
+        let Some(name) = signature_name(line) else {
             continue;
         };
         let end = body_end(&lines, start);
         let mut depth: i32 = 0;
         let mut live: Vec<(String, i32)> = Vec::new();
-        for idx in start..=end {
-            let code = code_part(lines[idx]);
+        for (offset, body_line) in lines[start..=end].iter().enumerate() {
+            let number = start + offset + 1;
+            let code = code_part(body_line);
             if !live.is_empty() {
                 for callee in catalog_calls(&code) {
                     if callee != "conn" && lockers.contains(&callee) {
-                        hits.push((idx + 1, name.clone(), callee));
+                        hits.push((number, name.clone(), callee));
                     }
                 }
             }

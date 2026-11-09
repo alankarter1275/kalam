@@ -49,16 +49,12 @@ const PLACEHOLDER_QUOTE: (&str, &str) = (
 #[derive(Debug)]
 pub enum HomeOut {
     /// The cover click (§60): open the book's details page.
-    Book {
-        book_id: i64,
-    },
+    Book { book_id: i64 },
     /// The play button (§60): resume in the reader at the saved position.
     /// No chapter rides along — `OpenReaderAt` with one *resets* the
     /// fraction inside the chapter, and resuming must not move the position
     /// the card was just showing. `None` opens at the stored spot.
-    Read {
-        book_id: i64,
-    },
+    Read { book_id: i64 },
 }
 
 #[derive(Debug)]

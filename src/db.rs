@@ -2654,18 +2654,28 @@ impl Catalog {
     /// position is cleared, which is exactly the card's contract. Books are
     /// re-sequenced by hand because `books_by_ids` answers with a map.
     pub fn books_in_progress(&self, limit: usize) -> Result<Vec<(Book, usize)>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare_cached(
-            "SELECT book_id, chapter_index FROM reading_progress \
-             ORDER BY updated_at DESC LIMIT ?1",
-        )?;
-        let mut rows_out: Vec<(i64, usize)> = Vec::new();
-        let rows = stmt.query_map(params![limit as i64], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)? as usize))
-        })?;
-        for row in rows {
-            rows_out.push(row?);
-        }
+        // Scoped, and the scope is the whole fix. The catalog is one
+        // connection behind one *non-reentrant* mutex, so a guard held across
+        // another `Catalog` call — here `books_by_ids`, which takes the same
+        // lock — deadlocks the calling thread with the lock in its own hands.
+        // The thread that froze was Home's snapshot worker, and because it
+        // froze holding the lock, the first page build froze behind it: splash
+        // on screen, window never realized, nothing spinning (pitfalls §106).
+        let rows_out: Vec<(i64, usize)> = {
+            let conn = self.conn();
+            let mut stmt = conn.prepare_cached(
+                "SELECT book_id, chapter_index FROM reading_progress \
+                 ORDER BY updated_at DESC LIMIT ?1",
+            )?;
+            let mut out: Vec<(i64, usize)> = Vec::new();
+            let rows = stmt.query_map(params![limit as i64], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)? as usize))
+            })?;
+            for row in rows {
+                out.push(row?);
+            }
+            out
+        };
         if rows_out.is_empty() {
             return Ok(Vec::new());
         }
@@ -4626,6 +4636,42 @@ mod tests {
     fn books_by_ids_on_no_ids_is_not_an_error() {
         let cat = Catalog::open_in_memory().unwrap();
         assert!(cat.books_by_ids(&[]).unwrap().is_empty());
+    }
+
+    /// The freeze this guards (pitfalls §106). `books_in_progress` held the
+    /// connection guard across `books_by_ids`, which takes the same
+    /// non-reentrant lock, so the calling thread deadlocked with the lock in
+    /// its own hands — and everything queued behind that lock, starting with
+    /// the first page build, froze with it. The app showed its splash screen
+    /// and never got a window.
+    ///
+    /// Every check stayed green because CI's seeded library has no saved
+    /// reading positions, and the empty early-return skipped the nested call:
+    /// the bug needs a book somebody has actually read. So seed one, and read
+    /// it back through the same path Home takes.
+    ///
+    /// A regression here would *hang* rather than fail, which is worse than no
+    /// test at all, so the call runs on its own thread against a deadline —
+    /// the bounded-poll idiom `tasks.rs` uses for the same reason.
+    #[test]
+    fn books_in_progress_reads_positions_without_taking_the_lock_twice() {
+        let cat = std::sync::Arc::new(Catalog::open_in_memory().unwrap());
+        let id = seed(&cat, "Dune", "Herbert", &[]);
+        cat.set_reading_progress(id, 2, 0.5, 10).unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = cat.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(worker.books_in_progress(5));
+        });
+        let cards = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("books_in_progress never returned: the connection lock was taken twice")
+            .expect("the read itself failed");
+
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].0.id, id);
+        assert_eq!(cards[0].1, 2, "the chapter the saved position sits in");
     }
 
     #[test]

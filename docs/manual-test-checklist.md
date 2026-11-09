@@ -234,8 +234,9 @@ deliberate, not a defect.
   right of the card: the current one an accent pill, the rest faint circles.
   Clicking a dot swaps the card to that book and moves the pill (§60).
 - [ ] Home opens at once on a real library: no freeze at the splash screen,
-  no stall lines in the terminal. The card's reads are small keyed queries
-  only (B17) — this is the check that the startup freeze stays fixed.
+  no stall lines in the terminal. Check it with a book that has a saved
+  reading position — that is the state the pager reads, and the state both
+  startup freezes needed (B17, pitfalls §105–§106).
 - [ ] With an empty library: a dashed "Your library is empty" card whose
   "Add books" button opens the import chooser; after importing, Home refreshes
   without leaving the page (§64).

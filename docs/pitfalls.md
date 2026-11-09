@@ -3916,3 +3916,43 @@ six smoke groups passed because CI's seeded library is a handful of chapters;
 only the owner's real library was big enough to show it. The fix was not a
 bigger timeout or a faster machine: per-book reads never go through the FTS
 table, they go through a keyed table of their own (build-decisions B17).
+
+## §106 — a connection guard held across another `Catalog` call deadlocks the thread holding it
+
+`Catalog` is one connection behind one `std::sync::Mutex`, and that mutex is
+not reentrant: the thread that holds it and asks for it again waits for itself,
+forever. `books_in_progress` did exactly that — `let conn = self.conn();` at the
+top of the function, then `self.books_by_ids(&ids)?` further down, which takes
+the same lock. The codebase already knew the rule and spells it out in
+`count_queries` ("Each guard is scoped and dropped before `f` runs: `f` takes
+the same lock, and holding it across the call would deadlock"); the scopes in
+`delete_comic_series_keeping`, `auto_finish_if_complete` and
+`get_comic_series_by_title` are the same discipline. A source scan for
+"guard live across a call to another locking method" found this one site and no
+others.
+
+The new function was called from Home's snapshot worker, so the worker froze
+holding the lock, and the first page build froze behind it. The presentation
+was identical to §105's: splash on screen, no window, no housekeeping lines in
+the log. Two reasons no check caught it — the seeded CI library has no saved
+reading positions, so the `rows_out.is_empty()` early-return skipped the nested
+call entirely; and a hang is invisible to a unit test that never runs the
+function. The regression test now seeds a position and calls it on a worker
+thread against a ten-second deadline, because a test that hangs on regression
+is worse than no test.
+
+**Two bugs can wear one symptom, and fixing the first hides the second.** The
+FTS scan (§105) was real and was fixed; the deadlock was behind it, and only
+the owner's library — which has books in progress — could reach either. After a
+hang fix, re-check the same symptom before declaring the cause found, and treat
+"it still hangs" as a new bug rather than a failed fix.
+
+**A stripped release binary's backtrace still answers the question that
+matters.** Every frame of Kalam's own code printed as `??`, and it was still
+decisive: `top -H` showed *no* thread running (so nothing was computing — this
+was a wait, not a scan), and the two threads that mattered were parked in the
+same wait primitive. The C frames named the rest: `g_application_register →
+g_signal_emit → g_closure_invoke` says the block is inside the app's `startup`
+handler, and relm4 builds the whole component in `connect_startup` — so "before
+the window exists" meant "inside `AppModel::init`", which cut the search space
+to a few hundred lines. Take the backtrace before reasoning further.

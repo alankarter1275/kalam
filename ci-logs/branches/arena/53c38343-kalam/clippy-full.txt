@@ -18,11 +18,11 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m uuid v1.29.2
 [1m[92m    Checking[0m cssparser v0.37.0
 [1m[92m    Checking[0m epub-builder v0.8.3
-[1m[92m    Checking[0m serde_json v1.0.154
-[1m[92m    Checking[0m to_shmem v0.5.0
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
-[1m[92m    Checking[0m selectors v0.40.0
+[1m[92m    Checking[0m serde_json v1.0.154
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
+[1m[92m    Checking[0m to_shmem v0.5.0
+[1m[92m    Checking[0m selectors v0.40.0
 [1m[92m    Checking[0m rbook v0.7.12
 [1m[92m    Checking[0m stylo_malloc_size_of v0.20.0
 [1m[92m    Checking[0m stylo_traits v0.20.0
@@ -34,9 +34,9 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/home.rs:58:5: [1m[91merror[0m: variants `BookDialog`, `AllBooks`, and `ComicSeries` are never constructed
-src/pages/home.rs:80:9: [1m[91merror[0m: fields `done`, `total`, and `title` are never read
-src/service.rs:97:9: [1m[91merror[0m: fields `recent` and `reading_list` are never read
+src/db.rs:2666:24: [1m[91merror[E0107][0m: type alias takes 1 generic argument but 2 generic arguments were supplied: expected 1 generic argument
+src/db.rs:2666:24: [1m[91merror[E0277][0m: a value of type `std::result::Result<std::vec::Vec<_>, db::DbError>` cannot be built from an iterator over elements of type `std::result::Result<(i64, usize), rusqlite::Error>`: value of type `std::result::Result<std::vec::Vec<_>, db::DbError>` cannot be built from `std::iter::Iterator<Item=std::result::Result<(i64, usize), rusqlite::Error>>`
+src/pages/home.rs:512:9: [1m[91merror[0m: unused variable: `chapter_index`: help: try ignoring the field: `chapter_index: _`
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors

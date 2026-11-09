@@ -1,14 +1,14 @@
 === kalam screenshot run ===
 books=20 out=ci-shots-components-light settle=20 output=1600x3400
 config home: /home/runner/work/kalam/kalam/ci-shots-components-light/config-home
-binary: 74682672 bytes
+binary: 74698320 bytes
 
 === seeding 20 books ===
 seed-library: 20 books, 18 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.10836.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.6959.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -30,78 +30,117 @@ requested PDF action: <none>
 settings fixture: 0 empty-dicts=0
 windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 readiness: min=3s max=30s stable_max_changed=0.5%
-readiness: route/window signal not seen within 20s; photographing anyway
+readiness: route and window seen after 0s
 toplevel windows seen: 1
-  shot: 01-components (21075 bytes)
+  shot: 01-components (303044 bytes)
 focused: 1
-  shot: 02-components-settling (21075 bytes)
-  shot: 03-components-settled (stable after 21s)
-navigation: FAILED -- no KALAM_ROUTE line; binary predates the flag?
+  shot: 02-components-settling (303044 bytes)
+  shot: 03-components-settled (stable after 4s)
+navigation: app accepted route 'components'
 navigation: 'components' is not a grid page; no grid_build expected
-readiness: Home route/window signal not seen within 10s; photographing anyway
-  shot: 04-home-for-comparison (21072 bytes)
-readiness: Home latest frame used; no stable pair within 10s
+readiness: Home seen after 1s
+  shot: 04-home-for-comparison (82265 bytes)
+readiness: Home stable after 3s
 navigation: 'components' differs from Home -- the page really did change
-navigation: NOT PROVEN -- do not trust the page names below
+navigation: OK -- the images below are 'components'
 
 === timing lines from the app ===
-  [timing] startup_fonts           2.5 ms
-  [timing] startup_gtk_init       45.7 ms
-  [timing] startup_splash_show      1.4 ms
+  [timing] startup_fonts           3.3 ms
+  [timing] startup_gtk_init       62.2 ms
+  [timing] startup_splash_show      1.6 ms
   [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
   [timing] icons_init              0.3 ms
-  [timing] startup_splash_pump    122.2 ms
-  [timing] startup_libraries       0.2 ms
-  [timing] startup_db_open         8.1 ms
-  [timing] startup_theme          22.9 ms
-  [timing] pre_run               203.3 ms
+  [timing] startup_splash_pump    120.9 ms
+  [timing] startup_libraries       0.3 ms
+  [timing] startup_db_open        10.6 ms
+  [timing] startup_theme          31.7 ms
+  [timing] pre_run               230.8 ms
   [timing] route_open:home         0.3 ms
   [timing] startup_first_page      0.3 ms
-  [timing] service_home            0.5 ms
+  [timing] service_home            0.6 ms
+  [timing] covers_queued             5
+  [timing] covers_decoded            0
+  [timing] covers_thumb              0
+  [timing] covers_full               1
+  [timing] covers_decode           0.0 ms
+  [timing] covers_decode_max       0.0 ms
+  [timing] init_done             280.6 ms
+  [timing] window_shown          282.7 ms
+  [timing] page_cache_miss           1
+  [timing] route_open:component_preview      6.4 ms
+  [timing] render_backend     GskCairoRenderer
+  [timing] frame_after:startup_fonts    290.8 ms
+  [timing] frame_after:startup_gtk_init    228.6 ms
+  [timing] frame_after:startup_splash_show    226.9 ms
+  [timing] frame_after:icons_write    222.7 ms
+  [timing] frame_after:icons_theme    222.6 ms
+  [timing] frame_after:icons_init    222.6 ms
+  [timing] frame_after:startup_splash_pump    106.0 ms
+  [timing] frame_after:startup_libraries    105.7 ms
+  [timing] frame_after:startup_db_open     95.1 ms
+  [timing] frame_after:startup_theme     63.4 ms
+  [timing] frame_after:pre_run     63.4 ms
+  [timing] frame_after:route_open:home     62.3 ms
+  [timing] frame_after:startup_first_page     62.3 ms
+  [timing] frame_after:service_home     61.7 ms
+  [timing] frame_after:covers_decode     50.7 ms
+  [timing] frame_after:covers_decode_max     50.7 ms
+  [timing] frame_after:init_done     13.5 ms
+  [timing] frame_after:window_shown     11.5 ms
+  [timing] frame_after:route_open:component_preview      3.9 ms
+  [timing] frame_paint:route_open:component_preview     69.6 ms
+  [timing] frame_paint:route_open:component_preview     51.2 ms
+  [timing] thumbs_backfilled        18
+  [timing] thumbs_backfill_done       18
+  [timing] startup_dicts        2198.0 ms
+  [timing] frame_after:startup_dicts    278.1 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 244 ms ago)
-  stalls seen -- name the screen and fix it before it spreads
+  (none -- no UI-loop block over ~100 ms was detected)
 
 === screenshot pixel sample ===
   low colour is a cover warning only on a seeded library-grid route.
-  01-components.png: 1600x3400  coloured=0.0%  lit=0.2%  <-- essentially black; the window probably never drew
-  02-components-settling.png: 1600x3400  coloured=0.0%  lit=0.2%  <-- essentially black; the window probably never drew
-  03-components-settled.png: 1600x3400  coloured=0.0%  lit=0.2%  <-- essentially black; the window probably never drew
-  04-home-for-comparison.png: 1600x3400  coloured=0.0%  lit=0.2%  <-- essentially black; the window probably never drew
+  01-components.png: 1600x3400  coloured=0.6%  lit=100.0%
+  02-components-settling.png: 1600x3400  coloured=0.6%  lit=100.0%
+  03-components-settled.png: 1600x3400  coloured=0.6%  lit=100.0%
+  04-home-for-comparison.png: 1600x3400  coloured=0.0%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  17260a1200e34e9974b66b42263a645c  ci-shots-components-light/01-components.png
-  17260a1200e34e9974b66b42263a645c  ci-shots-components-light/02-components-settling.png
-  17260a1200e34e9974b66b42263a645c  ci-shots-components-light/03-components-settled.png
-  ba7efa02ee302df9c2e8327a51b69dd6  ci-shots-components-light/04-home-for-comparison.png
+  6c2cdf62d6abfee346b0fae0092c6f14  ci-shots-components-light/01-components.png
+  6c2cdf62d6abfee346b0fae0092c6f14  ci-shots-components-light/02-components-settling.png
+  6c2cdf62d6abfee346b0fae0092c6f14  ci-shots-components-light/03-components-settled.png
+  2c2a4f82e24a780230d88b5180a2fcf5  ci-shots-components-light/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (process:10892): Gtk-WARNING **: 04:44:40.242: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:7015): Gtk-WARNING **: 08:27:51.123: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-light — applying terracotta-light for this run (not saved)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 244 ms ago)
+  
+  thread '<unnamed>' (7031) panicked at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/glib-0.22.10/src/main_context_futures.rs:592:14:
+  Spawning local futures only allowed on the thread owning the MainContext: BoolError { message: "Failed to acquire ownership of main context, already acquired by another thread", filename: "/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/glib-0.22.10/src/main_context.rs", function: "glib::main_context::<impl glib::auto::main_context::MainContext>::acquire", line: 181 }
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+  kalam: KALAM_ROUTE=components — navigating
 
 === peak memory ===
-books=20 peak_rss_kb=77556 peak_rss_mb=75
+books=20 peak_rss_kb=296788 peak_rss_mb=289
 
 === shutting down ===
 
 === artifacts ===
-  total 136
-  drwxr-xr-x  3 runner runner  4096 Nov  9 04:45 .
-  drwxr-xr-x 20 runner runner  4096 Nov  9 04:44 ..
-  -rw-r--r--  1 runner runner 21075 Nov  9 04:45 01-components.png
-  -rw-r--r--  1 runner runner 21075 Nov  9 04:45 02-components-settling.png
-  -rw-r--r--  1 runner runner 21075 Nov  9 04:45 03-components-settled.png
-  -rw-r--r--  1 runner runner 21072 Nov  9 04:45 04-home-for-comparison.png
-  drwxr-xr-x  3 runner runner  4096 Nov  9 04:44 config-home
-  -rw-r--r--  1 runner runner     0 Nov  9 04:45 grim.log
-  -rw-r--r--  1 runner runner  1081 Nov  9 04:45 kalam-home.log
-  -rw-r--r--  1 runner runner  1081 Nov  9 04:44 kalam.log
-  -rw-r--r--  1 runner runner  4213 Nov  9 04:45 report.txt
-  -rw-r--r--  1 runner runner    88 Nov  9 04:44 sway.log
-  -rw-r--r--  1 runner runner  7190 Nov  9 04:45 tree.json
---- run 42562225198 ---
+  total 1012
+  drwxr-xr-x  3 runner runner   4096 Nov  9 08:27 .
+  drwxr-xr-x 20 runner runner   4096 Nov  9 08:27 ..
+  -rw-r--r--  1 runner runner 303044 Nov  9 08:27 01-components.png
+  -rw-r--r--  1 runner runner 303044 Nov  9 08:27 02-components-settling.png
+  -rw-r--r--  1 runner runner 303044 Nov  9 08:27 03-components-settled.png
+  -rw-r--r--  1 runner runner  82265 Nov  9 08:27 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner   4096 Nov  9 08:27 config-home
+  -rw-r--r--  1 runner runner      0 Nov  9 08:27 grim.log
+  -rw-r--r--  1 runner runner   4039 Nov  9 08:27 kalam-home.log
+  -rw-r--r--  1 runner runner   3276 Nov  9 08:27 kalam.log
+  -rw-r--r--  1 runner runner   6079 Nov  9 08:28 report.txt
+  -rw-r--r--  1 runner runner     88 Nov  9 08:27 sway.log
+  -rw-r--r--  1 runner runner   7184 Nov  9 08:27 tree.json
+--- run 42583906727 ---

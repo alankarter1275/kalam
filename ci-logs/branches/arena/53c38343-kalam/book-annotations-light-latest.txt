@@ -1,14 +1,14 @@
 === kalam screenshot run ===
 books=20 out=ci-shots-book-annotations-light settle=20 output=1600x1200
 config home: /home/runner/work/kalam/kalam/ci-shots-book-annotations-light/config-home
-binary: 74682672 bytes
+binary: 74698320 bytes
 
 === seeding 20 books ===
 seed-library: 20 books, 18 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.17217.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.10285.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -30,78 +30,129 @@ requested PDF action: <none>
 settings fixture: 0 empty-dicts=0
 windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 readiness: min=2s max=30s stable_max_changed=0.5%
-readiness: route/window signal not seen within 20s; photographing anyway
+readiness: route and window seen after 0s
 toplevel windows seen: 1
-  shot: 01-book-1 (10793 bytes)
+  shot: 01-book-1 (80847 bytes)
 focused: 1
-  shot: 02-book-1-settling (10793 bytes)
-  shot: 03-book-1-settled (stable after 21s)
-navigation: FAILED -- no KALAM_ROUTE line; binary predates the flag?
+  shot: 02-book-1-settling (80847 bytes)
+  shot: 03-book-1-settled (stable after 3s)
+navigation: app accepted route 'book-1'
 navigation: 'book-1' is not a grid page; no grid_build expected
-readiness: Home route/window signal not seen within 10s; photographing anyway
-  shot: 04-home-for-comparison (10797 bytes)
-readiness: Home latest frame used; no stable pair within 10s
+readiness: Home seen after 1s
+  shot: 04-home-for-comparison (66874 bytes)
+readiness: Home stable after 3s
 navigation: 'book-1' differs from Home -- the page really did change
-navigation: NOT PROVEN -- do not trust the page names below
+navigation: OK -- the images below are 'book-1'
 
 === timing lines from the app ===
-  [timing] startup_fonts           2.6 ms
-  [timing] startup_gtk_init       45.7 ms
-  [timing] startup_splash_show      1.2 ms
+  [timing] startup_fonts           3.2 ms
+  [timing] startup_gtk_init       61.7 ms
+  [timing] startup_splash_show      1.6 ms
   [timing] icons_write             0.2 ms
-  [timing] icons_theme             0.0 ms
-  [timing] icons_init              0.2 ms
-  [timing] startup_splash_pump    121.8 ms
+  [timing] icons_theme             0.1 ms
+  [timing] icons_init              0.3 ms
+  [timing] startup_splash_pump    120.7 ms
   [timing] startup_libraries       0.3 ms
-  [timing] startup_db_open         8.2 ms
-  [timing] startup_theme          23.0 ms
-  [timing] pre_run               203.0 ms
+  [timing] startup_db_open        13.1 ms
+  [timing] startup_theme          32.3 ms
+  [timing] pre_run               233.1 ms
   [timing] route_open:home         0.3 ms
   [timing] startup_first_page      0.3 ms
-  [timing] service_home            0.4 ms
+  [timing] service_home            0.5 ms
+  [timing] covers_queued             5
+  [timing] covers_decoded            0
+  [timing] covers_thumb              0
+  [timing] covers_full               1
+  [timing] covers_decode           0.0 ms
+  [timing] covers_decode_max       0.0 ms
+  [timing] init_done             282.4 ms
+  [timing] window_shown          284.4 ms
+  [timing] page_cache_miss           1
+  [timing] book_page_rebuild       0.0 ms
+  [timing] route_open:book         0.6 ms
+  [timing] service_book_detail      0.1 ms
+  [timing] service_book_stats      0.1 ms
+  [timing] service_book_page       0.6 ms
+  [timing] render_backend     GskCairoRenderer
+  [timing] frame_after:startup_fonts    283.5 ms
+  [timing] frame_after:startup_gtk_init    221.7 ms
+  [timing] frame_after:startup_splash_show    220.1 ms
+  [timing] frame_after:icons_write    215.8 ms
+  [timing] frame_after:icons_theme    215.7 ms
+  [timing] frame_after:icons_init    215.7 ms
+  [timing] frame_after:startup_splash_pump     99.3 ms
+  [timing] frame_after:startup_libraries     99.1 ms
+  [timing] frame_after:startup_db_open     86.0 ms
+  [timing] frame_after:startup_theme     53.7 ms
+  [timing] frame_after:pre_run     53.7 ms
+  [timing] frame_after:route_open:home     52.7 ms
+  [timing] frame_after:startup_first_page     52.7 ms
+  [timing] frame_after:service_home     52.1 ms
+  [timing] frame_after:covers_decode     38.7 ms
+  [timing] frame_after:covers_decode_max     38.7 ms
+  [timing] frame_after:init_done      4.4 ms
+  [timing] frame_after:window_shown      2.4 ms
+  [timing] frame_after:book_page_rebuild      0.5 ms
+  [timing] frame_after:route_open:book      0.5 ms
+  [timing] frame_after:service_book_detail      0.4 ms
+  [timing] frame_after:service_book_stats      0.3 ms
+  [timing] frame_after:service_book_page      0.0 ms
+  [timing] book_page_rebuild       1.8 ms
+  [timing] book_page_rebuild       1.8 ms
+  [timing] book_page_rebuild       2.3 ms
+  [timing] frame_after:book_page_rebuild      5.3 ms
+  [timing] frame_after:book_page_rebuild      2.5 ms
+  [timing] frame_after:book_page_rebuild      0.0 ms
+  [timing] thumbs_backfilled        18
+  [timing] thumbs_backfill_done       18
+  [timing] startup_dicts        2123.5 ms
+  [timing] frame_after:startup_dicts    352.1 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 244 ms ago)
-  stalls seen -- name the screen and fix it before it spreads
+  (none -- no UI-loop block over ~100 ms was detected)
 
 === screenshot pixel sample ===
   low colour is a cover warning only on a seeded library-grid route.
-  01-book-1.png: 1600x1200  coloured=0.0%  lit=0.7%  <-- essentially black; the window probably never drew
-  02-book-1-settling.png: 1600x1200  coloured=0.0%  lit=0.7%  <-- essentially black; the window probably never drew
-  03-book-1-settled.png: 1600x1200  coloured=0.0%  lit=0.7%  <-- essentially black; the window probably never drew
-  04-home-for-comparison.png: 1600x1200  coloured=0.0%  lit=0.7%  <-- essentially black; the window probably never drew
+  01-book-1.png: 1600x1200  coloured=0.4%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
+  02-book-1-settling.png: 1600x1200  coloured=0.4%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
+  03-book-1-settled.png: 1600x1200  coloured=0.4%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
+  04-home-for-comparison.png: 1600x1200  coloured=0.1%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  62a00ca24cb32e7ac391cca75c60ff7c  ci-shots-book-annotations-light/01-book-1.png
-  62a00ca24cb32e7ac391cca75c60ff7c  ci-shots-book-annotations-light/02-book-1-settling.png
-  62a00ca24cb32e7ac391cca75c60ff7c  ci-shots-book-annotations-light/03-book-1-settled.png
-  92b20b4408ec61e4a33b955939414924  ci-shots-book-annotations-light/04-home-for-comparison.png
+  7f504fbf5fea0a4e904f8d01940075d9  ci-shots-book-annotations-light/01-book-1.png
+  7f504fbf5fea0a4e904f8d01940075d9  ci-shots-book-annotations-light/02-book-1-settling.png
+  7f504fbf5fea0a4e904f8d01940075d9  ci-shots-book-annotations-light/03-book-1-settled.png
+  4065eff0c27b03849480ec6e075f7047  ci-shots-book-annotations-light/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (process:17273): Gtk-WARNING **: 04:47:50.067: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:10341): Gtk-WARNING **: 08:28:52.258: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-light — applying terracotta-light for this run (not saved)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 244 ms ago)
+  
+  thread '<unnamed>' (10357) panicked at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/glib-0.22.10/src/main_context_futures.rs:592:14:
+  Spawning local futures only allowed on the thread owning the MainContext: BoolError { message: "Failed to acquire ownership of main context, already acquired by another thread", filename: "/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/glib-0.22.10/src/main_context.rs", function: "glib::main_context::<impl glib::auto::main_context::MainContext>::acquire", line: 181 }
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+  kalam: KALAM_ROUTE=book-1 — navigating
 
 === peak memory ===
-books=20 peak_rss_kb=77792 peak_rss_mb=75
+books=20 peak_rss_kb=269740 peak_rss_mb=263
 
 === shutting down ===
 
 === artifacts ===
-  total 88
-  drwxr-xr-x  3 runner runner  4096 Nov  9 04:48 .
-  drwxr-xr-x 26 runner runner  4096 Nov  9 04:47 ..
-  -rw-r--r--  1 runner runner 10793 Nov  9 04:48 01-book-1.png
-  -rw-r--r--  1 runner runner 10793 Nov  9 04:48 02-book-1-settling.png
-  -rw-r--r--  1 runner runner 10793 Nov  9 04:48 03-book-1-settled.png
-  -rw-r--r--  1 runner runner 10797 Nov  9 04:48 04-home-for-comparison.png
-  drwxr-xr-x  3 runner runner  4096 Nov  9 04:47 config-home
-  -rw-r--r--  1 runner runner     0 Nov  9 04:48 grim.log
-  -rw-r--r--  1 runner runner  1081 Nov  9 04:48 kalam-home.log
-  -rw-r--r--  1 runner runner  1081 Nov  9 04:47 kalam.log
-  -rw-r--r--  1 runner runner  4206 Nov  9 04:48 report.txt
-  -rw-r--r--  1 runner runner    88 Nov  9 04:47 sway.log
-  -rw-r--r--  1 runner runner  7189 Nov  9 04:48 tree.json
---- run 42562225198 ---
+  total 348
+  drwxr-xr-x  3 runner runner  4096 Nov  9 08:28 .
+  drwxr-xr-x 26 runner runner  4096 Nov  9 08:28 ..
+  -rw-r--r--  1 runner runner 80847 Nov  9 08:28 01-book-1.png
+  -rw-r--r--  1 runner runner 80847 Nov  9 08:28 02-book-1-settling.png
+  -rw-r--r--  1 runner runner 80847 Nov  9 08:28 03-book-1-settled.png
+  -rw-r--r--  1 runner runner 66874 Nov  9 08:28 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner  4096 Nov  9 08:28 config-home
+  -rw-r--r--  1 runner runner     0 Nov  9 08:28 grim.log
+  -rw-r--r--  1 runner runner  4042 Nov  9 08:28 kalam-home.log
+  -rw-r--r--  1 runner runner  3768 Nov  9 08:28 kalam.log
+  -rw-r--r--  1 runner runner  6786 Nov  9 08:29 report.txt
+  -rw-r--r--  1 runner runner    88 Nov  9 08:28 sway.log
+  -rw-r--r--  1 runner runner  7185 Nov  9 08:28 tree.json
+--- run 42583906727 ---

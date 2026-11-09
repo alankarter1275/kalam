@@ -1,8 +1,8 @@
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index fb9bf3e..bc9d3bc 100644
+index 3703073..24f4fb4 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
-@@ -52,16 +52,12 @@ const PLACEHOLDER_QUOTE: (&str, &str) = (
+@@ -49,16 +49,12 @@ const PLACEHOLDER_QUOTE: (&str, &str) = (
  #[derive(Debug)]
  pub enum HomeOut {
      /// The cover click (§60): open the book's details page.
@@ -37,4 +37,4 @@ index aa987ad..4042ea1 100644
      };
      let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
      let a = rows(&few, &ra);
---- run 42550616393 ---
+--- run 42562225198 ---

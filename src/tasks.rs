@@ -421,7 +421,12 @@ fn spawn_with<T, W, P, D>(
         ))
     });
 
+    // Named for the lock watchdog: if this worker is holding the catalogue
+    // lock while the screen waits, the line in the log has to say which job
+    // it was instead of "an unnamed thread (#7)" (pitfalls §109).
+    let worker_label = label.clone();
     std::thread::spawn(move || {
+        crate::lockwatch::name_this_thread(&worker_label);
         let reporter = Reporter {
             tx: progress_tx,
             cancelled: flags.cancel,
@@ -530,7 +535,12 @@ where
         ))
     });
 
+    // Same naming as `spawn_with`, for the same reason (§109). This is the
+    // shape housekeeping and the cover preloader use, which are the workers
+    // most likely to be inside the catalogue when the screen wants it.
+    let worker_label = label.clone();
     std::thread::spawn(move || {
+        crate::lockwatch::name_this_thread(&worker_label);
         let reporter = Reporter {
             tx: progress_tx,
             cancelled: flags.cancel,

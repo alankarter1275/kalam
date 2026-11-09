@@ -30,6 +30,7 @@ mod fonts;
 mod frames;
 mod icons;
 mod libraries;
+mod lockwatch;
 mod logging;
 mod metadata;
 mod models;
@@ -73,6 +74,12 @@ fn main() {
     // instead of a glib panic that kills the worker and takes its own result
     // with it (pitfalls §107). See src/tasks.rs.
     tasks::note_main_thread();
+
+    // And name it for the lock watchdog, before the catalogue is opened: a
+    // screen frozen on the database lock has to be reported as the screen,
+    // and the job holding it has to be named, or the stall line blames
+    // whatever activity label ran last (pitfalls §109). See src/lockwatch.rs.
+    lockwatch::note_ui_thread();
 
     // Register the bundled UI fonts (Playfair Display + DM Sans) as
     // fontconfig application fonts. This must precede RelmApp::new: Pango

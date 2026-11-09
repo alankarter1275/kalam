@@ -40,6 +40,16 @@ Prepare a small library containing:
   the selected library's books appear.
 - [ ] If a watch folder is configured, add a supported book file to it and
   confirm it is imported once.
+- [ ] If the app ever hangs for a second or more, the log names the cause.
+  `~/.local/share/kalam/kalam.log` holds a `[stall]` line for the freeze whose
+  tail reads either `catalogue lock: held by "<the job>" for <n> ms` or
+  `catalogue lock: free`, and a `[lock]` line naming both the waiter and the
+  holder. A freeze with neither line is a bug in the instrument itself
+  (B19, pitfalls §109). A `[lock]` line can also appear with no freeze at all:
+  it means some job held the catalogue for over two seconds, which is worth
+  reporting on its own. A long freeze also repeats its line every two seconds,
+  so the job holding the lock at the end is visible even when it was not the
+  one holding it at the start.
 
 ## Edits surviving a delete and re-import
 
@@ -236,7 +246,9 @@ deliberate, not a defect.
 - [ ] Home opens at once on a real library: no freeze at the splash screen,
   no stall lines in the terminal. Check it with a book that has a saved
   reading position — that is the state the pager reads, and the state both
-  startup freezes needed (B17, pitfalls §105–§106).
+  startup freezes needed (B17, pitfalls §105–§106). If a stall line does
+  appear, its tail says whether the catalogue lock was held and by which job
+  (B19, pitfalls §109); paste the whole line, not just the first half.
 - [ ] With an empty library: a dashed "Your library is empty" card whose
   "Add books" button opens the import chooser; after importing, Home refreshes
   without leaving the page (§64).

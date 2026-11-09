@@ -358,6 +358,38 @@ now covers it alone.
 Superseded: B16. The design files are not touched (§65 still draws the buttons);
 this entry is the record of why the build does not.
 
+---
+
+## B19 — catch the freeze before drawing anything else (2026-11-09)
+
+Asked what to do next, with Home's stage 1 built and the two startup freezes
+fixed, the owner chose *"Catch the freeze first"*: add the instrument that
+names the job holding the database, before the chapter-head store (Step B) and
+before stage 2's shelf ruler.
+
+The reason is the log he sent. One block of 4657 ms, blamed on a task that the
+same line said had ended 27 seconds earlier, and a final "still blocked" line
+that never resolved. Three freezes had already been found and fixed by reading
+his terminal (§105, §106, §107); a fourth was sitting in the same output and
+could not be named, because the watchdog's activity labels describe what the
+screen is *doing*, and a screen waiting for the database is doing nothing.
+
+So `src/lockwatch.rs` records who holds the catalogue's one connection lock and
+since when. A stall line printed during a block now ends with that lock's
+state — a name and a duration, or `free`; a waiter made to wait over 100 ms
+prints its own `[lock]` line naming both sides; a hold that runs past two
+seconds is named once whether or not anything waited for it; and a block longer
+than two seconds gets a fresh line every two seconds rather than one snapshot
+at the start. The
+CI smoke report prints `[lock]` beside `[stall]`, so contention on a seeded
+library is visible without anybody's terminal. Pitfalls §109 carries the
+reasoning and the costs.
+
+This is an instrument, not a fix: nothing that froze has been unfrozen by it.
+What it buys is that the next report from the owner's machine names the job to
+go and fix instead of a stale guess. The work it interrupts is queued and
+unchanged — Step B's chapter heads, then stage 2.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

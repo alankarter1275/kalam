@@ -651,10 +651,7 @@ impl Catalog {
         // difference between "0 books this year" and the right answer.
         let local_today = crate::db::local_today();
         let year = &local_today[..4];
-        let conn = match self.conn.lock() {
-            Ok(c) => c,
-            Err(_) => return 0,
-        };
+        let conn = self.conn();
         conn.query_row(
             "SELECT COUNT(*) FROM books
              WHERE finished_at IS NOT NULL AND substr(finished_at, 1, 4) = ?1",
@@ -668,9 +665,7 @@ impl Catalog {
     /// Index 0 is six days ago, index 6 is today.
     pub fn week_activity(&self) -> [bool; 7] {
         let mut out = [false; 7];
-        let Ok(conn) = self.conn.lock() else {
-            return out;
-        };
+        let conn = self.conn();
         let cutoff = iso_days_ago(6);
         let sql = format!(
             "SELECT DISTINCT {} FROM reading_sessions

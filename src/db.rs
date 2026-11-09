@@ -1015,7 +1015,7 @@ impl Catalog {
     /// `Connection::trace` takes a bare `fn(&str)`, not a closure, so the
     /// counter has to live outside it — hence the thread-local above rather
     /// than something captured. It also needs `&mut Connection`, which the
-    /// `MutexGuard` provides through `DerefMut`.
+    /// guard provides through `DerefMut`.
     ///
     /// The hook is installed for the duration of `f` and removed afterwards,
     /// so a test that forgets to stop counting cannot affect a later one.
@@ -1043,17 +1043,70 @@ impl Catalog {
     }
 }
 
+/// The connection lock, with a record of who is holding it.
+///
+/// Derefs to `Connection`, so the call sites — there are a few hundred — read
+/// exactly as they did when this was a bare `MutexGuard`. The `Drop` is the
+/// reason for the wrapper: releasing is what lets the stall watchdog say the
+/// lock is *free* rather than guess, which is the half of the diagnosis that
+/// was missing when a frozen screen blamed a task that had finished 27 seconds
+/// earlier (pitfalls §109, `src/lockwatch.rs`).
+pub(crate) struct ConnGuard<'a> {
+    inner: std::sync::MutexGuard<'a, Connection>,
+}
+
+impl<'a> ConnGuard<'a> {
+    /// Record the wait `started` measures, then this thread as the holder.
+    fn new(inner: std::sync::MutexGuard<'a, Connection>, started: i64) -> Self {
+        crate::lockwatch::note_acquire(started);
+        Self { inner }
+    }
+}
+
+impl Drop for ConnGuard<'_> {
+    fn drop(&mut self) {
+        // This runs before `inner` drops, so the record says "free" a moment
+        // before the mutex itself lets go. Nothing can slip into that gap:
+        // the next holder needs the mutex, which `inner` still has. And the
+        // release is a compare-exchange on our own thread number, so even a
+        // late release cannot erase a record that is already somebody else's.
+        crate::lockwatch::note_release();
+    }
+}
+
+impl std::ops::Deref for ConnGuard<'_> {
+    type Target = Connection;
+
+    fn deref(&self) -> &Connection {
+        &self.inner
+    }
+}
+
+impl std::ops::DerefMut for ConnGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Connection {
+        &mut self.inner
+    }
+}
+
 impl Catalog {
-    /// Take the connection lock, recovering from poisoning.
+    /// Take the connection lock, recovering from poisoning, and record who
+    /// holds it from here until the guard drops.
     ///
     /// A panic on any thread while holding this lock used to make every later
     /// `expect("db lock")` abort the whole app. SQLite itself is unharmed by
     /// the panic, so carrying on with the data is strictly better than dying.
-    pub(crate) fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap_or_else(|poisoned| {
+    ///
+    /// The guard is a [`ConnGuard`] rather than a bare `MutexGuard` so that
+    /// both ends of a wait are recorded. A screen frozen on this lock then
+    /// names the job holding it, instead of blaming whatever activity label
+    /// happened to run last (pitfalls §109).
+    pub(crate) fn conn(&self) -> ConnGuard<'_> {
+        let started = crate::lockwatch::now_micros();
+        let guard = self.conn.lock().unwrap_or_else(|poisoned| {
             eprintln!("kalam: recovered a poisoned database lock");
             poisoned.into_inner()
-        })
+        });
+        ConnGuard::new(guard, started)
     }
 
     pub fn open() -> Result<Self> {

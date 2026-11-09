@@ -554,6 +554,11 @@ impl WatchFolderService {
                 let cat = catalog_arc.clone();
                 let snd = sender_clone.clone();
                 std::thread::spawn(move || {
+                    // Named for the lock watchdog: an import writes a lot of
+                    // catalogue rows from a worker, so if the screen freezes
+                    // while this runs, the line in the log has to say so
+                    // (pitfalls §109).
+                    crate::lockwatch::name_this_thread("watched folders — importing new files");
                     import_watch_files_with_rules(&cat, ready, Some(snd));
                 });
             }
@@ -565,6 +570,10 @@ impl WatchFolderService {
         let cat = self.catalog.clone();
         let snd = self.app_sender.clone();
         std::thread::spawn(move || {
+            // Named like the timer's worker above (§109). This one walks
+            // every watched folder before importing, so it is the one most
+            // likely to be inside the catalogue when the screen wants it.
+            crate::lockwatch::name_this_thread("watched folders — first scan");
             let mut initial_items = Vec::new();
             for rule in enabled_rules {
                 let mut files = Vec::new();

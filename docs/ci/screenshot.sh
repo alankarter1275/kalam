@@ -1482,11 +1482,19 @@ grep -E "^\[timing\]" "$OUT/kalam.log" | sed 's/^/  /' | tee -a "$REPORT" \
 
 say ""
 say "=== main-thread stalls (roadmap 7.1 watchdog) ==="
-# Every [stall] line the watchdog printed during this session. None is the
-# pass condition: the UI loop never blocked past ~100 ms while the session
-# ran. (A teardown line at the very end of a run can be ignored -- the loop
-# stopping as the process exits looks, briefly, like a block.)
-STALL_LINES="$(grep -E '^\[stall\]' "$OUT/kalam.log" 2>/dev/null || true)"
+# Every [stall] line the watchdog printed during this session, plus every
+# [lock] line lockwatch printed beside it. None is the pass condition: the
+# UI loop never blocked past ~100 ms while the session ran, and nothing ever
+# waited that long for the catalogue lock. (A teardown line at the very end
+# of a run can be ignored -- the loop stopping as the process exits looks,
+# briefly, like a block.)
+#
+# The two tags answer each other. A [stall] line says how long the screen
+# froze and ends with the catalogue lock's state at that moment; a [lock]
+# line names the job that held it. A stall whose tail reads
+# "catalogue lock: free" is not contention -- the slow work is on the UI
+# thread itself (pitfalls §109).
+STALL_LINES="$(grep -E '^\[(stall|lock)\]' "$OUT/kalam.log" 2>/dev/null || true)"
 if [ -n "$STALL_LINES" ]; then
   printf '%s\n' "$STALL_LINES" | sed 's/^/  /' | tee -a "$REPORT"
   say "  stalls seen -- name the screen and fix it before it spreads"

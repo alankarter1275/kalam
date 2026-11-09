@@ -24,11 +24,26 @@
 //!    span is open, the last one that ended is named — a block just
 //!    after construction is usually realization of the widgets that
 //!    construction built.
+//! 3. **Waiting for whom** — an activity label describes the UI thread's
+//!    own work, so it is the wrong answer exactly when the thread is
+//!    blocked on the database lock instead, and it goes stale: the
+//!    owner's log blamed a 4657 ms block on a task that had ended 27
+//!    seconds earlier. Every line printed *while the block is still in
+//!    progress* therefore ends with `lockwatch`'s read of that lock —
+//!    `catalogue lock: held by "X" for 4702 ms`, or `catalogue lock:
+//!    free`, which rules contention out and sends the hunt back to the
+//!    UI thread's own work. `lockwatch` is also asked on every poll,
+//!    stalled or not, so a hold that runs long is named once even when
+//!    nothing was waiting for it (pitfalls §109).
 //!
 //! Two lines per stall: one when the silent window first proves a block of
 //! ≥ 100 ms (so a *permanent* freeze still gets its line), one when the
-//! loop resumes with the final lower bound. The accounting is deliberately
-//! conservative — one heartbeat period of grace, so a line can never cry
+//! loop resumes with the final lower bound. A block that lasts longer than
+//! `UPDATE` gets a line every `UPDATE` after that, because one snapshot
+//! taken 150 ms into a 27 second freeze names whoever held the lock at
+//! 150 ms and nobody else.
+//!
+//! The accounting is deliberately conservative — one heartbeat period of grace, so a line can never cry
 //! wolf on ordinary main-loop batching — which means a block in the 100–150
 //! ms range may slip through unreported. Blocks under 100 ms are ignored:
 //! that is the budget, not a defect.
@@ -36,15 +51,17 @@
 //! ## Where the lines go
 //!
 //! stderr, and appended to `~/.local/share/kalam/kalam.log`. The file is
-//! created by this event and only by this event: an ordinary launch with
-//! no stalls still writes no log file, which is the contract `logging.rs`
-//! documents. (The `log` facade is no use here — no logger is installed
-//! unless `RUST_LOG` is set, and the watchdog must work on ordinary
-//! launches.)
+//! created by a report line and only by a report line: an ordinary launch
+//! with no stalls still writes no log file, which is the contract
+//! `logging.rs` documents. `lockwatch` writes its `[lock]` lines through
+//! the same function, so a contention line can create the file too.
+//!
+//! (The `log` facade is no use here — no logger is installed unless
+//! `RUST_LOG` is set, and the watchdog must work on ordinary launches.)
 //!
 //! In CI, the smoke session captures stderr into its `kalam.log` and the
-//! report carries every `[stall]` line, so a regression shows up in
-//! `ci-logs/` on the day it happens.
+//! report carries every `[stall]` and `[lock]` line, so a regression shows
+//! up in `ci-logs/` on the day it happens.
 //!
 //! ## Known limits, stated honestly
 //!
@@ -70,6 +87,10 @@ const POLL: Duration = Duration::from_millis(100);
 /// called a stall. The owner's rule of thumb from 7.7: "logs any UI-loop
 /// block over ~100 ms".
 const THRESHOLD: Duration = Duration::from_millis(100);
+/// How often a block that is still going gets a fresh line. Long enough that
+/// an ordinary stall produces its two lines and nothing more, short enough
+/// that a multi-second freeze is watched rather than snapshotted once.
+const UPDATE: Duration = Duration::from_secs(2);
 
 static HEARTBEATS: AtomicU64 = AtomicU64::new(0);
 
@@ -99,16 +120,27 @@ fn watch() {
     // yet is not a stall.
     let mut loop_seen = false;
     let mut reported = false;
+    // When the last "still blocked" line went out, so a long freeze gets a
+    // fresh read of the catalogue lock every `UPDATE` rather than one
+    // snapshot taken 150 ms in.
+    let mut last_line = Instant::now();
 
     loop {
         std::thread::sleep(POLL);
+        // Asked every poll, stalled or not: a worker that keeps the catalogue
+        // lock for seconds is named whether or not the screen happened to want
+        // it while it was held (pitfalls §109).
+        crate::lockwatch::note_long_hold();
         let value = HEARTBEATS.load(Ordering::Relaxed);
         if value != last_value {
             if reported {
-                report(&format!(
-                    "UI thread unblocked — was blocked for at least {} ms",
-                    millis(last_advance.elapsed().saturating_sub(HEARTBEAT))
-                ));
+                report(
+                    &format!(
+                        "UI thread unblocked — was blocked for at least {} ms",
+                        millis(last_advance.elapsed().saturating_sub(HEARTBEAT))
+                    ),
+                    false,
+                );
                 reported = false;
             }
             last_value = value;
@@ -119,12 +151,20 @@ fn watch() {
             // One heartbeat period of grace: a healthy loop bumps the
             // counter every 50 ms, so "silent for 150 ms" proves a block
             // of at least 100 ms.
-            if silent >= THRESHOLD + HEARTBEAT && !reported {
+            if silent < THRESHOLD + HEARTBEAT {
+                continue;
+            }
+            let blocked_for = millis(silent.saturating_sub(HEARTBEAT));
+            if !reported {
                 reported = true;
-                report(&format!(
-                    "UI thread blocked for at least {} ms (still blocked)",
-                    millis(silent.saturating_sub(HEARTBEAT))
-                ));
+                last_line = Instant::now();
+                report(
+                    &format!("UI thread blocked for at least {blocked_for} ms (still blocked)"),
+                    true,
+                );
+            } else if last_line.elapsed() >= UPDATE {
+                last_line = Instant::now();
+                report(&format!("UI thread still blocked — at least {blocked_for} ms now"), true);
             }
         }
     }
@@ -136,9 +176,26 @@ fn millis(d: Duration) -> u64 {
 }
 
 /// One report line: to stderr and to `kalam.log`, with attribution.
-fn report(headline: &str) {
-    let attribution = attribution();
-    let line = format!("[stall] {headline}{attribution}");
+///
+/// `name_the_holder` adds `lockwatch`'s read of the catalogue lock. Only the
+/// lines printed *during* a block ask for it: by the time the loop resumes,
+/// whoever held the lock has let go, and "free" would be a fact about the
+/// present rather than about the freeze.
+fn report(headline: &str, name_the_holder: bool) {
+    let mut attribution = attribution();
+    if name_the_holder {
+        attribution.push_str(&crate::lockwatch::catalogue_state());
+    }
+    emit("stall", &format!("{headline}{attribution}"));
+}
+
+/// Write one tagged line to stderr and to `kalam.log`.
+///
+/// `pub(crate)` so `lockwatch` sends its `[lock]` lines through here instead
+/// of keeping a second copy of the "which file, and never fail" rule. The CI
+/// smoke report prints both tags in its stall section.
+pub(crate) fn emit(tag: &str, body: &str) {
+    let line = format!("[{tag}] {body}");
     eprintln!("{line}");
 
     // Best-effort, like `logging::Tee`: a file that cannot be opened must

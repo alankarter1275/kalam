@@ -29,7 +29,7 @@ impl Catalog {
                 return Some(v.clone());
             }
         }
-        let conn = self.conn.lock().ok()?;
+        let conn = self.conn();
         conn.query_row(
             "SELECT value FROM app_prefs WHERE key = ?1",
             params![key],
@@ -54,13 +54,12 @@ impl Catalog {
                 eprintln!("kalam: could not save global preference {key}: {err}");
             }
         }
-        if let Ok(conn) = self.conn.lock() {
-            let _ = conn.execute(
-                "INSERT INTO app_prefs (key, value) VALUES (?1, ?2)
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                params![key, value],
-            );
-        }
+        let conn = self.conn();
+        let _ = conn.execute(
+            "INSERT INTO app_prefs (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        );
     }
 
     /// Convenience for numeric prefs; falls back when unset or unparsable.
@@ -85,8 +84,7 @@ impl Catalog {
             !crate::libraries::is_global_pref(key),
             "delete_pref does not reach the global prefs file"
         );
-        if let Ok(conn) = self.conn.lock() {
-            let _ = conn.execute("DELETE FROM app_prefs WHERE key = ?1", params![key]);
-        }
+        let conn = self.conn();
+        let _ = conn.execute("DELETE FROM app_prefs WHERE key = ?1", params![key]);
     }
 }

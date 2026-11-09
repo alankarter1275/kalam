@@ -4022,3 +4022,75 @@ in the branch's own report and read `lit=`, `coloured=` and the settle time. A
 green run means it compiled and the tests passed; it has never meant a page
 drew. The durable half — pointing the black-frame guardrail at the branch's own
 copies, newest `--- run <id> ---` per report — is queued behind this entry.
+
+---
+
+## §109 — a stall line names the last activity, and when the screen is waiting for the database that name is a stale guess
+
+The owner's run of `bc4f65e` — the build that finally opened — carried one
+block of 4657 ms and blamed it on `task_done:Organizing comic series folders`.
+The same line said the activity had *ended 27039 ms ago*. So the app froze for
+four and a half seconds and the instrument pointed at something that had
+finished half a minute earlier, because that was simply the last label on the
+pile. The freeze was never explained, and the next report from the field would
+have been just as unreadable.
+
+The reason is structural, not a bug in the watchdog: `timing`'s activity labels
+describe work the UI thread is *doing* — a route being built, a page applying,
+a task's callback running. A thread blocked on a mutex is doing none of those.
+It is waiting for another thread, and the label of whatever ran last says
+nothing about who it is waiting for. The catalogue has exactly one connection
+lock (`Catalog::conn`, a non-reentrant `Mutex<Connection>`), every read of the
+library goes through it, and §106 already proved that a worker holding it makes
+the screen wait: that was the startup freeze. What §106 left behind was a
+scanner test for one specific shape — a guard held across another catalogue
+call — and no way to see a *legitimate* long hold, which is what a background
+job indexing or organising a large library produces.
+
+So the lock itself now keeps the record. `src/lockwatch.rs` holds four atomics:
+who has the lock, since when, which thread is the screen, and when the last
+line was printed. `Catalog::conn` writes them on the way in and on the way out
+— the guard is a `ConnGuard` wrapper now, whose `Drop` is what makes "free" a
+fact rather than an inference. Two things come out of it:
+
+- **Every stall line printed while a block is still in progress ends with the
+  lock's state** — `catalogue lock: held by "X" for 4702 ms`, or
+  `catalogue lock: free`. The second answer is as useful as the first: it
+  rules contention out and sends the hunt back to the UI thread's own work,
+  which is where the remaining suspects live (a cover decoded on the wrong
+  thread, a font loaded synchronously, a widget realized in a hurry).
+- **A waiter that was made to wait prints its own `[lock]` line**, naming both
+  sides: `the UI thread waited 4657 ms for the catalogue lock — "Organizing
+  comic series folders" had held it for at least 4702 ms`.
+- **A hold that runs past two seconds is named once, whether or not anything
+  waited for it**: `"Rebuilding cover thumbnails" has held the catalogue lock
+  for 10400 ms`. This is the half that does not need a victim — the screen may
+  have been idle at the time, and the freeze it would have caused is the one
+  that gets reported later against a stale label.
+
+Workers are named by
+their task label (`tasks.rs` names each worker thread as its first act), the
+watched-folder imports by what they are doing, the PDF workers by the OS thread
+names they already had, and anything else falls back to `an unnamed thread
+(#7)` — still a thread number, still findable in `top -H`.
+
+A block longer than two seconds also gets a fresh line every two seconds rather
+than one snapshot at 150 ms, because a 27 second freeze changes hands: the job
+holding the lock at the start is often not the one holding it at the end.
+
+The costs, stated rather than left to be discovered. Every catalogue read now
+costs one monotonic clock read and two relaxed atomic stores on the way in and
+one compare-exchange on the way out — cheaper than the query it measures, but
+it is on the hot path, so it is written down. A reported wait writes its line
+while the waiter holds the lock it just got, because that is the only moment
+the previous holder is still on the record; that is one file append on a path
+that already waited at least 100 ms, rate-limited to four a second and 400 a
+run. The thread-name table is a second `Mutex`, taken once per thread and again
+only while printing, never held across a catalogue call — so it cannot join the
+connection lock in the cycle §106 describes.
+
+**The rule this leaves behind:** read the *tail* of a stall line before
+believing its activity label. The label says what the screen was doing; the
+tail says whether it was waiting, and for whom. A `[stall]` line whose tail
+reads `catalogue lock: free` is not a contention bug, and chasing the named
+task is chasing the same stale guess that wasted the day this entry came from.

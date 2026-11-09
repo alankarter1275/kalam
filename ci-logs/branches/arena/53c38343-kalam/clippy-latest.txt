@@ -1,4 +1,20 @@
-(no lines matched; last 100 lines of output)
+src/app.rs:1257:17: [1m[91merror[0m: unexpected end of input, expected identifier
+src/pages/home.rs:155:13: [1m[91merror[0m: expected `,`
+src/pages/home.rs:176:21: [1m[91merror[0m: expected `,`
+src/pages/home.rs:186:21: [1m[91merror[0m: expected `,`
+src/pages/home.rs:199:25: [1m[91merror[0m: expected `,`
+src/pages/home.rs:211:21: [1m[91merror[0m: expected `,`
+src/pages/home.rs:221:25: [1m[91merror[0m: expected `,`
+src/pages/home.rs:228:21: [1m[91merror[0m: expected `,`
+src/pages/home.rs:241:17: [1m[91merror[0m: expected `,`
+src/app.rs:1548:37: [1m[91merror[E0609][0m: no field `window_controls` on type `app::AppModelWidgets`: unknown field
+src/pages/home.rs:92:12: [1m[91merror[E0277][0m: `pages::home::HomePayload` doesn't implement `std::fmt::Debug`: unsatisfied trait bound
+src/pages/home.rs:292:24: [1m[91merror[E0061][0m: this function takes 2 arguments but 0 arguments were supplied
+src/pages/home.rs:585:16: [1m[91merror[E0061][0m: this function takes 2 arguments but 0 arguments were supplied
+src/pages/home.rs:599:18: [1m[91merror[E0061][0m: this function takes 2 arguments but 0 arguments were supplied
+src/pages/home.rs:742:53: [1m[91merror[E0593][0m: function is expected to take 1 argument, but it takes 0 arguments: expected function that takes 1 argument
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 15 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 15 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -27,5 +43,22 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 20.93s
---- run 42544714863 ---
+src/app.rs:1257:17: [1m[91merror[0m: unexpected end of input, expected identifier
+src/pages/home.rs:155:13: [1m[91merror[0m: expected `,`
+src/pages/home.rs:176:21: [1m[91merror[0m: expected `,`
+src/pages/home.rs:186:21: [1m[91merror[0m: expected `,`
+src/pages/home.rs:199:25: [1m[91merror[0m: expected `,`
+src/pages/home.rs:211:21: [1m[91merror[0m: expected `,`
+src/pages/home.rs:221:25: [1m[91merror[0m: expected `,`
+src/pages/home.rs:228:21: [1m[91merror[0m: expected `,`
+src/pages/home.rs:241:17: [1m[91merror[0m: expected `,`
+src/app.rs:1548:37: [1m[91merror[E0609][0m: no field `window_controls` on type `app::AppModelWidgets`: unknown field
+src/pages/home.rs:92:12: [1m[91merror[E0277][0m: `pages::home::HomePayload` doesn't implement `std::fmt::Debug`: unsatisfied trait bound
+src/pages/home.rs:292:24: [1m[91merror[E0061][0m: this function takes 2 arguments but 0 arguments were supplied
+src/pages/home.rs:585:16: [1m[91merror[E0061][0m: this function takes 2 arguments but 0 arguments were supplied
+src/pages/home.rs:599:18: [1m[91merror[E0061][0m: this function takes 2 arguments but 0 arguments were supplied
+src/pages/home.rs:742:53: [1m[91merror[E0593][0m: function is expected to take 1 argument, but it takes 0 arguments: expected function that takes 1 argument
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 15 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 15 previous errors
+--- run 42546452215 ---

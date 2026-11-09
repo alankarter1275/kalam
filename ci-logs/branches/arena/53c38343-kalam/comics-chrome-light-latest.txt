@@ -1,14 +1,14 @@
 === kalam screenshot run ===
 books=20 out=ci-shots-comics-chrome-light settle=20 output=1600x1000
 config home: /home/runner/work/kalam/kalam/ci-shots-comics-chrome-light/config-home
-binary: 74698320 bytes
+binary: 74553904 bytes
 
 === seeding 20 books ===
 seed-library: 22 books, 20 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.3730.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.3901.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -30,8 +30,8 @@ requested PDF action: <none>
 settings fixture: 0 empty-dicts=0
 windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 readiness: min=5s max=30s stable_max_changed=0.5%
-readiness: route and window seen after 2s
-toplevel windows seen: 1
+readiness: route and window seen after 1s
+toplevel windows seen: 0
   shot: 01-comic-read-22 (4745 bytes)
 focused: 1
   shot: 02-comic-read-22-settling (11509 bytes)
@@ -39,67 +39,86 @@ focused: 1
 navigation: app accepted route 'comic-read-22'
 navigation: 'comic-read-22' is not a grid page; no grid_build expected
 readiness: Home seen after 1s
-  shot: 04-home-for-comparison (65388 bytes)
+  shot: 04-home-for-comparison (77809 bytes)
 readiness: Home stable after 3s
 navigation: 'comic-read-22' differs from Home -- the page really did change
 navigation: OK -- the images below are 'comic-read-22'
 
 === timing lines from the app ===
-  [timing] startup_fonts           8.5 ms
-  [timing] startup_gtk_init       84.0 ms
-  [timing] startup_splash_show      1.8 ms
-  [timing] icons_write             0.7 ms
+  [timing] startup_fonts           9.6 ms
+  [timing] startup_gtk_init      102.8 ms
+  [timing] startup_splash_show      1.6 ms
+  [timing] icons_write             0.8 ms
   [timing] icons_theme             0.1 ms
   [timing] icons_init              0.9 ms
-  [timing] startup_splash_pump    124.0 ms
+  [timing] startup_splash_pump    120.5 ms
   [timing] startup_libraries       0.4 ms
-  [timing] startup_db_open        10.9 ms
-  [timing] startup_theme          35.1 ms
-  [timing] pre_run               265.0 ms
+  [timing] startup_db_open        13.5 ms
+  [timing] startup_theme          39.0 ms
+  [timing] pre_run               287.6 ms
   [timing] route_open:home         0.3 ms
   [timing] startup_first_page      0.3 ms
   [timing] service_home            0.6 ms
+  [timing] init_done            1029.6 ms
+  [timing] window_shown         1032.4 ms
   [timing] covers_queued             5
-  [timing] covers_decoded            0
-  [timing] covers_thumb              0
-  [timing] covers_full               1
-  [timing] covers_decode           0.0 ms
-  [timing] covers_decode_max       0.0 ms
-  [timing] init_done             732.1 ms
-  [timing] window_shown          734.2 ms
+  [timing] home_fill               7.9 ms
   [timing] page_cache_miss           1
-  [timing] route_open:comics_reader    754.6 ms
+  [timing] covers_decoded            5
+  [timing] covers_thumb              0
+  [timing] covers_full               5
+  [timing] covers_decode          88.9 ms
+  [timing] covers_decode_max      35.0 ms
+  [timing] route_open:comics_reader   1290.1 ms
   [timing] thumbs_backfilled        20
   [timing] thumbs_backfill_done       20
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.2 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.2 ms
   [timing] render_backend     GskCairoRenderer
-  [timing] frame_after:startup_fonts   1488.6 ms
-  [timing] frame_after:startup_gtk_init   1404.6 ms
-  [timing] frame_after:startup_splash_show   1402.7 ms
-  [timing] frame_after:icons_write   1396.6 ms
-  [timing] frame_after:icons_theme   1396.5 ms
-  [timing] frame_after:icons_init   1396.5 ms
-  [timing] frame_after:startup_splash_pump   1278.6 ms
-  [timing] frame_after:startup_libraries   1278.2 ms
-  [timing] frame_after:startup_db_open   1267.3 ms
-  [timing] frame_after:startup_theme   1232.2 ms
-  [timing] frame_after:pre_run   1232.2 ms
-  [timing] frame_after:route_open:home   1231.2 ms
-  [timing] frame_after:startup_first_page   1231.2 ms
-  [timing] frame_after:service_home   1230.6 ms
-  [timing] frame_after:covers_decode   1218.7 ms
-  [timing] frame_after:covers_decode_max   1218.7 ms
-  [timing] frame_after:init_done    765.1 ms
-  [timing] frame_after:window_shown    763.0 ms
-  [timing] frame_after:route_open:comics_reader      7.0 ms
-  [timing] frame_paint:route_open:comics_reader    104.9 ms
-  [timing] frame_paint:route_open:comics_reader    143.8 ms
-  [timing] startup_dicts        2867.4 ms
+  [timing] frame_after:startup_fonts   2331.0 ms
+  [timing] frame_after:startup_gtk_init   2228.2 ms
+  [timing] frame_after:startup_splash_show   2226.5 ms
+  [timing] frame_after:icons_write   2219.3 ms
+  [timing] frame_after:icons_theme   2219.2 ms
+  [timing] frame_after:icons_init   2219.2 ms
+  [timing] frame_after:startup_splash_pump   2106.0 ms
+  [timing] frame_after:startup_libraries   2105.5 ms
+  [timing] frame_after:startup_db_open   2092.0 ms
+  [timing] frame_after:startup_theme   2053.0 ms
+  [timing] frame_after:pre_run   2053.0 ms
+  [timing] frame_after:route_open:home   2052.0 ms
+  [timing] frame_after:startup_first_page   2052.0 ms
+  [timing] frame_after:service_home   2051.3 ms
+  [timing] frame_after:init_done   1311.0 ms
+  [timing] frame_after:window_shown   1308.2 ms
+  [timing] frame_after:home_fill   1298.6 ms
+  [timing] frame_after:covers_decode   1198.6 ms
+  [timing] frame_after:covers_decode_max   1198.6 ms
+  [timing] frame_after:route_open:comics_reader      8.3 ms
+  [timing] frame_after:covers_land      2.0 ms
+  [timing] frame_after:covers_gap      2.0 ms
+  [timing] frame_after:covers_land      1.8 ms
+  [timing] frame_after:covers_gap      1.8 ms
+  [timing] frame_after:covers_land      1.7 ms
+  [timing] frame_after:covers_gap      1.7 ms
+  [timing] frame_after:covers_land      1.5 ms
+  [timing] frame_after:covers_gap      1.5 ms
+  [timing] frame_after:covers_land      1.4 ms
+  [timing] frame_paint:covers_land     73.9 ms
+  [timing] startup_dicts        2120.2 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 227 ms ago)
-  [stall] UI thread unblocked — was blocked for at least 450 ms — while route_open:comics_reader (open 57 ms)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — while route_open:comics_reader (open 258 ms)
-  [stall] UI thread unblocked — was blocked for at least 750 ms — after task_done:Loading comic page (took 0 ms, ended 98 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 224 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 750 ms — while route_open:comics_reader (open 71 ms)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — while route_open:comics_reader (open 271 ms)
+  [stall] UI thread unblocked — was blocked for at least 1260 ms — after task_done:Loading comic thumbnail (took 0 ms, ended 8 ms ago)
   stalls seen -- name the screen and fix it before it spreads
 
 === screenshot pixel sample ===
@@ -107,47 +126,43 @@ navigation: OK -- the images below are 'comic-read-22'
   01-comic-read-22.png: 1600x1000  coloured=0.0%  lit=0.0%  <-- essentially black; the window probably never drew
   02-comic-read-22-settling.png: 1600x1000  coloured=2.0%  lit=100.0%
   03-comic-read-22-settled.png: 1600x1000  coloured=2.0%  lit=100.0%
-  04-home-for-comparison.png: 1600x1000  coloured=0.2%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
+  04-home-for-comparison.png: 1600x1000  coloured=0.3%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
   1988e379937d7ecc5a72476021106bd2  ci-shots-comics-chrome-light/01-comic-read-22.png
   49a581c6dc9f00313f94f4f2670ad709  ci-shots-comics-chrome-light/02-comic-read-22-settling.png
   49a581c6dc9f00313f94f4f2670ad709  ci-shots-comics-chrome-light/03-comic-read-22-settled.png
-  b67cb613e68f72fc1390b9a3a9cfcb9e  ci-shots-comics-chrome-light/04-home-for-comparison.png
+  538fe85805394c61209b664759677490  ci-shots-comics-chrome-light/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (process:3786): Gtk-WARNING **: 08:25:18.694: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:3957): Gtk-WARNING **: 09:34:48.863: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-light — applying terracotta-light for this run (not saved)
-  
-  thread '<unnamed>' (3810) panicked at /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/glib-0.22.10/src/main_context_futures.rs:592:14:
-  Spawning local futures only allowed on the thread owning the MainContext: BoolError { message: "Failed to acquire ownership of main context, already acquired by another thread", filename: "/home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/glib-0.22.10/src/main_context.rs", function: "glib::main_context::<impl glib::auto::main_context::MainContext>::acquire", line: 181 }
-  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 227 ms ago)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — after route_open:home (took 0 ms, ended 224 ms ago)
   kalam: KALAM_ROUTE=comic-read-22 — navigating
-  [stall] UI thread unblocked — was blocked for at least 450 ms — while route_open:comics_reader (open 57 ms)
-  [stall] UI thread blocked for at least 150 ms (still blocked) — while route_open:comics_reader (open 258 ms)
-  [stall] UI thread unblocked — was blocked for at least 750 ms — after task_done:Loading comic page (took 0 ms, ended 98 ms ago)
+  [stall] UI thread unblocked — was blocked for at least 750 ms — while route_open:comics_reader (open 71 ms)
+  [stall] UI thread blocked for at least 150 ms (still blocked) — while route_open:comics_reader (open 271 ms)
+  [stall] UI thread unblocked — was blocked for at least 1260 ms — after task_done:Loading comic thumbnail (took 0 ms, ended 8 ms ago)
 
 === peak memory ===
-books=20 peak_rss_kb=386584 peak_rss_mb=377
+books=20 peak_rss_kb=400840 peak_rss_mb=391
 
 === shutting down ===
 
 === artifacts ===
-  total 136
-  drwxr-xr-x  3 runner runner  4096 Nov  9 08:25 .
-  drwxr-xr-x 18 runner runner  4096 Nov  9 08:25 ..
-  -rw-r--r--  1 runner runner  4745 Nov  9 08:25 01-comic-read-22.png
-  -rw-r--r--  1 runner runner 11509 Nov  9 08:25 02-comic-read-22-settling.png
-  -rw-r--r--  1 runner runner 11509 Nov  9 08:25 03-comic-read-22-settled.png
-  -rw-r--r--  1 runner runner 65388 Nov  9 08:25 04-home-for-comparison.png
-  drwxr-xr-x  3 runner runner  4096 Nov  9 08:25 config-home
-  -rw-r--r--  1 runner runner     0 Nov  9 08:25 grim.log
-  -rw-r--r--  1 runner runner  4076 Nov  9 08:25 kalam-home.log
-  -rw-r--r--  1 runner runner  3689 Nov  9 08:25 kalam.log
-  -rw-r--r--  1 runner runner  7096 Nov  9 08:25 report.txt
-  -rw-r--r--  1 runner runner    88 Nov  9 08:25 sway.log
-  -rw-r--r--  1 runner runner  7184 Nov  9 08:25 tree.json
---- run 42583906727 ---
+  total 148
+  drwxr-xr-x  3 runner runner  4096 Nov  9 09:34 .
+  drwxr-xr-x 18 runner runner  4096 Nov  9 09:34 ..
+  -rw-r--r--  1 runner runner  4745 Nov  9 09:34 01-comic-read-22.png
+  -rw-r--r--  1 runner runner 11509 Nov  9 09:34 02-comic-read-22-settling.png
+  -rw-r--r--  1 runner runner 11509 Nov  9 09:34 03-comic-read-22-settled.png
+  -rw-r--r--  1 runner runner 77809 Nov  9 09:34 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner  4096 Nov  9 09:34 config-home
+  -rw-r--r--  1 runner runner     0 Nov  9 09:34 grim.log
+  -rw-r--r--  1 runner runner  3926 Nov  9 09:34 kalam-home.log
+  -rw-r--r--  1 runner runner  3846 Nov  9 09:34 kalam.log
+  -rw-r--r--  1 runner runner  7288 Nov  9 09:34 report.txt
+  -rw-r--r--  1 runner runner    88 Nov  9 09:34 sway.log
+  -rw-r--r--  1 runner runner  5311 Nov  9 09:34 tree.json
+--- run 42592396528 ---

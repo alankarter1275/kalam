@@ -1,2 +1,40 @@
-clean
---- run 42549551095 ---
+diff --git a/src/pages/home.rs b/src/pages/home.rs
+index 94ddf60..3ed4920 100644
+--- a/src/pages/home.rs
++++ b/src/pages/home.rs
+@@ -52,16 +52,12 @@ const PLACEHOLDER_QUOTE: (&str, &str) = (
+ #[derive(Debug)]
+ pub enum HomeOut {
+     /// The cover click (§60): open the book's details page.
+-    Book {
+-        book_id: i64,
+-    },
++    Book { book_id: i64 },
+     /// The play button (§60): resume in the reader at the saved position.
+     /// No chapter rides along — `OpenReaderAt` with one *resets* the
+     /// fraction inside the chapter, and resuming must not move the position
+     /// the card was just showing. `None` opens at the stored spot.
+-    Read {
+-        book_id: i64,
+-    },
++    Read { book_id: i64 },
+ }
+ 
+ #[derive(Debug)]
+diff --git a/src/perf.rs b/src/perf.rs
+index aa987ad..4042ea1 100644
+--- a/src/perf.rs
++++ b/src/perf.rs
+@@ -658,9 +658,8 @@ fn home_snapshot_does_not_scale_with_reading_list_size() {
+         }
+     });
+     let rows = |svc: &LibraryService, out: &std::cell::Cell<usize>| {
+-        svc.catalog().count_queries(|| {
+-            out.set(usize::try_from(svc.home().stats.reading_list).unwrap_or(0))
+-        })
++        svc.catalog()
++            .count_queries(|| out.set(usize::try_from(svc.home().stats.reading_list).unwrap_or(0)))
+     };
+     let (ra, rb) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
+     let a = rows(&few, &ra);
+--- run 42550240536 ---

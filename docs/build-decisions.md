@@ -310,6 +310,9 @@ Alt+F4 is the only way out). They are shell-wide rather than Home's, but the
 board that shows them is this one, so they are built in Home's stage 1 and sit
 over every page.
 
+**Superseded by B18** the day the owner saw them on his own machine: all three
+are removed, and the compositor owns them.
+
 ## B17 — the card's chapter text waits for a store of its own (2026-11-09)
 
 Stage 1 read the Home card's chapter name and first lines straight out of the
@@ -330,6 +333,30 @@ stand there. The trap itself is recorded as pitfalls §105, because "just
 read it from the FTS table" will sound reasonable again someday.
 
 ---
+
+## B18 — the window's three buttons are gone; the compositor owns them (2026-11-09)
+
+Owner ruling, on seeing §65's buttons for the first time on his own machine:
+*"listen, I am using a tiling manager. sway. so two of those three buttons were
+redundant anyway! remove those three buttons. they will not be missed! ALL
+three."*
+
+So they are removed rather than redrawn. On a tiling compositor minimize and
+maximize have no meaning, and close is a keybinding; drawing three discs over
+every page bought nothing and cost a strip of the design's edge-to-edge surface.
+The window stays undecorated (`set_decorated: false`) and Kalam's own way out
+stays Ctrl+Q, which the shortcuts pane lists and the close request already
+honours by cancelling running jobs.
+
+Removed with them: the overlay slot in the shell's view, the two button builders
+in `app.rs`, the `.kalam-window-btn` rules, and the four Lucide glyphs bundled
+for them (`minus`, `x`, `maximize-2`, `minimize-2`) along with their SVGs — all
+recoverable from history if a decorated window ever comes back. The Home card's
+`play` glyph stays: it is §60's, not §65's, and the glyph test that covered both
+now covers it alone.
+
+Superseded: B16. The design files are not touched (§65 still draws the buttons);
+this entry is the record of why the build does not.
 
 ## Still open
 

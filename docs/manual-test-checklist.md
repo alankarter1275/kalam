@@ -248,15 +248,13 @@ deliberate, not a defect.
   bar arrives in stage 3.
 - [ ] No Updates block anywhere on the page: §62 draws nothing until something
   feeds it (B15).
-- [ ] Top-right over the page: three round 32px buttons — minimize, maximize,
-  close (§65, B16). Minimize shrinks the window; maximize fills the screen
-  and its glyph swaps to the restore pair; close quits, cancelling running
-  jobs as before.
-- [ ] The three buttons show on every page except inside the reader, which
-  brings its own chrome. Hovering any of them gives the same border and fill.
-- [ ] Switching theme in Settings recolours the quote rule, the play triangle,
-  the ribbon and the window glyphs along with everything else — the glyphs
-  are textures and repaint through the rail's machinery (B6).
+- [ ] No window buttons of Kalam's own on any page: minimize, maximize and
+  close belong to the compositor (B18, retiring §65 and B16). The window stays
+  undecorated and edge to edge, and Ctrl+Q still quits, cancelling running
+  jobs as it did.
+- [ ] Switching theme in Settings recolours the quote rule, the play triangle
+  and the ribbon along with everything else — the glyphs are textures and
+  repaint through the rail's machinery (B6).
 
 ## Keyboard shortcuts
 

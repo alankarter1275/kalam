@@ -56,10 +56,11 @@ struct Drawn {
     /// out, whatever its classes say).
     button: Option<gtk::Button>,
     image: gtk::Image,
-    /// A cell rather than a plain key so the maximize button can swap its
-    /// own glyph ("maximize-2" when restorable, "minimize-2" when
-    /// maximized) and still repaint the right drawing after a theme
-    /// install.
+    /// A cell rather than a plain key so a glyph that changes while it is on
+    /// screen still repaints the right drawing after a theme install. §65's
+    /// maximize button was the one that did — it swapped between the expand
+    /// and restore pair — and it left with the rest of the window controls
+    /// (B18). `remember_key` keeps the general shape for the next one.
     key: Rc<Cell<&'static str>>,
     /// A face that overrides the button's CSS classes.
     forced: Option<Face>,
@@ -111,13 +112,12 @@ fn svg(key: &'static str) -> Option<&'static str> {
         "download" => include_str!("../assets/icons/download.svg"),
         "compass" => include_str!("../assets/icons/compass.svg"),
         "feather" => include_str!("../assets/icons/feather.svg"),
-        // Window controls (§65, build-decisions B16) and the Home book
-        // card's play button (§60): drawn at 16px through `image_px`,
-        // rasterized from the same 24 grid as everything else.
-        "minus" => include_str!("../assets/icons/minus.svg"),
-        "maximize-2" => include_str!("../assets/icons/maximize-2.svg"),
-        "minimize-2" => include_str!("../assets/icons/minimize-2.svg"),
-        "x" => include_str!("../assets/icons/x.svg"),
+        // The Home book card's play button (§60): drawn at 16px through
+        // `image_px`, rasterized from the same 24 grid as everything else.
+        // §65's four window-control glyphs left with its buttons (B18): on a
+        // tiling compositor the window manager owns minimize, maximize and
+        // close, so nothing here drew them. They are in the history if a
+        // decorated window ever comes back.
         "play" => include_str!("../assets/icons/play.svg"),
         _ => return None,
     })
@@ -172,9 +172,8 @@ pub fn image(key: &'static str, face: Face) -> gtk::Image {
     image
 }
 
-/// A glyph at any pixel size, without the rail's CSS class — the window
-/// controls (§65) and the Home book card's play button (§60) draw at 16px,
-/// not §56's 22px. Same texture cache: the raster is 24px and
+/// A glyph at any pixel size, without the rail's CSS class — the Home book
+/// card's play button (§60) draws at 16px, not §56's 22px. Same texture cache: the raster is 24px and
 /// `set_pixel_size` scales it, so a size is free.
 pub fn image_px(key: &'static str, face: Face, px: i32) -> gtk::Image {
     let image = gtk::Image::new();
@@ -296,13 +295,14 @@ mod tests {
         assert!(svg("bell").is_some(), "the rail bell has no bundled glyph");
     }
 
-    /// The glyphs Home's stage 1 added — the window controls (§65) and the
-    /// book card's play button (§60) — are bundled and stroked like the
-    /// rail's, so the same two tests above would catch an upstream redraw
-    /// that filled them in.
+    /// The glyph Home's stage 1 added — the book card's play button (§60) —
+    /// is bundled and stroked like the rail's, so the same two tests above
+    /// would catch an upstream redraw that filled it in. The four
+    /// window-control glyphs that shipped beside it left with the buttons
+    /// (B18), and this list is where a new 16px glyph belongs.
     #[test]
     fn home_glyphs_are_bundled_outlines() {
-        for key in ["minus", "maximize-2", "minimize-2", "x", "play"] {
+        for key in ["play"] {
             let body = svg(key).unwrap_or_else(|| panic!("{key} is not bundled"));
             assert!(
                 body.contains("stroke=\"currentColor\""),

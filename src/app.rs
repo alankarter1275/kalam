@@ -1183,8 +1183,11 @@ impl Component for AppModel {
             set_default_width: 1100,
             set_default_height: 720,
             // No titlebar at all — not even the transparent strip with
-            // window controls. The page runs edge to edge; §65's three
-            // buttons float over it instead (built in init, below).
+            // window controls. The page runs edge to edge, and the window
+            // manager owns minimize, maximize and close: the owner runs a
+            // tiling compositor, where two of the three mean nothing and the
+            // third is a keybinding (B18, which retires §65's floating
+            // buttons). Kalam's own quit stays Ctrl+Q.
             set_decorated: false,
 
             // A0 step 4: tell background tasks to stop before the window goes.
@@ -1225,27 +1228,6 @@ impl Component for AppModel {
                         set_spacing: 8,
                         set_halign: gtk::Align::End,
                         set_valign: gtk::Align::End,
-                    },
-                },
-
-                add_overlay = &gtk::Box {
-                    // Window controls (§65, build-decisions B16): the window
-                    // is undecorated, so minimize, maximize and close are
-                    // ours. They float over every page and step aside in
-                    // the reader, which brings its own chrome. The buttons
-                    // themselves are built in init — they need the window
-                    // handle, which the view macro does not have yet.
-                    set_halign: gtk::Align::End,
-                    set_valign: gtk::Align::Start,
-                    set_margin_top: 12,
-                    set_margin_end: 16,
-                    #[watch]
-                    set_visible: !model.route.is_reader(),
-
-                    #[name = "window_controls"]
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 4,
                     },
                 },
 
@@ -1534,15 +1516,6 @@ impl Component for AppModel {
         widgets.root_overlay.add_overlay(&notifications.catcher());
         widgets.root_overlay.add_overlay(&notifications.revealer());
 
-        // The window controls' buttons (§65): the overlay slot came from
-        // the view; the buttons are built here because they need the
-        // window handle.
-        {
-            let controls = &widgets.window_controls;
-            controls.append(&window_button("minus", "Minimize", &root, |w| w.minimize()));
-            controls.append(&maximize_button(&root));
-            controls.append(&window_button("x", "Close", &root, |w| w.close()));
-        }
         notifications.attach_escape(&root);
         crate::notify::on_history_changed(std::rc::Rc::new({
             let notifications = notifications.clone();
@@ -2353,57 +2326,6 @@ impl Component for AppModel {
         crate::rail_icons::repaint_all();
         self.update_view(widgets, sender);
     }
-}
-
-/// One of the three window buttons (§65): a 32px round button with a 16px
-/// idle-face glyph. `remember`ed so a theme install repaints it — like the
-/// rail's, these glyphs are textures and cannot inherit a CSS colour.
-fn window_button(
-    key: &'static str,
-    tooltip: &str,
-    window: &gtk::Window,
-    action: impl Fn(&gtk::Window) + 'static,
-) -> gtk::Button {
-    let button = gtk::Button::new();
-    button.add_css_class("kalam-window-btn");
-    button.set_tooltip_text(Some(tooltip));
-    let image = crate::rail_icons::image_px(key, crate::rail_icons::Face::Idle, 16);
-    button.set_child(Some(&image));
-    crate::rail_icons::remember(&button, &image, key);
-    let window = window.clone();
-    button.connect_clicked(move |_| action(&window));
-    button
-}
-
-/// The maximize button, which swaps its own glyph: Lucide draws the pair as
-/// "maximize-2" (expand) and "minimize-2" (restore), and GTK4's Window has
-/// no `maximized` property to notify on, so the swap happens on click. The
-/// key cell is shared with `remember_key` so a theme install repaints
-/// whichever of the two is showing.
-fn maximize_button(window: &gtk::Window) -> gtk::Button {
-    let button = gtk::Button::new();
-    button.add_css_class("kalam-window-btn");
-    button.set_tooltip_text(Some("Maximize"));
-    let key = std::rc::Rc::new(std::cell::Cell::new("maximize-2"));
-    let image = crate::rail_icons::image_px(key.get(), crate::rail_icons::Face::Idle, 16);
-    button.set_child(Some(&image));
-    crate::rail_icons::remember_key(&button, &image, key.clone());
-    let (w, k, i) = (window.clone(), key, image);
-    button.connect_clicked(move |_| {
-        let was_maximized = w.is_maximized();
-        if was_maximized {
-            w.unmaximize();
-        } else {
-            w.maximize();
-        }
-        k.set(if was_maximized {
-            "maximize-2"
-        } else {
-            "minimize-2"
-        });
-        crate::rail_icons::paint(&i, k.get(), crate::rail_icons::Face::Idle);
-    });
-    button
 }
 
 /// The file half of the shell's Import EPUB shortcut. The native

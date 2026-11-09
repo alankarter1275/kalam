@@ -755,22 +755,6 @@ button.kalam-author-link-reader:hover {
     min-height: 22px;
 }
 
-/* §65: the window's own minimize/maximize/close — 32 round, a 1px
-   transparent border at rest so hover's border+fill cannot move them. */
-.kalam-window-btn {
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    padding: 0;
-    min-width: 32px;
-    min-height: 32px;
-}
-
-.kalam-window-btn:hover {
-    background: @kalam_hover;
-    border-color: @kalam_border;
-}
-
 
 .kalam-section-label {
     font-size: 0.75rem;

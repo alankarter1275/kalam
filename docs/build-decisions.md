@@ -774,6 +774,32 @@ and it fails silent. The witness table that found it -- instance tags
 plus before/after lines around the single suspect call -- is the shape
 worth repeating: one cycle, every hypothesis distinguishable.
 
+## B28. The panel's first photograph, and what it corrected
+
+The rebuild worked on the first run: run 42901986709's staged frame
+shows §57's box open under the bar -- groups, tinted match row,
+highlighted matches, gutter and fade -- after nine rounds in which no
+box ever appeared. Two things in that photograph were wrong, and both
+were the photograph's doing to find:
+
+- The fade over the list's bottom edge painted the wrong way round.
+  Its solid end sat at the top of the band, erasing the top of the
+  quote row and the whole "Saved quotes" heading with it, while the
+  last row under the band stayed crisp. The stops are now written in
+  the order that paints clear-to-solid top-to-bottom on screen; the
+  comment records that the written order and the painted order
+  disagree, so nobody "fixes" it back.
+- The salmon ring around the field is not a focus state. It is there
+  in unfocused launches too, and it survived `:focus` and
+  `:focus-visible` both, so the base rule now carries `outline: none`
+  with a transparent colour as well, and the focus rule adds
+  `:focus-within` and a transparent colour for whatever node and
+  state turn out to paint it.
+
+The box's own border still reads on the left edge only in that frame;
+the next photograph says whether that was the fade's opaque band
+eating the rest of the perimeter, or a second fault of its own.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

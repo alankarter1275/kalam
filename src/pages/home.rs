@@ -481,7 +481,7 @@ impl Component for HomePageModel {
                 let shaped = staged_pop.first_child();
                 crate::timing::note(
                     "home_box:hasclass",
-                    usize::from(shaped.as_ref().map_or(false, |w| {
+                    usize::from(shaped.as_ref().is_some_and(|w| {
                         w.has_css_class("kalam-search-box")
                     })),
                 );

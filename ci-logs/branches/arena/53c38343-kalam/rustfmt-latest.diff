@@ -1,36 +1,8 @@
-diff --git a/src/pages/home.rs b/src/pages/home.rs
-index 1ba812d..8968fa1 100644
---- a/src/pages/home.rs
-+++ b/src/pages/home.rs
-@@ -935,7 +935,10 @@ fn showcase_search() -> Vec<search_box::SearchItem> {
- 
- /// Turn the invented recent searches into the list the box edits.
- fn showcase_history() -> Vec<String> {
--    SHOWCASE_HISTORY.iter().map(|query| query.to_string()).collect()
-+    SHOWCASE_HISTORY
-+        .iter()
-+        .map(|query| query.to_string())
-+        .collect()
- }
- 
- fn greeting_line() -> String {
 diff --git a/src/widgets/search_box.rs b/src/widgets/search_box.rs
-index 9b373b0..599bcaa 100644
+index 924426e..fcd8cd1 100644
 --- a/src/widgets/search_box.rs
 +++ b/src/widgets/search_box.rs
-@@ -126,7 +126,10 @@ impl SearchGroup {
- 
-     /// Which of the expand-in-place flags this group owns.
-     fn index(self) -> usize {
--        Self::ALL.iter().position(|group| *group == self).unwrap_or(0)
-+        Self::ALL
-+            .iter()
-+            .position(|group| *group == self)
-+            .unwrap_or(0)
-     }
- }
- 
-@@ -369,7 +372,8 @@ impl Results {
+@@ -373,7 +373,8 @@ impl Results {
              let state = self.clone();
              move || state.clear_history()
          });
@@ -40,4 +12,4 @@ index 9b373b0..599bcaa 100644
          if queries.is_empty() {
              let none = gtk::Label::new(Some("Searches you open will be listed here."));
              none.add_css_class("kalam-ui-meta");
---- run 42850722310 ---
+--- run 42854965096 ---

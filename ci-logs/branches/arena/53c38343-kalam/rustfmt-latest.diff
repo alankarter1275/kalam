@@ -1,8 +1,22 @@
 diff --git a/src/widgets/search_box.rs b/src/widgets/search_box.rs
-index 6a2cdd9..79c823e 100644
+index 44d1f12..291d7fb 100644
 --- a/src/widgets/search_box.rs
 +++ b/src/widgets/search_box.rs
-@@ -256,7 +256,10 @@ pub fn search_box(
+@@ -153,12 +153,7 @@ impl SearchItem {
+ /// Hang the box under `bar` and wire it to the bar's field, count and picker.
+ /// `items` is the dummy library the box filters; `history` is the dummy recent
+ /// list (decision 197), which the crosses and Clear really do edit.
+-pub fn search_box(
+-    bar: &SearchBar,
+-    items: &[SearchItem],
+-    history: &[String],
+-    tag: i32,
+-) -> gtk::Box {
++pub fn search_box(bar: &SearchBar, items: &[SearchItem], history: &[String], tag: i32) -> gtk::Box {
+     // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
+     // popover died mid-call under headless sway (home_box:before2 logged,
+     // home_box:after2 never, the unflushed log buffer taking the line with
+@@ -260,7 +255,10 @@ pub fn search_box(
      bar.entry.connect_has_focus_notify(move |entry| {
          // Value = tag*10 + focused, so one line says both which instance
          // spoke and whether it was gaining or losing focus.
@@ -12,6 +26,6 @@ index 6a2cdd9..79c823e 100644
 +            tag as usize * 10 + usize::from(entry.has_focus()),
 +        );
      });
-     popover.connect_closed(|_| {
+     panel.connect_hide(|_| {
          crate::timing::note("home_box:closed", 1);
---- run 42893860400 ---
+--- run 42901238057 ---

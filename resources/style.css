@@ -771,6 +771,81 @@ button.kalam-author-link-reader:hover {
     min-height: 22px;
 }
 
+/* ── Home, stage 2: §57's search bar and §62's Updates timeline ──────────
+   The bar's underline is its own `border-bottom`, which is why the entry
+   brings no frame of its own. GTK has no `:focus-within` selector, so
+   `widgets/search_bar.rs` switches the `focused` class when the field gains
+   or loses focus. GTK also has no caret *width* property — §57's 1.5px caret
+   is therefore the accent colour at GTK's own thickness, and that half of
+   §57 is a limit of the toolkit rather than a choice made here. */
+
+/* The 7 below is arithmetic, not a design number: §57 asks for a 40-high bar
+   holding a 32-square picker, and the underline is the bar's own border, so
+   32 + 7 + 1 is the 40. §57 states no gaps between the magnifier, the field
+   and the picker; the 10 in `search_bar.rs` is the app's usual one. */
+.kalam-search-bar {
+    border-bottom: 1px solid @kalam_border;
+    padding-bottom: 7px;
+}
+
+.kalam-search-bar.focused {
+    border-bottom-color: @kalam_accent;
+}
+
+entry.kalam-search-entry {
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    min-height: 0;
+    font-size: 14px;
+    color: @kalam_text;
+    caret-color: @kalam_accent;
+}
+
+entry.kalam-search-entry > text {
+    color: @kalam_text;
+}
+
+/* §57: "N results" in Meta at the bar's right. */
+.kalam-search-count {
+    font-size: 12.5px;
+}
+
+/* §57: the option picker is bare — radius 8, no outline, and `border` as its
+   hover fill, the way home-spec §7 says hover works everywhere here. Its own
+   focus ring is the one §7 asks for, so nothing overrides it. */
+.kalam-search-options {
+    background: none;
+    border: none;
+    border-radius: 8px;
+    box-shadow: none;
+    padding: 0;
+    min-width: 32px;
+    min-height: 32px;
+}
+
+.kalam-search-options:hover {
+    background: @kalam_border;
+}
+
+/* §62: rows 56 high, the 2px line and the 10px nodes painted per row in
+   `widgets/updates.rs`, titles at 13 and weight 600, a Meta line under each,
+   the time at the right. The heading reuses `.kalam-home-heading`, which is
+   §3's Section style. */
+.kalam-updates-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+/* The fade runs to the page colour rather than to a fixed tint, so it holds
+   in every palette: `alpha()` is GTK's own function, and the transparent end
+   is the page colour at zero rather than black at zero. */
+.kalam-updates-fade {
+    background: linear-gradient(to bottom, alpha(@kalam_bg, 0), @kalam_bg);
+}
+
 
 .kalam-section-label {
     font-size: 0.75rem;

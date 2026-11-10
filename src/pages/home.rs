@@ -1,15 +1,23 @@
 //! Home — the reader's front page (design: `home-spec.md`, design-system
 //! §57–§66).
 //!
-//! Stage 1 of the Home build (`docs/build-decisions.md` B12): two columns —
+//! The Home build, staged (`docs/build-decisions.md` B12, B21): two columns —
 //! greeting, the quote placeholder (§63, B13) and the shelf heading on the
-//! left; the Home book card with its pager (§60) on the right — plus the
-//! state cards (§64) covering everything not built yet. The reading ruler is
-//! stage 2, the search bar stage 3 (its 520×40 row is reserved from day one,
-//! so the bar drops in without moving anything), and Updates is not drawn
-//! until something feeds it (§62's own rule, B15). The old dashboard left
-//! the day this landed, per B12 — but its import machinery stayed, because
-//! the empty-library state card's "Add books" action is a real import path.
+//! left; the Home book card with its pager (§60) and Updates (§62) on the
+//! right — plus the search bar across the top (§57) and the state cards (§64)
+//! covering everything not built yet.
+//!
+//! B21 makes this page the showcase: every element is drawn at the design's
+//! size and shape, with invented content where no store exists yet, so the
+//! composition can be judged whole. Two elements are the exception and stay
+//! wired — the book card (real books in progress, real covers, real
+//! navigation) and the import path behind the empty-library card's action,
+//! which is the one piece of the old dashboard B12 kept.
+//!
+//! Still to come: §57's result box under the bar (nothing to show until
+//! search exists, B17), §61's reading ruler in the shelf's 340px band, and
+//! the keyboard home-spec §7 asks for (`/` and Ctrl+F into the field, Esc out
+//! of the box).
 //!
 //! Same skeleton → worker → apply shape the dashboard used (7.1 step 2b):
 //! `init` paints placeholders, a worker reads the snapshot and the
@@ -22,7 +30,7 @@ use crate::pages::all_books::{ask_about_restored, import_summary, spawn_import, 
 use crate::rail_icons::{self, Face};
 use crate::service::{HomeSnapshot, LibraryService};
 use crate::widgets::book_row::cover_widget_deferred;
-use crate::widgets::surface;
+use crate::widgets::{search_bar, surface, updates};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::path::PathBuf;
@@ -65,6 +73,25 @@ const PLACEHOLDER_QUOTE: (&str, &str) = (
     "There is no Frigate like a Book\nTo take us Lands away",
     "Emily Dickinson",
 );
+
+/// §57's hint, shown in `text-2` while the field is empty.
+const SEARCH_HINT: &str = "Search your library";
+/// Decision 189 puts the last check at the right of §62's heading. Invented
+/// until a feed exists that could have checked anything (B21).
+const SHOWCASE_CHECKED: &str = "Checked 3 hours ago";
+/// §62's rows, invented for the same reason: online sources are off until
+/// Part 2 (B4), so the timeline is drawn at its real size and shape with
+/// content a feed will later replace. Title, detail, time, then whether the
+/// node is new (accent) or already seen (ring). Six rows: §62 shows four and
+/// the rest is what the fade is for.
+const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
+    ("Wonder", "3 new chapters in the saved source", "2h", true),
+    ("Piranesi", "The source listed a new edition", "5h", false),
+    ("The Dispossessed", "Description updated at the source", "1d", false),
+    ("Wolf Hall", "2 new chapters in the saved source", "2d", false),
+    ("Notes Toward a History", "The source stopped serving chapters", "4d", false),
+    ("Giovanni's Room", "Added from a saved source", "6d", false),
+];
 
 /// Navigation requests from Home. Variants are named for their destination
 /// rather than sharing an `Open` prefix (clippy::enum_variant_names) -- the
@@ -149,14 +176,19 @@ impl Component for HomePageModel {
 
             // The search row (§57): 28 above it, 520 x 40, 56 from the rail —
             // the board's own numbers, which hold now that Home owns its
-            // surface and the shell adds no padding of its own (B21). Empty
-            // until stage 3 lands the underlined bar and its result box.
+            // surface and the shell adds no padding of its own (B21). The bar
+            // itself is `widgets::search_bar`, which `init` appends to the
+            // host below; the result box under it waits for search (B17).
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
-                set_size_request: (520, 40),
                 set_margin_top: 28,
                 set_margin_start: 56,
                 set_halign: gtk::Align::Start,
+
+                #[name = "search_host"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                },
             },
 
             // The two columns (home-spec §1).
@@ -214,9 +246,9 @@ impl Component for HomePageModel {
                     },
 
                     // Your shelf (§61): the heading and Arrange-by chip now;
-                    // the ruler itself is stage 2 (B12), and the dashed card
+                    // the ruler itself comes later (B12), and the dashed card
                     // below says so instead of leaving a hole. The chip is
-                    // inert until stage 2 wires the Arrange sheet.
+                    // inert until that stage wires §43's Arrange list.
                     gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_margin_top: 24,
@@ -264,10 +296,18 @@ impl Component for HomePageModel {
                         set_halign: gtk::Align::End,
                     },
 
-                    // No Updates block: §62's timeline is not drawn until
-                    // something feeds it (B15). Online sources are off
-                    // until Part 2 (B4); a local-events feed is an open
-                    // option, not a promise.
+                    // Updates (§62, decision 189), 36 below the book card per
+                    // home-spec §1. Drawn as a dummy: B21 supersedes B15's
+                    // "nothing until there is a source", because online
+                    // sources stay off until Part 2 (B4) while the element's
+                    // size and shape can still be judged now. `init` fills
+                    // this from `SHOWCASE_UPDATES`; a feed replaces those rows
+                    // and nothing else about the element moves.
+                    #[name = "updates_host"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_margin_top: 36,
+                    },
                 },
             },
         }
@@ -287,13 +327,23 @@ impl Component for HomePageModel {
         };
         let widgets = view_output!();
 
+        // §57's bar and §62's timeline (B21): both come from widget modules
+        // and go into the hosts the view reserves for them, the way the shelf
+        // and the book card do. The bar's entry, count and picker stay with
+        // its struct until search is wired (B17) — the page needs the root to
+        // lay the element out and nothing else yet.
+        let search = search_bar::search_bar(SEARCH_HINT);
+        widgets.search_host.append(&search.root);
+        let updates_block = updates::updates(&showcase_updates(), SHOWCASE_CHECKED);
+        widgets.updates_host.append(&updates_block);
+
         // Stage-1 placeholders (B12): the shelf area says what is coming,
         // and the card host shows the dashed block the snapshot replaces a
         // moment later.
         let shelf_card = surface::state_card(
             "Your shelf",
             "Weeks, months and years of your reading, drawn as lines on a \
-             ruler — that arrives with the next stage of this build.",
+             ruler — that arrives with a later stage of this build.",
         );
         shelf_card.set_valign(gtk::Align::Center);
         shelf_card.set_vexpand(true);
@@ -752,6 +802,21 @@ fn local_now() -> Option<gtk::glib::DateTime> {
 }
 
 /// The greeting's first line (home-spec §1). The second is `GREETING_NAME`.
+/// Turn the showcase rows into the widget's entries. Kept beside the other
+/// page helpers so the invented content sits in one place (B21).
+fn showcase_updates() -> Vec<updates::UpdateEntry> {
+    SHOWCASE_UPDATES
+        .iter()
+        .copied()
+        .map(|(title, detail, time, fresh)| updates::UpdateEntry {
+            title: title.to_string(),
+            detail: detail.to_string(),
+            time: time.to_string(),
+            fresh,
+        })
+        .collect()
+}
+
 fn greeting_line() -> String {
     match local_now().map(|now| now.hour()) {
         Some(5..=11) => "Good morning".to_string(),

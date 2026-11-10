@@ -219,11 +219,11 @@ yet** — CI photographs the rail but cannot judge it.
 
 ## Home
 
-Stage 1 of the rebuild (four stages, `docs/build-decisions.md` B12), to
+The rebuild, staged (`docs/build-decisions.md` B12, B21), to
 `docs/design/home-spec.md` and design-system §57–§66. **None of this has been
-run by hand yet** — CI photographs Home but cannot judge it. The reading
-ruler (§61) and the search bar (§57) are stages 2 and 3: their absence is
-deliberate, not a defect.
+run by hand yet** — CI photographs Home but cannot judge it. What is still
+missing is deliberate, not a defect: §61's reading ruler, the result box that
+hangs under §57's search bar, and the keyboard home-spec §7 asks for.
 
 - [ ] Top left: the greeting on two big serif lines — "Good morning",
   "Good afternoon" or "Good evening" by the hour, then a name under it at the
@@ -234,10 +234,16 @@ deliberate, not a defect.
 - [ ] Under it the quote: an italic serif couplet behind a thin accent rule,
   attribution below (§63). It is the placeholder — Dickinson — until the real
   source is settled (B13).
+- [ ] Across the top, 28 from the window's top edge and 56 from the rail:
+  §57's search bar — 520 wide, 40 high, a magnifier at the left, the hint
+  "Search your library" in the field, a 32-square sliders button at the
+  right. Clicking into the field turns the bar's underline from the border
+  colour to the accent; clicking out turns it back. Nothing else happens yet:
+  the result box comes with search itself (B17).
 - [ ] "Your shelf" as an 18px serif section heading (§3's Section style, not
   the 11px caption it was) with an "Arrange by · Most recent" chip at its
   right, and below them a dashed card filling the ruler's 340px band saying
-  the ruler arrives next stage (B12). The chip does nothing yet.
+  the ruler arrives with a later stage (B12). The chip does nothing yet.
 - [ ] Right column: a 450×360 card, its right edge 32 from the window's —
   two equal pages at the ratio every other cover in the app uses, 1:1.6
   (B21). Left page the cover of the book last read, undistorted; right page
@@ -253,6 +259,14 @@ deliberate, not a defect.
 - [ ] With several books in progress, a column of up to five dots stands
   right of the card: the current one an accent pill, the rest faint circles.
   Clicking a dot swaps the card to that book and moves the pill (§60).
+- [ ] Under the card, 36 below it: §62's Updates block — an 18px serif
+  "Updates" heading with "Checked 3 hours ago" at its right, then rows 56
+  high down a 2px line. Each row has a 10px node on the line (the first is
+  filled in the accent colour, the rest are rings), a title at 13 with a
+  smaller grey line under it, and a time at the right. Four rows show and a
+  fade to the page colour covers the bottom 48; the rest scrolls behind the
+  fade with no scrollbar of its own. The six rows are invented (B21): online
+  sources are off until Part 2, so nothing real feeds this yet.
 - [ ] Home opens at once on a real library: no freeze at the splash screen,
   no stall lines in the terminal. Check it with a book that has a saved
   reading position — that is the state the pager reads, and the state both

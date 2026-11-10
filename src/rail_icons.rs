@@ -119,6 +119,16 @@ fn svg(key: &'static str) -> Option<&'static str> {
         // close, so nothing here drew them. They are in the history if a
         // decorated window ever comes back.
         "play" => include_str!("../assets/icons/play.svg"),
+        // §57's search bar and the result box under it: the magnifier in the
+        // field, the picker's three-row sliders, the clock on a history row
+        // and the cross that deletes one. Bundled now so the bar can be
+        // drawn; the box's two glyphs wait with it.
+        "search" => include_str!("../assets/icons/search.svg"),
+        "sliders-horizontal" => {
+            include_str!("../assets/icons/sliders-horizontal.svg")
+        }
+        "clock" => include_str!("../assets/icons/clock.svg"),
+        "x" => include_str!("../assets/icons/x.svg"),
         _ => return None,
     })
 }

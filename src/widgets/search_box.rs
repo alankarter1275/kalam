@@ -183,7 +183,11 @@ pub fn search_box(
     scroll.set_vexpand(true);
     scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
     scroll.set_vscrollbar_policy(gtk::PolicyType::External);
-    scroll.set_propagate_natural_height(true);
+    // No propagated natural height: run 6992780's frame showed the box
+    // closing its outline after the second group while the third group's
+    // rows painted on below it -- the propagation left the viewport one
+    // layout behind. The scroll's height is instead a plain number, set
+    // from the list's own measure at the end of every render.
     scroll.set_max_content_height(SCROLL_MAX);
 
     let fade = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -227,6 +231,7 @@ pub fn search_box(
         entry: bar.entry.clone(),
         count: bar.count.clone(),
         list: list.clone(),
+        scroll: scroll.clone(),
         items: Rc::new(items.to_vec()),
         history: Rc::new(RefCell::new(history.to_vec())),
         expanded: Rc::new(RefCell::new(vec![false; SearchGroup::ALL.len()])),
@@ -348,6 +353,7 @@ struct Results {
     entry: gtk::Entry,
     count: gtk::Label,
     list: gtk::Box,
+    scroll: gtk::ScrolledWindow,
     items: Rc<Vec<SearchItem>>,
     history: Rc<RefCell<Vec<String>>>,
     expanded: Rc<RefCell<Vec<bool>>>,
@@ -384,6 +390,10 @@ impl Results {
         // only read a colour from a label that is in the tree.
         self.list.append(&self.tint_probe);
         self.list.append(&self.bg_probe);
+        // And the viewport height, as a number rather than a negotiation:
+        // the list's own natural height, capped at §57's scroll maximum.
+        let (_, natural) = self.list.measure(gtk::Orientation::Vertical, -1);
+        self.scroll.set_height_request(natural.min(SCROLL_MAX));
     }
 
     /// Decision 198's groups in order, each only when it has a match, with the

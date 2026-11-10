@@ -464,6 +464,9 @@ impl Component for HomePageModel {
                 // handler is the usual opener and this is the staging
                 // launch's own belt-and-braces.
                 staged_pop.set_visible(true);
+                if let Some(root) = staged_pop.root() {
+                    root.queue_draw();
+                }
                 crate::timing::note("home_focus:staged", 1);
                 // The allocation probe: the box's own border, fill and
                 // radius never appear in any frame while its content does,

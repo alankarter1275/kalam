@@ -870,20 +870,28 @@ entry.kalam-search-entry:focus-visible {
    box is an ordinary child of the page overlay since B27's rebuild, so the
    shape sits on its own node and there is no popover card to see through. */
 
+/* §57's outline is painted as a fill, not as a border: the probe run
+   with a lime fill and a magenta border showed the fill landing on one
+   allocation, the border's left side on an older one and a corner
+   fragment on a third, while the rows painted on a newer one still --
+   a frame caught mid-relayout, where a border repaints per side and a
+   fill repaints as one rectangle. A fill behind an inset child is one
+   rectangle too, so the outline below is the outer node's background
+   showing through a 1px inset, top open, bottom corners rounded. */
 .kalam-search-box {
-    /* PROBE, one run only: green fill and a magenta border cannot be
-       confused with anything on the page, and named colours keep the
-       hex guardrail at its count. If they appear, the rule binds and
-       the fault was in the colours or the width; if they do not, the
-       rule never reaches this node and the shape moves to a node that
-       provably paints. Back out with the fix. */
-    background: lime;
-    border: 3px solid magenta;
-    border-top: none;
+    background: @kalam_border;
+    border: none;
     border-radius: 0 0 14px 14px;
     box-shadow: none;
-    padding: 0;
+    padding: 0 1px 1px;
     margin: 0;
+}
+
+.kalam-search-box > .kalam-search-box-inner {
+    background: @kalam_bg;
+    border: none;
+    border-radius: 0 0 13px 13px;
+    box-shadow: none;
 }
 
 /* §57's group heading: Label style, "Name · count", 14 above, 20 at the

@@ -211,15 +211,16 @@ pub fn search_box(
     // border's two pixels and paints over it, GTK boxes not clipping. On
     // the shell the border has nothing left to overflow it, and the
     // request shrinks by the border so the outside stays §57's 520.
+    let inner = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    inner.add_css_class("kalam-search-box-inner");
+    inner.append(&stack);
     let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
     shell.add_css_class("kalam-search-box");
-    shell.set_size_request(BOX_WIDTH - 2, -1);
-    // Clip, because nothing else holds: every descendant in this chain
-    // carries a natural size wider or taller than its allocation, and a
-    // GTK box that is not told to clip paints its children straight over
-    // its own border. Hidden overflow ends that at the shell's edge.
+    shell.set_size_request(BOX_WIDTH, -1);
+    // Clip, so a descendant's larger natural size ends at the shell's
+    // edge instead of painting over the outline's inset.
     shell.set_overflow(gtk::Overflow::Hidden);
-    shell.append(&stack);
+    shell.append(&inner);
     panel.append(&shell);
 
     let state = Results {
@@ -263,6 +264,13 @@ pub fn search_box(
         crate::timing::note("home_box:enter", tag as usize);
         crate::timing::note("home_box:before2", tag as usize);
         focus_open.set_visible(true);
+        // A whole-window repaint once the box is in: the probe frame
+        // caught the box mid-relayout, fill and border and rows on
+        // three different allocations, and a full invalidation is the
+        // cheap way to make the photographed frame one layout.
+        if let Some(root) = focus_open.root() {
+            root.queue_draw();
+        }
         crate::timing::note("home_box:after2", tag as usize);
     });
     bar.entry.add_controller(focus_ctrl);

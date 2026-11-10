@@ -226,6 +226,22 @@ pub fn search_box(bar: &SearchBar, items: &[SearchItem], history: &[String]) -> 
     // focus-out would fight the popover for the field.
     let open_on_focus = popover.clone();
     let entry_for_pop = bar.entry.clone();
+    // An EventControllerFocus, not notify::has-focus: three photograph
+    // rounds showed a focused field whose notify handlers left no trace in
+    // any log -- not even the bar's own class switch, the "ring" in the
+    // frames being GTK's built-in entry outline rather than the styled
+    // state. The focus controller's enter is the mechanism the toolkit
+    // guarantees for exactly this.
+    let focus_open = popover.clone();
+    let focus_entry = bar.entry.clone();
+    let focus_ctrl = gtk::EventControllerFocus::new();
+    focus_ctrl.connect_enter(move |_| {
+        if focus_entry.has_focus() {
+            focus_open.popup();
+            crate::timing::note("home_box:enter", 1);
+        }
+    });
+    bar.entry.add_controller(focus_ctrl);
     bar.entry.connect_has_focus_notify(move |entry| {
         if entry.has_focus() {
             open_on_focus.popup();

@@ -807,6 +807,15 @@ entry.kalam-search-entry > text {
     color: @kalam_text;
 }
 
+/* §57's focused state is the underline and nothing else. GTK draws its own
+   focus outline around a focused entry, and in the first photographs that
+   outline -- a full-perimeter ring -- is what appeared, reading as a focus
+   style the design does not have. */
+entry.kalam-search-entry:focus {
+    outline-style: none;
+    outline-width: 0;
+}
+
 /* §57: "N results" in Meta at the bar's right. */
 .kalam-search-count {
     font-size: 12.5px;

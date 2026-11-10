@@ -77,6 +77,23 @@ pub fn search_bar(hint: &str) -> SearchBar {
             }
         }
     });
+
+    // The same focus controller as the box's open trigger (see search_box):
+    // the styled focused state rides on enter/leave rather than on
+    // notify::has-focus, which three photograph rounds never saw fire.
+    let class_root = root.clone();
+    let class_entry = entry.clone();
+    let focus_ctrl = gtk::EventControllerFocus::new();
+    focus_ctrl.connect_enter(move |_| {
+        if class_entry.has_focus() {
+            class_root.add_css_class("focused");
+        }
+    });
+    focus_ctrl.connect_leave(move |_| {
+        class_root.remove_css_class("focused");
+    });
+    entry.add_controller(focus_ctrl);
+
     root.append(&entry);
 
     // "N results" (§57) in Meta at the right of the bar. Nothing to count

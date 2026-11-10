@@ -565,6 +565,43 @@ is no outline around the shelf and §64's empty state is the base line with the
 Today ring; the Arrange-by chip was a static label rather than a button opening
 §43's list; and the shelf's caption was missing.
 
+## B22 — Home's field takes Ctrl+F on Home, and the shelf waits for a picture (2026-11-10)
+
+Three owner rulings, given while stage 2 of the Home build was landing.
+
+**1. Home's search field wins Ctrl+F while Home is showing.** home-spec §7 asks
+`/` or Ctrl+F to focus the field, and Ctrl+F was already taken: `shortcuts.rs`
+binds it to `SearchLibrary` (decision 155), which jumps to All Books and focuses
+the search there, and decision 24 refuses a taken key rather than stealing it.
+The ruling splits the key by page — on Home it focuses Home's field, everywhere
+else it keeps the old job. The build honours both without touching the shell:
+the shell's handler is a bubble-phase controller on the window, and its own
+comment gives page handlers first claim on the keys they own, so Home takes
+Ctrl+F in a capture-phase controller of its own. `/` behaves the same way,
+except that it types a slash once the field already has focus. This settles the
+item that was queued under "Still open".
+
+**2. The shelf ruler waits until it can be seen.** §61 gives every length,
+thickness and opacity but never the arrangement: whether the ticks and their
+11px labels run down the left of the axis or across the bars, and where the
+"Today" ring's label goes. The boards sit behind a link the build cannot open,
+and the CI photographs are stored where the build cannot download them, so a
+wrong guess could not be corrected by looking. The ruling is to leave §64's
+dashed card in the shelf's 340px band and build the elements the text does
+settle. The shelf is deferred, not dropped: it wants a picture of the board.
+
+**3. Stage 3 is the search box.** With the shelf waiting, the next element is
+§57's second half, with decisions 197 to 200 as its behaviour: the recent
+searches when the field is empty, decision 198's groups in their fixed order
+with their top three and "See all N" expanding in place, the first result
+highlighted, the match marked bold on the tint, "N results" capped at 999+,
+§10's dashed card when nothing matches, and decision 200's option menu with its
+dimmed online sites and the "Search inside books" switch. The rows stay
+invented: Home never touches the full-text index (B17), so the box filters a
+short list the page hands it by plain case-insensitive substring, and nothing in
+it navigates. What the switch, the delete crosses, the expand link, the count
+and the skeleton lines do is real.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a
@@ -600,16 +637,6 @@ Today ring; the Arrange-by chip was a static label rather than a button opening
    from "starved" in one number. Roadmap 1.2's own note — *revisit when a large
    library makes those reads measurable* — is the standing invitation this
    answers.
-
-5. **Ctrl+F is already taken.** home-spec §7 asks `/` or Ctrl+F to focus the
-   Home search field and Esc to leave it. `shortcuts.rs` already binds Ctrl+F
-   to `SearchLibrary` (decision 155), which jumps to All Books and focuses the
-   search there, and decision 24 says a taken key is refused rather than
-   stolen. A handler scoped to Home could claim the key while Home is showing
-   and leave the shell's binding alone everywhere else, but which search Ctrl+F
-   means on Home is the owner's call. Nothing is wired until it is made: the
-   bar's field takes focus by clicking, which is also all §57's underline needs
-   to show itself.
 
 Settled while the rail was built, and built: the entries and their order (B1),
 the "My Library" label (B1, decision 173), the active glyph (B8), the rail's

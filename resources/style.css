@@ -846,6 +846,136 @@ entry.kalam-search-entry > text {
     background: linear-gradient(to bottom, alpha(@kalam_bg, 0), @kalam_bg);
 }
 
+/* ── Home, stage 3: §57's result box and decision 200's option menu ──────
+   The box hangs off the bar: `bg` fill, a 1px border with no top border, and
+   radius 0 0 14 14 so its top corners square up against the underline. A GTK
+   popover draws a card of its own, so the outer node is made transparent and
+   the `contents` node carries §57's shape — the same split the annotation
+   popover uses — and the margin is what closes the gap between box and bar,
+   because §57 attaches them. */
+
+popover.kalam-search-box {
+    background: transparent;
+    margin: 0;
+}
+
+popover.kalam-search-box > contents {
+    background: @kalam_bg;
+    border: 1px solid @kalam_border;
+    border-top: none;
+    border-radius: 0 0 14 14;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+}
+
+/* §57's group heading: Label style, "Name · count", 14 above, 20 at the
+   sides, 4 below. The rows take the same 20 so their text lines up with the
+   heading's, and the heading's 8 radius is the app's usual one — §57 names a
+   fill for the highlighted row but no shape for it. */
+.kalam-search-heading {
+    padding: 14px 20px 4px;
+}
+
+.kalam-search-row {
+    padding: 0 20px;
+    border-radius: 8px;
+}
+
+/* §57: the highlighted row has the `border` fill. Decision 198 highlights the
+   first result, which is the one Enter would open. */
+.kalam-search-row.highlighted {
+    background: @kalam_border;
+}
+
+/* A saved quote and a snippet are two lines of prose, and §57 gives no height
+   for them — 52 would clip them — so they take padding instead. */
+.kalam-search-row.prose {
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+/* §57's accent "See all N ›" at 12; decision 198's "Show less" sits in the
+   same slot, and so does the recent list's Clear (decision 197). */
+.kalam-search-link {
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    color: @kalam_accent;
+    font-size: 12px;
+}
+
+/* The delete cross on a history row. §57 names the cross and not its size, so
+   it takes a 24 target around the 16 glyph the row draws. */
+.kalam-search-delete {
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    min-width: 24px;
+    min-height: 24px;
+    border-radius: 6px;
+}
+
+.kalam-search-delete:hover {
+    background: @kalam_border;
+}
+
+.kalam-search-none,
+.kalam-search-note {
+    padding: 6px 20px 14px;
+}
+
+/* §64: a skeleton is the `border` fill at radius 6. The widths are the
+   build's own — no design line gives them. */
+.kalam-search-skeleton {
+    background: @kalam_border;
+    border-radius: 6px;
+    margin: 8px 20px 0;
+}
+
+/* The fade runs to the page colour, and only while there is more below it:
+   `search_box.rs` hides it when the list fits, so it never sits over the last
+   row of a short one. */
+.kalam-search-fade {
+    background: linear-gradient(to bottom, alpha(@kalam_bg, 0), @kalam_bg);
+    border-radius: 0 0 14 14;
+}
+
+/* §57 puts §10's dashed card inside the box when nothing matches; the 20 at
+   the sides lines it up with the rows. */
+.kalam-search-nomatch {
+    margin: 12px 20px 16px;
+}
+
+/* §57 gives the picker the `border` fill while its menu is open, not only on
+   hover. */
+.kalam-search-options.open {
+    background: @kalam_border;
+}
+
+/* A caption inside a §17 menu: decision 200 needs "Search in" and "Online ·
+   not available yet" to stand over their rows, and §17 draws no caption, so
+   these take §3's Label style with the items' side padding. */
+.kalam-ui-menu-caption {
+    padding: 6px 12px 2px;
+    text-transform: uppercase;
+}
+
+/* Decision 200's four online sites: the rows are there, but the app cannot
+   take them until Part 2 (decision 8), so they read faint and cannot be
+   chosen. */
+button.kalam-ui-menu-item:disabled {
+    color: @kalam_text_dim;
+    opacity: 0.7;
+}
+
+/* The probe §57's marked match reads its tint from. Pango's background
+   attribute is opaque, so `search_box.rs` blends this over the page colour
+   rather than handing the token's own alpha to pango. */
+.kalam-ui-token-search-match { color: @kalam_search_match; }
+
 
 .kalam-section-label {
     font-size: 0.75rem;

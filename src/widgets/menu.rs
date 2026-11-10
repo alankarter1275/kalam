@@ -132,6 +132,32 @@ impl MenuPopover {
         self.list.append(&separator);
     }
 
+    /// Add a caption that heads a group of items. §17 draws no caption of its
+    /// own; decision 200's option menu needs "Search in" and "Online · not
+    /// available yet" to stand over their rows, and the Label style with the
+    /// items' side padding is what lines up with them.
+    pub fn add_caption(&self, text: &str) {
+        let caption = gtk::Label::new(Some(text));
+        caption.add_css_class("kalam-ui-label");
+        caption.add_css_class("kalam-ui-menu-caption");
+        caption.set_halign(gtk::Align::Start);
+        caption.set_xalign(0.0);
+        self.list.append(&caption);
+    }
+
+    /// Add a row for something the app cannot do yet: the item's shape, but
+    /// insensitive and out of the focus order, so it reads as part of the menu
+    /// without promising a choice. Decision 200's four online sites wait on
+    /// Part 2 (decision 8).
+    pub fn add_unavailable_item(&self, label: &str) {
+        let button = gtk::Button::new();
+        style_item_button(&button, false);
+        button.set_child(Some(&item_content(label, None, None)));
+        button.set_sensitive(false);
+        button.set_can_focus(false);
+        self.list.append(&button);
+    }
+
     /// Add a side-opening submenu. `GtkMenuButton` supplies the toggle and
     /// popover parentage; this builder adds the row shape, chevron, the
     /// open-parent fill, and the one-open-at-a-time rule.

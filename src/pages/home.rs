@@ -14,10 +14,10 @@
 //! navigation) and the import path behind the empty-library card's action,
 //! which is the one piece of the old dashboard B12 kept.
 //!
-//! Still to come: §57's result box under the bar (nothing to show until
-//! search exists, B17), §61's reading ruler in the shelf's 340px band, and
-//! the keyboard home-spec §7 asks for (`/` and Ctrl+F into the field, Esc out
-//! of the box).
+//! Still to come: §61's reading ruler in the shelf's 340px band (B22 — it
+//! waits on a picture of the board, because the text gives every length but
+//! not the arrangement), and real search behind §57's box, which today filters
+//! an invented list rather than the library (B17).
 //!
 //! Same skeleton → worker → apply shape the dashboard used (7.1 step 2b):
 //! `init` paints placeholders, a worker reads the snapshot and the
@@ -30,7 +30,8 @@ use crate::pages::all_books::{ask_about_restored, import_summary, spawn_import, 
 use crate::rail_icons::{self, Face};
 use crate::service::{HomeSnapshot, LibraryService};
 use crate::widgets::book_row::cover_widget_deferred;
-use crate::widgets::{search_bar, surface, updates};
+use crate::widgets::search_box::SearchGroup;
+use crate::widgets::{search_bar, search_box, surface, updates};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::path::PathBuf;
@@ -106,6 +107,65 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
         false,
     ),
     ("Giovanni's Room", "Added from a saved source", "6d", false),
+];
+
+/// Decision 198's groups, filled with invented rows (B21). Home never touches
+/// the full-text index (B17, pitfalls §105), so the box under the search bar
+/// filters this list instead of the library: group, main line, small line. The
+/// two `InBooks` rows are decision 199's snippets, which the option menu's
+/// switch turns on.
+const SHOWCASE_SEARCH: &[(SearchGroup, &str, &str)] = &[
+    (SearchGroup::Books, "Piranesi", "Susanna Clarke"),
+    (
+        SearchGroup::Books,
+        "The Left Hand of Darkness",
+        "Ursula K. Le Guin",
+    ),
+    (SearchGroup::Books, "Wolf Hall", "Hilary Mantel"),
+    (SearchGroup::Books, "Giovanni's Room", "James Baldwin"),
+    (
+        SearchGroup::Books,
+        "The Remains of the Day",
+        "Kazuo Ishiguro",
+    ),
+    (SearchGroup::Books, "The Dispossessed", "Ursula K. Le Guin"),
+    (SearchGroup::Authors, "Ursula K. Le Guin", "6 books"),
+    (SearchGroup::Authors, "Hilary Mantel", "4 books"),
+    (SearchGroup::Authors, "James Baldwin", "3 books"),
+    (SearchGroup::Series, "Earthsea", "5 books"),
+    (SearchGroup::Series, "The Broken Earth", "3 books"),
+    (
+        SearchGroup::Quotes,
+        "There is no Frigate like a Book",
+        "Emily Dickinson · Poems",
+    ),
+    (
+        SearchGroup::Quotes,
+        "All this happened, more or less.",
+        "Kurt Vonnegut · Slaughterhouse-Five",
+    ),
+    (
+        SearchGroup::InBooks,
+        "…the tide came in through the door in the floor…",
+        "Piranesi · Chapter 3",
+    ),
+    (
+        SearchGroup::InBooks,
+        "…she had left the door in the wall unlocked…",
+        "The Left Hand of Darkness · Chapter 7",
+    ),
+];
+
+/// Decision 197's recent searches, invented for the same reason. The real list
+/// is saved when a result is opened or Enter is pressed, keeps the last twenty
+/// and stays on this computer; none of that exists yet, though the delete
+/// crosses and Clear really do edit this one.
+const SHOWCASE_HISTORY: &[&str] = &[
+    "piranesi",
+    "le guin",
+    "the door in the wall",
+    "earthsea",
+    "dickinson",
 ];
 
 /// Navigation requests from Home. Variants are named for their destination
@@ -342,16 +402,43 @@ impl Component for HomePageModel {
         };
         let widgets = view_output!();
 
-        // §57's bar and §62's timeline (B21): both come from widget modules
-        // and go into the hosts the view reserves for them, the way the shelf
-        // and the book card do. Neither is wired to anything yet — the bar
-        // keeps its field, count and picker to itself until search exists
-        // (B17), and the timeline's rows are the invented ones below.
-        widgets
-            .search_host
-            .append(&search_bar::search_bar(SEARCH_HINT));
+        // §57's bar and box and §62's timeline (B21): all three come from
+        // widget modules and go into the hosts the view reserves for them, the
+        // way the shelf and the book card do. The bar and the box are wired to
+        // each other — focus, typing, the count, the option menu — and their
+        // rows are the invented ones below; the timeline's are too.
+        let search = search_bar::search_bar(SEARCH_HINT);
+        widgets.search_host.append(&search.root);
+        search_box::search_box(&search, &showcase_search(), &showcase_history());
         let updates_block = updates::updates(&showcase_updates(), SHOWCASE_CHECKED);
         widgets.updates_host.append(&updates_block);
+
+        // home-spec §7's keys, on B22's ruling: Home's field wins Ctrl+F while
+        // Home is showing, and the shell's binding keeps its job everywhere
+        // else. The shell's handler is a bubble-phase controller on the window
+        // whose own comment gives page handlers first claim, so this
+        // capture-phase controller claims Ctrl+F here and leaves the jump to
+        // All Books intact on every other page. `/` does the same, except that
+        // it types a slash once the field has focus.
+        let keys = gtk::EventControllerKey::new();
+        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+        keys.connect_key_pressed({
+            let entry = search.entry.clone();
+            move |_, keyval, _, modifiers| {
+                let ctrl = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+                let find = ctrl && (keyval == gtk::gdk::Key::f || keyval == gtk::gdk::Key::F);
+                if find {
+                    entry.grab_focus();
+                    return gtk::glib::Propagation::Stop;
+                }
+                if keyval == gtk::gdk::Key::slash && !ctrl && !entry.has_focus() {
+                    entry.grab_focus();
+                    return gtk::glib::Propagation::Stop;
+                }
+                gtk::glib::Propagation::Proceed
+            }
+        });
+        widgets.root.add_controller(keys);
 
         // Stage-1 placeholders (B12): the shelf area says what is coming,
         // and the card host shows the dashed block the snapshot replaces a
@@ -831,6 +918,24 @@ fn showcase_updates() -> Vec<updates::UpdateEntry> {
             fresh,
         })
         .collect()
+}
+
+/// Turn the showcase rows into the box's items (B21).
+fn showcase_search() -> Vec<search_box::SearchItem> {
+    SHOWCASE_SEARCH
+        .iter()
+        .copied()
+        .map(|(group, title, meta)| search_box::SearchItem {
+            group,
+            title: title.to_string(),
+            meta: meta.to_string(),
+        })
+        .collect()
+}
+
+/// Turn the invented recent searches into the list the box edits.
+fn showcase_history() -> Vec<String> {
+    SHOWCASE_HISTORY.iter().map(|query| query.to_string()).collect()
 }
 
 fn greeting_line() -> String {

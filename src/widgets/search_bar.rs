@@ -9,19 +9,17 @@
 //! It lives with the widgets rather than in the Home page because §58 hangs
 //! the AO3 search off the same bar — one drawing of the element, two pages.
 //!
-//! The builder returns the bar and keeps its three working pieces to itself
-//! for now: the page has nothing to drive until search exists (B17), and a
-//! struct of fields nothing reads is a dead-code error under the workspace's
-//! `-D warnings`. When the result box lands, this hands the field, the count
-//! and the picker back to its caller.
+//! The builder hands back the bar and the three pieces `super::search_box`
+//! drives: the field the box drops open on, the "N results" count decision 197
+//! puts at the bar's right end, and the picker that carries decision 200's
+//! menu.
 //!
-//! home-spec §7 also asks for `/` and Ctrl+F to focus the field and Esc to
-//! leave it. That belongs with the box, and it needs a decision first: Ctrl+F
-//! is already the shell's `SearchLibrary` action, which jumps to All Books and
-//! focuses the search there (`shortcuts.rs`, decision 155). A Home-scoped
-//! handler can claim the key while Home is showing and leave the shell's
-//! binding intact everywhere else, but decision 24 — a taken key is refused,
-//! not stolen — means that is the owner's call, not a quiet one.
+//! home-spec §7's keys — `/` and Ctrl+F into the field — are the page's rather
+//! than the bar's, because they have to work while the focus is somewhere else
+//! on Home. Ctrl+F is also the shell's `SearchLibrary` binding, which jumps to
+//! All Books (decision 155); B22 splits it by page, so Home claims the key in a
+//! capture-phase controller of its own and the shell's binding still owns it
+//! everywhere else.
 use crate::rail_icons::{image_px, remember_fixed, Face};
 use gtk::prelude::*;
 
@@ -35,9 +33,17 @@ const MAGNIFIER_PX: i32 = 18;
 const SLIDERS_PX: i32 = 20;
 const PICKER_PX: i32 = 32;
 
+/// The bar, and the three pieces the box under it drives.
+pub struct SearchBar {
+    pub root: gtk::Box,
+    pub entry: gtk::Entry,
+    pub count: gtk::Label,
+    pub options: gtk::Button,
+}
+
 /// Build the bar. `hint` is the placeholder §57 shows in `text-2` while the
 /// field is empty.
-pub fn search_bar(hint: &str) -> gtk::Box {
+pub fn search_bar(hint: &str) -> SearchBar {
     // The 10 between the magnifier, the field and the picker is the app's
     // usual gap: §57 names the sizes of the three but no space between them.
     let root = gtk::Box::new(gtk::Orientation::Horizontal, 10);
@@ -96,7 +102,12 @@ pub fn search_bar(hint: &str) -> gtk::Box {
     options.set_child(Some(&sliders));
     root.append(&options);
 
-    root
+    SearchBar {
+        root,
+        entry,
+        count,
+        options,
+    }
 }
 
 #[cfg(test)]

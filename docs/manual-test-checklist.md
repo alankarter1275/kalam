@@ -222,8 +222,9 @@ yet** — CI photographs the rail but cannot judge it.
 The rebuild, staged (`docs/build-decisions.md` B12, B21), to
 `docs/design/home-spec.md` and design-system §57–§66. **None of this has been
 run by hand yet** — CI photographs Home but cannot judge it. What is still
-missing is deliberate, not a defect: §61's reading ruler, the result box that
-hangs under §57's search bar, and the keyboard home-spec §7 asks for.
+missing is deliberate, not a defect: §61's reading ruler, which waits on a
+picture of the board (B22), and real search behind §57's box, which today
+filters an invented list rather than the library (B17).
 
 - [ ] Top left: the greeting on two big serif lines — "Good morning",
   "Good afternoon" or "Good evening" by the hour, then a name under it at the
@@ -238,8 +239,44 @@ hangs under §57's search bar, and the keyboard home-spec §7 asks for.
   §57's search bar — 520 wide, 40 high, a magnifier at the left, the hint
   "Search your library" in the field, a 32-square sliders button at the
   right. Clicking into the field turns the bar's underline from the border
-  colour to the accent; clicking out turns it back. Nothing else happens yet:
-  the result box comes with search itself (B17).
+  colour to the accent; clicking out turns it back.
+- [ ] Clicking into the field also drops §57's box under the bar, attached to
+  it: the page colour, a 1px border with no top edge, and corners rounded 14
+  below only. With nothing typed it lists five invented recent searches, each
+  44 high with a clock at the left and a cross at the right, under a "RECENT
+  SEARCHES" heading with "Clear" at its right. A cross removes its row and
+  Clear empties the list (B22 — the rows are invented, the editing is real).
+- [ ] Typing filters the invented list and shows decision 198's groups in
+  order — Books, Authors, Series, Saved quotes — each only when something in
+  it matches, each headed "Name · count" in small capitals with 14 above and
+  20 at the sides. Rows are 52 high for books and series, 48 for authors; a
+  quote is two lines of serif italic with its source in 11px under it. The
+  first row of the lot carries the border fill, and the letters you typed come
+  up bold on a faint tint wherever they fall in a line.
+- [ ] A group with more than three matches shows three and an accent "See all
+  N ›" at the heading's right; clicking it shows the rest and turns the link
+  into "Show less".
+- [ ] While typing, the bar's right end shows "N results" (or "1 result"),
+  counting every group. Nothing matches: §10's dashed card inside the box,
+  with copy the build wrote because the design gives none.
+- [ ] The sliders button opens decision 200's menu, 260 wide, right under it:
+  "SEARCH IN" with Library ticked, "ONLINE · NOT AVAILABLE YET" over four
+  faint rows that cannot be chosen, a hairline, then the "Search inside books"
+  switch with "Looks through the full text. Slower." under it. The button keeps
+  the border fill while the menu is open.
+- [ ] Turning that switch on with something typed shows "Searching inside your
+  books…" and three skeleton bars for a moment, then an "INSIDE BOOKS" group of
+  snippets. Turning it off takes the group away. Decision 199 also has the
+  switch off again at every restart, which it is, because nothing writes it
+  down.
+- [ ] A long list scrolls inside the box with no scrollbar and a fade over its
+  bottom 48 — and no fade at all when the rows fit. Escape or a click outside
+  closes the box; the underline goes back to the border colour when the field
+  loses focus.
+- [ ] Ctrl+F on Home puts the focus in this field, and so does `/` — the
+  owner's ruling (B22) that Home's field wins the key while Home is showing.
+  On any other page Ctrl+F still jumps to All Books and focuses the search
+  there, and `/` still types a slash once the field has focus.
 - [ ] "Your shelf" as an 18px serif section heading (§3's Section style, not
   the 11px caption it was) with an "Arrange by · Most recent" chip at its
   right, and below them a dashed card filling the ruler's 340px band saying

@@ -19,6 +19,7 @@ pub mod rating;
 pub mod reading_choice;
 pub mod remaster_dialog;
 pub mod search_bar;
+pub mod search_box;
 pub mod segmented;
 pub mod selection_chip;
 pub mod setting_row;

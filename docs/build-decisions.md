@@ -746,6 +746,34 @@ witness:
   broken box. The query is `ursula` now: two book rows, an author row and a
   series row, three groups in one frame.
 
+## B27. The box never opened because headless sway never holds focus
+
+The probe round the owner ordered (run 42890371025) answered in one
+cycle what seven rounds of fixes could not: every focus handler fired
+-- `home_box:enter` for both Home instances, the bar's enter too -- and
+every one of them then consulted `has_focus()`, which was false, and
+skipped the open. The same run shows `home_claim:grabbed 0` straight
+after the chord handler's `grab_focus()`, and notify lines only for
+focus *loss*. The composition is exact: under headless sway the window
+never holds seat-level keyboard focus, so GTK sets the focus *widget*
+-- which is what draws the outline every photograph showed as a ring,
+and what fires EventControllerFocus enter -- while the `has-focus`
+property, which needs the toplevel to be focused, never arrives.
+
+So the open no longer asks. Enter opens the box unconditionally, the
+staged launch opens it directly after filling the field, and the bar's
+focused class rides the same unguarded enter. The notify handler stays
+as a witness only, because in this environment it speaks on the way
+out, not on the way in. The entry's own focus outline, which §57 does
+not want, is switched off for `:focus-visible` as well as `:focus`,
+since keyboard focus is exactly the state that arrives.
+
+The general lesson joins §110's family: a guard on a property that the
+environment never sets is not a guard, it is a switch wired to nothing,
+and it fails silent. The witness table that found it -- instance tags
+plus before/after lines around the single suspect call -- is the shape
+worth repeating: one cycle, every hypothesis distinguishable.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

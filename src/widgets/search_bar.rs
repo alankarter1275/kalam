@@ -84,13 +84,12 @@ pub fn search_bar(hint: &str) -> SearchBar {
     // notify::has-focus, which three photograph rounds never saw fire.
     let class_root = root.clone();
     let class_root_for_leave = root.clone();
-    let class_entry = entry.clone();
     let focus_ctrl = gtk::EventControllerFocus::new();
     focus_ctrl.connect_enter(move |_| {
+        // Unguarded, like the box's open: enter is the gain, and has_focus()
+        // never came true under headless sway (run 42890371025).
         crate::timing::note("home_bar:enter", 1);
-        if class_entry.has_focus() {
-            class_root.add_css_class("focused");
-        }
+        class_root.add_css_class("focused");
     });
     // Its own handle: the enter closure moves its clone (E0382, run of
     // 2f03643), and `leave` still has to reach the same bar.

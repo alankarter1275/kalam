@@ -420,7 +420,8 @@ impl Component for HomePageModel {
         // belongs to.
         let instance = INSTANCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as i32 + 1;
         crate::timing::note("home_init", instance as usize);
-        search_box::search_box(&search, &showcase_search(), &showcase_history(), instance);
+        let box_pop =
+            search_box::search_box(&search, &showcase_search(), &showcase_history(), instance);
 
         // Staging for the CI photographs, and nothing else: with
         // KALAM_HOME_SEARCH set, the field opens pre-filled on the first idle
@@ -432,6 +433,7 @@ impl Component for HomePageModel {
         // exists.
         let staged_query = std::env::var("KALAM_HOME_SEARCH").unwrap_or_default();
         let focus_entry = search.entry.clone();
+        let staged_pop = box_pop.clone();
         gtk::glib::idle_add_local_once(move || {
             if !staged_query.is_empty() {
                 focus_entry.set_text(&staged_query);
@@ -439,6 +441,12 @@ impl Component for HomePageModel {
                 focus_entry.grab_focus();
                 let grabbed = usize::from(focus_entry.has_focus());
                 crate::timing::note("home_staged:grabbed", instance as usize + grabbed * 100);
+                // Open here too, without waiting for any focus signal: the
+                // probe round showed grab_focus sets the focus widget while
+                // has-focus stays false under headless sway, so the enter
+                // handler is the usual opener and this is the staging
+                // launch's own belt-and-braces.
+                staged_pop.popup();
                 crate::timing::note("home_focus:staged", 1);
                 return;
             }

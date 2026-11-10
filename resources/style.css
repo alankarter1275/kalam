@@ -811,7 +811,8 @@ entry.kalam-search-entry > text {
    focus outline around a focused entry, and in the first photographs that
    outline -- a full-perimeter ring -- is what appeared, reading as a focus
    style the design does not have. */
-entry.kalam-search-entry:focus {
+entry.kalam-search-entry:focus,
+entry.kalam-search-entry:focus-visible {
     outline-style: none;
     outline-width: 0;
 }

@@ -229,8 +229,6 @@ pub fn search_box(
     // accent underline is the bar's own wiring). Nothing pops it down on
     // focus-out — Escape and a click outside are the ways out, and closing on
     // focus-out would fight the popover for the field.
-    let open_on_focus = popover.clone();
-    let entry_for_pop = bar.entry.clone();
     // An EventControllerFocus, not notify::has-focus: three photograph
     // rounds showed a focused field whose notify handlers left no trace in
     // any log -- not even the bar's own class switch, the "ring" in the
@@ -238,44 +236,27 @@ pub fn search_box(
     // state. The focus controller's enter is the mechanism the toolkit
     // guarantees for exactly this.
     let focus_open = popover.clone();
-    let focus_entry = bar.entry.clone();
     let focus_ctrl = gtk::EventControllerFocus::new();
     focus_ctrl.connect_enter(move |_| {
-        // Probe round (owner ruling): every witness carries the instance
-        // tag, because the log shows Home being built twice per launch and
-        // nothing so far has said which instance the visible bar belongs
-        // to. enter firing at all distinguishes "the signal never comes"
-        // from "the open call dies".
+        // No has_focus() guard, and the probe round (run 42890371025) is
+        // why: under headless sway the window never holds seat-level
+        // focus, so GTK sets the focus *widget* -- draws the outline,
+        // fires enter -- while has-focus stays false, and seven rounds of
+        // handlers guarded on a property that never arrived. enter IS the
+        // gain; open on it, unconditionally.
         crate::timing::note("home_box:enter", tag as usize);
-        if focus_entry.has_focus() {
-            crate::timing::note("home_box:before2", tag as usize);
-            focus_open.popup();
-            crate::timing::note("home_box:after2", tag as usize);
-        }
+        crate::timing::note("home_box:before2", tag as usize);
+        focus_open.popup();
+        crate::timing::note("home_box:after2", tag as usize);
     });
     bar.entry.add_controller(focus_ctrl);
+    // Kept as a witness, not as an opener: in the same probe run notify
+    // arrived only for focus *loss* (values ended in 0), so opening on it
+    // opened on the way out. The enter handler above owns the open.
     bar.entry.connect_has_focus_notify(move |entry| {
         // Value = tag*10 + focused, so one line says both which instance
         // spoke and whether it was gaining or losing focus.
         crate::timing::note("home_box:notify", tag as usize * 10 + usize::from(entry.has_focus()));
-        if entry.has_focus() {
-            crate::timing::note("home_box:before", tag as usize);
-            open_on_focus.popup();
-            crate::timing::note("home_box:after", tag as usize);
-            // The photographs show a focused field with no box under it and
-            // no warning in any log, so the next round needs to see what the
-            // popover did: whether it mapped at all, and whether something
-            // closed it again. A single idle retry covers the case where
-            // popup() landed a tick too early to take.
-            let pop = open_on_focus.clone();
-            let ent = entry_for_pop.clone();
-            gtk::glib::idle_add_local_once(move || {
-                if ent.has_focus() && !pop.is_mapped() {
-                    pop.popup();
-                    crate::timing::note("home_box:retry", 1);
-                }
-            });
-        }
     });
     popover.connect_closed(|_| {
         crate::timing::note("home_box:closed", 1);

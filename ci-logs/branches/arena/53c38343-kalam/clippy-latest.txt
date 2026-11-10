@@ -1,8 +1,4 @@
-src/pages/home.rs:441:17: [1m[91merror[E0609][0m: no field `root` on type `pages::home::HomePageModelWidgets`: unknown field
-src/widgets/search_box.rs:161:13: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::NativeDialog>` is not implemented for `gtk4::Popover`: requires `gtk4::Popover` to be a GObject that can be statically cast to `gtk4::NativeDialog`
-src/widgets/search_box.rs:485:35: [1m[91merror[E0599][0m: no associated function or constant named `from_label` found for struct `gtk4::Button` in the current scope: associated function or constant not found in `gtk4::Button`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -15,7 +11,12 @@ Package 'gdk4' not found
 not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
+[1m[92m Downloading[0m crates ...
+[1m[92m  Downloaded[0m bit-vec v0.10.2
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
+[1m[92m    Checking[0m bit-vec v0.10.2
+[1m[92m    Checking[0m bit-set v0.11.1
+[1m[92m    Checking[0m proptest v1.12.0
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
@@ -24,10 +25,5 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/home.rs:441:17: [1m[91merror[E0609][0m: no field `root` on type `pages::home::HomePageModelWidgets`: unknown field
-src/widgets/search_box.rs:161:13: [1m[91merror[E0599][0m: the trait `glib::object::IsA<gtk4::NativeDialog>` is not implemented for `gtk4::Popover`: requires `gtk4::Popover` to be a GObject that can be statically cast to `gtk4::NativeDialog`
-src/widgets/search_box.rs:485:35: [1m[91merror[E0599][0m: no associated function or constant named `from_label` found for struct `gtk4::Button` in the current scope: associated function or constant not found in `gtk4::Button`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
---- run 42850722310 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 27.01s
+--- run 42854965096 ---

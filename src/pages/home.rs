@@ -795,9 +795,6 @@ mod tests {
     #[test]
     fn the_greeting_stands_on_two_display_lines() {
         assert!(!GREETING_NAME.is_empty());
-        assert!(
-            !GREETING_NAME.contains(','),
-            "a name, not a formatted date"
-        );
+        assert!(!GREETING_NAME.contains(','), "a name, not a formatted date");
     }
 }

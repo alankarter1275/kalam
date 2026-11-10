@@ -1,8 +1,8 @@
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index 7d241f4..4794d5e 100644
+index bb7af2f..dd094ba 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
-@@ -481,9 +481,11 @@ impl Component for HomePageModel {
+@@ -484,9 +484,11 @@ impl Component for HomePageModel {
                  let shaped = staged_pop.first_child();
                  crate::timing::note(
                      "home_box:hasclass",
@@ -18,7 +18,7 @@ index 7d241f4..4794d5e 100644
                  if let Some(w) = shaped {
                      crate::timing::note("home_box:shell_w", w.width().max(0) as usize);
 diff --git a/src/widgets/search_box.rs b/src/widgets/search_box.rs
-index d62d359..18672e7 100644
+index 63dee71..bf08861 100644
 --- a/src/widgets/search_box.rs
 +++ b/src/widgets/search_box.rs
 @@ -153,12 +153,7 @@ impl SearchItem {
@@ -35,7 +35,7 @@ index d62d359..18672e7 100644
      // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
-@@ -272,7 +267,10 @@ pub fn search_box(
+@@ -280,7 +275,10 @@ pub fn search_box(
      bar.entry.connect_has_focus_notify(move |entry| {
          // Value = tag*10 + focused, so one line says both which instance
          // spoke and whether it was gaining or losing focus.
@@ -47,4 +47,4 @@ index d62d359..18672e7 100644
      });
      panel.connect_hide(|_| {
          crate::timing::note("home_box:closed", 1);
---- run 42918272008 ---
+--- run 42921316323 ---

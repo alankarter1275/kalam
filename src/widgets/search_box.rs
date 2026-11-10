@@ -392,7 +392,7 @@ impl Results {
         self.list.append(&self.bg_probe);
         // And the viewport height, as a number rather than a negotiation:
         // the list's own natural height, capped at §57's scroll maximum.
-        let (_, natural) = self.list.measure(gtk::Orientation::Vertical, -1);
+        let (_, natural, _, _) = self.list.measure(gtk::Orientation::Vertical, -1);
         self.scroll.set_height_request(natural.min(SCROLL_MAX));
     }
 

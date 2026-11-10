@@ -1,51 +1,16 @@
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index 0f27da2..d357a55 100644
+index 33934d7..c95711c 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
-@@ -87,9 +87,24 @@ const SHOWCASE_CHECKED: &str = "Checked 3 hours ago";
- const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
-     ("Wonder", "3 new chapters in the saved source", "2h", true),
-     ("Piranesi", "The source listed a new edition", "5h", false),
--    ("The Dispossessed", "Description updated at the source", "1d", false),
--    ("Wolf Hall", "2 new chapters in the saved source", "2d", false),
--    ("Notes Toward a History", "The source stopped serving chapters", "4d", false),
-+    (
-+        "The Dispossessed",
-+        "Description updated at the source",
-+        "1d",
-+        false,
-+    ),
-+    (
-+        "Wolf Hall",
-+        "2 new chapters in the saved source",
-+        "2d",
-+        false,
-+    ),
-+    (
-+        "Notes Toward a History",
-+        "The source stopped serving chapters",
-+        "4d",
-+        false,
-+    ),
-     ("Giovanni's Room", "Added from a saved source", "6d", false),
- ];
+@@ -347,7 +347,9 @@ impl Component for HomePageModel {
+         // and the book card do. Neither is wired to anything yet — the bar
+         // keeps its field, count and picker to itself until search exists
+         // (B17), and the timeline's rows are the invented ones below.
+-        widgets.search_host.append(&search_bar::search_bar(SEARCH_HINT));
++        widgets
++            .search_host
++            .append(&search_bar::search_bar(SEARCH_HINT));
+         let updates_block = updates::updates(&showcase_updates(), SHOWCASE_CHECKED);
+         widgets.updates_host.append(&updates_block);
  
-diff --git a/src/widgets/search_bar.rs b/src/widgets/search_bar.rs
-index e956c96..6075daf 100644
---- a/src/widgets/search_bar.rs
-+++ b/src/widgets/search_bar.rs
-@@ -92,7 +92,12 @@ pub fn search_bar(hint: &str) -> SearchBar {
-     options.set_child(Some(&sliders));
-     root.append(&options);
- 
--    SearchBar { root, entry, count, options }
-+    SearchBar {
-+        root,
-+        entry,
-+        count,
-+        options,
-+    }
- }
- 
- #[cfg(test)]
---- run 42835081435 ---
+--- run 42840144245 ---

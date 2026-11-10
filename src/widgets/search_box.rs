@@ -126,7 +126,10 @@ impl SearchGroup {
 
     /// Which of the expand-in-place flags this group owns.
     fn index(self) -> usize {
-        Self::ALL.iter().position(|group| *group == self).unwrap_or(0)
+        Self::ALL
+            .iter()
+            .position(|group| *group == self)
+            .unwrap_or(0)
     }
 }
 
@@ -156,9 +159,10 @@ pub fn search_box(bar: &SearchBar, items: &[SearchItem], history: &[String]) -> 
     popover.set_has_arrow(false);
     popover.set_position(gtk::PositionType::Bottom);
     popover.set_autohide(true);
-    // The field keeps the keystrokes, so the box must not grab input: a modal
-    // popover would swallow the very typing it exists to answer.
-    popover.set_modal(false);
+    // Nothing to turn off here, and that is the point: a GTK 4 popover has no
+    // modal property, so the field keeps the keystrokes and the box can answer
+    // them. Escape and a click outside still close it, which is all `autohide`
+    // needs.
     popover.set_parent(&bar.root);
 
     let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -482,7 +486,7 @@ impl Results {
     /// decision 198's "Show less" in the same place, and the recent list's
     /// Clear.
     fn link_button(&self, label: &str, on_click: impl Fn() + 'static) -> gtk::Button {
-        let button = gtk::Button::from_label(label);
+        let button = gtk::Button::with_label(label);
         button.add_css_class("kalam-search-link");
         button.set_halign(gtk::Align::End);
         button.set_valign(gtk::Align::Center);

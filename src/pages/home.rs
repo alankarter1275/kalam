@@ -390,7 +390,7 @@ impl Component for HomePageModel {
 
     fn init(
         catalog: Self::Init,
-        _root: Self::Root,
+        root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = HomePageModel {
@@ -438,7 +438,10 @@ impl Component for HomePageModel {
                 gtk::glib::Propagation::Proceed
             }
         });
-        widgets.root.add_controller(keys);
+        // The root this page was handed, not a field of the view: the
+        // controller has to sit above every widget on the page, so it claims
+        // the key whatever has focus.
+        root.add_controller(keys);
 
         // Stage-1 placeholders (B12): the shelf area says what is coming,
         // and the card host shows the dashed block the snapshot replaces a
@@ -935,7 +938,10 @@ fn showcase_search() -> Vec<search_box::SearchItem> {
 
 /// Turn the invented recent searches into the list the box edits.
 fn showcase_history() -> Vec<String> {
-    SHOWCASE_HISTORY.iter().map(|query| query.to_string()).collect()
+    SHOWCASE_HISTORY
+        .iter()
+        .map(|query| query.to_string())
+        .collect()
 }
 
 fn greeting_line() -> String {

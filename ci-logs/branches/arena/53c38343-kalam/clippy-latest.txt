@@ -1,10 +1,4 @@
-src/widgets/search_bar.rs:29:9: [1m[91merror[0m: fields `entry`, `count`, and `options` are never read
-src/widgets/updates.rs:152:9: [1m[91merror[0m: unused `std::result::Result` that must be used
-src/widgets/updates.rs:157:13: [1m[91merror[0m: unused `std::result::Result` that must be used
-src/widgets/updates.rs:163:13: [1m[91merror[0m: unused `std::result::Result` that must be used
-src/widgets/updates.rs:167:13: [1m[91merror[0m: unused `std::result::Result` that must be used
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -26,12 +20,5 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/widgets/search_bar.rs:29:9: [1m[91merror[0m: fields `entry`, `count`, and `options` are never read
-src/widgets/updates.rs:152:9: [1m[91merror[0m: unused `std::result::Result` that must be used
-src/widgets/updates.rs:157:13: [1m[91merror[0m: unused `std::result::Result` that must be used
-src/widgets/updates.rs:163:13: [1m[91merror[0m: unused `std::result::Result` that must be used
-src/widgets/updates.rs:167:13: [1m[91merror[0m: unused `std::result::Result` that must be used
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
---- run 42835081435 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 26.93s
+--- run 42840144245 ---

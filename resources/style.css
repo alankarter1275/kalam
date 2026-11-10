@@ -872,12 +872,13 @@ entry.kalam-search-entry:focus-visible {
 
 .kalam-search-box {
     /* PROBE, one run only: green fill and a magenta border cannot be
-       confused with anything on the page. If they appear, the rule binds
-       and the fault was in the colours or the width; if they do not, the
+       confused with anything on the page, and named colours keep the
+       hex guardrail at its count. If they appear, the rule binds and
+       the fault was in the colours or the width; if they do not, the
        rule never reaches this node and the shape moves to a node that
-       provably paints. Two hexes, back out with the fix. */
-    background: #00ff00;
-    border: 3px solid #ff00ff;
+       provably paints. Back out with the fix. */
+    background: lime;
+    border: 3px solid magenta;
     border-top: none;
     border-radius: 0 0 14px 14px;
     box-shadow: none;

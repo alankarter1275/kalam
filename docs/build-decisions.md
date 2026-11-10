@@ -678,6 +678,47 @@ Three changes, owner-ruling "fix the check now":
   family of staging levers documented in docs/ci/README-screenshots.md;
   nothing else in the app reads it.
 
+## B25. What the first four photographs showed
+
+The first run that committed frames (B23) committed four, and they caught
+three things no text report could have caught. All of it measured on
+`home-terracotta-light.png` from run 42862494812 with a pixel probe, not
+eyeballed, because two of the three are invisible at a glance and one of them
+I first mis-saw in the other direction:
+
+1. **The left column was 518 wide, not 470.** home-spec §1 says 470 and the
+   view requests 470 — but a width request is a floor, and the dashed shelf
+   card's wrapping labels carry the natural width of their unwrapped text,
+   so the column stretched to fit them. The greeting, quote and chip all sat
+   48px wider than the board. `surface::state_card_narrow` now caps the two
+   labels where the column is narrow; wider columns wrap at their allocation
+   either way and keep the plain card.
+2. **The open book card was 473 wide, not 450**, for the same reason one level
+   down: the excerpt wraps, and a wrapping label's natural width is the whole
+   passage on one line, so an expanding reading page let that width stretch
+   the card. The page is now fixed at one cover width and the card is exactly
+   two pages again. The "Continue reading" kicker, which the stretched frame
+   showed ellipsized, loses its ellipsis — it is one fixed string that fits
+   the 177px text column, so an ellipsis on it can only mean the column
+   shrank, and that is worth seeing as overflow rather than hiding. The
+   chapter title keeps its ellipsis, because real chapter names do overflow.
+3. **The launch state of the search bar was a coin toss.** One launch painted
+   the bar focused with no box under it — the one combination §57 does not
+   describe — and another painted it at rest, and no log line said which had
+   happened. GTK gives a new window's first focus to its first focusable
+   widget, which on Home is the field; a popup asked for before the bar is
+   mapped is a no-op, so the box never followed. Home now hands that first
+   focus back on an unstaged launch, the box re-checks focus once the bar
+   maps, and three `[timing]` witnesses (`home_focus:staged`,
+   `home_focus:cleared`, `home_focus:resting`) say which path ran.
+
+What the frames also settled: the right column's 24px overhang past the page
+margin and the pager standing right of the card are the board's own numbers
+(home-spec §1, "nudged 24 past the right margin", "560 x 360 plus the pager"
+at B21's 450), measured correct to the pixel. They looked wrong at a glance
+and are not. That is the argument for measuring: half of what a first look
+reports is a guess about which side of a line a pixel sits on.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

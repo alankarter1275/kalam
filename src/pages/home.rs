@@ -420,13 +420,32 @@ impl Component for HomePageModel {
         // what makes focus land after the window is up rather than before it
         // exists.
         let staged_query = std::env::var("KALAM_HOME_SEARCH").unwrap_or_default();
-        if !staged_query.is_empty() {
-            let entry = search.entry.clone();
-            gtk::glib::idle_add_local_once(move || {
-                entry.set_text(&staged_query);
-                entry.grab_focus();
-            });
-        }
+        let focus_entry = search.entry.clone();
+        gtk::glib::idle_add_local_once(move || {
+            if !staged_query.is_empty() {
+                focus_entry.set_text(&staged_query);
+                focus_entry.grab_focus();
+                crate::timing::note("home_focus:staged", 1);
+                return;
+            }
+            // The first Home photographs disagreed with each other: one
+            // launch showed the bar focused with no box under it, another
+            // showed it at rest, and nothing in any log said which had
+            // happened. GTK gives a new window's first focus to its first
+            // focusable widget, which here is the field; a focused field with
+            // no box is the one combination §57 does not describe, so on an
+            // unstaged launch Home hands that first focus back and rests.
+            if focus_entry.has_focus() {
+                if let Some(root) = focus_entry.root() {
+                    if let Ok(window) = root.downcast::<gtk::Window>() {
+                        window.set_focus(None::<&gtk::Widget>);
+                    }
+                }
+                crate::timing::note("home_focus:cleared", 1);
+            } else {
+                crate::timing::note("home_focus:resting", 1);
+            }
+        });
         let updates_block = updates::updates(&showcase_updates(), SHOWCASE_CHECKED);
         widgets.updates_host.append(&updates_block);
 
@@ -471,10 +490,11 @@ impl Component for HomePageModel {
         // Stage-1 placeholders (B12): the shelf area says what is coming,
         // and the card host shows the dashed block the snapshot replaces a
         // moment later.
-        let shelf_card = surface::state_card(
+        let shelf_card = surface::state_card_narrow(
             "Your shelf",
             "Weeks, months and years of your reading, drawn as lines on a \
              ruler — that arrives with a later stage of this build.",
+            46,
         );
         shelf_card.set_valign(gtk::Align::Center);
         shelf_card.set_vexpand(true);
@@ -752,13 +772,20 @@ fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> 
     // 188's "no text beside the book" is about the space outside the card.
     let page = gtk::Box::new(gtk::Orientation::Vertical, 0);
     page.add_css_class("kalam-home-book-page");
-    page.set_hexpand(true);
+    // A request, not an expansion: the excerpt label wraps, and a wrapping
+    // label's natural width is its whole text on one line, so an expanding
+    // page lets that natural width stretch the card past its 450 (measured
+    // 486 in ci-logs/branches/.../home-terracotta-light.png, run 42862494812).
+    // Fixed at one cover width, the card is exactly two pages again.
+    page.set_size_request(COVER_W, -1);
     page.set_vexpand(true);
 
     let line = gtk::Label::new(Some("Continue reading"));
     line.add_css_class("kalam-home-book-line");
     line.set_halign(gtk::Align::Start);
-    line.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    // No ellipsis here: the kicker is this one fixed string and at §3's
+    // Label size it fits the 177px text column, so an ellipsis on it can only
+    // mean the column shrank — which is worth seeing as overflow, not hiding.
     page.append(&line);
 
     let title: &str = if chapter_title.is_empty() {

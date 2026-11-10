@@ -232,6 +232,18 @@ pub fn search_box(bar: &SearchBar, items: &[SearchItem], history: &[String]) -> 
     });
 
     let typed = state.clone();
+
+    // A focus that arrives before the bar is mapped -- GTK handing a new
+    // window's first focus to the field -- pops nothing: popup() under an
+    // unmapped parent is a no-op and the notify has already fired, leaving
+    // the bar focused with no box under it. Re-check once the bar is mapped.
+    let entry_for_map = bar.entry.clone();
+    let pop_for_map = popover.clone();
+    bar.root.connect_map(move |_| {
+        if entry_for_map.has_focus() && !pop_for_map.visible() {
+            pop_for_map.popup();
+        }
+    });
     bar.entry.connect_changed(move |_| typed.render());
 
     // Decision 200's option menu on the picker. §57 gives the picker the

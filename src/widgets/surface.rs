@@ -104,7 +104,7 @@ pub fn side_panel_close_button(on_close: impl Fn() + 'static) -> gtk::Button {
     icon_button("window-close-symbolic", "Close panel", 32, false, on_close)
 }
 
-fn state_card_shell(heading: &str, message: &str) -> gtk::Box {
+fn state_card_shell(heading: &str, message: &str, max_chars: Option<i32>) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Vertical, crate::style::spacing::XS);
     card.add_css_class("kalam-ui-state-card");
     card.set_halign(gtk::Align::Fill);
@@ -114,6 +114,9 @@ fn state_card_shell(heading: &str, message: &str) -> gtk::Box {
     title.set_halign(gtk::Align::Center);
     title.set_xalign(0.5);
     title.set_wrap(true);
+    if let Some(chars) = max_chars {
+        title.set_max_width_chars(chars);
+    }
     card.append(&title);
 
     let body = gtk::Label::new(Some(message));
@@ -121,23 +124,36 @@ fn state_card_shell(heading: &str, message: &str) -> gtk::Box {
     body.set_halign(gtk::Align::Center);
     body.set_xalign(0.5);
     body.set_wrap(true);
+    if let Some(chars) = max_chars {
+        body.set_max_width_chars(chars);
+    }
     card.append(&body);
     card
 }
 
 /// Dashed blocking-state card (§10).
 pub fn state_card(heading: &str, message: &str) -> gtk::Box {
-    state_card_shell(heading, message)
+    state_card_shell(heading, message, None)
 }
 
 /// State card with the optional ghost action used by empty/error states.
+/// A state card whose wrapping labels are capped at `max_chars`, for columns
+/// narrow enough that the labels' natural width would otherwise stretch the
+/// column: a width request is a floor, and a wrapping label's natural width
+/// is its whole text on one line, so Home's 470 column (home-spec §1) came
+/// out 518 with the plain card. Columns wide enough to wrap at their
+/// allocation look the same either way, so they keep [`state_card`].
+pub fn state_card_narrow(heading: &str, message: &str, max_chars: i32) -> gtk::Box {
+    state_card_shell(heading, message, Some(max_chars))
+}
+
 pub fn state_card_with_action(
     heading: &str,
     message: &str,
     action_label: &str,
     on_action: impl Fn() + 'static,
 ) -> gtk::Box {
-    let card = state_card_shell(heading, message);
+    let card = state_card_shell(heading, message, None);
     let action = ghost_button(action_label, on_action);
     action.set_halign(gtk::Align::Center);
     action.set_margin_top(crate::style::spacing::XS);

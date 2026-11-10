@@ -583,7 +583,7 @@ impl Component for HomePageModel {
             click.set_propagation_phase(gtk::PropagationPhase::Capture);
             let panel_for_click = box_for_click.clone();
             let bar_for_click = search.root.clone();
-            click.connect_pressed(move |gesture, x, y| {
+            click.connect_pressed(move |gesture, _n_press, x, y| {
                 if !panel_for_click.get_visible() {
                     return;
                 }
@@ -597,7 +597,9 @@ impl Component for HomePageModel {
                     }
                     None => false,
                 };
-                if !inside(&panel_for_click) && !inside(&bar_for_click) {
+                let panel_w = panel_for_click.upcast_ref::<gtk::Widget>();
+                let bar_w = bar_for_click.upcast_ref::<gtk::Widget>();
+                if !inside(panel_w) && !inside(bar_w) {
                     panel_for_click.set_visible(false);
                     gesture.set_state(gtk::EventSequenceState::Denied);
                 }

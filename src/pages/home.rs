@@ -456,11 +456,36 @@ impl Component for HomePageModel {
         // capture-phase controller claims Ctrl+F here and leaves the jump to
         // All Books intact on every other page. `/` does the same, except that
         // it types a slash once the field has focus.
-        let keys = gtk::EventControllerKey::new();
-        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
-        keys.connect_key_pressed({
+        // home-spec §7's keys, on B22's ruling: Home's field wins Ctrl+F
+        // while Home is showing, and the shell's binding keeps its job
+        // everywhere else. The first photograph of the keys run proved the
+        // obvious placement blind: a controller on the page root never sees
+        // a key pressed while no widget has focus, because the event's
+        // target is then the window itself and the path never walks the
+        // page -- keys-home-search.png from run 42862494812 shows All Books
+        // after a chord sent from Home, the shell having taken it untouched.
+        // The claim therefore sits on the window in the capture phase, ahead
+        // of the shell's bubble-phase handler, gated on Home being the mapped
+        // page: true on map, false on unmap, so a cached-but-hidden Home
+        // claims nothing and every other page reaches the shell as before.
+        let home_shown = std::rc::Rc::new(std::cell::Cell::new(false));
+        root.connect_map({
+            let shown = home_shown.clone();
+            move |_| shown.set(true)
+        });
+        root.connect_unmap({
+            let shown = home_shown.clone();
+            move |_| shown.set(false)
+        });
+        let window = root.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+        if let Some(window) = window {
             let entry = search.entry.clone();
-            move |_, keyval, _, modifiers| {
+            let keys = gtk::EventControllerKey::new();
+            keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+            keys.connect_key_pressed(move |_, keyval, _, modifiers| {
+                if !home_shown.get() {
+                    return gtk::glib::Propagation::Proceed;
+                }
                 let ctrl = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
                 let find = ctrl && (keyval == gtk::gdk::Key::f || keyval == gtk::gdk::Key::F);
                 if find {
@@ -480,12 +505,9 @@ impl Component for HomePageModel {
                     return gtk::glib::Propagation::Stop;
                 }
                 gtk::glib::Propagation::Proceed
-            }
-        });
-        // The root this page was handed, not a field of the view: the
-        // controller has to sit above every widget on the page, so it claims
-        // the key whatever has focus.
-        root.add_controller(keys);
+            });
+            window.add_controller(keys);
+        }
 
         // Stage-1 placeholders (B12): the shelf area says what is coming,
         // and the card host shows the dashed block the snapshot replaces a

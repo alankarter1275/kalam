@@ -1138,7 +1138,7 @@ jobs:
         run: |
           BOOKS=20 OUT=ci-shots-home-search-light SETTLE=20 ROUTE=home \
             THEME=terracotta-light OUTPUT_W=1280 OUTPUT_H=800 \
-            KALAM_HOME_SEARCH=dune docs/ci/screenshot.sh
+            KALAM_HOME_SEARCH=ursula docs/ci/screenshot.sh
       - name: open home whole (light) and report
         if: matrix.group == 'pages'
         run: |

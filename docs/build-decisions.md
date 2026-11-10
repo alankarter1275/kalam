@@ -719,6 +719,33 @@ at B21's 450), measured correct to the pixel. They looked wrong at a glance
 and are not. That is the argument for measuring: half of what a first look
 reports is a guess about which side of a line a pixel sits on.
 
+## B26. The claim moves to the window, and two small silent deaths
+
+The second photograph round caught what the first could not: chord 6 of the
+keystroke probe navigated to All Books from Home. The page-root capture
+controller B24 described is blind to the common case — with no widget
+focused, a key event's target is the window itself, so the propagation path
+never walks the page and the shell's bubble-phase handler takes the chord
+untouched. The claim now sits on the window in the capture phase, ahead of
+the shell, gated on a flag that is true while Home is mapped and false while
+it is cached but hidden, so every other page reaches the shell exactly as
+before and a hidden Home claims nothing.
+
+Two silent deaths beside it, both found in the app's own stderr inside the
+committed report, both present since stage 2 and invisible in every text
+witness:
+
+- `border-radius: 0 0 14 14;` — unitless lengths, which GTK's parser rejects
+  ("Theme parser error: Unit is missing"), so §57's rounded bottom corners on
+  the result box and its fade never rendered at all. Now `14px`. The older
+  sheets carry unitless `line-height` values and parse clean, so line-height
+  takes a bare ratio and was left alone; an earlier bulk conversion to `em`
+  was reverted before it could re-lead every approved page.
+- The staged capture queried `dune`, which matches nothing in the showcase
+  rows, so its frame would have shown the no-match card and been read as a
+  broken box. The query is `ursula` now: two book rows, an author row and a
+  series row, three groups in one frame.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

@@ -863,7 +863,7 @@ popover.kalam-search-box > contents {
     background: @kalam_bg;
     border: 1px solid @kalam_border;
     border-top: none;
-    border-radius: 0 0 14 14;
+    border-radius: 0 0 14px 14px;
     box-shadow: none;
     padding: 0;
     margin: 0;
@@ -940,7 +940,7 @@ popover.kalam-search-box > contents {
    row of a short one. */
 .kalam-search-fade {
     background: linear-gradient(to bottom, alpha(@kalam_bg, 0), @kalam_bg);
-    border-radius: 0 0 14 14;
+    border-radius: 0 0 14px 14px;
 }
 
 /* §57 puts §10's dashed card inside the box when nothing matches; the 20 at

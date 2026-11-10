@@ -373,7 +373,8 @@ impl Results {
             let state = self.clone();
             move || state.clear_history()
         });
-        self.list.append(&self.heading_row("Recent searches", Some(clear)));
+        self.list
+            .append(&self.heading_row("Recent searches", Some(clear)));
         if queries.is_empty() {
             let none = gtk::Label::new(Some("Searches you open will be listed here."));
             none.add_css_class("kalam-ui-meta");

@@ -240,7 +240,7 @@ pub fn search_box(bar: &SearchBar, items: &[SearchItem], history: &[String]) -> 
     let entry_for_map = bar.entry.clone();
     let pop_for_map = popover.clone();
     bar.root.connect_map(move |_| {
-        if entry_for_map.has_focus() && !pop_for_map.visible() {
+        if entry_for_map.has_focus() && !pop_for_map.is_mapped() {
             pop_for_map.popup();
         }
     });

@@ -436,11 +436,14 @@ impl Component for HomePageModel {
             // no box is the one combination §57 does not describe, so on an
             // unstaged launch Home hands that first focus back and rests.
             if focus_entry.has_focus() {
-                if let Some(root) = focus_entry.root() {
-                    if let Ok(window) = root.downcast::<gtk::Window>() {
-                        window.set_focus(None::<&gtk::Widget>);
-                    }
-                }
+                // Dropping focusable for one tick hands the focus back
+                // without naming a new owner; restoring it in the same tick
+                // leaves the field clickable and tab-reachable as before.
+                // (WindowExt::set_focus would say the same in one call, but
+                // two traits in scope both answer to that name and the
+                // compiler refuses to choose -- E0034, run 42867562973.)
+                focus_entry.set_focusable(false);
+                focus_entry.set_focusable(true);
                 crate::timing::note("home_focus:cleared", 1);
             } else {
                 crate::timing::note("home_focus:resting", 1);

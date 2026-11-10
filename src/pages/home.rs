@@ -168,6 +168,11 @@ const SHOWCASE_HISTORY: &[&str] = &[
     "dickinson",
 ];
 
+/// How many Home pages this launch has built. The log shows two per launch
+/// (route_open:home twice) and the search box's witnesses carry the number so
+/// a silent handler can be tied to the instance that registered it.
+static INSTANCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 /// Navigation requests from Home. Variants are named for their destination
 /// rather than sharing an `Open` prefix (clippy::enum_variant_names) -- the
 /// same convention `LibraryOut` uses. The dashboard's `BookDialog`,
@@ -409,7 +414,13 @@ impl Component for HomePageModel {
         // rows are the invented ones below; the timeline's are too.
         let search = search_bar::search_bar(SEARCH_HINT);
         widgets.search_host.append(&search.root);
-        search_box::search_box(&search, &showcase_search(), &showcase_history());
+        // The tag rides in every search_box witness: the log shows two Home
+        // builds per launch (route_open:home twice), and seven rounds of
+        // silent witnesses need to know which instance the visible bar
+        // belongs to.
+        let instance = INSTANCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as i32 + 1;
+        crate::timing::note("home_init", instance as usize);
+        search_box::search_box(&search, &showcase_search(), &showcase_history(), instance);
 
         // Staging for the CI photographs, and nothing else: with
         // KALAM_HOME_SEARCH set, the field opens pre-filled on the first idle
@@ -424,7 +435,10 @@ impl Component for HomePageModel {
         gtk::glib::idle_add_local_once(move || {
             if !staged_query.is_empty() {
                 focus_entry.set_text(&staged_query);
+                crate::timing::note("home_staged:grab", instance as usize);
                 focus_entry.grab_focus();
+                let grabbed = usize::from(focus_entry.has_focus());
+                crate::timing::note("home_staged:grabbed", instance as usize + grabbed * 100);
                 crate::timing::note("home_focus:staged", 1);
                 return;
             }
@@ -484,8 +498,10 @@ impl Component for HomePageModel {
         // asked for at init is a controller that never exists -- which is
         // what run 42871002844 proved, chord 6 navigating to All Books
         // through a build that believed it had claimed the chord.
+        let instance_for_map = instance;
         root.connect_map(move |w| {
             shown_for_map.set(true);
+            crate::timing::note("home_map", instance_for_map as usize);
             if attached.get() {
                 return;
             }
@@ -512,6 +528,7 @@ impl Component for HomePageModel {
                     // nothing at all.
                     let _t = crate::timing::measure("home_search:ctrl_f");
                     entry.grab_focus();
+                    crate::timing::note("home_claim:grabbed", usize::from(entry.has_focus()));
                     return gtk::glib::Propagation::Stop;
                 }
                 if keyval == gtk::gdk::Key::slash && !ctrl && !entry.has_focus() {

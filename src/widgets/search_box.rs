@@ -153,7 +153,12 @@ impl SearchItem {
 /// Hang the box under `bar` and wire it to the bar's field, count and picker.
 /// `items` is the dummy library the box filters; `history` is the dummy recent
 /// list (decision 197), which the crosses and Clear really do edit.
-pub fn search_box(bar: &SearchBar, items: &[SearchItem], history: &[String]) -> gtk::Popover {
+pub fn search_box(
+    bar: &SearchBar,
+    items: &[SearchItem],
+    history: &[String],
+    tag: i32,
+) -> gtk::Popover {
     let popover = gtk::Popover::new();
     popover.add_css_class("kalam-search-box");
     popover.set_has_arrow(false);
@@ -236,16 +241,27 @@ pub fn search_box(bar: &SearchBar, items: &[SearchItem], history: &[String]) -> 
     let focus_entry = bar.entry.clone();
     let focus_ctrl = gtk::EventControllerFocus::new();
     focus_ctrl.connect_enter(move |_| {
+        // Probe round (owner ruling): every witness carries the instance
+        // tag, because the log shows Home being built twice per launch and
+        // nothing so far has said which instance the visible bar belongs
+        // to. enter firing at all distinguishes "the signal never comes"
+        // from "the open call dies".
+        crate::timing::note("home_box:enter", tag as usize);
         if focus_entry.has_focus() {
+            crate::timing::note("home_box:before2", tag as usize);
             focus_open.popup();
-            crate::timing::note("home_box:enter", 1);
+            crate::timing::note("home_box:after2", tag as usize);
         }
     });
     bar.entry.add_controller(focus_ctrl);
     bar.entry.connect_has_focus_notify(move |entry| {
+        // Value = tag*10 + focused, so one line says both which instance
+        // spoke and whether it was gaining or losing focus.
+        crate::timing::note("home_box:notify", tag as usize * 10 + usize::from(entry.has_focus()));
         if entry.has_focus() {
+            crate::timing::note("home_box:before", tag as usize);
             open_on_focus.popup();
-            crate::timing::note("home_box:popup", 1);
+            crate::timing::note("home_box:after", tag as usize);
             // The photographs show a focused field with no box under it and
             // no warning in any log, so the next round needs to see what the
             // popover did: whether it mapped at all, and whether something

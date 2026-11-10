@@ -70,6 +70,7 @@ pub fn search_bar(hint: &str) -> SearchBar {
     entry.connect_has_focus_notify({
         let root = root.clone();
         move |entry| {
+            crate::timing::note("home_bar:notify", usize::from(entry.has_focus()));
             if entry.has_focus() {
                 root.add_css_class("focused");
             } else {
@@ -86,6 +87,7 @@ pub fn search_bar(hint: &str) -> SearchBar {
     let class_entry = entry.clone();
     let focus_ctrl = gtk::EventControllerFocus::new();
     focus_ctrl.connect_enter(move |_| {
+        crate::timing::note("home_bar:enter", 1);
         if class_entry.has_focus() {
             class_root.add_css_class("focused");
         }

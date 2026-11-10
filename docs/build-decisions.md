@@ -782,13 +782,15 @@ highlighted matches, gutter and fade -- after nine rounds in which no
 box ever appeared. Two things in that photograph were wrong, and both
 were the photograph's doing to find:
 
-- The fade over the list's bottom edge painted the wrong way round.
-  Its solid end sat at the top of the band, erasing the top of the
-  quote row and the whole "Saved quotes" heading with it, while the
-  last row under the band stayed crisp. The stops are now written in
-  the order that paints clear-to-solid top-to-bottom on screen; the
-  comment records that the written order and the painted order
-  disagree, so nobody "fixes" it back.
+- The quote row's glyph tops and the whole "Saved quotes" heading are
+  absent from the frame along a straight horizontal line, while the
+  Updates block's fade -- the same gradient syntax -- paints exactly
+  as written, so the fade stops stay as they are and the cut is a
+  layout fault, not a gradient one. The next probe carries the box
+  panel's allocated size, because a panel allocated no height of its
+  own would look precisely like this: GTK boxes do not clip, so the
+  content paints through while the panel's own border, fill and
+  radius paint nothing -- and none of the three appears in any frame.
 - The salmon ring around the field is not a focus state. It is there
   in unfocused launches too, and it survived `:focus` and
   `:focus-visible` both, so the base rule now carries `outline: none`

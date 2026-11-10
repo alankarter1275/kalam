@@ -796,6 +796,12 @@ entry.kalam-search-entry {
     background: none;
     border: none;
     box-shadow: none;
+    /* The ring the first photographs showed survives `:focus` and
+       `:focus-visible` both, and it is there in unfocused launches too, so
+       the base rule says no outline at all: transparent colour as well as
+       no style, because width alone left it on screen. */
+    outline: none;
+    outline-color: transparent;
     padding: 0;
     min-height: 0;
     font-size: 14px;
@@ -812,9 +818,11 @@ entry.kalam-search-entry > text {
    outline -- a full-perimeter ring -- is what appeared, reading as a focus
    style the design does not have. */
 entry.kalam-search-entry:focus,
+entry.kalam-search-entry:focus-within,
 entry.kalam-search-entry:focus-visible {
-    outline-style: none;
-    outline-width: 0;
+    outline: none;
+    outline-color: transparent;
+    box-shadow: none;
 }
 
 /* §57: "N results" in Meta at the bar's right. */

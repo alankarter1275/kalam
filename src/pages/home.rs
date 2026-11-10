@@ -465,6 +465,15 @@ impl Component for HomePageModel {
                 // launch's own belt-and-braces.
                 staged_pop.set_visible(true);
                 crate::timing::note("home_focus:staged", 1);
+                // The allocation probe: the box's own border, fill and
+                // radius never appear in any frame while its content does,
+                // which is what a panel allocated no size of its own would
+                // look like -- GTK boxes do not clip, so an oversized child
+                // paints right through a zero-height parent while the
+                // parent's own border paints nothing. Height first, then
+                // width, then the shell child's height for comparison.
+                crate::timing::note("home_box:alloc_h", staged_pop.get_allocated_height());
+                crate::timing::note("home_box:alloc_w", staged_pop.get_allocated_width());
                 return;
             }
             // The first Home photographs disagreed with each other: one

@@ -1,7 +1,4 @@
-src/pages/home.rs:441:32: [1m[91merror[E0034][0m: multiple applicable items in scope: multiple `set_focus` found
-src/widgets/search_box.rs:243:54: [1m[91merror[E0599][0m: no method named `visible` found for struct `gtk4::Popover` in the current scope
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -31,9 +28,5 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m ureq v2.12.1
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/home.rs:441:32: [1m[91merror[E0034][0m: multiple applicable items in scope: multiple `set_focus` found
-src/widgets/search_box.rs:243:54: [1m[91merror[E0599][0m: no method named `visible` found for struct `gtk4::Popover` in the current scope
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
---- run 42870416511 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 20.63s
+--- run 42871002844 ---

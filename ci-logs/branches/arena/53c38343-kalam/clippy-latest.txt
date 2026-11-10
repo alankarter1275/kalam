@@ -1,8 +1,9 @@
-src/pages/home.rs:586:19: [1m[91merror[E0593][0m: closure is expected to take 4 arguments, but it takes 3 arguments: expected closure that takes 4 arguments
-src/pages/home.rs:600:28: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/home.rs:600:57: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
+src/pages/home.rs:596:30: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `f32`
+src/pages/home.rs:596:41: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `f32`
+src/pages/home.rs:596:64: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `f32`
+src/pages/home.rs:596:75: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `f32`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -24,10 +25,11 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/home.rs:586:19: [1m[91merror[E0593][0m: closure is expected to take 4 arguments, but it takes 3 arguments: expected closure that takes 4 arguments
-src/pages/home.rs:600:28: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/home.rs:600:57: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
+src/pages/home.rs:596:30: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `f32`
+src/pages/home.rs:596:41: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `f32`
+src/pages/home.rs:596:64: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `f32`
+src/pages/home.rs:596:75: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `f32`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
---- run 42901238057 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+--- run 42901562839 ---

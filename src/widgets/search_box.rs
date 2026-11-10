@@ -427,7 +427,8 @@ impl Results {
             ("scroll", self.scroll.upcast_ref::<gtk::Widget>().clone()),
             ("list", self.list.upcast_ref::<gtk::Widget>().clone()),
         ] {
-            let (x, y, w, h) = widget.allocation();
+            let rect = widget.allocation();
+            let (x, y, w, h) = (rect.x(), rect.y(), rect.width(), rect.height());
             println!(
                 "[searchbox] {when} {name} x={x} y={y} w={w} h={h}                  req_h={}",
                 widget.height()

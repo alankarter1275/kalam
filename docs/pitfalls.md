@@ -4170,3 +4170,32 @@ believing its activity label. The label says what the screen was doing; the
 tail says whether it was waiting, and for whom. A `[stall]` line whose tail
 reads `catalogue lock: free` is not a contention bug, and chasing the named
 task is chasing the same stale guess that wasted the day this entry came from.
+
+## §110 — a photograph nobody can open is not evidence
+
+The smoke test publishes its pictures twice over: once as an Actions
+artifact, which the owner clicks in the run summary, and — until 2026-11-10 —
+nowhere else. The sandbox cannot download an artifact (the blob host answers
+with a redirect to a domain it has no route to), so the builder of the very
+surfaces in those pictures never saw one. Every visual question in this
+repository got answered from report text, fingerprints and lit percentages,
+because text was what got committed and pictures were what got uploaded, and
+nothing ever failed over the gap: the reports never say "the proof is over
+there, where you cannot go".
+
+The general shape is worth more than the instance. When a tool produces
+output for two audiences with different reach, publish to the least able one,
+because the more able one will find a way. Here that meant committing a
+curated few frames beside the text reports, under stable names, on branches
+too; main's canonical `ci-logs/*.png` had been readable from the checkout all
+along, and the blindness was branch-scoped — exactly where new work happens.
+
+Two habits follow. First, when a claim rests on a picture, ask where the
+picture lives and whether the person making the claim can open it; a metric
+derived from an image is not the image, and the difference is the whole
+difference between "the frame is 62% lit" and "the search box is open over
+the wrong column". Second, treat a workflow comment that says something is
+impossible as a claim with a date on it: the comments here recorded a true
+fact (artifacts are unreachable) and drew a false conclusion (therefore the
+images are for humans), and the false half survived because nothing
+downstream of it ever failed.

@@ -602,6 +602,51 @@ short list the page hands it by plain case-insensitive substring, and nothing in
 it navigates. What the switch, the delete crosses, the expand link, the count
 and the skeleton lines do is real.
 
+## B23. The photographs get published where the build can read them
+
+The smoke test has always taken photographs, and the owner has always been
+able to click them in a run's summary. The builder could not. A shard uploads
+its settled frames as an Actions artifact, and the sandbox has no route to the
+artifact host — it answers with a redirect to a storage domain that is
+blocked — so for every unit so far the visual evidence existed only where the
+one worker who needed it could not go. The reports were readable because they
+are text committed to the branch; the pictures were not, because nobody
+committed them on a branch.
+
+The owner's complaint was exactly right, and the second half of it was the
+fixable half: a picture that has to be judged is only as good as the place it
+is published. Anything committed to the branch can be opened and looked at;
+an artifact cannot. So the photographs now travel with the text.
+
+What changed, all in the CI workflow and its README:
+
+- The smoke matrix photographs Home in both Terracotta modes at 1280×800,
+  the design board's own size, because at that width home-spec.md's numbers
+  are the page's numbers and a frame can be held against the board without
+  rescaling.
+- A branch run copies a short list of pictures into
+  `ci-logs/branches/<branch>/`, next to its text reports: Home light, Home
+  dark, and the keystroke probe's two Home frames — the page on arrival, and
+  the page after Ctrl+f, which since B22 gives that chord to Home's own field
+  is the page with the results box open. Names are stable and overwritten on
+  every run, so a branch carries one copy of the current truth rather than a
+  picture per commit, and main deletes the directory on its first run after a
+  merge, so nothing accumulates.
+- Main's canonical `ci-logs/` set gains the same two Home frames, and the two
+  workflow comments that said the pictures are for humans only, and that the
+  text report is the only thing the agent can see, are corrected: what the
+  agent cannot reach is an artifact or a log, not an image in the tree.
+
+The list is a decision, not a default. The figure that made images main-only
+— 19.5 MB a run for the full set of 133 frames, against 1.21 MB of text — is
+why the list is four pictures and not all of them. A stage that needs eyes on
+a screen adds its frame to the publish step's list, and says so here.
+
+The workflow comments that claimed otherwise were the reason this stayed
+broken: they recorded a true fact (artifacts are unreachable) and drew a
+false conclusion from it (therefore images are for humans), and the false
+half was never revisited because nothing downstream of it ever failed.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a
@@ -637,6 +682,17 @@ and the skeleton lines do is real.
    from "starved" in one number. Roadmap 1.2's own note — *revisit when a large
    library makes those reads measurable* — is the standing invitation this
    answers.
+
+5. **The keystroke probe still expects Ctrl+f to leave Home.** B22 gives that
+   chord to Home's own search field while Home is showing, so the probe's
+   sixth chord — sent from Home, expecting `route_open:all_books` — now
+   reports FAILED, and the seventh chord (Back) fails behind it because there
+   is no history entry to pop. The behaviour is correct; the probe's
+   expectation predates the ruling. The fix on offer: prove the page's claim
+   with a witness line from the app when the field takes the chord, prove the
+   shell's binding by sending Ctrl+f from a page that does not claim it, and
+   point Back at wherever that leaves the stack. Not done yet, on the owner's
+   instruction to be consulted first.
 
 Settled while the rail was built, and built: the entries and their order (B1),
 the "My Library" label (B1, decision 173), the active glyph (B8), the rail's

@@ -1103,6 +1103,28 @@ jobs:
             THEME=terracotta-dark OUTPUT_W=1600 OUTPUT_H=3400 \
             docs/ci/screenshot.sh
 
+      # Home, at the design board's own 1280x800 rather than the 1600x1200 the
+      # page shots use. That is not a smaller window for its own sake: at 1280
+      # wide the columns, the card and the 520px search bar sit at the numbers
+      # docs/design/home-spec.md gives, so the picture can be held against the
+      # board without rescaling. Both Terracotta modes, like the gallery above.
+      #
+      # These two frames are also published into the branch's ci-logs directory
+      # by the last step of the publish job, because a picture that has to be
+      # judged is worthless in an artifact: the sandbox cannot download one.
+      - name: open home (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-home-light SETTLE=20 ROUTE=home \
+            THEME=terracotta-light OUTPUT_W=1280 OUTPUT_H=800 \
+            docs/ci/screenshot.sh
+      - name: open home (dark) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-home-dark SETTLE=20 ROUTE=home \
+            THEME=terracotta-dark OUTPUT_W=1280 OUTPUT_H=800 \
+            docs/ci/screenshot.sh
+
       # The redesigned book details page, photographed the same way: a
       # real page at a plausible window size, both Terracotta modes.
       # Book 1 is the first seeded EPUB (AUTOINCREMENT from 1).
@@ -1633,8 +1655,9 @@ jobs:
           retention-days: 1
 
   publish-screenshots:
-    # The images are main-only. The text reports are not, and the two are now
-    # published by separate steps below.
+    # Every image used to be main-only; a branch now gets a short curated list
+    # as well, because the agent reads committed files and cannot download
+    # artifacts at all. The two are published by separate steps below.
     #
     # This job used to be main-only altogether, on the reasoning that a
     # branch-specific copy would add roughly 20 MB per branch merged. Measured
@@ -1683,8 +1706,10 @@ jobs:
 
       # The Arena sandbox cannot download Actions artifacts -- the blob host is
       # unreachable from it, exactly like the Actions log host (which is why
-      # clippy failures are committed to ci-logs/). The PNGs are for humans;
-      # this text report is the only way the agent can see what happened.
+      # clippy failures are committed to ci-logs/). Anything committed to the
+      # branch it can read, text and pictures alike, which is what makes these
+      # two steps the only channel the agent has: this report says what
+      # happened, and the frames below show it.
       # Committed on success AND failure, because a failed run is precisely
       # when the diagnostics matter.
       - name: publish the report
@@ -1747,6 +1772,14 @@ jobs:
             echo "  (no new keys-latest.txt this run; keeping the previously committed one)";
           fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/keys-latest.txt
+          if [ -f ci-shots-home-light/report.txt ]; then cp ci-shots-home-light/report.txt ci-logs/home-light-latest.txt; else
+            echo "  (no new home-light-latest.txt this run; keeping the previously committed one)";
+          fi
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/home-light-latest.txt
+          if [ -f ci-shots-home-dark/report.txt ]; then cp ci-shots-home-dark/report.txt ci-logs/home-dark-latest.txt; else
+            echo "  (no new home-dark-latest.txt this run; keeping the previously committed one)";
+          fi
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/home-dark-latest.txt
           if [ -f ci-shots-components-light/report.txt ]; then cp ci-shots-components-light/report.txt ci-logs/components-light-latest.txt; else
             echo "  (no new components-light-latest.txt this run; keeping the previously committed one)";
           fi
@@ -2054,6 +2087,13 @@ jobs:
             ci-logs/reader-search-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-reader-search-missing/03-read-1-settled.png \
             ci-logs/reader-search-missing-terracotta-dark.png 2>/dev/null || true
+          # Home is the page the current design work is judged against, so it
+          # leads the page frames here -- and it is captured at the board's own
+          # 1280x800, which is the size home-spec.md's numbers describe.
+          cp ci-shots-home-light/03-home-settled.png \
+            ci-logs/home-terracotta-light.png 2>/dev/null || true
+          cp ci-shots-home-dark/03-home-settled.png \
+            ci-logs/home-terracotta-dark.png 2>/dev/null || true
           cp ci-shots-components-light/03-components-settled.png \
             ci-logs/components-terracotta-light.png 2>/dev/null || true
           cp ci-shots-components-dark/03-components-settled.png \
@@ -2186,6 +2226,7 @@ jobs:
             ci-logs/reader-search-missing-latest.txt \
             ci-logs/tasks-latest.txt \
             ci-logs/keys-latest.txt \
+            ci-logs/home-light-latest.txt ci-logs/home-dark-latest.txt \
             ci-logs/components-light-latest.txt ci-logs/components-dark-latest.txt \
             ci-logs/book-light-latest.txt ci-logs/book-dark-latest.txt \
             ci-logs/book-tags-light-latest.txt ci-logs/book-tags-dark-latest.txt \
@@ -2279,6 +2320,8 @@ jobs:
                       ci-logs/reader-dict-missing-terracotta-dark.png \
                       ci-logs/reader-search-terracotta-dark.png \
                       ci-logs/reader-search-missing-terracotta-dark.png \
+                      ci-logs/home-terracotta-light.png \
+                      ci-logs/home-terracotta-dark.png \
                       ci-logs/components-terracotta-light.png \
                       ci-logs/components-terracotta-dark.png \
                       ci-logs/book-terracotta-light.png \
@@ -2382,6 +2425,39 @@ jobs:
             echo "--- run $GITHUB_RUN_ID ---" >> "$CILOG_DIR/$name-latest.txt"
             published=$((published + 1))
           done
+
+          # A short list of pictures, beside their reports.
+          #
+          # This step published text only, on the reasoning still recorded in
+          # the job header: the images are 19.5 MB a run, and the agent cannot
+          # read them. The size figure was right and the second half was not.
+          # What the agent cannot reach is an artifact or an Actions log --
+          # both answer with a redirect to a storage host the sandbox has no
+          # route to. A file committed to the branch it can read, pictures
+          # included: it renders them. So a frame that has to be judged
+          # belongs here, and the cost per run is why this list is short
+          # rather than why it is empty.
+          #
+          # Stable names, overwritten on every run, so a branch carries one
+          # copy of the current truth instead of a picture per commit. main
+          # deletes this directory on its first run after a merge, so none of
+          # it accumulates. Add a frame here when a stage needs eyes on it.
+          cp ci-shots-home-light/03-home-settled.png \
+            "$CILOG_DIR/home-terracotta-light.png" 2>/dev/null || true
+          cp ci-shots-home-dark/03-home-settled.png \
+            "$CILOG_DIR/home-terracotta-dark.png" 2>/dev/null || true
+          # The keystroke probe's two Home frames: the page as it looks on
+          # arrival, and as it looks after Ctrl+f -- which, since Home claims
+          # that chord for its own search field, is the page with the results
+          # box open.
+          cp ci-shots-keys/06-keys-home.png \
+            "$CILOG_DIR/keys-home.png" 2>/dev/null || true
+          cp ci-shots-keys/09-keys-search.png \
+            "$CILOG_DIR/keys-search.png" 2>/dev/null || true
+          echo "pictures in $CILOG_DIR:"
+          ls -la "$CILOG_DIR"/*.png 2>/dev/null | sed 's/^/  /'
+          echo "  (a name missing above means that capture produced no frame)"
+
           echo "published $published smoke-test report(s) into $CILOG_DIR"
           if [ "$published" -eq 0 ]; then
             echo "no ci-shots-*/report.txt was found, so there is nothing to"

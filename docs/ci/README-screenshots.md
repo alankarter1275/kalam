@@ -22,6 +22,7 @@ for the first two; the gallery needs no library to speak of and seeds 20):
 | `comic-series-book-22` + `COMIC_FIXTURE=1` | The comic-series drawer for that chapter's series, its Edit details dialog, the Find metadata search dialog, and a synthetic local Find review state staged by `DIALOG=find-comic-series-review`, so the metadata proof makes no provider request. |
 | `pdf-read-21` + `PDF_FIXTURE=1` | The PDF reader on the seeded outlined document, including chrome, Contents, Pages, Search, Notes, Reading, Image/Invert, Shortcuts, page-jump and drawing states over seeded strokes, shapes, a text box and a sticky note. `PDF_FIXTURE_STATE` also seeds genuinely encrypted, damaged and missing variants; their password, wrong-password, unlocked, corrupt and missing captures exercise the whole-book open states. |
 | `tasks` | The task manager's current empty/idle state. |
+| `home` | The Home page, twice: Terracotta Light and Dark at 1280×800. That is the design board's own size, and at that width the columns, the card and the 520px search bar sit at the numbers `docs/design/home-spec.md` gives, so the frame can be held against the board without rescaling. |
 | `components` | The hidden redesign component gallery, twice: Terracotta Light and Dark on a tall 1600×3400 output. |
 | `book-1` | The redesigned book details page for the first seeded EPUB, twice: Terracotta Light and Dark at 1600×1200. |
 | `book-4` + `DIALOG=tags` | The book page's Tag dialog opened over it (`KALAM_DIALOG`), twice: Light and Dark. Book 4 is the first seeded book carrying three tags, so chips and ticked library rows render for real. |
@@ -68,6 +69,8 @@ The job commits text reports to:
 - `ci-logs/tasks-latest.txt`
 - `ci-logs/keys-latest.txt` (the keystroke probe; its frames are committed as
   `ci-logs/keys-*.png`)
+- `ci-logs/home-light-latest.txt`
+- `ci-logs/home-dark-latest.txt`
 - `ci-logs/components-light-latest.txt`
 - `ci-logs/components-dark-latest.txt`
 - `ci-logs/book-light-latest.txt`
@@ -94,6 +97,7 @@ direct inspection are the redesigned surfaces: the
 gallery, the book page and its two dialogs, the series page, the author
 page and its dialogs, and the Settings captures. Their settled frames
 are committed as
+`ci-logs/home-terracotta-{light,dark}.png`,
 `ci-logs/components-terracotta-{light,dark}.png`,
 `ci-logs/book-terracotta-{light,dark}.png`,
 `ci-logs/book-tags-terracotta-{light,dark}.png`,
@@ -107,6 +111,18 @@ are committed as
 `ci-logs/comics-*.png`, `ci-logs/comic-series-*.png` and
 `ci-logs/settings-*.png`, because a redesign
 nobody can look at is not verified and the agent cannot download artifacts.
+
+Those paths are main's. A branch gets its own copy under
+`ci-logs/branches/<branch>/` — every text report, plus a short curated list of
+pictures: Home in both modes, and the keystroke probe's two Home frames
+(`keys-home.png` on arrival, `keys-search.png` after Ctrl+f, which since Home
+claims that chord for its own field is the page with the results box open).
+The names are stable and overwritten on every run, so a branch carries one
+copy of the current truth rather than a picture per commit, and main deletes
+the whole directory on its first run after a merge. Add a frame to that list
+in the workflow's branch publish step when a stage needs eyes on it: the
+internal shard artifacts are unreachable from the sandbox, and a photograph
+nobody can open proves nothing.
 
 A passing route check is not a visual verdict. Compare the app's logs and
 fingerprints with what the selected route is expected to display. A reader
@@ -352,13 +368,14 @@ covered only by a human hand.
 - **Timing:** shared-runner milliseconds are not a performance benchmark.
   Use `KALAM_TIMING=1` on the target desktop for timing decisions. Peak memory
   is reported as a diagnostic.
-- **Screenshots:** the internal shard artifacts are still not reachable
-  from the Arena sandbox, so the committed report is what an agent can
-  inspect from the repository for most routes: fingerprints and
-  metrics, not the image itself. The redesign frames listed above are
-  committed as PNGs, so those can and should be eyeballed directly —
-  remembering the gallery's 1600×3400 software-rendered output is a shape
-  no user has.
+- **Screenshots:** the internal shard artifacts are not reachable from the
+  Arena sandbox, so what an agent can inspect is what got committed. For
+  most routes that is still the text report — fingerprints and metrics, not
+  the image. The frames listed above are committed as PNGs on main, and a
+  branch gets the short curated list under `ci-logs/branches/<branch>/`, so
+  those can and should be eyeballed directly — remembering the gallery's
+  1600×3400 software-rendered output is a shape no user has, and that
+  Home's two frames are the board's own 1280×800.
 
 ## Run locally
 

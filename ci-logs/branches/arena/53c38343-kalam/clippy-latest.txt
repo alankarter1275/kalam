@@ -1,4 +1,10 @@
-(no lines matched; last 100 lines of output)
+src/widgets/search_bar.rs:29:9: [1m[91merror[0m: fields `entry`, `count`, and `options` are never read
+src/widgets/updates.rs:152:9: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/widgets/updates.rs:157:13: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/widgets/updates.rs:163:13: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/widgets/updates.rs:167:13: [1m[91merror[0m: unused `std::result::Result` that must be used
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -11,26 +17,8 @@ Package 'gdk4' not found
 not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
-[1m[92m Downloading[0m crates ...
-[1m[92m  Downloaded[0m crc32fast v1.5.5
-[1m[92m  Downloaded[0m jiff v0.2.42
-[1m[92m   Compiling[0m crc32fast v1.5.5
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
-[1m[92m    Checking[0m jiff v0.2.42
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
-[1m[92m    Checking[0m env_logger v0.11.11
-[1m[92m    Checking[0m flate2 v1.1.11
-[1m[92m    Checking[0m zopfli v0.8.4
-[1m[92m    Checking[0m png v0.18.1
-[1m[92m    Checking[0m zip v9.5.0
-[1m[92m    Checking[0m ureq v2.12.1
-[1m[92m    Checking[0m zip v6.0.0
-[1m[92m    Checking[0m zip v2.6.1
-[1m[92m    Checking[0m epub-builder v0.8.3
-[1m[92m    Checking[0m tiny-skia v0.12.0
-[1m[92m    Checking[0m image v0.25.10
-[1m[92m    Checking[0m rbook v0.7.12
-[1m[92m    Checking[0m resvg v0.48.1
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-epub)
 [1m[92m    Checking[0m chapbook-layout v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-layout)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-render-tinyskia)
@@ -38,5 +26,12 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 25.74s
---- run 42830989367 ---
+src/widgets/search_bar.rs:29:9: [1m[91merror[0m: fields `entry`, `count`, and `options` are never read
+src/widgets/updates.rs:152:9: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/widgets/updates.rs:157:13: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/widgets/updates.rs:163:13: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/widgets/updates.rs:167:13: [1m[91merror[0m: unused `std::result::Result` that must be used
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
+--- run 42835081435 ---

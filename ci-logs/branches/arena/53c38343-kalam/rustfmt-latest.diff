@@ -18,7 +18,7 @@ index bb7af2f..dd094ba 100644
                  if let Some(w) = shaped {
                      crate::timing::note("home_box:shell_w", w.width().max(0) as usize);
 diff --git a/src/widgets/search_box.rs b/src/widgets/search_box.rs
-index 63dee71..bf08861 100644
+index 29b868f..333d066 100644
 --- a/src/widgets/search_box.rs
 +++ b/src/widgets/search_box.rs
 @@ -153,12 +153,7 @@ impl SearchItem {
@@ -35,7 +35,7 @@ index 63dee71..bf08861 100644
      // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
-@@ -280,7 +275,10 @@ pub fn search_box(
+@@ -285,7 +280,10 @@ pub fn search_box(
      bar.entry.connect_has_focus_notify(move |entry| {
          // Value = tag*10 + focused, so one line says both which instance
          // spoke and whether it was gaining or losing focus.
@@ -47,4 +47,4 @@ index 63dee71..bf08861 100644
      });
      panel.connect_hide(|_| {
          crate::timing::note("home_box:closed", 1);
---- run 42921316323 ---
+--- run 42924172673 ---

@@ -225,20 +225,27 @@ run by hand yet** — CI photographs Home but cannot judge it. The reading
 ruler (§61) and the search bar (§57) are stages 2 and 3: their absence is
 deliberate, not a defect.
 
-- [ ] Top left: the greeting on two lines — "Good morning", "Good afternoon"
-  or "Good evening" by the hour, in the big serif face — with today's date
-  under it. No name yet: that waits on the customization area in Settings
-  (B14).
+- [ ] Top left: the greeting on two big serif lines — "Good morning",
+  "Good afternoon" or "Good evening" by the hour, then a name under it at the
+  same size. The name is the design's own placeholder, "Harvey", until the
+  customization area in Settings exists (B14, B21). Home is flush to the page
+  edges, so the greeting stands 56 from the rail and the search row 28 from
+  the top — the board's own numbers.
 - [ ] Under it the quote: an italic serif couplet behind a thin accent rule,
   attribution below (§63). It is the placeholder — Dickinson — until the real
   source is settled (B13).
-- [ ] "YOUR SHELF" heading with an "Arrange by · Most recent" chip at its
+- [ ] "Your shelf" as an 18px serif section heading (§3's Section style, not
+  the 11px caption it was) with an "Arrange by · Most recent" chip at its
   right, and below them a dashed card filling the ruler's 340px band saying
   the ruler arrives next stage (B12). The chip does nothing yet.
-- [ ] Right column: a 560×360 card — left half the cover of the book last
-  read, right half its title in small capitals and, under it, "Where you
-  left off" with a quiet line: the chapter name and its first words wait
-  for their own store (B17) and return in a later stage (§60).
+- [ ] Right column: a 450×360 card, its right edge 32 from the window's —
+  two equal pages at the ratio every other cover in the app uses, 1:1.6
+  (B21). Left page the cover of the book last read, undistorted; right page
+  "CONTINUE READING" in small capitals, the book's title under it in the
+  serif face, and a passage of showcase text where the excerpt goes — the
+  real one waits on the reader engine handing over text at the saved
+  position (home-spec §7), and the chapter name waits on its own store
+  (B17). Both are marked where they are built.
 - [ ] A round accent play button at the card's bottom-right resumes the
   reader at the saved position; an 18×36 accent ribbon hangs at its top,
   32 from the right.

@@ -207,7 +207,16 @@ impl Route {
     /// has its own Back, because leaving it can mean discarding
     /// unsaved changes).
     pub fn owns_its_surface(&self) -> bool {
-        self.is_reader() || matches!(self, Route::EditorWorkspace { .. })
+        // Home too, since B21: home-spec §1 draws it as "a full page on plain
+        // `bg`" whose measurements are taken from the rail and the top of the
+        // page, and the shell's 20/24 padding was offsetting every one of them
+        // by that much — the left column stood 80 from the rail rather than
+        // the board's 56. Flushing it also brings decision 90's external
+        // scrollbar policy, which §6 asks for, and drops the back chip, which
+        // the root of the app has no use for.
+        self.is_reader()
+            || matches!(self, Route::EditorWorkspace { .. })
+            || matches!(self, Route::Module(NavItem::Home))
     }
 }
 

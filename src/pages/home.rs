@@ -28,11 +28,36 @@ use relm4::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// The Home book card's cover page (§60): the left 280 of its 560 width.
-const COVER_W: i32 = 280;
+/// One page of the Home book card, at the ratio the rest of the app already
+/// uses for covers — `book_row::COVER_ASPECT` is 1.6, every shelf and grid
+/// cover is 128 x 204, and the thumbnails on disk are 256 x 408. So 225 x 360,
+/// and the card two of them side by side: 450 x 360 (B21).
+///
+/// §60 says 560 x 360, "two pages of 280", and 280 x 360 is 1:1.29. The cover
+/// decode is `resize_exact` into a picture set to `Fill`, so holding that
+/// number squeezed every cover on this page into a shape no cover in the
+/// library actually has, while the same cover two clicks away was undistorted.
+const COVER_W: i32 = 225;
 const COVER_H: i32 = 360;
+/// The card: its two equal pages side by side (§60, B21).
+const CARD_W: i32 = COVER_W * 2;
 /// How many in-progress books the pager holds (§60: five dots).
 const PAGER_MAX: usize = 5;
+/// The greeting's second Display line (decision 186: "the greeting stacked on
+/// two lines (Display)"). home-spec §7 names "Harvey" as the placeholder for
+/// the user's own name, and B21 puts the design's own placeholder here until
+/// the customization area in Settings exists (B14). The date the build showed
+/// instead has no line in the design, and at Display 46 it would not have fit
+/// the 470 column anyway.
+const GREETING_NAME: &str = "Harvey";
+/// Showcase text for the card's excerpt (B21). The real one comes from the
+/// reader engine at the saved position (home-spec §7) and nothing hands it over
+/// yet. A one-line apology cannot show whether Playfair 13 at 1.85 under a 96
+/// fade reads correctly, and that is what this card is now being judged on.
+const SHOWCASE_EXCERPT: &str = "The light in the hallway had gone out again, \
+    and she stood at the top of the stairs listening to the house settle around \
+    her. Somewhere below a door closed, and the sound came up through the floor \
+    and into the soles of her feet.";
 /// The placeholder quote (B13): §63's element drawn in full, so the real
 /// source drops into this one constant when the owner settles it. Public
 /// domain — Dickinson's couplet about what a book does.
@@ -122,10 +147,10 @@ impl Component for HomePageModel {
             set_hexpand: true,
             set_vexpand: true,
 
-            // The search row (§57): 28px above it, 520×40 — empty until
-            // stage 3 lands the underlined bar and its result box (B12).
-            // Reserving the row now is the ruling: the bar drops in later
-            // without moving anything below it.
+            // The search row (§57): 28 above it, 520 x 40, 56 from the rail —
+            // the board's own numbers, which hold now that Home owns its
+            // surface and the shell adds no padding of its own (B21). Empty
+            // until stage 3 lands the underlined bar and its result box.
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_size_request: (520, 40),
@@ -148,19 +173,20 @@ impl Component for HomePageModel {
                     set_halign: gtk::Align::Start,
                     set_valign: gtk::Align::Start,
 
-                    // The greeting, two Display lines (home-spec §1). The
-                    // second line is the date, not a name, until the
-                    // customization area in Settings exists (B14).
+                    // The greeting, two Display lines (home-spec §1, decision
+                    // 186). The second is the design's own placeholder name
+                    // until the customization area in Settings exists (B14,
+                    // B21); it is not the date, which the design has no line
+                    // for and which the build was standing in with.
                     gtk::Label {
                         set_label: &greeting_line(),
                         add_css_class: "kalam-home-greeting",
                         set_halign: gtk::Align::Start,
                     },
                     gtk::Label {
-                        set_label: &date_line(),
-                        add_css_class: "kalam-home-greeting-date",
+                        set_label: GREETING_NAME,
+                        add_css_class: "kalam-home-greeting-name",
                         set_halign: gtk::Align::Start,
-                        set_margin_top: 6,
                     },
 
                     // Quote (§63): Quote large behind a 1.5px accent rule,
@@ -216,11 +242,12 @@ impl Component for HomePageModel {
                     },
                 },
 
-                // Right column: 600 wide, its top 52 below the search row.
-                // The board nudges the column 24 past the page's right
-                // margin; the shell has no negative margin, so it stops 24
-                // short of the edge instead — stage 4 checks the two against
-                // the board.
+                // Right column: 600 wide, its top 52 below the search row,
+                // its right edge 32 from the window's — the board's 56 page
+                // margin nudged 24 past (home-spec §1). It keeps the board's
+                // 600 rather than narrowing to the card's 450: the card is
+                // right-anchored, so narrowing would not move it a pixel, and
+                // §64's state cards are sized to the column (B21).
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_width_request: 600,
@@ -228,7 +255,7 @@ impl Component for HomePageModel {
                     set_halign: gtk::Align::End,
                     set_valign: gtk::Align::Start,
                     set_margin_top: 52,
-                    set_margin_end: 24,
+                    set_margin_end: 32,
 
                     #[name = "card_host"]
                     gtk::Box {
@@ -274,7 +301,7 @@ impl Component for HomePageModel {
 
         let skeleton = gtk::Box::new(gtk::Orientation::Vertical, 0);
         skeleton.add_css_class("kalam-placeholder");
-        skeleton.set_size_request(560, 360);
+        skeleton.set_size_request(CARD_W, COVER_H);
         widgets.card_host.append(&skeleton);
 
         request_snapshot(&model.service, &sender);
@@ -490,7 +517,11 @@ fn paint_right(
                 "Open any book and it will wait for you here.",
             )
         };
-        card.set_size_request(560, 360);
+        // §64 sizes the two against different things: the empty-library card
+        // spans the column, and "Nothing in progress" stands where the book
+        // would, so it takes the book's footprint (B21).
+        let width = if library_empty { 600 } else { CARD_W };
+        card.set_size_request(width, COVER_H);
         card.set_valign(gtk::Align::Center);
         host.append(&card);
         return;
@@ -501,8 +532,9 @@ fn paint_right(
 }
 
 /// One card from §60: cover page left, reading page right, ribbon and play
-/// button over it, 560×360. Cover click opens the book's page; play resumes
-/// in the reader at the saved position.
+/// button over it — two equal pages at the app's own cover ratio, so 450 x 360
+/// rather than §60's 560 x 360 (B21). Cover click opens the book's page; play
+/// resumes in the reader at the saved position.
 fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> gtk::Widget {
     let CardData {
         book,
@@ -512,7 +544,7 @@ fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> 
 
     let overlay = gtk::Overlay::new();
     overlay.add_css_class("kalam-home-book-card");
-    overlay.set_size_request(560, 360);
+    overlay.set_size_request(CARD_W, COVER_H);
     overlay.set_halign(gtk::Align::Start);
 
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -531,21 +563,25 @@ fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> 
     });
     body.append(&cover);
 
-    // Reading page: chapter line (Label), chapter name (Card title),
-    // excerpt under a 96px fade to the card colour (§60).
+    // Reading page: the chapter line in Label style, the chapter name in Card
+    // title, the excerpt under a 96px fade to the card colour (§60). Step B's
+    // chapter-head store does not exist yet, so the kicker says what the card
+    // is and the Card-title line carries the book's own title — real data in
+    // the slot the chapter name will take, rather than a hole (B21). Decision
+    // 188's "no text beside the book" is about the space outside the card.
     let page = gtk::Box::new(gtk::Orientation::Vertical, 0);
     page.add_css_class("kalam-home-book-page");
     page.set_hexpand(true);
     page.set_vexpand(true);
 
-    let line = gtk::Label::new(Some(&book.title));
+    let line = gtk::Label::new(Some("Continue reading"));
     line.add_css_class("kalam-home-book-line");
     line.set_halign(gtk::Align::Start);
     line.set_ellipsize(gtk::pango::EllipsizeMode::End);
     page.append(&line);
 
     let title: &str = if chapter_title.is_empty() {
-        "Where you left off"
+        &book.title
     } else {
         chapter_title
     };
@@ -560,16 +596,11 @@ fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> 
     excerpt_box.set_margin_top(20);
     excerpt_box.set_vexpand(true);
     let text = gtk::Label::new(Some(if excerpt.is_empty() {
-        // B17: the chapter head's store is not built yet. Honest and
-        // temporary — the line names what will stand here.
-        "The chapter name and its first lines appear here once their store lands."
+        SHOWCASE_EXCERPT
     } else {
         excerpt
     }));
     text.add_css_class("kalam-home-book-excerpt");
-    if excerpt.is_empty() {
-        text.add_css_class("kalam-muted");
-    }
     text.set_wrap(true);
     text.set_xalign(0.0);
     text.set_yalign(0.0);
@@ -720,8 +751,7 @@ fn local_now() -> Option<gtk::glib::DateTime> {
         .ok()
 }
 
-/// The greeting's first line (home-spec §1). No name on the second line
-/// until the customization area in Settings exists (B14).
+/// The greeting's first line (home-spec §1). The second is `GREETING_NAME`.
 fn greeting_line() -> String {
     match local_now().map(|now| now.hour()) {
         Some(5..=11) => "Good morning".to_string(),
@@ -729,15 +759,6 @@ fn greeting_line() -> String {
         Some(_) => "Good evening".to_string(),
         None => "Hello".to_string(),
     }
-}
-
-/// The greeting's second line: today's date standing in for the name (B14),
-/// e.g. "Saturday, 08 November". Empty only when the clock is unreadable.
-fn date_line() -> String {
-    local_now()
-        .and_then(|now| now.format("%A, %d %B").ok())
-        .map(|s| s.to_string())
-        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -753,14 +774,30 @@ mod tests {
         assert!(!PLACEHOLDER_QUOTE.1.is_empty());
     }
 
-    /// The date line must not be empty wherever a clock reads at all — the
-    /// UTC fallback exists for machines with no local timezone configured,
-    /// and the greeting's second line has nothing else to stand on (B14).
-    /// Only an unreadable clock may produce "".
+    /// The card is two equal pages at the cover ratio the rest of the app
+    /// uses, and the card's width is twice a page — B21's ruling, pinned
+    /// because the numbers used to disagree with `book_row::COVER_ASPECT` and
+    /// nothing said so.
     #[test]
-    fn date_line_is_never_empty() {
-        if gtk::glib::DateTime::now_utc().is_ok() {
-            assert!(!date_line().is_empty());
-        }
+    fn the_card_is_two_pages_at_the_cover_ratio() {
+        let ratio = f64::from(COVER_H) / f64::from(COVER_W);
+        assert!(
+            (ratio - crate::widgets::book_row::COVER_ASPECT).abs() < 0.01,
+            "a page must hold the app's cover ratio, got 1:{ratio:.3}"
+        );
+        assert_eq!(CARD_W, COVER_W * 2, "two equal pages side by side");
+        assert_eq!((CARD_W, COVER_H), (450, 360), "the card B21 rules");
+    }
+
+    /// The greeting's second line is a name, not a date: decision 186 draws
+    /// two Display lines and home-spec §7 names the placeholder. Pinned so a
+    /// future edit does not quietly put the date back (B21).
+    #[test]
+    fn the_greeting_stands_on_two_display_lines() {
+        assert!(!GREETING_NAME.is_empty());
+        assert!(
+            !GREETING_NAME.contains(','),
+            "a name, not a formatted date"
+        );
     }
 }

@@ -493,6 +493,78 @@ of this that costs anything measurable, and the point of it. The cap and
 the wait line's wording are both pinned by tests in `src/lockwatch.rs`, because
 that line is the evidence and it has to stay readable.
 
+## B21 — Home becomes a showcase, and the book card keeps the cover's ratio (2026-11-09)
+
+Four owner rulings, given after an audit of the built Home against the design,
+and one correction the audit turned up on the way.
+
+**1. The card's sides are 1:1.6, equal — the ratio the rest of the app already
+uses.** `book_row.rs` has a named `COVER_ASPECT = 1.6`; every shelf, grid and
+list cover is 128 x 204, and the thumbnails written to disk are 256 x 408. Home
+alone carried private constants of 280 x 360, which is 1:1.29, and the cover
+decode is `resize_exact` into a picture set to `Fill` — so every cover on Home
+was being squeezed into a shape no cover in the library actually has. That half
+is a build bug and it is ours: §60 says the left page is 280 wide and the art
+goes in it, and nothing says to stretch the art.
+
+The other half is the design's own arithmetic. §60 and decision 188 fix the
+card at 560 x 360, "two pages of 280", so each side is 1:1.29 by construction
+and cannot show a 1.6 cover undistorted. Held to the design faithfully, the
+build produced squashed covers. The owner's ruling changes the card, and the
+height is the number that stays: **450 x 360, two pages of 225 x 360.** Costs
+accepted with it: the reading page's text column narrows from 216 to 161, so
+its padding goes from 40 32 to 32 24 to buy the excerpt room back; and about
+130px of air opens to the book's left inside the right column. The column stays
+600 wide rather than narrowing to 470 — the book is right-anchored, so
+narrowing would not have moved it a pixel, and §64's state cards (600 x 360,
+560 x 360) are keyed to the column's width.
+
+**2. The card stays wired.** Real books in progress, real covers, click the
+cover for Book details, play resumes in the reader, the pager switches between
+up to five. The two things with no store behind them carry showcase content in
+the real styles: the chapter name falls back to the book's title until Step B,
+and the excerpt is a stand-in passage until the reader engine hands over text
+at the saved position (home-spec §7). Both are marked where they are built.
+
+**3. Home becomes the showcase.** Every element is drawn at the design's size
+and shape with dummy content where no store exists — search, greeting, shelf,
+timeline — so the composition can be judged as a whole instead of a season
+late, which is how §105 and §106 were both found. The owner does not use the
+app daily; it is under active development, so a front door that does nothing
+costs nothing. Two things this supersedes: **B15** (the timeline is drawn as a
+dummy even though decision 189 hides it when there are no saved sources, which
+is the state the app is in), and **B14's** "no name in the greeting" for
+display purposes — the second Display line shows the design's own placeholder
+name until the customization area in Settings exists. B12's stages survive:
+each still lands as a showcase first and is wired when its store does.
+
+**4. Nothing is handed back to the design side.** The owner's word: do as he
+says. `docs/design/` stays read-only and untouched, and the deviations from it
+are recorded here instead — 560 x 360 becoming 450 x 360, the timeline drawn
+while decision 189 hides it, the greeting's second line carrying a placeholder
+name, and the shelf's caption, whose text is not written down anywhere in the
+design and is therefore invented here.
+
+**The correction the audit found.** Every number on the page was offset by the
+shell. `.kalam-content` pads the page 20 top and 24 at the sides, and Home laid
+its own margins on top of that, so the left column stood 80 from the rail
+rather than the board's 56 and the search row 48 from the top rather than 28.
+Home now owns its surface — flush padding, the external scrollbar policy of
+decision 90, no back chip — and sets the board's own numbers, with the right
+column's edge 32 from the window edge, which is the board's 56 margin nudged 24
+past. At 1280 wide the page is now the board; wider windows keep the
+composition and grow the air on the right.
+
+The rest of the audit, all of it built in this unit: "Your shelf" was an 11px
+uppercase caption where §3's Section style is Playfair 500 at 18, inverting the
+page's hierarchy under a 46px greeting; the excerpt had no 1.85 line height,
+the quote no 1.6, the greeting no 1.05; the reading page's first line carried
+the book's title where §60 asks for a chapter line, and decision 188 allows no
+text beside the book at all; the shelf was a dashed box although §61 says there
+is no outline around the shelf and §64's empty state is the base line with the
+Today ring; the Arrange-by chip was a static label rather than a button opening
+§43's list; and the shelf's caption was missing.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a
@@ -507,7 +579,10 @@ that line is the evidence and it has to stay readable.
 
 3. **The Home quote's real source** (B13) and **the customization area in
    Settings** that will carry the greeting's name (B14). Both are to be
-   discussed in this session; both have placeholders until then.
+   discussed in this session; both have placeholders until then. B21 puts
+   showcase content in both slots on Home — the design's own placeholder name
+   and a stand-in quote — so the page can be judged whole; neither slot is
+   wired, and both still need their real source.
 
 4. **The startup database pass runs on the screen.** The owner's log from the
    build carrying B20 shows one long block per launch — 4.9 s, then 2.5 s —

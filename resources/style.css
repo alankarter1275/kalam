@@ -640,18 +640,27 @@ button.kalam-author-link-reader:hover {
     font-family: "Playfair Display", "Literata", Georgia, serif;
     font-weight: 500;
     font-size: 46px;
+    line-height: 1.05;
     letter-spacing: -0.7px;
     color: @kalam_text;
 }
 
-.kalam-home-greeting-date {
-    font-size: 12.5px;
-    color: @kalam_text_dim;
+/* The greeting's second Display line (decision 186): the name, at the same
+   size and leading as the first. GTK CSS has had line-height since 4.6, so
+   §3's 1.05 is set rather than left to the font's own leading. */
+.kalam-home-greeting-name {
+    font-family: "Playfair Display", "Literata", Georgia, serif;
+    font-weight: 500;
+    font-size: 46px;
+    line-height: 1.05;
+    letter-spacing: -0.7px;
+    color: @kalam_text;
 }
 
 /* §63: Quote large — Playfair italic 18 behind a 1.5px accent rule,
-   attribution 11 below. GTK CSS has no line-height, so the 1.6 of the
-   spec rides on the font's own leading. */
+   attribution 11 below, line height 1.6. This comment used to say GTK CSS
+   has no line-height and left the 1.6 to the font's own leading; GTK has
+   supported it since 4.6, so it is set (B21). */
 .kalam-quote-large {
     border-left: 1.5px solid @kalam_accent;
     padding: 0 0 0 20px;
@@ -661,6 +670,7 @@ button.kalam-author-link-reader:hover {
     font-family: "Playfair Display", "Literata", Georgia, serif;
     font-style: italic;
     font-size: 18px;
+    line-height: 1.6;
     color: @kalam_text;
 }
 
@@ -670,12 +680,13 @@ button.kalam-author-link-reader:hover {
 }
 
 /* Section style (§3): DM Sans 500 11, uppercase, 0.14em tracking. */
+/* Section style (§3): Playfair 500 at 18. It was an 11px uppercase caption,
+   which put the page's hierarchy upside down under a 46px greeting (B21). */
 .kalam-home-heading {
-    font-size: 11px;
+    font-family: "Playfair Display", "Literata", Georgia, serif;
     font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
-    color: @kalam_text_dim;
+    font-size: 18px;
+    color: @kalam_text;
 }
 
 /* §60: the Home book card — one 560×360 surface: cover page left,
@@ -693,8 +704,11 @@ button.kalam-author-link-reader:hover {
     border-radius: 10px 0 0 10px;
 }
 
+/* §60 gives the reading page 40 32, which was written for a 280-wide page.
+   At B21's 225 the same padding would leave 161 of text column, so it comes
+   in to 32 24 and buys the excerpt back to 177. */
 .kalam-home-book-page {
-    padding: 40px 32px;
+    padding: 32px 24px;
 }
 
 /* Label (§3) for the book line, Card title (§3) for the chapter name. */
@@ -714,6 +728,8 @@ button.kalam-author-link-reader:hover {
 }
 
 .kalam-home-book-excerpt {
+    /* §60: Playfair 13 with a line height of 1.85. */
+    line-height: 1.85;
     font-family: "Playfair Display", "Literata", Georgia, serif;
     font-size: 13px;
     color: @kalam_text;

@@ -347,7 +347,9 @@ impl Component for HomePageModel {
         // and the book card do. Neither is wired to anything yet — the bar
         // keeps its field, count and picker to itself until search exists
         // (B17), and the timeline's rows are the invented ones below.
-        widgets.search_host.append(&search_bar::search_bar(SEARCH_HINT));
+        widgets
+            .search_host
+            .append(&search_bar::search_bar(SEARCH_HINT));
         let updates_block = updates::updates(&showcase_updates(), SHOWCASE_CHECKED);
         widgets.updates_host.append(&updates_block);
 

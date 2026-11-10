@@ -1,14 +1,14 @@
 === kalam screenshot run ===
 books=20 out=ci-shots-keys settle=25 output=1600x1000
 config home: /home/runner/work/kalam/kalam/ci-shots-keys/config-home
-binary: 74875920 bytes
+binary: 74929040 bytes
 
 === seeding 20 books ===
 seed-library: 20 books, 18 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.4280.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.4489.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -30,7 +30,7 @@ requested PDF action: <none>
 settings fixture: 0 empty-dicts=0
 windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 readiness: min=2s max=35s stable_max_changed=0.5%
-readiness: route and window seen after 0s
+readiness: route and window seen after 1s
 toplevel windows seen: 1
   shot: 01-home (117427 bytes)
 focused: 1
@@ -44,8 +44,7 @@ keys: sent Alt+2 (GoLibrary)
 keys: OK -- chord 1: Alt+2 opened the library (route_open:library)
   shot: 05-keys-library (61992 bytes)
 keys: sent Alt+1 (GoHome)
-keys: sent Alt+1 (GoHome), second attempt
-keys: OK on RETRY -- chord 2: Alt+1 went home (route_open:home)
+keys: OK -- chord 2: Alt+1 went home (route_open:home)
 keys: CONTROL PASSED -- a second modified chord still arrives, so the
        failures below, if any, are about those bindings and not about
        input delivery.
@@ -59,17 +58,12 @@ keys: OK -- Ctrl+slash filled the Shortcuts tab (settings_fill:shortcuts)
 keys: sent Alt+1 (GoHome, second time)
 keys: OK -- Alt+1 went home a second time (page_cache_hit (cached, so the log names no page))
 keys: sent Ctrl+f (Home's own field)
-keys: sent Ctrl+f (Home's own field), second attempt
-keys: OK on RETRY -- chord 6: Ctrl+f went to Home's own search field
-       The first attempt wrote no witness, so that key was dropped
-       in transit rather than refused by the page.
+keys: OK -- chord 6: Ctrl+f went to Home's own search field (home_search:ctrl_f)
   shot: 06a-keys-home-search (117446 bytes)
 keys: sent Alt+2 (GoLibrary, off Home)
-keys: sent Alt+2 (GoLibrary, off Home), second attempt
-keys: OK on RETRY -- chord 6b: Alt+2 left Home for the library
+keys: OK -- chord 6b: Alt+2 left Home for the library (page_cache_hit (cached, so the log names no page))
 keys: sent Ctrl+f (SearchLibrary)
-keys: sent Ctrl+f (SearchLibrary), second attempt
-keys: OK on RETRY -- chord 6c: Ctrl+f reached the library search (route_open:all_books)
+keys: OK -- chord 6c: Ctrl+f reached the library search (route_open:all_books)
        The search box now holds focus, which is the point of the
        next step and the reason this one runs where it does.
   shot: 09-keys-search (90963 bytes)
@@ -88,138 +82,115 @@ keys: NOTE -- still fullscreen_mode=1 after two
        unfullscreen() branch -- guarded by root.is_fullscreen()
        -- is never taken. A property of this runner, not a defect.
 keys: sent Ctrl+q (Quit)
-keys: sent Ctrl+q (Quit), second attempt
-keys: FAILED -- the app was still alive after two Ctrl+q attempts
+keys: OK -- the app exited on Ctrl+q
 
-keys: 10 of 11 keystroke probes passed
-keys: NOTE -- 4 of them only landed on a second attempt. Those
-       bindings are wired; the injector dropped the first key. A
-       retry count that climbs run over run is the harness wearing
-       out, not the app breaking, and is worth watching.
-keys: VERDICT -- some probes passed, so input does arrive; the
-       failures above are individual and worth reading one by one.
+keys: 11 of 11 keystroke probes passed
+keys: VERDICT -- keystrokes DO reach the app: it quit on Ctrl+q.
+       Every FAILED line above is then a question about that one
+       shortcut's wiring, not about input delivery.
 navigation: app accepted route 'home'
 navigation: 'home' is not a grid page; no grid_build expected
 navigation: OK -- the images below are 'home'
 
 === timing lines from the app ===
-  [timing] startup_fonts           2.9 ms
-  [timing] startup_gtk_init       52.1 ms
-  [timing] startup_splash_show      1.7 ms
+  [timing] startup_fonts           4.3 ms
+  [timing] startup_gtk_init       77.0 ms
+  [timing] startup_splash_show      1.8 ms
   [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
   [timing] icons_init              0.3 ms
-  [timing] startup_splash_pump    120.3 ms
-  [timing] startup_libraries       0.3 ms
-  [timing] startup_db_open         9.1 ms
-  [timing] startup_theme          63.3 ms
-  [timing] pre_run               250.0 ms
-  [timing] route_open:home        31.6 ms
-  [timing] startup_first_page     31.6 ms
-  [timing] service_home            0.6 ms
-  [timing] init_done             296.8 ms
-  [timing] window_shown          299.5 ms
+  [timing] startup_splash_pump    122.2 ms
+  [timing] startup_libraries       0.4 ms
+  [timing] startup_db_open        13.4 ms
+  [timing] startup_theme          99.6 ms
+  [timing] pre_run               318.8 ms
+  [timing] route_open:home        35.8 ms
+  [timing] startup_first_page     35.9 ms
+  [timing] service_home            0.8 ms
+  [timing] init_done             374.7 ms
+  [timing] window_shown          378.9 ms
   [timing] covers_queued             5
-  [timing] home_fill               4.3 ms
+  [timing] home_fill               5.3 ms
   [timing] page_cache_miss           1
-  [timing] route_open:home         2.1 ms
-  [timing] service_home            0.5 ms
-  [timing] covers_queued             5
-  [timing] home_fill               1.7 ms
-  [timing] covers_decoded            5
-  [timing] covers_thumb              3
-  [timing] covers_full               2
-  [timing] covers_decode          28.5 ms
-  [timing] covers_decode_max      11.4 ms
-  [timing] covers_decoded            5
-  [timing] covers_thumb              4
-  [timing] covers_full               1
-  [timing] covers_decode          24.2 ms
-  [timing] covers_decode_max      10.8 ms
+  [timing] route_open:home         3.1 ms
+  [timing] service_home            0.6 ms
   [timing] render_backend     GskCairoRenderer
-  [timing] frame_after:startup_fonts    309.6 ms
-  [timing] frame_after:startup_gtk_init    257.4 ms
-  [timing] frame_after:startup_splash_show    255.7 ms
-  [timing] frame_after:icons_write    251.8 ms
-  [timing] frame_after:icons_theme    251.7 ms
-  [timing] frame_after:icons_init    251.7 ms
-  [timing] frame_after:startup_splash_pump    135.3 ms
-  [timing] frame_after:startup_libraries    135.0 ms
-  [timing] frame_after:startup_db_open    125.9 ms
-  [timing] frame_after:startup_theme     62.5 ms
-  [timing] frame_after:pre_run     62.5 ms
-  [timing] frame_after:route_open:home     30.1 ms
-  [timing] frame_after:startup_first_page     30.1 ms
-  [timing] frame_after:service_home     29.5 ms
-  [timing] frame_after:init_done     15.7 ms
-  [timing] frame_after:window_shown     13.0 ms
-  [timing] frame_after:home_fill      5.8 ms
-  [timing] frame_after:route_open:home      3.4 ms
-  [timing] frame_after:service_home      2.1 ms
+  [timing] frame_after:startup_fonts    387.3 ms
+  [timing] frame_after:startup_gtk_init    310.3 ms
+  [timing] frame_after:startup_splash_show    308.4 ms
+  [timing] frame_after:icons_write    303.8 ms
+  [timing] frame_after:icons_theme    303.7 ms
+  [timing] frame_after:icons_init    303.7 ms
+  [timing] frame_after:startup_splash_pump    186.2 ms
+  [timing] frame_after:startup_libraries    185.9 ms
+  [timing] frame_after:startup_db_open    172.4 ms
+  [timing] frame_after:startup_theme     72.8 ms
+  [timing] frame_after:pre_run     72.8 ms
+  [timing] frame_after:route_open:home     36.2 ms
+  [timing] frame_after:startup_first_page     36.1 ms
+  [timing] frame_after:service_home     35.4 ms
+  [timing] frame_after:init_done     16.8 ms
+  [timing] frame_after:window_shown     12.7 ms
+  [timing] frame_after:home_fill      4.4 ms
+  [timing] frame_after:route_open:home      1.0 ms
+  [timing] frame_after:service_home      0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_queued             1
+  [timing] home_fill               0.5 ms
+  [timing] covers_decoded            5
+  [timing] covers_thumb              1
+  [timing] covers_full               4
+  [timing] covers_decode          51.8 ms
+  [timing] covers_decode_max      12.7 ms
+  [timing] covers_decoded            1
+  [timing] covers_thumb              0
+  [timing] covers_full               1
+  [timing] covers_decode          17.8 ms
+  [timing] covers_decode_max      17.8 ms
+  [timing] frame_after:covers_land      0.9 ms
+  [timing] frame_after:covers_gap      0.9 ms
+  [timing] frame_after:covers_land      0.9 ms
+  [timing] frame_after:covers_gap      0.9 ms
+  [timing] frame_after:covers_land      0.8 ms
+  [timing] frame_after:covers_gap      0.8 ms
+  [timing] frame_after:covers_land      0.6 ms
   [timing] frame_after:home_fill      0.1 ms
   [timing] frame_after:covers_decode      0.0 ms
   [timing] frame_after:covers_decode_max      0.0 ms
   [timing] frame_after:covers_decode      0.0 ms
   [timing] frame_after:covers_decode_max      0.0 ms
-  [timing] frame_paint:covers_decode_max     52.3 ms
-  [timing] covers_land             0.2 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
   [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] frame_after:covers_land      0.6 ms
-  [timing] frame_after:covers_gap      0.6 ms
-  [timing] frame_after:covers_land      0.5 ms
-  [timing] frame_after:covers_gap      0.5 ms
-  [timing] frame_after:covers_land      0.4 ms
-  [timing] frame_after:covers_gap      0.4 ms
-  [timing] frame_after:covers_land      0.3 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
   [timing] home_focus:resting        1
   [timing] home_focus:resting        1
+  [timing] frame_after:covers_land      1.6 ms
+  [timing] frame_after:covers_land      1.5 ms
   [timing] thumbs_backfilled        18
   [timing] thumbs_backfill_done       18
-  [timing] startup_dicts        1696.0 ms
-  [timing] frame_after:startup_dicts    289.1 ms
+  [timing] startup_dicts        1957.5 ms
+  [timing] frame_after:startup_dicts     21.6 ms
   [timing] page_cache_miss           1
   [timing] route_open:library      0.1 ms
-  [timing] service_dashboard       1.3 ms
+  [timing] service_dashboard       1.7 ms
   [timing] covers_queued             6
-  [timing] library_fill            1.4 ms
+  [timing] library_fill            2.1 ms
   [timing] covers_decoded            6
   [timing] covers_thumb              6
   [timing] covers_full               0
-  [timing] covers_decode           7.4 ms
-  [timing] covers_decode_max       1.6 ms
-  [timing] frame_after:route_open:library      4.3 ms
-  [timing] frame_after:service_dashboard      2.9 ms
-  [timing] frame_after:library_fill      0.1 ms
+  [timing] covers_decode           7.8 ms
+  [timing] covers_decode_max       1.9 ms
+  [timing] frame_after:route_open:library      5.7 ms
+  [timing] frame_after:service_dashboard      3.9 ms
+  [timing] frame_after:library_fill      0.2 ms
   [timing] frame_after:covers_decode      0.0 ms
   [timing] frame_after:covers_decode_max      0.0 ms
-  [timing] covers_land             0.0 ms
+  [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.0 ms
   [timing] covers_gap              0.0 ms
@@ -232,9 +203,9 @@ navigation: OK -- the images below are 'home'
   [timing] covers_land             0.0 ms
   [timing] frame_after:covers_land      0.2 ms
   [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
+  [timing] frame_after:covers_land      0.2 ms
+  [timing] frame_after:covers_gap      0.2 ms
+  [timing] frame_after:covers_land      0.2 ms
   [timing] frame_after:covers_gap      0.1 ms
   [timing] frame_after:covers_land      0.1 ms
   [timing] frame_after:covers_gap      0.1 ms
@@ -242,7 +213,7 @@ navigation: OK -- the images below are 'home'
   [timing] frame_after:covers_gap      0.1 ms
   [timing] frame_after:covers_land      0.0 ms
   [timing] page_cache_miss           1
-  [timing] route_open:home         1.4 ms
+  [timing] route_open:home         2.2 ms
   [timing] service_home            0.0 ms
   [timing] covers_queued             0
   [timing] home_fill               0.2 ms
@@ -251,53 +222,59 @@ navigation: OK -- the images below are 'home'
   [timing] frame_after:home_fill      0.0 ms
   [timing] home_focus:resting        1
   [timing] page_cache_miss           1
-  [timing] route_open:settings      1.4 ms
-  [timing] service_settings        8.5 ms
-  [timing] frame_after:route_open:settings      7.7 ms
-  [timing] frame_after:service_settings      0.0 ms
-  [timing] settings_fill:appearance      1.3 ms
-  [timing] frame_after:settings_fill:appearance      0.0 ms
-  [timing] settings_fill:shortcuts      0.8 ms
-  [timing] frame_after:settings_fill:shortcuts      0.3 ms
+  [timing] route_open:settings      1.0 ms
+  [timing] service_settings        2.1 ms
+  [timing] settings_fill:appearance      2.4 ms
+  [timing] frame_after:route_open:settings      5.1 ms
+  [timing] frame_after:service_settings      3.0 ms
+  [timing] frame_after:settings_fill:appearance      0.1 ms
+  [timing] settings_fill:shortcuts      1.6 ms
+  [timing] frame_after:settings_fill:shortcuts      0.4 ms
   [timing] page_cache_hit            1
   [timing] home_search:ctrl_f      0.2 ms
   [timing] frame_after:home_search:ctrl_f      0.0 ms
   [timing] page_cache_hit            1
   [timing] page_cache_miss           1
-  [timing] service_all_books       0.5 ms
+  [timing] service_all_books       0.3 ms
   [timing] covers_queued            18
-  [timing] grid_build              2.3 ms
+  [timing] grid_build              1.3 ms
   [timing] grid_cards               20
   [timing] grid_cards_total         20
-  [timing] route_open:all_books      4.7 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
+  [timing] route_open:all_books      2.5 ms
   [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_queued            13
-  [timing] grid_build              0.9 ms
+  [timing] covers_queued            17
+  [timing] grid_build              1.4 ms
   [timing] grid_cards               20
   [timing] grid_cards_total         20
-  [timing] frame_after:service_all_books     30.2 ms
-  [timing] frame_after:grid_build     26.0 ms
-  [timing] frame_after:route_open:all_books     26.0 ms
-  [timing] frame_after:covers_land      2.0 ms
-  [timing] frame_after:covers_gap      2.0 ms
-  [timing] frame_after:covers_land      2.0 ms
-  [timing] frame_after:covers_gap      2.0 ms
-  [timing] frame_after:covers_land      1.9 ms
-  [timing] frame_after:covers_gap      1.9 ms
-  [timing] frame_after:covers_land      1.9 ms
-  [timing] frame_after:covers_gap      1.9 ms
-  [timing] frame_after:covers_land      1.9 ms
-  [timing] frame_after:grid_build      0.2 ms
+  [timing] frame_after:service_all_books      8.2 ms
+  [timing] frame_after:grid_build      6.1 ms
+  [timing] frame_after:route_open:all_books      6.1 ms
+  [timing] frame_after:covers_land      2.9 ms
+  [timing] frame_after:grid_build      1.0 ms
+  [timing] frame_paint:grid_build     70.7 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
   [timing] covers_land             0.0 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.0 ms
@@ -307,7 +284,6 @@ navigation: OK -- the images below are 'home'
   [timing] covers_land             0.0 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.0 ms
-  [timing] covers_land             0.0 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.0 ms
   [timing] covers_gap              0.0 ms
@@ -320,8 +296,24 @@ navigation: OK -- the images below are 'home'
   [timing] covers_land             0.0 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.0 ms
-  [timing] frame_after:covers_land      0.3 ms
-  [timing] frame_after:covers_gap      0.3 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      0.8 ms
+  [timing] frame_after:covers_gap      0.8 ms
+  [timing] frame_after:covers_land      0.8 ms
+  [timing] frame_after:covers_gap      0.7 ms
+  [timing] frame_after:covers_land      0.7 ms
+  [timing] frame_after:covers_gap      0.7 ms
+  [timing] frame_after:covers_land      0.6 ms
+  [timing] frame_after:covers_gap      0.6 ms
+  [timing] frame_after:covers_land      0.6 ms
+  [timing] frame_after:covers_gap      0.6 ms
+  [timing] frame_after:covers_land      0.5 ms
+  [timing] frame_after:covers_gap      0.5 ms
+  [timing] frame_after:covers_land      0.4 ms
+  [timing] frame_after:covers_gap      0.4 ms
+  [timing] frame_after:covers_land      0.4 ms
+  [timing] frame_after:covers_gap      0.4 ms
   [timing] frame_after:covers_land      0.3 ms
   [timing] frame_after:covers_gap      0.3 ms
   [timing] frame_after:covers_land      0.2 ms
@@ -329,8 +321,6 @@ navigation: OK -- the images below are 'home'
   [timing] frame_after:covers_land      0.2 ms
   [timing] frame_after:covers_gap      0.2 ms
   [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.1 ms
   [timing] frame_after:covers_land      0.1 ms
   [timing] frame_after:covers_gap      0.1 ms
   [timing] frame_after:covers_land      0.1 ms
@@ -343,53 +333,59 @@ navigation: OK -- the images below are 'home'
   [timing] frame_after:covers_gap      0.1 ms
   [timing] frame_after:covers_land      0.1 ms
   [timing] frame_after:covers_gap      0.1 ms
+  [timing] frame_after:covers_land      0.1 ms
+  [timing] frame_after:covers_gap      0.1 ms
+  [timing] frame_after:covers_land      0.1 ms
+  [timing] frame_after:covers_gap      0.1 ms
+  [timing] frame_after:covers_land      0.1 ms
+  [timing] frame_after:covers_gap      0.1 ms
+  [timing] frame_after:covers_land      0.1 ms
+  [timing] frame_after:covers_gap      0.1 ms
+  [timing] frame_after:covers_land      0.1 ms
+  [timing] frame_after:covers_gap      0.0 ms
   [timing] frame_after:covers_land      0.0 ms
   [timing] covers_land             0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              1.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] frame_after:covers_land      9.9 ms
-  [timing] frame_after:covers_land      9.9 ms
-  [timing] frame_after:covers_gap      8.9 ms
-  [timing] frame_after:covers_land      8.9 ms
-  [timing] frame_after:covers_land      6.3 ms
-  [timing] frame_after:covers_land      4.3 ms
-  [timing] frame_after:covers_land      1.6 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
   [timing] covers_land             0.0 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              1.8 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_decoded           13
-  [timing] covers_thumb             13
-  [timing] covers_full               0
-  [timing] covers_decode          11.8 ms
-  [timing] covers_decode_max       1.2 ms
   [timing] covers_land             0.1 ms
+  [timing] covers_land             0.0 ms
   [timing] covers_decoded           18
   [timing] covers_thumb             18
   [timing] covers_full               0
-  [timing] covers_decode          18.5 ms
-  [timing] covers_decode_max       1.9 ms
-  [timing] covers_land             0.0 ms
-  [timing] frame_after:covers_land      9.6 ms
-  [timing] frame_after:covers_gap      9.6 ms
-  [timing] frame_after:covers_land      9.6 ms
-  [timing] frame_after:covers_land      9.6 ms
-  [timing] frame_after:covers_gap      7.8 ms
-  [timing] frame_after:covers_land      7.8 ms
-  [timing] frame_after:covers_land      5.3 ms
-  [timing] frame_after:covers_decode      3.1 ms
-  [timing] frame_after:covers_decode_max      3.1 ms
+  [timing] covers_decode          31.2 ms
+  [timing] covers_decode_max       2.1 ms
+  [timing] covers_decoded           17
+  [timing] covers_thumb             17
+  [timing] covers_full               0
+  [timing] covers_decode          32.9 ms
+  [timing] covers_decode_max       2.2 ms
+  [timing] frame_after:covers_land      5.2 ms
+  [timing] frame_after:covers_gap      5.2 ms
+  [timing] frame_after:covers_land      5.2 ms
+  [timing] frame_after:covers_land      5.2 ms
+  [timing] frame_after:covers_gap      5.2 ms
+  [timing] frame_after:covers_land      5.2 ms
   [timing] frame_after:covers_land      3.0 ms
-  [timing] frame_after:covers_decode      0.7 ms
-  [timing] frame_after:covers_decode_max      0.7 ms
-  [timing] frame_after:covers_land      0.7 ms
+  [timing] frame_after:covers_land      2.2 ms
+  [timing] frame_after:covers_decode      0.0 ms
+  [timing] frame_after:covers_decode_max      0.0 ms
+  [timing] frame_after:covers_decode      0.0 ms
+  [timing] frame_after:covers_decode_max      0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] frame_after:covers_land      4.3 ms
+  [timing] frame_after:covers_gap      4.3 ms
+  [timing] frame_after:covers_land      4.2 ms
+  [timing] frame_after:covers_land      4.2 ms
+  [timing] frame_after:covers_gap      4.2 ms
+  [timing] frame_after:covers_land      4.2 ms
   [timing] page_cache_hit            1
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
@@ -425,33 +421,33 @@ navigation: OK -- the images below are 'home'
 
 === app stderr (non-timing lines) ===
   
-  (process:4336): Gtk-WARNING **: 19:13:01.242: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:4545): Gtk-WARNING **: 19:35:44.046: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=home — navigating
 
 === peak memory ===
-books=20 peak_rss_kb=276960 peak_rss_mb=270
+books=20 peak_rss_kb=171728 peak_rss_mb=167
 
 === shutting down ===
 
 === artifacts ===
   total 1120
-  drwxr-xr-x  3 runner runner   4096 Nov 10 19:14 .
-  drwxr-xr-x 19 runner runner   4096 Nov 10 19:13 ..
-  -rw-r--r--  1 runner runner 117427 Nov 10 19:13 01-home.png
-  -rw-r--r--  1 runner runner 117427 Nov 10 19:13 02-home-settling.png
-  -rw-r--r--  1 runner runner 117427 Nov 10 19:13 03-home-settled.png
-  -rw-r--r--  1 runner runner  61992 Nov 10 19:13 05-keys-library.png
-  -rw-r--r--  1 runner runner 117446 Nov 10 19:13 06-keys-home.png
-  -rw-r--r--  1 runner runner 117446 Nov 10 19:13 06a-keys-home-search.png
-  -rw-r--r--  1 runner runner  90461 Nov 10 19:13 07-keys-settings.png
-  -rw-r--r--  1 runner runner 104148 Nov 10 19:13 08-keys-shortcuts.png
-  -rw-r--r--  1 runner runner  90963 Nov 10 19:14 09-keys-search.png
-  -rw-r--r--  1 runner runner  61992 Nov 10 19:14 10-keys-back.png
-  -rw-r--r--  1 runner runner  61992 Nov 10 19:14 11-keys-fullscreen.png
-  drwxr-xr-x  3 runner runner   4096 Nov 10 19:13 config-home
-  -rw-r--r--  1 runner runner      0 Nov 10 19:13 grim.log
-  -rw-r--r--  1 runner runner  12536 Nov 10 19:14 kalam.log
-  -rw-r--r--  1 runner runner  19584 Nov 10 19:15 report.txt
-  -rw-r--r--  1 runner runner     88 Nov 10 19:13 sway.log
-  -rw-r--r--  1 runner runner   7184 Nov 10 19:13 tree.json
---- run 42881571406 ---
+  drwxr-xr-x  3 runner runner   4096 Nov 10 19:36 .
+  drwxr-xr-x 19 runner runner   4096 Nov 10 19:35 ..
+  -rw-r--r--  1 runner runner 117427 Nov 10 19:35 01-home.png
+  -rw-r--r--  1 runner runner 117427 Nov 10 19:35 02-home-settling.png
+  -rw-r--r--  1 runner runner 117427 Nov 10 19:35 03-home-settled.png
+  -rw-r--r--  1 runner runner  61992 Nov 10 19:35 05-keys-library.png
+  -rw-r--r--  1 runner runner 117446 Nov 10 19:35 06-keys-home.png
+  -rw-r--r--  1 runner runner 117446 Nov 10 19:36 06a-keys-home-search.png
+  -rw-r--r--  1 runner runner  90461 Nov 10 19:35 07-keys-settings.png
+  -rw-r--r--  1 runner runner 104148 Nov 10 19:36 08-keys-shortcuts.png
+  -rw-r--r--  1 runner runner  90963 Nov 10 19:36 09-keys-search.png
+  -rw-r--r--  1 runner runner  61992 Nov 10 19:36 10-keys-back.png
+  -rw-r--r--  1 runner runner  61992 Nov 10 19:36 11-keys-fullscreen.png
+  drwxr-xr-x  3 runner runner   4096 Nov 10 19:35 config-home
+  -rw-r--r--  1 runner runner      0 Nov 10 19:35 grim.log
+  -rw-r--r--  1 runner runner  12781 Nov 10 19:36 kalam.log
+  -rw-r--r--  1 runner runner  19290 Nov 10 19:36 report.txt
+  -rw-r--r--  1 runner runner     88 Nov 10 19:35 sway.log
+  -rw-r--r--  1 runner runner   7184 Nov 10 19:35 tree.json
+--- run 42885521135 ---

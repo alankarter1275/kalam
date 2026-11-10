@@ -360,7 +360,6 @@ fn option_menu(on_inside_books: impl Fn(bool) + 'static) -> MenuPopover {
 /// The box's contents and the state they are drawn from. Cloning it clones
 /// GTK handles and `Rc`s, so every callback drives the same box.
 #[derive(Clone)]
-#[derive(Clone)]
 struct Results {
     entry: gtk::Entry,
     count: gtk::Label,

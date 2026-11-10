@@ -1,18 +1,18 @@
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index 2a4fd14..4cf32b2 100644
+index 7d241f4..4794d5e 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
 @@ -481,9 +481,11 @@ impl Component for HomePageModel {
                  let shaped = staged_pop.first_child();
                  crate::timing::note(
                      "home_box:hasclass",
--                    usize::from(shaped.as_ref().map_or(false, |w| {
+-                    usize::from(shaped.as_ref().is_some_and(|w| {
 -                        w.has_css_class("kalam-search-box")
 -                    })),
 +                    usize::from(
 +                        shaped
 +                            .as_ref()
-+                            .map_or(false, |w| w.has_css_class("kalam-search-box")),
++                            .is_some_and(|w| w.has_css_class("kalam-search-box")),
 +                    ),
                  );
                  if let Some(w) = shaped {
@@ -47,4 +47,4 @@ index d62d359..18672e7 100644
      });
      panel.connect_hide(|_| {
          crate::timing::note("home_box:closed", 1);
---- run 42917138917 ---
+--- run 42917526437 ---

@@ -1,2 +1,17 @@
-clean
---- run 42885521135 ---
+diff --git a/src/widgets/search_box.rs b/src/widgets/search_box.rs
+index 669a321..d1ae334 100644
+--- a/src/widgets/search_box.rs
++++ b/src/widgets/search_box.rs
+@@ -257,7 +257,10 @@ pub fn search_box(
+     bar.entry.connect_has_focus_notify(move |entry| {
+         // Value = tag*10 + focused, so one line says both which instance
+         // spoke and whether it was gaining or losing focus.
+-        crate::timing::note("home_box:notify", tag as usize * 10 + usize::from(entry.has_focus()));
++        crate::timing::note(
++            "home_box:notify",
++            tag as usize * 10 + usize::from(entry.has_focus()),
++        );
+         if entry.has_focus() {
+             crate::timing::note("home_box:before", tag as usize);
+             open_on_focus.popup();
+--- run 42890371025 ---

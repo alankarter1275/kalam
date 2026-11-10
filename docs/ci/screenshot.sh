@@ -1084,6 +1084,7 @@ print(found[0])
     # draw. A retry can: if the second attempt lands, the binding is wired and
     # the first key never arrived, and saying so costs one line.
     RETRIES=0
+    HOME_CLAIM_OK=0
 
     # 1. Alt+2 -- GoLibrary. The first chord, sent from home.
     KEYS_TRIED=$((KEYS_TRIED + 1))
@@ -1182,25 +1183,75 @@ print(found[0])
       say "keys: FAILED -- the second Alt+1 opened no page in two attempts"
     fi
 
-    # 6. Ctrl+F -- SearchLibrary. Two jobs at once. It goes to All Books, and
-    #    it is the only default shortcut that pushes the history stack -- every
-    #    other navigation shortcut passes push_history=false, which clears it,
-    #    so Back has nothing to pop after them and a no-op result there proves
-    #    nothing. It also ends with the library's search box holding focus,
-    #    which is what step 7 then measures.
+    # 6. Ctrl+F on Home -- Home's own field, on the owner's ruling that the
+    #    page keeps the chord while it is showing (build-decisions B22). The
+    #    witness is therefore not a page change but the line the page writes
+    #    when its field takes the chord, `home_search:ctrl_f`, and the page
+    #    must NOT change: a route_open here would mean the shell's binding ran
+    #    on Home, which is the regression this step exists to catch. The frame
+    #    after it shows what the ruling looks like -- the results box open
+    #    over the page.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    if try_label home_search:ctrl_f 10 "Ctrl+f (Home's own field)" -M ctrl -k f -m ctrl; then
+      say "keys: OK -- chord 6: Ctrl+f went to Home's own search field (home_search:ctrl_f)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      HOME_CLAIM_OK=1
+    elif try_label home_search:ctrl_f 10 "Ctrl+f (Home's own field), second attempt" -M ctrl -k f -m ctrl; then
+      say "keys: OK on RETRY -- chord 6: Ctrl+f went to Home's own search field"
+      say "       The first attempt wrote no witness, so that key was dropped"
+      say "       in transit rather than refused by the page."
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      HOME_CLAIM_OK=1
+      RETRIES=$((RETRIES + 1))
+    else
+      say "keys: FAILED -- Ctrl+f on Home wrote no home_search:ctrl_f in two attempts"
+      say "       Either the page's capture-phase claim is gone, or the chord"
+      say "       never arrived; the frame below says which, because a box"
+      say "       open over Home is the claim seen with eyes."
+    fi
+    probe_shot "06a-keys-home-search"
+
+    # 6b. Alt+2 -- GoLibrary, to stand on a page that does not claim Ctrl+F.
+    #     The shell's binding is proved from here in the next step; proving it
+    #     from Home would only re-test step 6.
+    KEYS_TRIED=$((KEYS_TRIED + 1))
+    if try_page library 10 "Alt+2 (GoLibrary, off Home)" -M alt -k 2 -m alt; then
+      say "keys: OK -- chord 6b: Alt+2 left Home for the library ($PAGE_WITNESS)"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+    elif try_page library 10 "Alt+2 (GoLibrary, off Home), second attempt" -M alt -k 2 -m alt; then
+      say "keys: OK on RETRY -- chord 6b: Alt+2 left Home for the library"
+      KEYS_PASSED=$((KEYS_PASSED + 1))
+      RETRIES=$((RETRIES + 1))
+    else
+      say "keys: FAILED -- chord 6b: Alt+2 opened no page in two attempts"
+    fi
+
+    # 6c. Ctrl+F -- SearchLibrary, the shell's own binding, unchanged on every
+    #     page that does not claim the chord (B22). Two jobs at once, as ever:
+    #     it goes to All Books, and it is the only default shortcut that pushes
+    #     the history stack -- every other navigation shortcut passes
+    #     push_history=false, which clears it, so Back has nothing to pop
+    #     after them and a no-op result there proves nothing. It also ends
+    #     with the library's search box holding focus, which is what step 7
+    #     then measures.
     KEYS_TRIED=$((KEYS_TRIED + 1))
     SEARCH_FOCUSED=0
     if try_page all_books 10 "Ctrl+f (SearchLibrary)" -M ctrl -k f -m ctrl; then
-      say "keys: OK -- Ctrl+f reached the library search ($PAGE_WITNESS)"
+      say "keys: OK -- chord 6c: Ctrl+f reached the library search ($PAGE_WITNESS)"
       KEYS_PASSED=$((KEYS_PASSED + 1))
       SEARCH_FOCUSED=1
     elif try_page all_books 10 "Ctrl+f (SearchLibrary), second attempt" -M ctrl -k f -m ctrl; then
-      say "keys: OK on RETRY -- Ctrl+f reached the library search ($PAGE_WITNESS)"
+      say "keys: OK on RETRY -- chord 6c: Ctrl+f reached the library search ($PAGE_WITNESS)"
       KEYS_PASSED=$((KEYS_PASSED + 1))
       SEARCH_FOCUSED=1
       RETRIES=$((RETRIES + 1))
     else
       say "keys: FAILED -- Ctrl+f opened no page in two attempts"
+      if [ "$HOME_CLAIM_OK" = "1" ]; then
+        say "       Home claimed its own Ctrl+f a moment ago, so the chord"
+        say "       arrives; this is the shell's half of the ruling, and it"
+        say "       is the half that is missing."
+      fi
     fi
     if [ "$SEARCH_FOCUSED" = "1" ]; then
       say "       The search box now holds focus, which is the point of the"
@@ -1209,12 +1260,15 @@ print(found[0])
     probe_shot "09-keys-search"
 
     # 7. Alt+Left -- Back. Now there IS a history entry to pop, so a no-op
-    #    would be a real result rather than a consequence of the design.
+    #    would be a real result rather than a consequence of the design. The
+    #    entry is the library, because that is where 6c sent the chord from;
+    #    until B22 gave Home its own claim this step began on Home and
+    #    therefore expected Home back.
     KEYS_TRIED=$((KEYS_TRIED + 1))
-    if try_page home 10 "Alt+Left (Back)" -M alt -k Left -m alt; then
+    if try_page library 10 "Alt+Left (Back)" -M alt -k Left -m alt; then
       say "keys: OK -- Alt+Left popped the history ($PAGE_WITNESS)"
       KEYS_PASSED=$((KEYS_PASSED + 1))
-    elif try_page home 10 "Alt+Left (Back), second attempt" -M alt -k Left -m alt; then
+    elif try_page library 10 "Alt+Left (Back), second attempt" -M alt -k Left -m alt; then
       say "keys: OK on RETRY -- Alt+Left popped the history ($PAGE_WITNESS)"
       KEYS_PASSED=$((KEYS_PASSED + 1))
       RETRIES=$((RETRIES + 1))

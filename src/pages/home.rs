@@ -410,6 +410,23 @@ impl Component for HomePageModel {
         let search = search_bar::search_bar(SEARCH_HINT);
         widgets.search_host.append(&search.root);
         search_box::search_box(&search, &showcase_search(), &showcase_history());
+
+        // Staging for the CI photographs, and nothing else: with
+        // KALAM_HOME_SEARCH set, the field opens pre-filled on the first idle
+        // tick so a frame can show the result box over real invented rows
+        // without synthetic typing, which has never been trustworthy enough
+        // under headless sway to stage a photograph with. A normal launch has
+        // no such variable and this whole block is a no-op; the idle tick is
+        // what makes focus land after the window is up rather than before it
+        // exists.
+        let staged_query = std::env::var("KALAM_HOME_SEARCH").unwrap_or_default();
+        if !staged_query.is_empty() {
+            let entry = search.entry.clone();
+            gtk::glib::idle_add_local_once(move || {
+                entry.set_text(&staged_query);
+                entry.grab_focus();
+            });
+        }
         let updates_block = updates::updates(&showcase_updates(), SHOWCASE_CHECKED);
         widgets.updates_host.append(&updates_block);
 
@@ -428,10 +445,18 @@ impl Component for HomePageModel {
                 let ctrl = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
                 let find = ctrl && (keyval == gtk::gdk::Key::f || keyval == gtk::gdk::Key::F);
                 if find {
+                    // The witness the smoke probe waits on (B24): this page
+                    // took the chord, so the shell's jump to All Books is not
+                    // coming and no route line will follow. A `[timing]`
+                    // label like every other witness the probe counts, and a
+                    // no-op without KALAM_TIMING=1, so a normal launch writes
+                    // nothing at all.
+                    let _t = crate::timing::measure("home_search:ctrl_f");
                     entry.grab_focus();
                     return gtk::glib::Propagation::Stop;
                 }
                 if keyval == gtk::gdk::Key::slash && !ctrl && !entry.has_focus() {
+                    let _t = crate::timing::measure("home_search:slash");
                     entry.grab_focus();
                     return gtk::glib::Propagation::Stop;
                 }

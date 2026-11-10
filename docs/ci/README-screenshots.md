@@ -22,7 +22,7 @@ for the first two; the gallery needs no library to speak of and seeds 20):
 | `comic-series-book-22` + `COMIC_FIXTURE=1` | The comic-series drawer for that chapter's series, its Edit details dialog, the Find metadata search dialog, and a synthetic local Find review state staged by `DIALOG=find-comic-series-review`, so the metadata proof makes no provider request. |
 | `pdf-read-21` + `PDF_FIXTURE=1` | The PDF reader on the seeded outlined document, including chrome, Contents, Pages, Search, Notes, Reading, Image/Invert, Shortcuts, page-jump and drawing states over seeded strokes, shapes, a text box and a sticky note. `PDF_FIXTURE_STATE` also seeds genuinely encrypted, damaged and missing variants; their password, wrong-password, unlocked, corrupt and missing captures exercise the whole-book open states. |
 | `tasks` | The task manager's current empty/idle state. |
-| `home` | The Home page, twice: Terracotta Light and Dark at 1280×800. That is the design board's own size, and at that width the columns, the card and the 520px search bar sit at the numbers `docs/design/home-spec.md` gives, so the frame can be held against the board without rescaling. |
+| `home` | The Home page, twice: Terracotta Light and Dark at 1280×800. That is the design board's own size, and at that width the columns, the card and the 520px search bar sit at the numbers `docs/design/home-spec.md` gives, so the frame can be held against the board without rescaling. Twice more in Light: with the search box open over result groups, staged by `KALAM_HOME_SEARCH=dune` (a launch variable Home reads and nothing else does, because synthetic typing has never been trustworthy enough here to stage a photograph with), and whole, in a 1280×1600 window so the Updates timeline and the quote card sit above the fold instead of under it. |
 | `components` | The hidden redesign component gallery, twice: Terracotta Light and Dark on a tall 1600×3400 output. |
 | `book-1` | The redesigned book details page for the first seeded EPUB, twice: Terracotta Light and Dark at 1600×1200. |
 | `book-4` + `DIALOG=tags` | The book page's Tag dialog opened over it (`KALAM_DIALOG`), twice: Light and Dark. Book 4 is the first seeded book carrying three tags, so chips and ticked library rows render for real. |
@@ -71,6 +71,8 @@ The job commits text reports to:
   `ci-logs/keys-*.png`)
 - `ci-logs/home-light-latest.txt`
 - `ci-logs/home-dark-latest.txt`
+- `ci-logs/home-search-light-latest.txt`
+- `ci-logs/home-tall-light-latest.txt`
 - `ci-logs/components-light-latest.txt`
 - `ci-logs/components-dark-latest.txt`
 - `ci-logs/book-light-latest.txt`
@@ -98,6 +100,8 @@ gallery, the book page and its two dialogs, the series page, the author
 page and its dialogs, and the Settings captures. Their settled frames
 are committed as
 `ci-logs/home-terracotta-{light,dark}.png`,
+`ci-logs/home-search-terracotta-light.png`,
+`ci-logs/home-tall-terracotta-light.png`,
 `ci-logs/components-terracotta-{light,dark}.png`,
 `ci-logs/book-terracotta-{light,dark}.png`,
 `ci-logs/book-tags-terracotta-{light,dark}.png`,
@@ -114,9 +118,10 @@ nobody can look at is not verified and the agent cannot download artifacts.
 
 Those paths are main's. A branch gets its own copy under
 `ci-logs/branches/<branch>/` — every text report, plus a short curated list of
-pictures: Home in both modes, and the keystroke probe's two Home frames
-(`keys-home.png` on arrival, `keys-search.png` after Ctrl+f, which since Home
-claims that chord for its own field is the page with the results box open).
+pictures: Home in both modes at the board's size, Home with its search box
+open, Home whole in a taller window, and the keystroke probe's frame of Home
+after a real Ctrl+f (`keys-home-search.png`) — the same box opened by a real
+chord through a real compositor rather than by a launch variable.
 The names are stable and overwritten on every run, so a branch carries one
 copy of the current truth rather than a picture per commit, and main deletes
 the whole directory on its first run after a merge. Add a frame to that list
@@ -146,9 +151,9 @@ pose. Everywhere else in this harness the app performs the action itself —
 stages a drawn state — so a control whose wiring to its action has broken
 still produces a perfect frame. This probe is the check that can notice.
 
-It runs on `ROUTE=home` in the `pages` group and types nine of the app's own
-default shortcuts (`default_binding` in `src/shortcuts.rs`) with `wtype`,
-then asks three independent witnesses whether the app acted:
+It runs on `ROUTE=home` in the `pages` group and types the app's own default
+shortcuts (`default_binding` in `src/shortcuts.rs`) with `wtype` across
+eleven steps, then asks three independent witnesses whether the app acted:
 
 | # | Keys | Shortcut | The witness |
 |---|---|---|---|
@@ -157,8 +162,10 @@ then asks three independent witnesses whether the app acted:
 | 3 | `Ctrl+,` | Open Settings | a page changed |
 | 4 | `Ctrl+/` | The shortcut pane | the app logs `settings_fill:shortcuts` |
 | 5 | `Alt+1` | Home again | a page changed |
-| 6 | `Ctrl+F` | Search the library | a page changed — and it pushes the history stack |
-| 7 | `Alt+Left` | Back | a page changed — now there is something to pop |
+| 6 | `Ctrl+F` | Home's own search field (B22) | the page logs `home_search:ctrl_f`, and **no page changes** — a `route_open` here would be the shell's binding running on Home, the regression this step catches |
+| 6b | `Alt+2` | The library, to stand off Home | a page changed |
+| 6c | `Ctrl+F` | Search the library — the shell's half of B22 | a page changed — and it pushes the history stack |
+| 7 | `Alt+Left` | Back | a page changed — to the library, which is what 6c pushed |
 | 8 | `F11` | Full screen, and back | **sway** reports `fullscreen_mode`, not Kalam |
 | 9 | `Ctrl+Q` | Quit | the process is gone |
 
@@ -180,12 +187,20 @@ were chosen after a run proved the obvious witness wrong:
   is already open, so no route line is possible. `settings_fill:shortcuts`
   fires either way.
 
-Steps 6 and 7 are a pair too. Every navigation shortcut calls `swap_page` with
-`push_history=false`, and that branch is `history.clear()`, so after any of
-them `Back` has nothing to pop and `AppMsg::Back` — `if let Some(prev) =
-self.history.pop()` — is a correct no-op. `Ctrl+F` is the one default shortcut
-that pushes, so it is the only way to give `Back` something to do. It also
-leaves the search box focused, which is what step 7 then measures.
+Steps 6, 6c and 7 are a triple now, and they exist to hold one ruling (B22)
+from both ends. Home keeps `Ctrl+F` while Home is showing, so step 6 sends it
+from Home and expects the page's own witness line and no navigation at all;
+the frame it takes shows the results box the chord opens. Step 6b then leaves
+Home, because the shell's binding can only be proved from a page that does
+not claim the chord, and 6c proves it there. Every navigation shortcut calls
+`swap_page` with `push_history=false`, and that branch is `history.clear()`,
+so after any of them `Back` has nothing to pop and `AppMsg::Back` —
+`if let Some(prev) = self.history.pop()` — is a correct no-op. `Ctrl+F` is the
+one default shortcut that pushes, so 6c is the only way to give `Back`
+something to do, and what it pushed is the library — which is why step 7 now
+expects the library back, where before B22 the chord was sent from Home and
+Home was what came back. 6c also leaves the search box focused, which is what
+step 7 then measures.
 
 The last two matter most. `fullscreen_mode` comes from the compositor, so the
 app cannot supply it by logging something optimistic, and a dead process is

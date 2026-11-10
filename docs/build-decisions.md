@@ -626,9 +626,9 @@ What changed, all in the CI workflow and its README:
   rescaling.
 - A branch run copies a short list of pictures into
   `ci-logs/branches/<branch>/`, next to its text reports: Home light, Home
-  dark, and the keystroke probe's two Home frames — the page on arrival, and
-  the page after Ctrl+f, which since B22 gives that chord to Home's own field
-  is the page with the results box open. Names are stable and overwritten on
+  dark, Home with its search box open (staged by `KALAM_HOME_SEARCH`, see
+  B24), Home whole in a taller window, and the keystroke probe's frame of
+  Home after a real Ctrl+f. Names are stable and overwritten on
   every run, so a branch carries one copy of the current truth rather than a
   picture per commit, and main deletes the directory on its first run after a
   merge, so nothing accumulates.
@@ -646,6 +646,37 @@ The workflow comments that claimed otherwise were the reason this stayed
 broken: they recorded a true fact (artifacts are unreachable) and drew a
 false conclusion from it (therefore images are for humans), and the false
 half was never revisited because nothing downstream of it ever failed.
+
+## B24. The shortcut check now knows who owns Ctrl+F
+
+B22 gave Home the Ctrl+F chord while Home is showing. The keystroke probe
+still expected the old world: its sixth chord was sent from Home and waited
+for the shell's jump to All Books, so the ruling itself read as a failure, and
+the Back step behind it failed for want of a history entry the old sixth chord
+used to push. Two runs carried those two FAILED lines before the photographs
+made them visible (B23), which is their own argument for B23.
+
+Three changes, owner-ruling "fix the check now":
+
+- The app writes a witness when the page takes the chord: `home_search:ctrl_f`
+  from the Ctrl+F half of the capture-phase handler, `home_search:slash` from
+  the slash half. Both are `[timing]` labels in the shape every other probe
+  witness uses, and like the rest of that module they are a no-op without
+  KALAM_TIMING=1, so a normal launch writes nothing.
+- The probe proves the two halves of the ruling separately. From Home it waits
+  for the page's witness and for no page change at all — a `route_open` there
+  would mean the shell ran on Home, which is the regression worth catching —
+  and photographs the box the chord opens. It then leaves Home and proves the
+  shell's binding from the library, where nobody claims the chord. Back's
+  expected landing moved from Home to the library, because the library is
+  where the chord now gets sent from.
+- The two screens this unit is working on get photographs of their own rather
+  than borrowing the probe's: Home with the results box open over invented
+  rows, staged by a new launch variable `KALAM_HOME_SEARCH` that pre-fills the
+  field on an idle tick, and Home in a 1280×1600 window so the Updates
+  timeline and the quote card are not below the fold. The variable joins the
+  family of staging levers documented in docs/ci/README-screenshots.md;
+  nothing else in the app reads it.
 
 ## Still open
 
@@ -682,17 +713,6 @@ half was never revisited because nothing downstream of it ever failed.
    from "starved" in one number. Roadmap 1.2's own note — *revisit when a large
    library makes those reads measurable* — is the standing invitation this
    answers.
-
-5. **The keystroke probe still expects Ctrl+f to leave Home.** B22 gives that
-   chord to Home's own search field while Home is showing, so the probe's
-   sixth chord — sent from Home, expecting `route_open:all_books` — now
-   reports FAILED, and the seventh chord (Back) fails behind it because there
-   is no history entry to pop. The behaviour is correct; the probe's
-   expectation predates the ruling. The fix on offer: prove the page's claim
-   with a witness line from the app when the field takes the chord, prove the
-   shell's binding by sending Ctrl+f from a page that does not claim it, and
-   point Back at wherever that leaves the stack. Not done yet, on the owner's
-   instruction to be consulted first.
 
 Settled while the rail was built, and built: the entries and their order (B1),
 the "My Library" label (B1, decision 173), the active glyph (B8), the rail's

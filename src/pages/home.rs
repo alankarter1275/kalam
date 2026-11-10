@@ -472,8 +472,8 @@ impl Component for HomePageModel {
                 // paints right through a zero-height parent while the
                 // parent's own border paints nothing. Height first, then
                 // width, then the shell child's height for comparison.
-                crate::timing::note("home_box:alloc_h", staged_pop.height());
-                crate::timing::note("home_box:alloc_w", staged_pop.width());
+                crate::timing::note("home_box:alloc_h", staged_pop.height().max(0) as usize);
+                crate::timing::note("home_box:alloc_w", staged_pop.width().max(0) as usize);
                 return;
             }
             // The first Home photographs disagreed with each other: one

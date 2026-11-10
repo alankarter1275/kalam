@@ -8,7 +8,7 @@ seed-library: 20 books, 18 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.22748.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.22032.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -30,7 +30,7 @@ requested PDF action: <none>
 settings fixture: 0 empty-dicts=0
 windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 readiness: min=2s max=30s stable_max_changed=0.5%
-readiness: route and window seen after 0s
+readiness: route and window seen after 1s
 toplevel windows seen: 1
   shot: 01-edit-book-1 (91242 bytes)
 focused: 1
@@ -45,32 +45,32 @@ navigation: 'edit-book-1' differs from Home -- the page really did change
 navigation: OK -- the images below are 'edit-book-1'
 
 === timing lines from the app ===
-  [timing] startup_fonts           2.7 ms
-  [timing] startup_gtk_init       59.3 ms
-  [timing] startup_splash_show      1.4 ms
-  [timing] icons_write             0.1 ms
+  [timing] startup_fonts           4.2 ms
+  [timing] startup_gtk_init       79.2 ms
+  [timing] startup_splash_show      1.9 ms
+  [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
-  [timing] icons_init              0.2 ms
-  [timing] startup_splash_pump    122.5 ms
-  [timing] startup_libraries       0.2 ms
-  [timing] startup_db_open         9.2 ms
-  [timing] startup_theme          27.5 ms
-  [timing] pre_run               222.9 ms
-  [timing] route_open:home        24.1 ms
-  [timing] startup_first_page     24.1 ms
-  [timing] service_home            0.5 ms
-  [timing] init_done             269.2 ms
-  [timing] window_shown          271.5 ms
+  [timing] icons_init              0.3 ms
+  [timing] startup_splash_pump    120.3 ms
+  [timing] startup_libraries       0.4 ms
+  [timing] startup_db_open        13.7 ms
+  [timing] startup_theme          42.0 ms
+  [timing] pre_run               262.0 ms
+  [timing] route_open:home        40.6 ms
+  [timing] startup_first_page     40.6 ms
+  [timing] service_home            0.8 ms
+  [timing] init_done             332.3 ms
+  [timing] window_shown          336.6 ms
   [timing] covers_queued             5
-  [timing] home_fill               3.7 ms
+  [timing] home_fill               9.2 ms
   [timing] page_cache_miss           1
-  [timing] route_open:editor_workspace      8.1 ms
+  [timing] route_open:editor_workspace     14.6 ms
   [timing] covers_land             0.1 ms
   [timing] covers_decoded            5
-  [timing] covers_thumb              3
-  [timing] covers_full               2
-  [timing] covers_decode          29.6 ms
-  [timing] covers_decode_max      10.1 ms
+  [timing] covers_thumb              2
+  [timing] covers_full               3
+  [timing] covers_decode          48.6 ms
+  [timing] covers_decode_max      14.3 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
@@ -78,7 +78,38 @@ navigation: OK -- the images below are 'edit-book-1'
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] book_open               3.8 ms
+  [timing] book_open               4.3 ms
+  [timing] render_backend     GskCairoRenderer
+  [timing] frame_after:startup_fonts    544.0 ms
+  [timing] frame_after:startup_gtk_init    464.8 ms
+  [timing] frame_after:startup_splash_show    462.7 ms
+  [timing] frame_after:icons_write    457.8 ms
+  [timing] frame_after:icons_theme    457.7 ms
+  [timing] frame_after:icons_init    457.7 ms
+  [timing] frame_after:startup_splash_pump    342.4 ms
+  [timing] frame_after:startup_libraries    342.1 ms
+  [timing] frame_after:startup_db_open    328.3 ms
+  [timing] frame_after:startup_theme    286.3 ms
+  [timing] frame_after:pre_run    286.3 ms
+  [timing] frame_after:route_open:home    244.8 ms
+  [timing] frame_after:startup_first_page    244.8 ms
+  [timing] frame_after:service_home    244.0 ms
+  [timing] frame_after:init_done    215.9 ms
+  [timing] frame_after:window_shown    211.7 ms
+  [timing] frame_after:home_fill    198.1 ms
+  [timing] frame_after:route_open:editor_workspace    183.1 ms
+  [timing] frame_after:covers_land    174.9 ms
+  [timing] frame_after:covers_decode    141.1 ms
+  [timing] frame_after:covers_decode_max    141.1 ms
+  [timing] frame_after:covers_land     38.5 ms
+  [timing] frame_after:covers_gap     38.5 ms
+  [timing] frame_after:covers_land     38.3 ms
+  [timing] frame_after:covers_gap     38.3 ms
+  [timing] frame_after:covers_land     38.2 ms
+  [timing] frame_after:covers_gap     38.2 ms
+  [timing] frame_after:covers_land     38.1 ms
+  [timing] frame_after:book_open     33.7 ms
+  [timing] frame_paint:book_open     82.9 ms
   [timing] thumbs_backfilled        18
   [timing] render_backend     GskCairoRenderer
   [timing] frame_after:startup_fonts    404.4 ms
@@ -111,8 +142,8 @@ navigation: OK -- the images below are 'edit-book-1'
   [timing] frame_after:covers_land     30.9 ms
   [timing] frame_after:book_open     27.0 ms
   [timing] thumbs_backfill_done       18
-  [timing] startup_dicts        1890.5 ms
-  [timing] frame_after:startup_dicts     88.4 ms
+  [timing] startup_dicts        2024.2 ms
+  [timing] frame_after:startup_dicts    446.0 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
   (none -- no UI-loop block over ~100 ms was detected)
@@ -133,32 +164,32 @@ navigation: OK -- the images below are 'edit-book-1'
 
 === app stderr (non-timing lines) ===
   
-  (process:22804): Gtk-WARNING **: 16:42:49.476: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:22088): Gtk-WARNING **: 17:04:13.406: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-light — applying terracotta-light for this run (not saved)
   
-  (process:22804): Gtk-WARNING **: 16:42:49.610: Theme parser error: <data>:896:24-26: Unit is missing.
+  (process:22088): Gtk-WARNING **: 17:04:13.543: Theme parser error: <data>:896:24-26: Unit is missing.
   
-  (process:22804): Gtk-WARNING **: 16:42:49.610: Theme parser error: <data>:973:24-26: Unit is missing.
+  (process:22088): Gtk-WARNING **: 17:04:13.543: Theme parser error: <data>:973:24-26: Unit is missing.
   kalam: KALAM_ROUTE=edit-book-1 — navigating
 
 === peak memory ===
-books=20 peak_rss_kb=270844 peak_rss_mb=264
+books=20 peak_rss_kb=269092 peak_rss_mb=262
 
 === shutting down ===
 
 === artifacts ===
   total 440
-  drwxr-xr-x  3 runner runner   4096 Nov 10 16:42 .
-  drwxr-xr-x 47 runner runner   4096 Nov 10 16:42 ..
-  -rw-r--r--  1 runner runner  91242 Nov 10 16:42 01-edit-book-1.png
-  -rw-r--r--  1 runner runner  91242 Nov 10 16:42 02-edit-book-1-settling.png
-  -rw-r--r--  1 runner runner  91242 Nov 10 16:42 03-edit-book-1-settled.png
-  -rw-r--r--  1 runner runner 120656 Nov 10 16:42 04-home-for-comparison.png
-  drwxr-xr-x  3 runner runner   4096 Nov 10 16:42 config-home
-  -rw-r--r--  1 runner runner      0 Nov 10 16:42 grim.log
-  -rw-r--r--  1 runner runner   4517 Nov 10 16:42 kalam-home.log
-  -rw-r--r--  1 runner runner   3580 Nov 10 16:42 kalam.log
-  -rw-r--r--  1 runner runner   6396 Nov 10 16:42 report.txt
-  -rw-r--r--  1 runner runner     88 Nov 10 16:42 sway.log
-  -rw-r--r--  1 runner runner   7185 Nov 10 16:42 tree.json
---- run 42854965096 ---
+  drwxr-xr-x  3 runner runner   4096 Nov 10 17:04 .
+  drwxr-xr-x 47 runner runner   4096 Nov 10 17:04 ..
+  -rw-r--r--  1 runner runner  91242 Nov 10 17:04 01-edit-book-1.png
+  -rw-r--r--  1 runner runner  91242 Nov 10 17:04 02-edit-book-1-settling.png
+  -rw-r--r--  1 runner runner  91242 Nov 10 17:04 03-edit-book-1-settled.png
+  -rw-r--r--  1 runner runner 120656 Nov 10 17:04 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner   4096 Nov 10 17:04 config-home
+  -rw-r--r--  1 runner runner      0 Nov 10 17:04 grim.log
+  -rw-r--r--  1 runner runner   4517 Nov 10 17:04 kalam-home.log
+  -rw-r--r--  1 runner runner   3623 Nov 10 17:04 kalam.log
+  -rw-r--r--  1 runner runner   6441 Nov 10 17:04 report.txt
+  -rw-r--r--  1 runner runner     88 Nov 10 17:04 sway.log
+  -rw-r--r--  1 runner runner   7185 Nov 10 17:04 tree.json
+--- run 42855734310 ---

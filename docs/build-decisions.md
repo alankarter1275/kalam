@@ -798,9 +798,20 @@ were the photograph's doing to find:
   `:focus-within` and a transparent colour for whatever node and
   state turn out to paint it.
 
-The box's own border still reads on the left edge only in that frame;
-the next photograph says whether that was the fade's opaque band
-eating the rest of the perimeter, or a second fault of its own.
+The box's own border read on the left edge only. The allocation probe
+(run 42907346209: panel 520 x 262, the other Home instance 0 x 0) ruled
+out a zero-size panel and pointed at the child instead: the shell's
+width request is a floor, so it overflows a bordered parent by exactly
+the border's two pixels and paints over it, GTK boxes not clipping.
+§57's shape therefore rides the shell, and the shell's request shrinks
+by the border so the outside measure stays 520.
+
+Still open from the same frame, measured and unresolved: the Saved-
+quotes heading is absent and the quote row's glyph tops are cut along
+a straight line at y 285, while the history state in the tall frame
+shows every row whole. The Updates fade paints as written, so neither
+is the gradient; the next photograph of the grouped state is the next
+witness.
 
 ## Still open
 

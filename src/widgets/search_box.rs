@@ -171,7 +171,6 @@ pub fn search_box(
     // page, which was the other half of what the popover's non-modality
     // bought.
     let panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    panel.add_css_class("kalam-search-box");
     panel.set_visible(false);
 
     let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -205,8 +204,16 @@ pub fn search_box(
     stack.set_child(Some(&scroll));
     stack.add_overlay(&fade);
 
+    // §57's shape rides the shell, not the panel: run 42907346209's probe
+    // gave the panel its full 520 x 262 and still no frame showed the
+    // border on the right or the bottom, because this shell's own width
+    // request is a floor -- it overflows a bordered parent by exactly the
+    // border's two pixels and paints over it, GTK boxes not clipping. On
+    // the shell the border has nothing left to overflow it, and the
+    // request shrinks by the border so the outside stays §57's 520.
     let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    shell.set_size_request(BOX_WIDTH, -1);
+    shell.add_css_class("kalam-search-box");
+    shell.set_size_request(BOX_WIDTH - 2, -1);
     shell.append(&stack);
     panel.append(&shell);
 

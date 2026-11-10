@@ -18,7 +18,7 @@ index bb7af2f..dd094ba 100644
                  if let Some(w) = shaped {
                      crate::timing::note("home_box:shell_w", w.width().max(0) as usize);
 diff --git a/src/widgets/search_box.rs b/src/widgets/search_box.rs
-index c56ede9..3cc190c 100644
+index e30e935..44c68cb 100644
 --- a/src/widgets/search_box.rs
 +++ b/src/widgets/search_box.rs
 @@ -153,12 +153,7 @@ impl SearchItem {
@@ -35,7 +35,7 @@ index c56ede9..3cc190c 100644
      // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
-@@ -285,7 +280,10 @@ pub fn search_box(
+@@ -288,7 +283,10 @@ pub fn search_box(
      bar.entry.connect_has_focus_notify(move |entry| {
          // Value = tag*10 + focused, so one line says both which instance
          // spoke and whether it was gaining or losing focus.
@@ -47,4 +47,26 @@ index c56ede9..3cc190c 100644
      });
      panel.connect_hide(|_| {
          crate::timing::note("home_box:closed", 1);
---- run 42924533361 ---
+@@ -359,8 +357,7 @@ fn option_menu(on_inside_books: impl Fn(bool) + 'static) -> MenuPopover {
+ 
+ /// The box's contents and the state they are drawn from. Cloning it clones
+ /// GTK handles and `Rc`s, so every callback drives the same box.
+-#[derive(Clone)]
+-#[derive(Clone)]
++#[derive(Clone, Clone)]
+ struct Results {
+     entry: gtk::Entry,
+     count: gtk::Label,
+@@ -434,7 +431,10 @@ impl Results {
+                 widget.height()
+             );
+         }
+-        println!("[searchbox] {when} rows={}", self.list.observe_children().n_items());
++        println!(
++            "[searchbox] {when} rows={}",
++            self.list.observe_children().n_items()
++        );
+     }
+ 
+     /// Decision 198's groups in order, each only when it has a match, with the
+--- run 42927417168 ---

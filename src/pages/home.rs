@@ -474,13 +474,18 @@ impl Component for HomePageModel {
         let home_shown = std::rc::Rc::new(std::cell::Cell::new(false));
         let attached = std::rc::Rc::new(std::cell::Cell::new(false));
         let entry_for_keys = search.entry.clone();
+        // Clones before the closures, not inside them: a `move` closure
+        // takes the Rc itself, and the unmap handler below still needs its
+        // own handle (E0382, run 42881100543).
+        let shown_for_map = home_shown.clone();
+        let entry_for_map = entry_for_keys.clone();
         // Attached on the first map, not in init: at init the page root is
         // not in any window yet, so root() is None there and a controller
         // asked for at init is a controller that never exists -- which is
         // what run 42871002844 proved, chord 6 navigating to All Books
         // through a build that believed it had claimed the chord.
         root.connect_map(move |w| {
-            home_shown.set(true);
+            shown_for_map.set(true);
             if attached.get() {
                 return;
             }
@@ -488,8 +493,8 @@ impl Component for HomePageModel {
             let Some(window) = w.root().and_then(|r| r.downcast::<gtk::Window>().ok()) else {
                 return;
             };
-            let entry = entry_for_keys.clone();
-            let shown = home_shown.clone();
+            let entry = entry_for_map.clone();
+            let shown = shown_for_map.clone();
             let keys = gtk::EventControllerKey::new();
             keys.set_propagation_phase(gtk::PropagationPhase::Capture);
             keys.connect_key_pressed(move |_, keyval, _, modifiers| {

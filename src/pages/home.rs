@@ -474,6 +474,21 @@ impl Component for HomePageModel {
                 // width, then the shell child's height for comparison.
                 crate::timing::note("home_box:alloc_h", staged_pop.height().max(0) as usize);
                 crate::timing::note("home_box:alloc_w", staged_pop.width().max(0) as usize);
+                // Does the shaped node still carry its class, and what did
+                // the overlay give the shell's own child? The first child
+                // of the panel is the shell; 1 says the class survived
+                // into the mapped tree.
+                let shaped = staged_pop.first_child();
+                crate::timing::note(
+                    "home_box:hasclass",
+                    usize::from(shaped.as_ref().map_or(false, |w| {
+                        w.has_css_class("kalam-search-box")
+                    })),
+                );
+                if let Some(w) = shaped {
+                    crate::timing::note("home_box:shell_w", w.width().max(0) as usize);
+                    crate::timing::note("home_box:shell_h", w.height().max(0) as usize);
+                }
                 return;
             }
             // The first Home photographs disagreed with each other: one

@@ -87,9 +87,24 @@ const SHOWCASE_CHECKED: &str = "Checked 3 hours ago";
 const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
     ("Wonder", "3 new chapters in the saved source", "2h", true),
     ("Piranesi", "The source listed a new edition", "5h", false),
-    ("The Dispossessed", "Description updated at the source", "1d", false),
-    ("Wolf Hall", "2 new chapters in the saved source", "2d", false),
-    ("Notes Toward a History", "The source stopped serving chapters", "4d", false),
+    (
+        "The Dispossessed",
+        "Description updated at the source",
+        "1d",
+        false,
+    ),
+    (
+        "Wolf Hall",
+        "2 new chapters in the saved source",
+        "2d",
+        false,
+    ),
+    (
+        "Notes Toward a History",
+        "The source stopped serving chapters",
+        "4d",
+        false,
+    ),
     ("Giovanni's Room", "Added from a saved source", "6d", false),
 ];
 
@@ -329,11 +344,10 @@ impl Component for HomePageModel {
 
         // §57's bar and §62's timeline (B21): both come from widget modules
         // and go into the hosts the view reserves for them, the way the shelf
-        // and the book card do. The bar's entry, count and picker stay with
-        // its struct until search is wired (B17) — the page needs the root to
-        // lay the element out and nothing else yet.
-        let search = search_bar::search_bar(SEARCH_HINT);
-        widgets.search_host.append(&search.root);
+        // and the book card do. Neither is wired to anything yet — the bar
+        // keeps its field, count and picker to itself until search exists
+        // (B17), and the timeline's rows are the invented ones below.
+        widgets.search_host.append(&search_bar::search_bar(SEARCH_HINT));
         let updates_block = updates::updates(&showcase_updates(), SHOWCASE_CHECKED);
         widgets.updates_host.append(&updates_block);
 

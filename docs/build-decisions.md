@@ -601,6 +601,16 @@ Today ring; the Arrange-by chip was a static label rather than a button opening
    library makes those reads measurable* — is the standing invitation this
    answers.
 
+5. **Ctrl+F is already taken.** home-spec §7 asks `/` or Ctrl+F to focus the
+   Home search field and Esc to leave it. `shortcuts.rs` already binds Ctrl+F
+   to `SearchLibrary` (decision 155), which jumps to All Books and focuses the
+   search there, and decision 24 says a taken key is refused rather than
+   stolen. A handler scoped to Home could claim the key while Home is showing
+   and leave the shell's binding alone everywhere else, but which search Ctrl+F
+   means on Home is the owner's call. Nothing is wired until it is made: the
+   bar's field takes focus by clicking, which is also all §57's underline needs
+   to show itself.
+
 Settled while the rail was built, and built: the entries and their order (B1),
 the "My Library" label (B1, decision 173), the active glyph (B8), the rail's
 fill and divider (§56: no fill, no border, a 2px rounded divider inset 28 from

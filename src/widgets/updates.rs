@@ -149,22 +149,22 @@ fn gutter(fresh: bool) -> gtk::Box {
         // The line runs the whole row, so stacked rows join into one 2px line.
         set_source(cr, probe_color(&line), 1.0);
         cr.rectangle(centre_x - 1.0, 0.0, 2.0, height as f64);
-        cr.fill();
+        let _ = cr.fill();
 
         if fresh {
             set_source(cr, probe_color(&accent), 1.0);
             cr.arc(centre_x, centre_y, radius, 0.0, turn);
-            cr.fill();
+            let _ = cr.fill();
         } else {
             // Seen: a 1.5px `text-2` ring on `bg`, so the line does not show
             // through the middle of the node.
             set_source(cr, probe_color(&bg), 1.0);
             cr.arc(centre_x, centre_y, radius, 0.0, turn);
-            cr.fill();
+            let _ = cr.fill();
             set_source(cr, probe_color(&ring), 1.0);
             cr.set_line_width(1.5);
             cr.arc(centre_x, centre_y, radius - 0.75, 0.0, turn);
-            cr.stroke();
+            let _ = cr.stroke();
         }
     });
 

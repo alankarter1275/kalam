@@ -232,6 +232,9 @@ pub fn search_box(
         count: bar.count.clone(),
         list: list.clone(),
         scroll: scroll.clone(),
+        shell: shell.clone(),
+        inner: inner.clone(),
+        stack: stack.clone(),
         items: Rc::new(items.to_vec()),
         history: Rc::new(RefCell::new(history.to_vec())),
         expanded: Rc::new(RefCell::new(vec![false; SearchGroup::ALL.len()])),
@@ -293,7 +296,15 @@ pub fn search_box(
 
     let typed = state.clone();
 
-    bar.entry.connect_changed(move |_| typed.render());
+    bar.entry.connect_changed(move |_| {
+        typed.render();
+        // And the same dump once the layout has had time to settle: the
+        // difference between the two is the staleness the frames show.
+        let settled = typed.clone();
+        gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(400), move || {
+            settled.dump_allocations("settled");
+        });
+    });
 
     // Decision 200's option menu on the picker. §57 gives the picker the
     // `border` fill while its menu is open, so the open state takes the class
@@ -349,11 +360,15 @@ fn option_menu(on_inside_books: impl Fn(bool) + 'static) -> MenuPopover {
 /// The box's contents and the state they are drawn from. Cloning it clones
 /// GTK handles and `Rc`s, so every callback drives the same box.
 #[derive(Clone)]
+#[derive(Clone)]
 struct Results {
     entry: gtk::Entry,
     count: gtk::Label,
     list: gtk::Box,
     scroll: gtk::ScrolledWindow,
+    shell: gtk::Box,
+    inner: gtk::Box,
+    stack: gtk::Overlay,
     items: Rc<Vec<SearchItem>>,
     history: Rc<RefCell<Vec<String>>>,
     expanded: Rc<RefCell<Vec<bool>>>,
@@ -393,7 +408,33 @@ impl Results {
         // And the viewport height, as a number rather than a negotiation:
         // the list's own natural height, capped at §57's scroll maximum.
         let (_, natural, _, _) = self.list.measure(gtk::Orientation::Vertical, -1);
-        self.scroll.set_height_request(natural.min(SCROLL_MAX));
+        let viewport = natural.min(SCROLL_MAX);
+        self.scroll.set_height_request(viewport);
+        // And the shell that draws §57's outline, pinned to the same number
+        // plus its own two border rows: the frames show the outline closing
+        // a whole row above the list's last one while the scroll inside it
+        // keeps the taller allocation, so the shell's height must not be
+        // left to a cached measure of its own.
+        self.shell.set_height_request(viewport + 2);
+        self.dump_allocations("render");
+    }
+
+    /// One line per widget in the box chain, for the CI log only.
+    fn dump_allocations(&self, when: &str) {
+        for (name, widget) in [
+            ("shell", self.shell.upcast_ref::<gtk::Widget>().clone()),
+            ("inner", self.inner.upcast_ref::<gtk::Widget>().clone()),
+            ("stack", self.stack.upcast_ref::<gtk::Widget>().clone()),
+            ("scroll", self.scroll.upcast_ref::<gtk::Widget>().clone()),
+            ("list", self.list.upcast_ref::<gtk::Widget>().clone()),
+        ] {
+            let (x, y, w, h) = widget.allocation();
+            println!(
+                "[searchbox] {when} {name} x={x} y={y} w={w} h={h}                  req_h={}",
+                widget.height()
+            );
+        }
+        println!("[searchbox] {when} rows={}", self.list.observe_children().n_items());
     }
 
     /// Decision 198's groups in order, each only when it has a match, with the

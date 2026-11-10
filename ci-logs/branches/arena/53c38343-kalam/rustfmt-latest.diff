@@ -1,2 +1,16 @@
-clean
---- run 42737582187 ---
+diff --git a/src/pages/home.rs b/src/pages/home.rs
+index 461ac1a..c18b552 100644
+--- a/src/pages/home.rs
++++ b/src/pages/home.rs
+@@ -795,9 +795,6 @@ mod tests {
+     #[test]
+     fn the_greeting_stands_on_two_display_lines() {
+         assert!(!GREETING_NAME.is_empty());
+-        assert!(
+-            !GREETING_NAME.contains(','),
+-            "a name, not a formatted date"
+-        );
++        assert!(!GREETING_NAME.contains(','), "a name, not a formatted date");
+     }
+ }
+--- run 42828956940 ---

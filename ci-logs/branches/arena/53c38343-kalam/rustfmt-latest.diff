@@ -28,4 +28,4 @@ index 44d1f12..291d7fb 100644
      });
      panel.connect_hide(|_| {
          crate::timing::note("home_box:closed", 1);
---- run 42906642869 ---
+--- run 42907054226 ---

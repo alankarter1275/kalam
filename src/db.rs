@@ -101,7 +101,35 @@ pub type Result<T> = std::result::Result<T, DbError>;
 ///          per book, so the word column gains its uniqueness rule
 pub const SCHEMA_VERSION: i64 = 23;
 
-/// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
+/// The process-wide library handle: one connection behind one lock.
+///
+/// The lock is a safety requirement, not a scheduling policy. A SQLite
+/// connection cannot cross threads, so something has to serialise access, and
+/// a mutex is the smallest thing that does. This comment used to say that the
+/// app is single-threaded for the UI and that imports run there too — true in
+/// the P1 era, and the reason no ordering rule seemed worth writing down.
+/// Roadmap 1.2 ("move blocking SQLite off the UI thread", done 2026-09-19)
+/// retired that assumption, and `docs/WORKING.md` made it a standing rule:
+/// catalog queries go to `tasks.rs` workers. From then on the screen and its
+/// workers shared this lock with nobody in charge of it. Linux hands an unfair
+/// mutex to whoever asks next, so two housekeeping jobs asking a hundred times
+/// each could keep the screen out for half a second — pitfalls §105 sighted
+/// that queue and fixed the slow query in front of it, §109 measured the queue
+/// itself once there was an instrument able to.
+///
+/// The rule now is that the screen goes first, and it lives in
+/// [`crate::lockwatch`]: [`Catalog::conn`] raises a flag before it blocks, a
+/// worker about to take the lock gives way two milliseconds at a time while
+/// that flag is set, capped at 50 ms per attempt so a stuck flag can slow the
+/// library down but never stop it. Build-decisions B20 records the ruling and
+/// what was deliberately not adopted instead.
+///
+/// Two consequences worth knowing at a call site. The flag makes the ordering
+/// fair; it does not make holding fast, so a long UI-thread hold still freezes
+/// the screen — it just no longer starves the workers queued behind it as
+/// well. And `PRAGMA busy_timeout` can never help a waiter here: SQLite's own
+/// patience sits behind this mutex, so a thread stuck in front of the lock
+/// never reaches the lock SQLite is guarding.
 pub struct Catalog {
     conn: Mutex<Connection>,
     /// `library_stats()` runs ~20 aggregates and is called on Home, the

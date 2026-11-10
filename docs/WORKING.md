@@ -114,7 +114,11 @@ Adopted:
   it looks like it ends. `Catalog::conn()` returns the guard itself and is called
   about 198 times; those sites are not being rewritten, but holding a guard
   across a call that locks again is how this app freezes, and the closure form
-  makes the hazard visible at the call site.
+  makes the hazard visible at the call site. Who *wins* the catalogue lock is
+  settled separately: the screen goes first and workers give way, capped at
+  50 ms per attempt (`src/lockwatch.rs`, build-decisions B20). Fair ordering is
+  not a licence for a long hold on the UI thread — it only means the workers
+  behind it are not starved as well.
 
 Deliberately not adopted, with the reason, so the question is not re-litigated:
 

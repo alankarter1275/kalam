@@ -58,10 +58,12 @@
 //! ## Cost, stated because it sits on the hot path
 //!
 //! Every read of the catalogue goes through `conn()`, so the record has to be
-//! cheaper than the query it measures: one monotonic clock read and two
-//! relaxed atomic stores on the way in, one compare-exchange, a second clock
-//! read and two more stores on the way out. Tens of nanoseconds against a
-//! query that costs microseconds.
+//! cheaper than the query it measures: a handful of relaxed atomic loads and
+//! stores and two monotonic clock reads for the whole acquisition, tens of
+//! nanoseconds against a query that costs microseconds. A worker pays the same,
+//! plus up to [`YIELD_CAP`] of sleep when the screen happens to be waiting —
+//! the only part of this module that costs anything measurable, and the point
+//! of it.
 //! The thread-name table is a `Mutex`, but it is taken once per thread and
 //! again only while a line is actually being printed, and it is never held
 //! across a catalogue call — so it cannot join the connection lock in a

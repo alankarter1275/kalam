@@ -405,6 +405,94 @@ lock rather than to the work: the screen does not queue behind housekeeping.
 The work B19 interrupted is queued and unchanged — Step B's chapter heads, then
 stage 2.
 
+## B20 — the screen goes first at the catalogue lock (2026-11-09)
+
+The ruling: at the catalogue's one connection lock, the screen is served
+first. A worker about to take the lock gives way while the screen is waiting —
+two milliseconds of sleep per look at the flag — and stops giving way after
+50 ms, cap pinned by a test, so that a flag left set by a bug costs the workers
+a fiftieth of a second and not the session.
+
+This is recorded as a decision rather than as a fix because the opposite was
+never decided either. Nobody had written down who wins that lock, in any
+document, at any time:
+
+- The comment above the lock itself said the app is *single-threaded for the
+  UI, and imports run sync on the UI* — a P1-era truth, and the reason an
+  ordering rule looked like overhead. Under it there is nobody to queue behind.
+  That comment is corrected now; it was still there this morning.
+- Roadmap 1.2, *"move blocking SQLite off the UI thread"*, is marked done
+  2026-09-19, and `docs/WORKING.md` carries it as a standing rule: catalog
+  queries go to `tasks.rs` workers. From that day the screen and its workers
+  have shared one lock.
+- The same roadmap decided, deliberately and with reasons, which reads *stay*
+  on the screen: *"a page asks and blocks for ~1 ms, which is invisible"*, so
+  five bounded queries stay synchronous, and *"every page's first read in
+  `init`"* stays synchronous because the page is not on screen yet. That entry
+  ends with a standing invitation — *"revisit when a large library makes those
+  reads measurable"*.
+- What no document said is what happens when a read that stayed on the screen
+  meets a worker holding the lock. Linux answered it by default: an unfair
+  mutex goes to whoever asks next, not to whoever has waited longest.
+
+So the queue was inherited, not designed. It was sighted once, in §105 — *"a
+scan on a worker thread queues every UI-thread read behind it; at startup that
+presents as 'the splash screen never goes away'"* — and the fix then was to
+kill the slow query in front of it, which removed the evidence and left the
+ordering untouched. §106 pinned a different shape entirely (a guard held across
+a call that locks again). The queue had no rule and no instrument until §109
+built one.
+
+The numbers that settled it, from three CI runs and then the owner's machine.
+Before: waits of 370 to 1110 ms per block, measured two ways — the accumulated
+counter and then the waiter's own line — against holds of 0 to 4 ms, and 116
+`[lock]` lines in a single run. Every hold polite; the total a freeze. After: a
+10 ms worst case in CI and no `[lock]` lines at all; and in the owner's own log
+not one line of reported waiting, with the eleven samples that caught the lock
+occupied finding it empty eight times, held by the screen itself twice, and
+held once by a worker for 2 ms.
+
+**What this ruling does not say.** It makes the ordering fair; it does not make
+holding fast. A long hold on the screen thread still freezes the screen — the
+worker cap exists precisely so that it does not also starve the workers behind
+it. The owner's log still carries one such hold, the startup schema pass in
+`Catalog::open`, and it is Still open item 4, not something this settles.
+
+Deliberately not adopted, with the reason, so the question is not re-litigated:
+
+- **A connection pool, or a second read-only connection.** WAL would allow
+  readers alongside a writer and `PRAGMA busy_timeout = 5000` would finally
+  mean something — today it cannot help the screen at all, because SQLite's
+  patience sits behind this mutex. Not adopted: the measured problem was
+  ordering, not capacity. Holds were 0 to 4 ms and reads about 1 ms, so a pool
+  would trade one named lock for SQLite's own, where nothing can say who is
+  holding what; it would need its own PRAGMAs, statement cache and page cache
+  per connection; and it would put the memoised `library_stats` cache and its
+  `total_changes()` token behind a second view of the database. One connection
+  is also what makes §106's nested-lock shape a single thing a scanner test can
+  find. Revisit only on a measurement the flag does not explain.
+- **A fair or ticketed mutex.** Not adopted: fairness is the wrong requirement.
+  Two housekeeping jobs alternating politely in front of the screen would still
+  keep it out for as long as they have work between them, which is exactly the
+  half second that was measured.
+- **Coarser yielding — workers pause between task items instead of before each
+  acquisition.** Not adopted: an item can be a hundred covers, so the screen
+  would wait for the whole of one. Yielding at the lock is the only place where
+  the wait is bounded by somebody else's hold rather than by somebody else's
+  batch.
+- **Rewriting the two housekeeping jobs to take the lock less often.** Not
+  adopted as the fix, though it remains good hygiene: it would shorten this
+  queue and leave the next one, and the flag covers jobs that have not been
+  written yet.
+
+Cost, stated because it sits on the hot path: on the screen's path, a handful
+of relaxed atomic loads and stores and two monotonic clock reads for the whole
+acquisition, against a query that costs microseconds. A worker pays the same,
+plus up to 50 ms of sleep when the screen happens to be waiting — the only part
+of this that costs anything measurable, and the point of it. The cap and
+the wait line's wording are both pinned by tests in `src/lockwatch.rs`, because
+that line is the evidence and it has to stay readable.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a
@@ -420,6 +508,23 @@ stage 2.
 3. **The Home quote's real source** (B13) and **the customization area in
    Settings** that will carry the greeting's name (B14). Both are to be
    discussed in this session; both have placeholders until then.
+
+4. **The startup database pass runs on the screen.** The owner's log from the
+   build carrying B20 shows one long block per launch — 4.9 s, then 2.5 s —
+   while the splash is up, and no freeze once the app is running (150 to
+   250 ms hiccups opening Settings, a book, the reader, Home). The part the log
+   can name is the screen opening the library itself: `Catalog::open` runs the
+   whole startup schema pass on the UI thread holding the lock, at least
+   1558 ms in the first launch and 109 ms in the second. The rest of the block
+   has the lock empty, so it is the app being built and painted for the first
+   time with the startup jobs competing for the machine — and the log cannot
+   name it, because startup has no activity labels at all, so every line from
+   that phase points at whatever finished last. Two small steps are on offer
+   and neither is ruled on: label the startup phases, and record for each block
+   how much was processor time and how much was waiting, which settles "busy"
+   from "starved" in one number. Roadmap 1.2's own note — *revisit when a large
+   library makes those reads measurable* — is the standing invitation this
+   answers.
 
 Settled while the rail was built, and built: the entries and their order (B1),
 the "My Library" label (B1, decision 173), the active glyph (B8), the rail's

@@ -3917,6 +3917,15 @@ only the owner's real library was big enough to show it. The fix was not a
 bigger timeout or a faster machine: per-book reads never go through the FTS
 table, they go through a keyed table of their own (build-decisions B17).
 
+The queue outlived its own diagnosis. Killing the scan removed the slow hold
+that made the queue visible, not the ordering that produced it: the lock still
+went to whoever asked next, and a season later §109 measured the same queue
+behind holds of 0 to 4 ms — no scan involved, just two housekeeping jobs asking
+a hundred times each while the screen asked once. B20 records the rule that was
+missing here, and `Catalog`'s own doc comment now carries it, because the
+comment that used to sit there ("single-threaded for UI; imports run sync on
+UI for P1") is what told every later reader that no rule was needed.
+
 ## §106 — a connection guard held across another `Catalog` call deadlocks the thread holding it
 
 `Catalog` is one connection behind one `std::sync::Mutex`, and that mutex is

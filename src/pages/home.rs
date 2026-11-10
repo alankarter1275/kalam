@@ -592,8 +592,10 @@ impl Component for HomePageModel {
                 };
                 let inside = |w: &gtk::Widget| match w.compute_bounds(&host) {
                     Some(r) => {
-                        let (rx, ry) = (r.x(), r.y());
-                        x >= rx && x <= rx + r.width() && y >= ry && y <= ry + r.height()
+                        // The click carries f64, the rect f32.
+                        let (rx, ry) = (f64::from(r.x()), f64::from(r.y()));
+                        let (rw, rh) = (f64::from(r.width()), f64::from(r.height()));
+                        x >= rx && x <= rx + rw && y >= ry && y <= ry + rh
                     }
                     None => false,
                 };

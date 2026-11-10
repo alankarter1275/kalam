@@ -225,10 +225,31 @@ pub fn search_box(bar: &SearchBar, items: &[SearchItem], history: &[String]) -> 
     // focus-out — Escape and a click outside are the ways out, and closing on
     // focus-out would fight the popover for the field.
     let open_on_focus = popover.clone();
+    let entry_for_pop = bar.entry.clone();
     bar.entry.connect_has_focus_notify(move |entry| {
         if entry.has_focus() {
             open_on_focus.popup();
+            crate::timing::note("home_box:popup", 1);
+            // The photographs show a focused field with no box under it and
+            // no warning in any log, so the next round needs to see what the
+            // popover did: whether it mapped at all, and whether something
+            // closed it again. A single idle retry covers the case where
+            // popup() landed a tick too early to take.
+            let pop = open_on_focus.clone();
+            let ent = entry_for_pop.clone();
+            gtk::glib::idle_add_local_once(move || {
+                if ent.has_focus() && !pop.is_mapped() {
+                    pop.popup();
+                    crate::timing::note("home_box:retry", 1);
+                }
+            });
         }
+    });
+    popover.connect_closed(|_| {
+        crate::timing::note("home_box:closed", 1);
+    });
+    popover.connect_map(|_| {
+        crate::timing::note("home_box:mapped", 1);
     });
 
     let typed = state.clone();

@@ -472,21 +472,28 @@ impl Component for HomePageModel {
         // page: true on map, false on unmap, so a cached-but-hidden Home
         // claims nothing and every other page reaches the shell as before.
         let home_shown = std::rc::Rc::new(std::cell::Cell::new(false));
-        root.connect_map({
+        let attached = std::rc::Rc::new(std::cell::Cell::new(false));
+        let entry_for_keys = search.entry.clone();
+        // Attached on the first map, not in init: at init the page root is
+        // not in any window yet, so root() is None there and a controller
+        // asked for at init is a controller that never exists -- which is
+        // what run 42871002844 proved, chord 6 navigating to All Books
+        // through a build that believed it had claimed the chord.
+        root.connect_map(move |w| {
+            home_shown.set(true);
+            if attached.get() {
+                return;
+            }
+            attached.set(true);
+            let Some(window) = w.root().and_then(|r| r.downcast::<gtk::Window>().ok()) else {
+                return;
+            };
+            let entry = entry_for_keys.clone();
             let shown = home_shown.clone();
-            move |_| shown.set(true)
-        });
-        root.connect_unmap({
-            let shown = home_shown.clone();
-            move |_| shown.set(false)
-        });
-        let window = root.root().and_then(|r| r.downcast::<gtk::Window>().ok());
-        if let Some(window) = window {
-            let entry = search.entry.clone();
             let keys = gtk::EventControllerKey::new();
             keys.set_propagation_phase(gtk::PropagationPhase::Capture);
             keys.connect_key_pressed(move |_, keyval, _, modifiers| {
-                if !home_shown.get() {
+                if !shown.get() {
                     return gtk::glib::Propagation::Proceed;
                 }
                 let ctrl = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
@@ -510,7 +517,11 @@ impl Component for HomePageModel {
                 gtk::glib::Propagation::Proceed
             });
             window.add_controller(keys);
-        }
+        });
+        root.connect_unmap({
+            let shown = home_shown.clone();
+            move |_| shown.set(false)
+        });
 
         // Stage-1 placeholders (B12): the shelf area says what is coming,
         // and the card host shows the dashed block the snapshot replaces a

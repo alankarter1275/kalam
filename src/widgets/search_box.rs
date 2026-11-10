@@ -158,17 +158,21 @@ pub fn search_box(
     items: &[SearchItem],
     history: &[String],
     tag: i32,
-) -> gtk::Popover {
-    let popover = gtk::Popover::new();
-    popover.add_css_class("kalam-search-box");
-    popover.set_has_arrow(false);
-    popover.set_position(gtk::PositionType::Bottom);
-    popover.set_autohide(true);
-    // Nothing to turn off here, and that is the point: a GTK 4 popover has no
-    // modal property, so the field keeps the keystrokes and the box can answer
-    // them. Escape and a click outside still close it, which is all `autohide`
-    // needs.
-    popover.set_parent(&bar.root);
+) -> gtk::Box {
+    // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
+    // popover died mid-call under headless sway (home_box:before2 logged,
+    // home_box:after2 never, the unflushed log buffer taking the line with
+    // it), in the same environment where the reader's annotation popover
+    // photographs fine. §57's box is a panel under the bar in every respect
+    // the design cares about, so it is now exactly that: an ordinary child
+    // of the page overlay, shown and hidden, with Escape and the outside
+    // click closed by hand where `autohide` used to do it. Being in the
+    // page rather than a toplevel also keeps the field's keystrokes in the
+    // page, which was the other half of what the popover's non-modality
+    // bought.
+    let panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    panel.add_css_class("kalam-search-box");
+    panel.set_visible(false);
 
     let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
     list.add_css_class("kalam-search-list");
@@ -204,7 +208,7 @@ pub fn search_box(
     let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
     shell.set_size_request(BOX_WIDTH, -1);
     shell.append(&stack);
-    popover.set_child(Some(&shell));
+    panel.append(&shell);
 
     let state = Results {
         entry: bar.entry.clone(),
@@ -235,7 +239,7 @@ pub fn search_box(
     // frames being GTK's built-in entry outline rather than the styled
     // state. The focus controller's enter is the mechanism the toolkit
     // guarantees for exactly this.
-    let focus_open = popover.clone();
+    let focus_open = panel.clone();
     let focus_ctrl = gtk::EventControllerFocus::new();
     focus_ctrl.connect_enter(move |_| {
         // No has_focus() guard, and the probe round (run 42890371025) is
@@ -246,7 +250,7 @@ pub fn search_box(
         // gain; open on it, unconditionally.
         crate::timing::note("home_box:enter", tag as usize);
         crate::timing::note("home_box:before2", tag as usize);
-        focus_open.popup();
+        focus_open.set_visible(true);
         crate::timing::note("home_box:after2", tag as usize);
     });
     bar.entry.add_controller(focus_ctrl);
@@ -258,26 +262,12 @@ pub fn search_box(
         // spoke and whether it was gaining or losing focus.
         crate::timing::note("home_box:notify", tag as usize * 10 + usize::from(entry.has_focus()));
     });
-    popover.connect_closed(|_| {
+    panel.connect_hide(|_| {
         crate::timing::note("home_box:closed", 1);
-    });
-    popover.connect_map(|_| {
-        crate::timing::note("home_box:mapped", 1);
     });
 
     let typed = state.clone();
 
-    // A focus that arrives before the bar is mapped -- GTK handing a new
-    // window's first focus to the field -- pops nothing: popup() under an
-    // unmapped parent is a no-op and the notify has already fired, leaving
-    // the bar focused with no box under it. Re-check once the bar is mapped.
-    let entry_for_map = bar.entry.clone();
-    let pop_for_map = popover.clone();
-    bar.root.connect_map(move |_| {
-        if entry_for_map.has_focus() && !pop_for_map.is_mapped() {
-            pop_for_map.popup();
-        }
-    });
     bar.entry.connect_changed(move |_| typed.render());
 
     // Decision 200's option menu on the picker. §57 gives the picker the
@@ -299,7 +289,7 @@ pub fn search_box(
     let picker_shut = bar.options.clone();
     picker_menu.connect_closed(move |_| picker_shut.remove_css_class("open"));
 
-    popover
+    panel
 }
 
 /// Decision 200: §17's menu at 260 wide — "Search in" with Library ticked and

@@ -858,18 +858,11 @@ entry.kalam-search-entry:focus-visible {
 
 /* ── Home, stage 3: §57's result box and decision 200's option menu ──────
    The box hangs off the bar: `bg` fill, a 1px border with no top border, and
-   radius 0 0 14 14 so its top corners square up against the underline. A GTK
-   popover draws a card of its own, so the outer node is made transparent and
-   the `contents` node carries §57's shape — the same split the annotation
-   popover uses — and the margin is what closes the gap between box and bar,
-   because §57 attaches them. */
+   radius 0 0 14 14 so its top corners square up against the underline. The
+   box is an ordinary child of the page overlay since B27's rebuild, so the
+   shape sits on its own node and there is no popover card to see through. */
 
-popover.kalam-search-box {
-    background: transparent;
-    margin: 0;
-}
-
-popover.kalam-search-box > contents {
+.kalam-search-box {
     background: @kalam_bg;
     border: 1px solid @kalam_border;
     border-top: none;

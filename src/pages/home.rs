@@ -248,11 +248,18 @@ impl Component for HomePageModel {
     type CommandOutput = ();
 
     view! {
+        // An overlay, not a plain box: §57's result box hangs over the
+        // greeting and the shelf from the search row, and since the B27
+        // rebuild it is an ordinary child of this overlay rather than a
+        // popover toplevel -- popup() on the popover died mid-call under
+        // headless sway (run 42893860400: home_box:before2 logged,
+        // home_box:after2 never, the unflushed buffer taking the line).
         #[root]
-        gtk::Box {
-            set_orientation: gtk::Orientation::Vertical,
-            set_hexpand: true,
-            set_vexpand: true,
+        gtk::Overlay {
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_hexpand: true,
+                set_vexpand: true,
 
             // The search row (§57): 28 above it, 520 x 40, 56 from the rail —
             // the board's own numbers, which hold now that Home owns its
@@ -390,6 +397,7 @@ impl Component for HomePageModel {
                     },
                 },
             },
+            }
         }
     }
 
@@ -422,6 +430,15 @@ impl Component for HomePageModel {
         crate::timing::note("home_init", instance as usize);
         let box_pop =
             search_box::search_box(&search, &showcase_search(), &showcase_history(), instance);
+        // §57 hangs the box off the bar and over the page: start-aligned at
+        // the board's 56, its top the search row's 28 plus the bar's 40.
+        // Hidden until focus or staging opens it; a hidden overlay child
+        // takes no input and paints nothing.
+        box_pop.set_halign(gtk::Align::Start);
+        box_pop.set_valign(gtk::Align::Start);
+        box_pop.set_margin_start(56);
+        box_pop.set_margin_top(68);
+        root.add_overlay(&box_pop);
 
         // Staging for the CI photographs, and nothing else: with
         // KALAM_HOME_SEARCH set, the field opens pre-filled on the first idle
@@ -446,7 +463,7 @@ impl Component for HomePageModel {
                 // has-focus stays false under headless sway, so the enter
                 // handler is the usual opener and this is the staging
                 // launch's own belt-and-braces.
-                staged_pop.popup();
+                staged_pop.set_visible(true);
                 crate::timing::note("home_focus:staged", 1);
                 return;
             }
@@ -501,6 +518,7 @@ impl Component for HomePageModel {
         // own handle (E0382, run 42881100543).
         let shown_for_map = home_shown.clone();
         let entry_for_map = entry_for_keys.clone();
+        let box_for_click = box_pop.clone();
         // Attached on the first map, not in init: at init the page root is
         // not in any window yet, so root() is None there and a controller
         // asked for at init is a controller that never exists -- which is
@@ -519,11 +537,18 @@ impl Component for HomePageModel {
             };
             let entry = entry_for_map.clone();
             let shown = shown_for_map.clone();
+            let box_for_keys = box_for_click.clone();
             let keys = gtk::EventControllerKey::new();
             keys.set_propagation_phase(gtk::PropagationPhase::Capture);
             keys.connect_key_pressed(move |_, keyval, _, modifiers| {
                 if !shown.get() {
                     return gtk::glib::Propagation::Proceed;
+                }
+                // Escape closes the box the popover's autohide used to, and
+                // stops there: with the box shut it is nobody's key here.
+                if keyval == gtk::gdk::Key::Escape && box_for_keys.get_visible() {
+                    box_for_keys.set_visible(false);
+                    return gtk::glib::Propagation::Stop;
                 }
                 let ctrl = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
                 let find = ctrl && (keyval == gtk::gdk::Key::f || keyval == gtk::gdk::Key::F);
@@ -547,6 +572,37 @@ impl Component for HomePageModel {
                 gtk::glib::Propagation::Proceed
             });
             window.add_controller(keys);
+
+            // The outside click, by hand: capture phase on the window, so it
+            // sees the press before whatever sits under the box does. A
+            // press outside both the box and the bar shuts the box and is
+            // then denied by this gesture, which is the gesture declining
+            // the sequence -- the click carries on to its real target, the
+            // way autohide let it.
+            let click = gtk::GestureClick::new();
+            click.set_propagation_phase(gtk::PropagationPhase::Capture);
+            let panel_for_click = box_for_click.clone();
+            let bar_for_click = search.root.clone();
+            click.connect_pressed(move |gesture, x, y| {
+                if !panel_for_click.get_visible() {
+                    return;
+                }
+                let Some(host) = gesture.widget() else {
+                    return;
+                };
+                let inside = |w: &gtk::Widget| match w.compute_bounds(&host) {
+                    Some(r) => {
+                        let (rx, ry) = (r.x(), r.y());
+                        x >= rx && x <= rx + r.width() && y >= ry && y <= ry + r.height()
+                    }
+                    None => false,
+                };
+                if !inside(&panel_for_click) && !inside(&bar_for_click) {
+                    panel_for_click.set_visible(false);
+                    gesture.set_state(gtk::EventSequenceState::Denied);
+                }
+            });
+            window.add_controller(click);
         });
         root.connect_unmap({
             let shown = home_shown.clone();

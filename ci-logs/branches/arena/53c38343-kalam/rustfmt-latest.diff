@@ -1,3 +1,22 @@
+diff --git a/src/pages/home.rs b/src/pages/home.rs
+index 2a4fd14..4cf32b2 100644
+--- a/src/pages/home.rs
++++ b/src/pages/home.rs
+@@ -481,9 +481,11 @@ impl Component for HomePageModel {
+                 let shaped = staged_pop.first_child();
+                 crate::timing::note(
+                     "home_box:hasclass",
+-                    usize::from(shaped.as_ref().map_or(false, |w| {
+-                        w.has_css_class("kalam-search-box")
+-                    })),
++                    usize::from(
++                        shaped
++                            .as_ref()
++                            .map_or(false, |w| w.has_css_class("kalam-search-box")),
++                    ),
+                 );
+                 if let Some(w) = shaped {
+                     crate::timing::note("home_box:shell_w", w.width().max(0) as usize);
 diff --git a/src/widgets/search_box.rs b/src/widgets/search_box.rs
 index d62d359..18672e7 100644
 --- a/src/widgets/search_box.rs
@@ -28,4 +47,4 @@ index d62d359..18672e7 100644
      });
      panel.connect_hide(|_| {
          crate::timing::note("home_box:closed", 1);
---- run 42913984110 ---
+--- run 42917138917 ---

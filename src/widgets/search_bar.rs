@@ -82,6 +82,7 @@ pub fn search_bar(hint: &str) -> SearchBar {
     // the styled focused state rides on enter/leave rather than on
     // notify::has-focus, which three photograph rounds never saw fire.
     let class_root = root.clone();
+    let class_root_for_leave = root.clone();
     let class_entry = entry.clone();
     let focus_ctrl = gtk::EventControllerFocus::new();
     focus_ctrl.connect_enter(move |_| {
@@ -89,8 +90,10 @@ pub fn search_bar(hint: &str) -> SearchBar {
             class_root.add_css_class("focused");
         }
     });
+    // Its own handle: the enter closure moves its clone (E0382, run of
+    // 2f03643), and `leave` still has to reach the same bar.
     focus_ctrl.connect_leave(move |_| {
-        class_root.remove_css_class("focused");
+        class_root_for_leave.remove_css_class("focused");
     });
     entry.add_controller(focus_ctrl);
 

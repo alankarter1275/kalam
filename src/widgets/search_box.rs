@@ -214,6 +214,11 @@ pub fn search_box(
     let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
     shell.add_css_class("kalam-search-box");
     shell.set_size_request(BOX_WIDTH - 2, -1);
+    // Clip, because nothing else holds: every descendant in this chain
+    // carries a natural size wider or taller than its allocation, and a
+    // GTK box that is not told to clip paints its children straight over
+    // its own border. Hidden overflow ends that at the shell's edge.
+    shell.set_overflow(gtk::Overflow::Hidden);
     shell.append(&stack);
     panel.append(&shell);
 

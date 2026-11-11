@@ -41,6 +41,11 @@ use std::time::Duration;
 const BOX_WIDTH: i32 = 520;
 const BOOK_ROW: i32 = 52;
 const AUTHOR_ROW: i32 = 48;
+/// The two natural-height rows, pinned: a quote or snippet row is two
+/// lines of prose with padding, a heading one line with its own.
+const PROSE_ROW: i32 = 56;
+const HEADING_ROW: i32 = 34;
+
 const HISTORY_ROW: i32 = 44;
 /// §57 asks for a 48 to 56 fade and §24 fixes 48 for a scrolled list.
 const FADE_HEIGHT: i32 = 48;
@@ -583,6 +588,9 @@ impl Results {
     fn heading_row(&self, title: &str, right: Option<gtk::Button>) -> gtk::Box {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.add_css_class("kalam-search-heading");
+        // Fixed like the rows, for the same reason: the heading is the
+        // other natural-height child in the list.
+        row.set_size_request(-1, HEADING_ROW);
         let label = gtk::Label::new(Some(title));
         label.add_css_class("kalam-ui-label");
         label.set_hexpand(true);
@@ -618,9 +626,14 @@ impl Results {
         if first {
             row.add_css_class("highlighted");
         }
-        if let Some(height) = item.group.row_height() {
-            row.set_size_request(-1, height);
-        } else {
+        // A fixed height for every row, prose included: the settled-layout
+        // dump showed the chain losing exactly one prose row's height four
+        // hundred milliseconds after render, with no second render -- a
+        // natural-height child collapsing once its label layout settles --
+        // and a row whose height is a request cannot collapse.
+        let height = item.group.row_height().unwrap_or(PROSE_ROW);
+        row.set_size_request(-1, height);
+        if item.group.row_height().is_none() {
             row.add_css_class("prose");
         }
 

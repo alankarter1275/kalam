@@ -50,14 +50,12 @@ const HISTORY_ROW: i32 = 44;
 /// Not in the design: the list scrolls from this height instead of growing
 /// past it, so a wide match cannot push the box off an 800-high board.
 const SCROLL_MAX: i32 = 320;
-/// The height the list may actually fill, by the build's own row heights.
-/// §57's 320 stays as the scroll's own maximum; this is lower because the
-/// headless grant under it proved exact for a 254-high list (the history
-/// state photographs clean) and a row short for anything taller (run
-/// 42930000000's dumps: render 263, settled 221, ghost row below the
-/// outline). Fit-and-stop, as ruled: rows are added while their fixed
-/// heights fit this, and the chain is pinned to the sum.
-const LIST_MAX: i32 = 280;
+/// Fit-and-stop, as ruled: rows join while their fixed heights fit §57's
+/// 320, and the chain is pinned to the committed sum. The probe dumps that
+/// led here read a ghost row below the outline; the photograph comparison
+/// (B29) showed the ghost is the page's own quote block under the opaque
+/// box -- the overlay doing exactly its job -- and the settled grant exact.
+
 /// Decision 198: three rows per group until "See all N" expands it.
 const TOP_N: usize = 3;
 /// Decision 198: "N results" caps at 999+.
@@ -168,7 +166,6 @@ pub fn search_box(
     bar: &SearchBar,
     items: &[SearchItem],
     history: &[String],
-    tag: i32,
 ) -> gtk::Box {
     // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
     // popover died mid-call under headless sway (home_box:before2 logged,
@@ -236,7 +233,6 @@ pub fn search_box(
         list: list.clone(),
         scroll: scroll.clone(),
         shell: shell.clone(),
-        inner: inner.clone(),
         items: Rc::new(items.to_vec()),
         history: Rc::new(RefCell::new(history.to_vec())),
         expanded: Rc::new(RefCell::new(vec![false; SearchGroup::ALL.len()])),
@@ -272,42 +268,18 @@ pub fn search_box(
         // fires enter -- while has-focus stays false, and seven rounds of
         // handlers guarded on a property that never arrived. enter IS the
         // gain; open on it, unconditionally.
-        crate::timing::note("home_box:enter", tag as usize);
-        crate::timing::note("home_box:before2", tag as usize);
         focus_open.set_visible(true);
-        // A whole-window repaint once the box is in: the probe frame
-        // caught the box mid-relayout, fill and border and rows on
-        // three different allocations, and a full invalidation is the
-        // cheap way to make the photographed frame one layout.
+        // A whole-window repaint once the box is in, so the photographed
+        // frame is one layout rather than a tear between two.
         if let Some(root) = focus_open.root() {
             root.queue_draw();
         }
-        crate::timing::note("home_box:after2", tag as usize);
     });
     bar.entry.add_controller(focus_ctrl);
-    // Kept as a witness, not as an opener: in the same probe run notify
-    // arrived only for focus *loss* (values ended in 0), so opening on it
-    // opened on the way out. The enter handler above owns the open.
-    bar.entry.connect_has_focus_notify(move |entry| {
-        // Value = tag*10 + focused, so one line says both which instance
-        // spoke and whether it was gaining or losing focus.
-        crate::timing::note("home_box:notify", tag as usize * 10 + usize::from(entry.has_focus()));
-    });
-    panel.connect_hide(|_| {
-        crate::timing::note("home_box:closed", 1);
-    });
 
     let typed = state.clone();
 
-    bar.entry.connect_changed(move |_| {
-        typed.render();
-        // And the same dump once the layout has had time to settle: the
-        // difference between the two is the staleness the frames show.
-        let settled = typed.clone();
-        gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(400), move || {
-            settled.dump_allocations("settled");
-        });
-    });
+    bar.entry.connect_changed(move |_| typed.render());
 
     // Decision 200's option menu on the picker. §57 gives the picker the
     // `border` fill while its menu is open, so the open state takes the class
@@ -369,7 +341,6 @@ struct Results {
     list: gtk::Box,
     scroll: gtk::ScrolledWindow,
     shell: gtk::Box,
-    inner: gtk::Box,
     items: Rc<Vec<SearchItem>>,
     history: Rc<RefCell<Vec<String>>>,
     expanded: Rc<RefCell<Vec<bool>>>,
@@ -416,37 +387,12 @@ impl Results {
         self.list.set_height_request(used);
         self.scroll.set_height_request(used);
         self.shell.set_height_request(used + 2);
-        self.dump_allocations("render");
-    }
-
-    /// One line per widget in the box chain, for the CI log only.
-    fn dump_allocations(&self, when: &str) {
-        for (name, widget) in [
-            ("shell", self.shell.upcast_ref::<gtk::Widget>().clone()),
-            ("inner", self.inner.upcast_ref::<gtk::Widget>().clone()),
-            ("scroll", self.scroll.upcast_ref::<gtk::Widget>().clone()),
-            ("list", self.list.upcast_ref::<gtk::Widget>().clone()),
-        ] {
-            // compute_bounds, not the deprecated allocation(): CI denies
-            // the warning.
-            let anchor = self.shell.upcast_ref::<gtk::Widget>();
-            let rect = widget
-                .compute_bounds(anchor)
-                .map(|r| (r.x() as i32, r.y() as i32, r.width() as i32, r.height() as i32))
-                .unwrap_or((0, 0, 0, 0));
-            let (x, y, w, h) = rect;
-            println!(
-                "[searchbox] {when} {name} x={x} y={y} w={w} h={h}                  req_h={}",
-                widget.height()
-            );
-        }
-        println!("[searchbox] {when} rows={}", self.list.observe_children().n_items());
     }
 
     /// Commit `h` more pixels of list, if the cap still holds.
     fn take(&self, h: i32) -> bool {
         let used = self.budget.get();
-        if used + h > LIST_MAX {
+        if used + h > SCROLL_MAX {
             return false;
         }
         self.budget.set(used + h);

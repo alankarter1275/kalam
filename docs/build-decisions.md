@@ -821,6 +821,38 @@ drops, kept everywhere else the list scrolls. If the grouped state
 still leaks with the overlay gone, the next witness is the row's own
 parent chain at settle.
 
+## B29. The ghost was the page, and the box was right
+
+The italic quote line and its attribution that read as a row leaking
+below the closed outline are Home's own showcase quote block in the
+left column. The box is opaque and hangs over the page, so a tall box
+(history state, 254 high) covers the block and every history frame is
+clean, while the shorter grouped box (220 high) leaves the block
+peeking out below its bottom edge -- the top of its first line cut by
+exactly that edge. The "missing Saved-quotes heading" is the same
+misreading: the staged query is "ursula", the showcase quote is Emily
+Dickinson's, the group has no hits and is correctly absent; the dump's
+rows=7 (five content rows plus the two colour probes) said so all
+along, and the settled grant of 221 is the committed group sum plus
+the border, to the pixel. The render-time measure of 263 was the only
+wrong number in the whole table.
+
+What the probe era leaves behind, and why: fit-and-stop as ruled --
+rows join while their fixed heights fit §57's 320 and the chain is
+pinned to the committed sum, so render and settle cannot disagree;
+fixed heights on every row; the shell and the scroll both clip, which
+costs nothing now; §57's outline painted as a fill rather than a
+border, because the probe frame did show a border repainting per side
+across allocations; and no fade inside the box, the one design line
+dropped. The diagnostic scaffolding -- instance tags, allocation and
+class dumps, the settle timeout, the home_box and home_bar notes -- is
+out again; the witnesses that stay are the chord's home_search:ctrl_f
+and home_search:slash, and home_focus:staged, cleared and resting.
+
+The lesson for the next visual hunt: compare states before inventing
+faults. The difference between the clean frames and the "leaking" one
+was the box's height over unchanged page content, not the box's chain.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

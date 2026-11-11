@@ -70,7 +70,6 @@ pub fn search_bar(hint: &str) -> SearchBar {
     entry.connect_has_focus_notify({
         let root = root.clone();
         move |entry| {
-            crate::timing::note("home_bar:notify", usize::from(entry.has_focus()));
             if entry.has_focus() {
                 root.add_css_class("focused");
             } else {
@@ -88,7 +87,6 @@ pub fn search_bar(hint: &str) -> SearchBar {
     focus_ctrl.connect_enter(move |_| {
         // Unguarded, like the box's open: enter is the gain, and has_focus()
         // never came true under headless sway (run 42890371025).
-        crate::timing::note("home_bar:enter", 1);
         class_root.add_css_class("focused");
     });
     // Its own handle: the enter closure moves its clone (E0382, run of

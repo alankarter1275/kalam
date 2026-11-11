@@ -168,11 +168,6 @@ const SHOWCASE_HISTORY: &[&str] = &[
     "dickinson",
 ];
 
-/// How many Home pages this launch has built. The log shows two per launch
-/// (route_open:home twice) and the search box's witnesses carry the number so
-/// a silent handler can be tied to the instance that registered it.
-static INSTANCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
 /// Navigation requests from Home. Variants are named for their destination
 /// rather than sharing an `Open` prefix (clippy::enum_variant_names) -- the
 /// same convention `LibraryOut` uses. The dashboard's `BookDialog`,
@@ -422,14 +417,7 @@ impl Component for HomePageModel {
         // rows are the invented ones below; the timeline's are too.
         let search = search_bar::search_bar(SEARCH_HINT);
         widgets.search_host.append(&search.root);
-        // The tag rides in every search_box witness: the log shows two Home
-        // builds per launch (route_open:home twice), and seven rounds of
-        // silent witnesses need to know which instance the visible bar
-        // belongs to.
-        let instance = INSTANCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as i32 + 1;
-        crate::timing::note("home_init", instance as usize);
-        let box_pop =
-            search_box::search_box(&search, &showcase_search(), &showcase_history(), instance);
+        let box_pop = search_box::search_box(&search, &showcase_search(), &showcase_history());
         // §57 hangs the box off the bar and over the page: start-aligned at
         // the board's 56, its top the search row's 28 plus the bar's 40.
         // Hidden until focus or staging opens it; a hidden overlay child
@@ -454,10 +442,7 @@ impl Component for HomePageModel {
         gtk::glib::idle_add_local_once(move || {
             if !staged_query.is_empty() {
                 focus_entry.set_text(&staged_query);
-                crate::timing::note("home_staged:grab", instance as usize);
                 focus_entry.grab_focus();
-                let grabbed = usize::from(focus_entry.has_focus());
-                crate::timing::note("home_staged:grabbed", instance as usize + grabbed * 100);
                 // Open here too, without waiting for any focus signal: the
                 // probe round showed grab_focus sets the focus widget while
                 // has-focus stays false under headless sway, so the enter
@@ -468,30 +453,6 @@ impl Component for HomePageModel {
                     root.queue_draw();
                 }
                 crate::timing::note("home_focus:staged", 1);
-                // The allocation probe: the box's own border, fill and
-                // radius never appear in any frame while its content does,
-                // which is what a panel allocated no size of its own would
-                // look like -- GTK boxes do not clip, so an oversized child
-                // paints right through a zero-height parent while the
-                // parent's own border paints nothing. Height first, then
-                // width, then the shell child's height for comparison.
-                crate::timing::note("home_box:alloc_h", staged_pop.height().max(0) as usize);
-                crate::timing::note("home_box:alloc_w", staged_pop.width().max(0) as usize);
-                // Does the shaped node still carry its class, and what did
-                // the overlay give the shell's own child? The first child
-                // of the panel is the shell; 1 says the class survived
-                // into the mapped tree.
-                let shaped = staged_pop.first_child();
-                crate::timing::note(
-                    "home_box:hasclass",
-                    usize::from(shaped.as_ref().is_some_and(|w| {
-                        w.has_css_class("kalam-search-box")
-                    })),
-                );
-                if let Some(w) = shaped {
-                    crate::timing::note("home_box:shell_w", w.width().max(0) as usize);
-                    crate::timing::note("home_box:shell_h", w.height().max(0) as usize);
-                }
                 return;
             }
             // The first Home photographs disagreed with each other: one
@@ -551,10 +512,8 @@ impl Component for HomePageModel {
         // asked for at init is a controller that never exists -- which is
         // what run 42871002844 proved, chord 6 navigating to All Books
         // through a build that believed it had claimed the chord.
-        let instance_for_map = instance;
         root.connect_map(move |w| {
             shown_for_map.set(true);
-            crate::timing::note("home_map", instance_for_map as usize);
             if attached.get() {
                 return;
             }
@@ -588,7 +547,6 @@ impl Component for HomePageModel {
                     // nothing at all.
                     let _t = crate::timing::measure("home_search:ctrl_f");
                     entry.grab_focus();
-                    crate::timing::note("home_claim:grabbed", usize::from(entry.has_focus()));
                     return gtk::glib::Propagation::Stop;
                 }
                 if keyval == gtk::gdk::Key::slash && !ctrl && !entry.has_focus() {

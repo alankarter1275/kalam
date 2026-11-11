@@ -188,6 +188,11 @@ pub fn search_box(
     scroll.set_vexpand(true);
     scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
     scroll.set_vscrollbar_policy(gtk::PolicyType::External);
+    // And the scroll clips: the settled layout of this chain has, in every
+    // probe run, ended a row shorter than the render-time measure, and
+    // whatever the settled number turns out to be, nothing below it may
+    // draw past the outline -- the fade above already says there is more.
+    scroll.set_overflow(gtk::Overflow::Hidden);
     // No propagated natural height: run 6992780's frame showed the box
     // closing its outline after the second group while the third group's
     // rows painted on below it -- the propagation left the viewport one

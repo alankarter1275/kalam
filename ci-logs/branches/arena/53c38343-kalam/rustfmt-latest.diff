@@ -18,10 +18,10 @@ index bb7af2f..dd094ba 100644
                  if let Some(w) = shaped {
                      crate::timing::note("home_box:shell_w", w.width().max(0) as usize);
 diff --git a/src/widgets/search_box.rs b/src/widgets/search_box.rs
-index 3563e7b..abd6fa4 100644
+index 88c5783..331a1b4 100644
 --- a/src/widgets/search_box.rs
 +++ b/src/widgets/search_box.rs
-@@ -156,12 +156,7 @@ impl SearchItem {
+@@ -164,12 +164,7 @@ impl SearchItem {
  /// Hang the box under `bar` and wire it to the bar's field, count and picker.
  /// `items` is the dummy library the box filters; `history` is the dummy recent
  /// list (decision 197), which the crosses and Clear really do edit.
@@ -35,7 +35,7 @@ index 3563e7b..abd6fa4 100644
      // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
-@@ -282,7 +277,10 @@ pub fn search_box(
+@@ -291,7 +286,10 @@ pub fn search_box(
      bar.entry.connect_has_focus_notify(move |entry| {
          // Value = tag*10 + focused, so one line says both which instance
          // spoke and whether it was gaining or losing focus.
@@ -47,7 +47,7 @@ index 3563e7b..abd6fa4 100644
      });
      panel.connect_hide(|_| {
          crate::timing::note("home_box:closed", 1);
-@@ -424,7 +422,14 @@ impl Results {
+@@ -432,7 +430,14 @@ impl Results {
              let anchor = self.shell.upcast_ref::<gtk::Widget>();
              let rect = widget
                  .compute_bounds(anchor)
@@ -63,7 +63,7 @@ index 3563e7b..abd6fa4 100644
                  .unwrap_or((0, 0, 0, 0));
              let (x, y, w, h) = rect;
              println!(
-@@ -432,7 +437,10 @@ impl Results {
+@@ -440,7 +445,10 @@ impl Results {
                  widget.height()
              );
          }
@@ -74,5 +74,5 @@ index 3563e7b..abd6fa4 100644
 +        );
      }
  
-     /// Decision 198's groups in order, each only when it has a match, with the
---- run 42935577351 ---
+     /// Commit `h` more pixels of list, if the cap still holds.
+--- run 42938927286 ---

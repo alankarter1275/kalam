@@ -50,6 +50,14 @@ const HISTORY_ROW: i32 = 44;
 /// Not in the design: the list scrolls from this height instead of growing
 /// past it, so a wide match cannot push the box off an 800-high board.
 const SCROLL_MAX: i32 = 320;
+/// The height the list may actually fill, by the build's own row heights.
+/// §57's 320 stays as the scroll's own maximum; this is lower because the
+/// headless grant under it proved exact for a 254-high list (the history
+/// state photographs clean) and a row short for anything taller (run
+/// 42930000000's dumps: render 263, settled 221, ghost row below the
+/// outline). Fit-and-stop, as ruled: rows are added while their fixed
+/// heights fit this, and the chain is pinned to the sum.
+const LIST_MAX: i32 = 280;
 /// Decision 198: three rows per group until "See all N" expands it.
 const TOP_N: usize = 3;
 /// Decision 198: "N results" caps at 999+.
@@ -234,6 +242,7 @@ pub fn search_box(
         expanded: Rc::new(RefCell::new(vec![false; SearchGroup::ALL.len()])),
         inside_books: Rc::new(Cell::new(false)),
         searching: Rc::new(Cell::new(false)),
+        budget: Rc::new(Cell::new(0)),
         // A drawing reads its colours from labels in its own tree
         // (`super::paint`), and the match tint needs two: the tint itself and
         // the page colour it is blended over.
@@ -366,6 +375,8 @@ struct Results {
     expanded: Rc<RefCell<Vec<bool>>>,
     inside_books: Rc<Cell<bool>>,
     searching: Rc<Cell<bool>>,
+    /// Height committed to the list so far in this render, for fit-and-stop.
+    budget: Rc<Cell<i32>>,
     tint_probe: gtk::Label,
     bg_probe: gtk::Label,
 }
@@ -376,6 +387,7 @@ impl Results {
         while let Some(child) = self.list.first_child() {
             child.unparent();
         }
+        self.budget.set(0);
         let query = self.entry.text().trim().to_string();
         if query.is_empty() {
             self.count.set_visible(false);
@@ -397,17 +409,13 @@ impl Results {
         // only read a colour from a label that is in the tree.
         self.list.append(&self.tint_probe);
         self.list.append(&self.bg_probe);
-        // And the viewport height, as a number rather than a negotiation:
-        // the list's own natural height, capped at §57's scroll maximum.
-        let (_, natural, _, _) = self.list.measure(gtk::Orientation::Vertical, -1);
-        let viewport = natural.min(SCROLL_MAX);
-        self.scroll.set_height_request(viewport);
-        // And the shell that draws §57's outline, pinned to the same number
-        // plus its own two border rows: the frames show the outline closing
-        // a whole row above the list's last one while the scroll inside it
-        // keeps the taller allocation, so the shell's height must not be
-        // left to a cached measure of its own.
-        self.shell.set_height_request(viewport + 2);
+        // And the whole chain pinned to the committed sum, exactly: no
+        // measure, no negotiation, every link the same number the rows
+        // were added against.
+        let used = self.budget.get();
+        self.list.set_height_request(used);
+        self.scroll.set_height_request(used);
+        self.shell.set_height_request(used + 2);
         self.dump_allocations("render");
     }
 
@@ -433,6 +441,16 @@ impl Results {
             );
         }
         println!("[searchbox] {when} rows={}", self.list.observe_children().n_items());
+    }
+
+    /// Commit `h` more pixels of list, if the cap still holds.
+    fn take(&self, h: i32) -> bool {
+        let used = self.budget.get();
+        if used + h > LIST_MAX {
+            return false;
+        }
+        self.budget.set(used + h);
+        true
     }
 
     /// Decision 198's groups in order, each only when it has a match, with the
@@ -478,18 +496,26 @@ impl Results {
             let state = self.clone();
             move || state.clear_history()
         });
+        if !self.take(HEADING_ROW) {
+            return;
+        }
         self.list
             .append(&self.heading_row("Recent searches", Some(clear)));
         if queries.is_empty() {
-            let none = gtk::Label::new(Some("Searches you open will be listed here."));
-            none.add_css_class("kalam-ui-meta");
-            none.add_css_class("kalam-search-none");
-            none.set_halign(gtk::Align::Start);
-            none.set_xalign(0.0);
-            self.list.append(&none);
+            if self.take(40) {
+                let none = gtk::Label::new(Some("Searches you open will be listed here."));
+                none.add_css_class("kalam-ui-meta");
+                none.add_css_class("kalam-search-none");
+                none.set_halign(gtk::Align::Start);
+                none.set_xalign(0.0);
+                self.list.append(&none);
+            }
             return;
         }
         for (index, query) in queries.iter().enumerate() {
+            if !self.take(HISTORY_ROW) {
+                break;
+            }
             self.list.append(&self.history_row(query, index));
         }
     }
@@ -518,9 +544,25 @@ impl Results {
                 let state = self.clone();
                 self.link_button(&label, move || state.set_expanded(group, !expanded))
             });
+            // A group joins whole or not at all: the heading and its first
+            // row are checked together, so a heading never ends up dangling
+            // over the cap line.
+            let first_h = shown
+                .first()
+                .map(|at| self.items[*at].group.row_height().unwrap_or(PROSE_ROW))
+                .unwrap_or(0);
+            if !self.take(HEADING_ROW + first_h) {
+                break;
+            }
             let heading = format!("{} · {}", group.heading(), total);
             self.list.append(&self.heading_row(&heading, right));
+            let mut committed = true;
             for at in shown {
+                if !committed && !self.take(self.items[*at].group.row_height().unwrap_or(PROSE_ROW))
+                {
+                    break;
+                }
+                committed = false;
                 let row = self.result_row(&self.items[*at], query, first);
                 first = false;
                 self.list.append(&row);
@@ -541,13 +583,19 @@ impl Results {
             .collect();
         self.render_groups(query, &ready);
 
-        let note = gtk::Label::new(Some("Searching inside your books…"));
-        note.add_css_class("kalam-ui-meta");
-        note.add_css_class("kalam-search-note");
-        note.set_halign(gtk::Align::Start);
-        note.set_xalign(0.0);
-        self.list.append(&note);
+        if self.take(40) {
+            let note = gtk::Label::new(Some("Searching inside your books…"));
+            note.add_css_class("kalam-ui-meta");
+            note.add_css_class("kalam-search-note");
+            note.set_halign(gtk::Align::Start);
+            note.set_xalign(0.0);
+            self.list.append(&note);
+        }
         for width in SKELETON_WIDTHS {
+            // 12 of skeleton and its 8 of margin.
+            if !self.take(20) {
+                break;
+            }
             let line = gtk::Box::new(gtk::Orientation::Horizontal, 0);
             line.add_css_class("kalam-search-skeleton");
             line.set_size_request(width, 12);
@@ -567,6 +615,10 @@ impl Results {
              the full text.",
         );
         card.add_css_class("kalam-search-nomatch");
+        // The card is the whole content of this state, and its own height
+        // is the one natural one left in the box; the take keeps the sum
+        // honest for the pin below.
+        self.take(140);
         self.list.append(&card);
     }
 

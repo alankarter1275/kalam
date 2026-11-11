@@ -429,8 +429,9 @@ impl Results {
         ] {
             // compute_bounds, not the deprecated allocation(): CI denies
             // the warning.
+            let anchor = self.shell.upcast_ref::<gtk::Widget>();
             let rect = widget
-                .compute_bounds(&widget)
+                .compute_bounds(anchor)
                 .map(|r| (r.x() as i32, r.y() as i32, r.width() as i32, r.height() as i32))
                 .unwrap_or((0, 0, 0, 0));
             let (x, y, w, h) = rect;

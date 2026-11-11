@@ -47,8 +47,6 @@ const PROSE_ROW: i32 = 56;
 const HEADING_ROW: i32 = 34;
 
 const HISTORY_ROW: i32 = 44;
-/// §57 asks for a 48 to 56 fade and §24 fixes 48 for a scrolled list.
-const FADE_HEIGHT: i32 = 48;
 /// Not in the design: the list scrolls from this height instead of growing
 /// past it, so a wide match cannot push the box off an 800-high board.
 const SCROLL_MAX: i32 = 320;
@@ -181,7 +179,7 @@ pub fn search_box(
     let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
     list.add_css_class("kalam-search-list");
 
-    // §24: no scrollbar anywhere, and the fade is what says the list goes on.
+    // §24: no scrollbar anywhere; the list simply ends at the outline.
     let scroll = gtk::ScrolledWindow::new();
     scroll.set_child(Some(&list));
     scroll.set_hexpand(true);
@@ -191,7 +189,7 @@ pub fn search_box(
     // And the scroll clips: the settled layout of this chain has, in every
     // probe run, ended a row shorter than the render-time measure, and
     // whatever the settled number turns out to be, nothing below it may
-    // draw past the outline -- the fade above already says there is more.
+    // draw past the outline the settled layout has closed.
     scroll.set_overflow(gtk::Overflow::Hidden);
     // No propagated natural height: run 6992780's frame showed the box
     // closing its outline after the second group while the third group's
@@ -199,24 +197,6 @@ pub fn search_box(
     // layout behind. The scroll's height is instead a plain number, set
     // from the list's own measure at the end of every render.
     scroll.set_max_content_height(SCROLL_MAX);
-
-    let fade = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    fade.add_css_class("kalam-search-fade");
-    fade.set_height_request(FADE_HEIGHT);
-    fade.set_valign(gtk::Align::End);
-    // Paint, not a target: the fade must not swallow a row's hover or click.
-    fade.set_can_target(false);
-
-    // A fade only means "there is more below" when there is more below, so it
-    // follows the scroll range instead of sitting over a short list's last row.
-    let fade_for_range = fade.clone();
-    scroll.vadjustment().connect_changed(move |adjustment| {
-        fade_for_range.set_visible(adjustment.upper() > adjustment.page_size() + 1.0);
-    });
-
-    let stack = gtk::Overlay::new();
-    stack.set_child(Some(&scroll));
-    stack.add_overlay(&fade);
 
     // §57's shape rides the shell, not the panel: run 42907346209's probe
     // gave the panel its full 520 x 262 and still no frame showed the
@@ -227,7 +207,12 @@ pub fn search_box(
     // request shrinks by the border so the outside stays §57's 520.
     let inner = gtk::Box::new(gtk::Orientation::Vertical, 0);
     inner.add_css_class("kalam-search-box-inner");
-    inner.append(&stack);
+    // No overlay of its own inside the box: the history state photographs
+    // clean and the grouped state leaked a row past every clip, and the one
+    // widget between them is this chain's nested overlay, whose fade child
+    // never painted at all. The scroll sits in the shell directly; §57's
+    // fade goes without inside the box, recorded in B28.
+    inner.append(&scroll);
     let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
     shell.add_css_class("kalam-search-box");
     shell.set_size_request(BOX_WIDTH, -1);
@@ -244,7 +229,6 @@ pub fn search_box(
         scroll: scroll.clone(),
         shell: shell.clone(),
         inner: inner.clone(),
-        stack: stack.clone(),
         items: Rc::new(items.to_vec()),
         history: Rc::new(RefCell::new(history.to_vec())),
         expanded: Rc::new(RefCell::new(vec![false; SearchGroup::ALL.len()])),
@@ -377,7 +361,6 @@ struct Results {
     scroll: gtk::ScrolledWindow,
     shell: gtk::Box,
     inner: gtk::Box,
-    stack: gtk::Overlay,
     items: Rc<Vec<SearchItem>>,
     history: Rc<RefCell<Vec<String>>>,
     expanded: Rc<RefCell<Vec<bool>>>,
@@ -433,7 +416,6 @@ impl Results {
         for (name, widget) in [
             ("shell", self.shell.upcast_ref::<gtk::Widget>().clone()),
             ("inner", self.inner.upcast_ref::<gtk::Widget>().clone()),
-            ("stack", self.stack.upcast_ref::<gtk::Widget>().clone()),
             ("scroll", self.scroll.upcast_ref::<gtk::Widget>().clone()),
             ("list", self.list.upcast_ref::<gtk::Widget>().clone()),
         ] {
@@ -834,7 +816,8 @@ mod tests {
         assert_eq!(SearchGroup::Series.row_height(), Some(52), "series");
         assert_eq!(SearchGroup::Authors.row_height(), Some(48), "authors");
         assert_eq!(HISTORY_ROW, 44, "history");
-        assert_eq!(FADE_HEIGHT, 48, "§57's fade, at §24's height");
+        // The fade's assertion went with the fade: B28 records why the box
+        // no longer carries one.
         assert_eq!(TOP_N, 3, "decision 198's top three");
     }
 

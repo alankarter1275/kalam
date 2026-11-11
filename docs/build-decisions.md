@@ -806,12 +806,20 @@ the border's two pixels and paints over it, GTK boxes not clipping.
 §57's shape therefore rides the shell, and the shell's request shrinks
 by the border so the outside measure stays 520.
 
-Still open from the same frame, measured and unresolved: the Saved-
-quotes heading is absent and the quote row's glyph tops are cut along
-a straight line at y 285, while the history state in the tall frame
-shows every row whole. The Updates fade paints as written, so neither
-is the gradient; the next photograph of the grouped state is the next
-witness.
+The leak's own witness table (runs 42907346209 to 42930000000-ish,
+dumps in the log as [searchbox]): at render the whole chain measures
+263 high with seven rows; four hundred milliseconds later, with no
+second render, the settled layout holds 221 -- a row shorter -- and
+the row left over draws below the closed outline from a zero-sized
+slot, past the shell's clip and past the scroll's own. The history
+state photographs pixel-clean in the same frames, and the one widget
+the two states do not share is the box chain's nested GtkOverlay,
+whose fade child never painted at all. The overlay is therefore out
+of the box: the scroll sits in the shell directly, and §57's fade
+goes without inside the box -- the one design line this rebuild
+drops, kept everywhere else the list scrolls. If the grouped state
+still leaks with the overlay gone, the next witness is the row's own
+parent chain at settle.
 
 ## Still open
 

@@ -427,8 +427,13 @@ impl Results {
             ("scroll", self.scroll.upcast_ref::<gtk::Widget>().clone()),
             ("list", self.list.upcast_ref::<gtk::Widget>().clone()),
         ] {
-            let rect = widget.allocation();
-            let (x, y, w, h) = (rect.x(), rect.y(), rect.width(), rect.height());
+            // compute_bounds, not the deprecated allocation(): CI denies
+            // the warning.
+            let rect = widget
+                .compute_bounds(&widget)
+                .map(|r| (r.x() as i32, r.y() as i32, r.width() as i32, r.height() as i32))
+                .unwrap_or((0, 0, 0, 0));
+            let (x, y, w, h) = rect;
             println!(
                 "[searchbox] {when} {name} x={x} y={y} w={w} h={h}                  req_h={}",
                 widget.height()

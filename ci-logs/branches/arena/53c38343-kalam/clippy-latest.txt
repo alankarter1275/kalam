@@ -1,7 +1,6 @@
-src/widgets/search_box.rs:430:39: [1m[91merror[0m: use of deprecated method `gtk4::prelude::WidgetExt::allocation`: Since 4.12
-src/widgets/search_box.rs:430:17: [1m[91merror[E0308][0m: mismatched types: expected `Rectangle`, found `(_, _, _, _)`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+src/widgets/search_box.rs:430:31: [1m[91merror[0m: use of deprecated method `gtk4::prelude::WidgetExt::allocation`: Since 4.12
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -23,9 +22,8 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/widgets/search_box.rs:430:39: [1m[91merror[0m: use of deprecated method `gtk4::prelude::WidgetExt::allocation`: Since 4.12
-src/widgets/search_box.rs:430:17: [1m[91merror[E0308][0m: mismatched types: expected `Rectangle`, found `(_, _, _, _)`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+src/widgets/search_box.rs:430:31: [1m[91merror[0m: use of deprecated method `gtk4::prelude::WidgetExt::allocation`: Since 4.12
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
---- run 42927417168 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+--- run 42927544785 ---

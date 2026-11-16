@@ -889,6 +889,33 @@ chapbook-layout table, pdf column selection, and the OCR
 reading-order test. None are Home's code; all are enumerate now,
 because CI is the compiler and the branch must build.
 
+## B31. The card rises to the window's own margin, and the scroll detents
+
+Three more from the owner's hand on the running app (2026-10-29):
+
+- The card's top gap equals its right gap. The owner's measure: the
+  distance from the card's right edge to the window's right edge is
+  some fixed number -- 32 in the build -- and the distance from the
+  card's top edge to the window's top edge should be the same number.
+  §1's rule (the column's top 52 below the search row, i.e. y=120)
+  cannot reach that high, because a flow child never rises above the
+  row ahead of it; so the right column leaves the flow entirely and
+  hangs off the root overlay, top- and end-anchored at 32 and 32.
+  This supersedes §1's 52 and B30's "the top stays where the spec
+  puts it"; the deviation is the owner's own ruler.
+- Updates rises with the card, which falls out of the same move: it
+  rides inside the column, 36 below the card as §1 has it, so both
+  moved up by the same 88 pixels and nothing between them changed.
+- The scroll over the book detents instead of cooling down. The
+  owner's words: a lock that stops at the books, not a smooth scroll
+  -- one gesture reaches the next or previous book and then waits for
+  the next gesture. The 250 ms cooldown let a long trackpad fling
+  spend two or three books; now the first stroke past a one-unit
+  threshold spends exactly one, and a lock holds until the scroll
+  stream has been quiet for 200 ms, each incoming stroke pushing that
+  quiet moment further off. A held mouse wheel behaves the same way:
+  one book per burst of scrolling.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

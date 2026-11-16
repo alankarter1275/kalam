@@ -370,19 +370,28 @@ impl Component for HomePageModel {
                     },
                 },
 
-                // Right column: 600 wide, its top 52 below the search row,
-                // its right edge 32 from the window's — the board's 56 page
-                // margin nudged 24 past (home-spec §1). It keeps the board's
-                // 600 rather than narrowing to the card's 450: the card is
-                // right-anchored, so narrowing would not move it a pixel, and
-                // §64's state cards are sized to the column (B21).
+                // Right column: 600 wide, its right edge 32 from the
+                // window's — the board's 56 page margin nudged 24 past
+                // (home-spec §1). It keeps the board's 600 rather than
+                // narrowing to the card's 450: the card is right-anchored, so
+                // narrowing would not move it a pixel, and §64's state cards
+                // are sized to the column (B21). Its top margin is the same
+                // 32 as its right one, by the owner's own measure
+                // (2026-10-29): the gap from the card's top edge to the
+                // window's top edge should match the gap from its right edge
+                // to the window's right edge. §1's 52-below-the-search-row
+                // put the top at 120, and a flow child can never rise above
+                // the row ahead of it, so init lifts this column out of the
+                // flow and hangs it off the root overlay at these margins;
+                // Updates rides inside it and rises just as far.
+                #[name = "right_col"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_width_request: 600,
                     set_hexpand: true,
                     set_halign: gtk::Align::End,
                     set_valign: gtk::Align::Start,
-                    set_margin_top: 52,
+                    set_margin_top: 32,
                     set_margin_end: 32,
 
                     #[name = "card_host"]
@@ -423,6 +432,14 @@ impl Component for HomePageModel {
             library_empty: false,
         };
         let widgets = view_output!();
+
+        // The right column hangs off the overlay, not off the flow: its
+        // top margin is the window's own 32, which sits above the search
+        // row's band, and no flow child can. See the column's comment in
+        // the view for the owner's measure it answers to.
+        let right_col = widgets.right_col.clone();
+        right_col.unparent();
+        root.add_overlay(&right_col);
 
         // §57's bar and box and §62's timeline (B21): all three come from
         // widget modules and go into the hosts the view reserves for them, the
@@ -861,6 +878,28 @@ fn paint_right(
 /// button over it — two equal pages at the app's own cover ratio, so 450 x 360
 /// rather than §60's 560 x 360 (B21). Cover click opens the book's page; play
 /// resumes in the reader at the saved position.
+/// Push the detent's quiet moment further off: once the scroll stream has
+/// been silent this long the lock opens, pending stroke resets, and the
+/// next gesture may spend the next book.
+fn arm_quiet(
+    locked: &std::rc::Rc<std::cell::Cell<bool>>,
+    pending: &std::rc::Rc<std::cell::Cell<f64>>,
+    quiet: &std::rc::Rc<std::cell::RefCell<Option<gtk::glib::SourceId>>>,
+) {
+    if let Some(id) = quiet.borrow_mut().take() {
+        id.remove();
+    }
+    let locked = locked.clone();
+    let pending = pending.clone();
+    let quiet = quiet.clone();
+    let id = gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(200), move || {
+        locked.set(false);
+        pending.set(0.0);
+        *quiet.borrow_mut() = None;
+    });
+    *quiet.borrow_mut() = Some(id);
+}
+
 fn build_book_card(
     card: &CardData,
     current: usize,
@@ -1016,27 +1055,40 @@ fn build_book_card(
     });
     overlay.add_overlay(&play);
 
-    // Decision 188, as the owner re-ruled it: a scroll or a two-finger
-    // swipe anywhere over the book moves to the next in-progress book --
-    // down for next, up for previous, wrapping at both ends. The cooldown
-    // is what keeps a trackpad fling from spending three books in one
-    // gesture; the pager dots repaint through the same Switch message.
+    // Decision 188, as the owner re-ruled it and then re-ruled again once
+    // their hand was on it: the card does not scroll, it stops. One gesture
+    // spends exactly one book -- the first stroke past the threshold steps,
+    // then a lock holds until the scroll stream has been quiet for a beat,
+    // so a trackpad fling of any length lands on the neighbour and stops
+    // there, and the next book waits for the next gesture. Down is next, up
+    // previous, wrapping at both ends; the pager dots repaint through the
+    // same Switch message.
     if total > 1 {
         let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
-        let last = std::rc::Rc::new(std::cell::Cell::new(std::time::Instant::now()
-            - std::time::Duration::from_secs(1)));
+        let locked = std::rc::Rc::new(std::cell::Cell::new(false));
+        let pending = std::rc::Rc::new(std::cell::Cell::new(0.0f64));
+        let quiet: std::rc::Rc<std::cell::RefCell<Option<gtk::glib::SourceId>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(None));
         // The closure outlives the borrow, so it carries a clone.
         let step_sender = sender.clone();
         scroll.connect_scroll(move |_ctrl, _dx, dy| {
-            let now = std::time::Instant::now();
-            if now.duration_since(last.get()) < std::time::Duration::from_millis(250) {
-                return gtk::glib::Propagation::Stop;
-            }
             if dy == 0.0 {
                 return gtk::glib::Propagation::Stop;
             }
-            last.set(now);
-            let step = if dy > 0.0 { 1 } else { total - 1 };
+            if locked.get() {
+                // The same gesture still talking: push the quiet moment
+                // further off, spend nothing.
+                arm_quiet(&locked, &pending, &quiet);
+                return gtk::glib::Propagation::Stop;
+            }
+            pending.set(pending.get() + dy);
+            if pending.get().abs() < 1.0 {
+                return gtk::glib::Propagation::Stop;
+            }
+            let step = if pending.get() > 0.0 { 1 } else { total - 1 };
+            pending.set(0.0);
+            locked.set(true);
+            arm_quiet(&locked, &pending, &quiet);
             step_sender.input(HomeMsg::Switch((current + step) % total));
             gtk::glib::Propagation::Stop
         });

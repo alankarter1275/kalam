@@ -526,8 +526,8 @@ mod tests {
                     let mid_y = ((l.y0 + l.y1) * 0.5).clamp(0.0, H_PT);
                     let p1 = ((l.x1 - 2.0).max(l.x0 + 1.0), mid_y);
                     let (sel, _) = page_text.select_between(p0, p1);
-                    for j in 1..i {
-                        let lj = &page_text.lines[j];
+                    for (offset, lj) in page_text.lines[1..i].iter().enumerate() {
+                        let j = 1 + offset;
                         if lj.text.trim().is_empty() {
                             continue;
                         }

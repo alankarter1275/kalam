@@ -164,8 +164,11 @@ impl PdfPageText {
         let mut selected_lines = Vec::new();
         let mut highlight_rects = Vec::new();
 
-        for line_idx in start_idx..=end_idx {
-            let line = &self.lines[line_idx];
+        // Slice and enumerate rather than index by the loop variable,
+        // which the newer clippy in CI denies; line_idx stays for the
+        // first/last checks below.
+        for (offset, line) in self.lines[start_idx..=end_idx].iter().enumerate() {
+            let line_idx = start_idx + offset;
             let line_x0 = line.x0.min(line.x1);
             let line_x1 = line.x0.max(line.x1);
             let line_center = (line_x0 + line_x1) * 0.5;

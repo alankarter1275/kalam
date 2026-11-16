@@ -891,11 +891,13 @@ fn arm_quiet(
     }
     let locked = locked.clone();
     let pending = pending.clone();
-    let quiet = quiet.clone();
+    // The closure moves what it captures, so it gets clones of its own
+    // and the originals stay here to store the source id.
+    let quiet_cb = quiet.clone();
     let id = gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(200), move || {
         locked.set(false);
         pending.set(0.0);
-        *quiet.borrow_mut() = None;
+        *quiet_cb.borrow_mut() = None;
     });
     *quiet.borrow_mut() = Some(id);
 }

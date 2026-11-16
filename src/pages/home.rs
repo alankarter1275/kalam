@@ -391,7 +391,12 @@ impl Component for HomePageModel {
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_width_request: 600,
-                    set_hexpand: true,
+                    // No expand: an overlay child is offered the whole
+                    // board, and expanding would take it, stretching the
+                    // column from the window's left edge. In the flow the
+                    // expand was what claimed the leftover width; here the
+                    // 600 request and the end anchor are the whole story.
+                    set_hexpand: false,
                     set_halign: gtk::Align::End,
                     set_valign: gtk::Align::Start,
                     set_margin_top: 54,

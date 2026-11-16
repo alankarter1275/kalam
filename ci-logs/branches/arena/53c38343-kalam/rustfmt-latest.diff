@@ -1,5 +1,5 @@
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index 909079c..d16fde4 100644
+index 120f7c1..163a009 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
 @@ -100,7 +100,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
@@ -30,7 +30,7 @@ index 909079c..d16fde4 100644
      (
          "The Farthest Shore",
          "The source saved a new chapter",
-@@ -873,7 +883,12 @@ fn paint_right(
+@@ -878,7 +888,12 @@ fn paint_right(
          return;
      }
  
@@ -61,4 +61,4 @@ index 5e523a3..180295a 100644
      // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
---- run 43970695962 ---
+--- run 43973943995 ---

@@ -1025,6 +1025,8 @@ fn build_book_card(
         let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
         let last = std::rc::Rc::new(std::cell::Cell::new(std::time::Instant::now()
             - std::time::Duration::from_secs(1)));
+        // The closure outlives the borrow, so it carries a clone.
+        let step_sender = sender.clone();
         scroll.connect_scroll(move |_ctrl, _dx, dy| {
             let now = std::time::Instant::now();
             if now.duration_since(last.get()) < std::time::Duration::from_millis(250) {
@@ -1035,7 +1037,7 @@ fn build_book_card(
             }
             last.set(now);
             let step = if dy > 0.0 { 1 } else { total - 1 };
-            sender.input(HomeMsg::Switch((current + step) % total));
+            step_sender.input(HomeMsg::Switch((current + step) % total));
             gtk::glib::Propagation::Stop
         });
         overlay.add_controller(scroll);

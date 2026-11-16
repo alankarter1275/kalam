@@ -1,7 +1,7 @@
 === kalam screenshot run ===
 books=20 out=ci-shots-pdf-reading-dark settle=20 output=1600x1000
 config home: /home/runner/work/kalam/kalam/ci-shots-pdf-reading-dark/config-home
-binary: 74802416 bytes
+binary: 74802160 bytes
 
 === seeding 20 books ===
 pdf fixture: book 21 (route pdf-read-21, normal)
@@ -9,7 +9,7 @@ seed-library: 21 books, 19 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.16600.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.16636.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -33,166 +33,154 @@ windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 readiness: min=5s max=30s stable_max_changed=0.5%
 readiness: route and window seen after 0s
 toplevel windows seen: 1
-  shot: 01-pdf-read-21 (166212 bytes)
+  shot: 01-pdf-read-21 (4745 bytes)
 focused: 1
   shot: 02-pdf-read-21-settling (156122 bytes)
   shot: 03-pdf-read-21-settled (stable after 6s)
 navigation: app accepted route 'pdf-read-21'
 navigation: 'pdf-read-21' is not a grid page; no grid_build expected
 readiness: Home seen after 1s
-  shot: 04-home-for-comparison (109084 bytes)
+  shot: 04-home-for-comparison (109496 bytes)
 readiness: Home stable after 3s
 navigation: 'pdf-read-21' differs from Home -- the page really did change
 navigation: OK -- the images below are 'pdf-read-21'
 
 === timing lines from the app ===
-  [timing] startup_fonts           2.7 ms
-  [timing] startup_gtk_init       49.4 ms
-  [timing] startup_splash_show      1.2 ms
+  [timing] startup_fonts           5.6 ms
+  [timing] startup_gtk_init       77.7 ms
+  [timing] startup_splash_show      1.8 ms
   [timing] icons_write             0.2 ms
-  [timing] icons_theme             0.0 ms
+  [timing] icons_theme             0.1 ms
   [timing] icons_init              0.3 ms
-  [timing] startup_splash_pump    122.6 ms
-  [timing] startup_libraries       0.2 ms
-  [timing] startup_db_open         9.9 ms
-  [timing] startup_theme          59.3 ms
-  [timing] pre_run               245.6 ms
-  [timing] route_open:home        28.8 ms
-  [timing] startup_first_page     28.8 ms
-  [timing] service_home            0.6 ms
-  [timing] init_done             288.3 ms
-  [timing] window_shown          291.2 ms
+  [timing] startup_splash_pump    122.1 ms
+  [timing] startup_libraries       0.3 ms
+  [timing] startup_db_open        12.6 ms
+  [timing] startup_theme         104.0 ms
+  [timing] pre_run               324.5 ms
+  [timing] route_open:home        33.1 ms
+  [timing] startup_first_page     33.1 ms
+  [timing] service_home            0.8 ms
+  [timing] init_done             376.6 ms
+  [timing] window_shown          381.0 ms
   [timing] covers_queued             5
-  [timing] home_fill               3.5 ms
+  [timing] home_fill               6.7 ms
   [timing] page_cache_miss           1
-  [timing] route_open:pdf_reader     11.4 ms
-  [timing] pdf_open_doc            0.8 ms
+  [timing] route_open:pdf_reader     17.1 ms
+  [timing] pdf_open_doc            1.1 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] pdf_open_total         13.6 ms
+  [timing] pdf_open_total         11.2 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
   [timing] covers_decoded            5
-  [timing] covers_thumb              4
-  [timing] covers_full               1
-  [timing] covers_decode          21.7 ms
-  [timing] covers_decode_max      11.2 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
+  [timing] covers_thumb              3
+  [timing] covers_full               2
+  [timing] covers_decode          57.6 ms
+  [timing] covers_decode_max      27.9 ms
   [timing] render_backend     GskCairoRenderer
-  [timing] frame_after:startup_fonts    335.3 ms
-  [timing] frame_after:startup_gtk_init    285.9 ms
-  [timing] frame_after:startup_splash_show    284.6 ms
-  [timing] frame_after:icons_write    281.1 ms
-  [timing] frame_after:icons_theme    281.1 ms
-  [timing] frame_after:icons_init    281.1 ms
-  [timing] frame_after:startup_splash_pump    162.0 ms
-  [timing] frame_after:startup_libraries    161.8 ms
-  [timing] frame_after:startup_db_open    151.9 ms
-  [timing] frame_after:startup_theme     92.6 ms
-  [timing] frame_after:pre_run     92.6 ms
-  [timing] frame_after:route_open:home     63.2 ms
-  [timing] frame_after:startup_first_page     63.2 ms
-  [timing] frame_after:service_home     62.7 ms
-  [timing] frame_after:init_done     49.9 ms
-  [timing] frame_after:window_shown     46.9 ms
-  [timing] frame_after:home_fill     40.4 ms
-  [timing] frame_after:route_open:pdf_reader     27.8 ms
-  [timing] frame_after:pdf_open_doc     27.0 ms
-  [timing] frame_after:covers_land     23.0 ms
-  [timing] frame_after:covers_gap     23.0 ms
-  [timing] frame_after:covers_land     22.9 ms
-  [timing] frame_after:pdf_open_total     14.3 ms
-  [timing] frame_after:covers_decode      1.2 ms
-  [timing] frame_after:covers_decode_max      1.2 ms
+  [timing] frame_after:startup_fonts    433.6 ms
+  [timing] frame_after:startup_gtk_init    355.8 ms
+  [timing] frame_after:startup_splash_show    353.9 ms
+  [timing] frame_after:icons_write    349.3 ms
+  [timing] frame_after:icons_theme    349.2 ms
+  [timing] frame_after:icons_init    349.2 ms
+  [timing] frame_after:startup_splash_pump    231.8 ms
+  [timing] frame_after:startup_libraries    231.5 ms
+  [timing] frame_after:startup_db_open    218.9 ms
+  [timing] frame_after:startup_theme    114.8 ms
+  [timing] frame_after:pre_run    114.8 ms
+  [timing] frame_after:route_open:home     81.1 ms
+  [timing] frame_after:startup_first_page     81.1 ms
+  [timing] frame_after:service_home     80.3 ms
+  [timing] frame_after:init_done     62.7 ms
+  [timing] frame_after:window_shown     58.3 ms
+  [timing] frame_after:home_fill     48.1 ms
+  [timing] frame_after:route_open:pdf_reader     30.7 ms
+  [timing] frame_after:pdf_open_doc     29.6 ms
+  [timing] frame_after:covers_land     23.4 ms
+  [timing] frame_after:covers_gap     23.4 ms
+  [timing] frame_after:covers_land     23.3 ms
+  [timing] frame_after:pdf_open_total     19.6 ms
   [timing] frame_after:covers_land      0.2 ms
-  [timing] frame_after:covers_gap      0.2 ms
-  [timing] frame_after:covers_land      0.1 ms
   [timing] frame_after:covers_gap      0.1 ms
   [timing] frame_after:covers_land      0.0 ms
-  [timing] frame_paint:covers_land     82.5 ms
+  [timing] frame_after:covers_decode      0.0 ms
+  [timing] frame_after:covers_decode_max      0.0 ms
+  [timing] frame_paint:covers_decode_max     74.0 ms
+  [timing] covers_land             1.1 ms
+  [timing] frame_after:covers_land      1.0 ms
+  [timing] frame_paint:covers_land    182.5 ms
   [timing] thumbs_backfilled        19
   [timing] thumbs_backfill_done       19
-  [timing] frame_paint:covers_land     56.1 ms
-  [timing] frame_paint:covers_land     90.1 ms
+  [timing] frame_paint:covers_land    121.5 ms
+  [timing] frame_paint:covers_land    100.1 ms
   [timing] home_focus:resting        1
-  [timing] frame_paint:covers_land     74.0 ms
-  [timing] frame_paint:covers_land     69.5 ms
-  [timing] frame_paint:covers_land     64.1 ms
-  [timing] frame_paint:covers_land     64.8 ms
-  [timing] frame_paint:covers_land     66.4 ms
-  [timing] frame_paint:covers_land     63.1 ms
-  [timing] frame_paint:covers_land     62.4 ms
-  [timing] frame_paint:covers_land     62.9 ms
-  [timing] frame_paint:covers_land     71.0 ms
-  [timing] frame_paint:covers_land     66.2 ms
-  [timing] frame_paint:covers_land     64.0 ms
-  [timing] frame_paint:covers_land     63.6 ms
-  [timing] frame_paint:covers_land     63.6 ms
-  [timing] frame_paint:covers_land     64.3 ms
-  [timing] frame_paint:covers_land     67.3 ms
-  [timing] frame_paint:covers_land     66.6 ms
-  [timing] startup_dicts        1885.5 ms
-  [timing] frame_after:startup_dicts    713.0 ms
-  [timing] frame_paint:startup_dicts     62.0 ms
-  [timing] frame_paint:startup_dicts     61.2 ms
-  [timing] frame_paint:startup_dicts     61.7 ms
-  [timing] frame_paint:startup_dicts     60.9 ms
-  [timing] frame_paint:startup_dicts     59.5 ms
-  [timing] frame_paint:startup_dicts     61.3 ms
-  [timing] frame_paint:startup_dicts     61.8 ms
-  [timing] frame_paint:startup_dicts     60.3 ms
-  [timing] frame_paint:startup_dicts     61.4 ms
-  [timing] frame_paint:startup_dicts     61.3 ms
-  [timing] frame_paint:startup_dicts     61.7 ms
-  [timing] frame_paint:startup_dicts     62.2 ms
-  [timing] frame_paint:startup_dicts     61.4 ms
-  [timing] frame_paint:startup_dicts     60.1 ms
-  [timing] frame_paint:startup_dicts     64.4 ms
+  [timing] frame_paint:covers_land    120.5 ms
+  [timing] frame_paint:covers_land    100.1 ms
+  [timing] frame_paint:covers_land    114.0 ms
+  [timing] frame_paint:covers_land     99.9 ms
+  [timing] frame_paint:covers_land    101.2 ms
+  [timing] frame_paint:covers_land    103.8 ms
+  [timing] frame_paint:covers_land    107.8 ms
+  [timing] frame_paint:covers_land    100.4 ms
+  [timing] frame_paint:covers_land     99.4 ms
+  [timing] frame_paint:covers_land    103.7 ms
+  [timing] startup_dicts        2206.8 ms
+  [timing] frame_after:startup_dicts    522.9 ms
+  [timing] frame_paint:startup_dicts     99.1 ms
+  [timing] frame_paint:startup_dicts     97.2 ms
+  [timing] frame_paint:startup_dicts     97.2 ms
+  [timing] frame_paint:startup_dicts     99.3 ms
+  [timing] frame_paint:startup_dicts     97.6 ms
+  [timing] frame_paint:startup_dicts     97.2 ms
+  [timing] frame_paint:startup_dicts     97.5 ms
+  [timing] frame_paint:startup_dicts     98.0 ms
+  [timing] frame_paint:startup_dicts     98.7 ms
+  [timing] frame_paint:startup_dicts     98.0 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
   (none -- no UI-loop block over ~100 ms was detected)
 
 === screenshot pixel sample ===
   low colour is a cover warning only on a seeded library-grid route.
-  01-pdf-read-21.png: 1600x1000  coloured=20.2%  lit=100.0%
+  01-pdf-read-21.png: 1600x1000  coloured=0.0%  lit=0.0%  <-- essentially black; the window probably never drew
   02-pdf-read-21-settling.png: 1600x1000  coloured=20.1%  lit=100.0%
   03-pdf-read-21-settled.png: 1600x1000  coloured=20.1%  lit=100.0%
   04-home-for-comparison.png: 1600x1000  coloured=0.3%  lit=100.0%  <-- low colour; interpret as a cover warning only on a library grid
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  0d93438bb59f9086572628ba16284330  ci-shots-pdf-reading-dark/01-pdf-read-21.png
+  1988e379937d7ecc5a72476021106bd2  ci-shots-pdf-reading-dark/01-pdf-read-21.png
   dce130c80a8d9f004b1a4d70d738fbe7  ci-shots-pdf-reading-dark/02-pdf-read-21-settling.png
   dce130c80a8d9f004b1a4d70d738fbe7  ci-shots-pdf-reading-dark/03-pdf-read-21-settled.png
-  c250802075c1a3e1cf8fd2923a5db9bc  ci-shots-pdf-reading-dark/04-home-for-comparison.png
+  7a4e4bd9ba7aa93031feb0b4a38544d8  ci-shots-pdf-reading-dark/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (process:16656): Gtk-WARNING **: 23:01:51.446: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:16692): Gtk-WARNING **: 23:29:18.330: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-dark — applying terracotta-dark for this run (not saved)
   kalam: KALAM_ROUTE=pdf-read-21 — navigating
 
 === peak memory ===
-books=20 peak_rss_kb=401708 peak_rss_mb=392
+books=20 peak_rss_kb=391776 peak_rss_mb=382
 
 === shutting down ===
 
 === artifacts ===
-  total 632
-  drwxr-xr-x  3 runner runner   4096 Nov 16 23:02 .
-  drwxr-xr-x 37 runner runner   4096 Nov 16 23:01 ..
-  -rw-r--r--  1 runner runner 166212 Nov 16 23:01 01-pdf-read-21.png
-  -rw-r--r--  1 runner runner 156122 Nov 16 23:01 02-pdf-read-21-settling.png
-  -rw-r--r--  1 runner runner 156122 Nov 16 23:01 03-pdf-read-21-settled.png
-  -rw-r--r--  1 runner runner 109084 Nov 16 23:02 04-home-for-comparison.png
-  drwxr-xr-x  3 runner runner   4096 Nov 16 23:01 config-home
-  -rw-r--r--  1 runner runner      0 Nov 16 23:01 grim.log
-  -rw-r--r--  1 runner runner   4420 Nov 16 23:01 kalam-home.log
-  -rw-r--r--  1 runner runner   5048 Nov 16 23:01 kalam.log
-  -rw-r--r--  1 runner runner   8021 Nov 16 23:02 report.txt
-  -rw-r--r--  1 runner runner     88 Nov 16 23:01 sway.log
-  -rw-r--r--  1 runner runner   7185 Nov 16 23:01 tree.json
---- run 43973943995 ---
+  total 476
+  drwxr-xr-x  3 runner runner   4096 Nov 16 23:29 .
+  drwxr-xr-x 37 runner runner   4096 Nov 16 23:29 ..
+  -rw-r--r--  1 runner runner   4745 Nov 16 23:29 01-pdf-read-21.png
+  -rw-r--r--  1 runner runner 156122 Nov 16 23:29 02-pdf-read-21-settling.png
+  -rw-r--r--  1 runner runner 156122 Nov 16 23:29 03-pdf-read-21-settled.png
+  -rw-r--r--  1 runner runner 109496 Nov 16 23:29 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner   4096 Nov 16 23:29 config-home
+  -rw-r--r--  1 runner runner      0 Nov 16 23:29 grim.log
+  -rw-r--r--  1 runner runner   4420 Nov 16 23:29 kalam-home.log
+  -rw-r--r--  1 runner runner   4510 Nov 16 23:29 kalam.log
+  -rw-r--r--  1 runner runner   7509 Nov 16 23:29 report.txt
+  -rw-r--r--  1 runner runner     88 Nov 16 23:29 sway.log
+  -rw-r--r--  1 runner runner   7185 Nov 16 23:29 tree.json
+--- run 43977202721 ---

@@ -128,9 +128,12 @@ fn assign_grid_positions(table: &mut TableBox) {
     // Per column: how many rows (including the current one) a spanning
     // cell still covers.
     let mut occupied: Vec<usize> = Vec::new();
-    for row_idx in 0..row_count {
+    // enumerate over iter_mut, not an index loop: the newer clippy in CI
+    // denies indexing a slice by its own loop variable, and the row is
+    // exactly what the loop body wants.
+    for (row_idx, row) in table.rows.iter_mut().enumerate() {
         let mut col = 0usize;
-        for cell in &mut table.rows[row_idx].cells {
+        for cell in &mut row.cells {
             while col < occupied.len() && occupied[col] > 0 {
                 col += 1;
             }

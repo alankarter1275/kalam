@@ -375,15 +375,18 @@ impl Component for HomePageModel {
                 // (home-spec §1). It keeps the board's 600 rather than
                 // narrowing to the card's 450: the card is right-anchored, so
                 // narrowing would not move it a pixel, and §64's state cards
-                // are sized to the column (B21). Its top margin is the same
-                // 32 as its right one, by the owner's own measure
-                // (2026-10-29): the gap from the card's top edge to the
-                // window's top edge should match the gap from its right edge
-                // to the window's right edge. §1's 52-below-the-search-row
-                // put the top at 120, and a flow child can never rise above
-                // the row ahead of it, so init lifts this column out of the
-                // flow and hangs it off the root overlay at these margins;
-                // Updates rides inside it and rises just as far.
+                // are sized to the column (B21). Its top margin is the
+                // card's own right gap, 54, by the owner's measure
+                // (2026-10-29): the distance from the card's top edge to the
+                // window's top edge should be the distance from the card's
+                // right edge to the window's right edge, and the frames put
+                // that at 54 everywhere -- the column's 32 margin plus the
+                // 22 the pager dots take beside the card. §1's
+                // 52-below-the-search-row put the top at 120, and a flow
+                // child can never rise above the row ahead of it, so init
+                // lifts this column out of the flow and hangs it off the
+                // root overlay at these margins; Updates rides inside it and
+                // rises just as far.
                 #[name = "right_col"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
@@ -391,7 +394,7 @@ impl Component for HomePageModel {
                     set_hexpand: true,
                     set_halign: gtk::Align::End,
                     set_valign: gtk::Align::Start,
-                    set_margin_top: 32,
+                    set_margin_top: 54,
                     set_margin_end: 32,
 
                     #[name = "card_host"]
@@ -434,9 +437,9 @@ impl Component for HomePageModel {
         let widgets = view_output!();
 
         // The right column hangs off the overlay, not off the flow: its
-        // top margin is the window's own 32, which sits above the search
-        // row's band, and no flow child can. See the column's comment in
-        // the view for the owner's measure it answers to.
+        // top margin is the card's right gap of 54, which sits above the
+        // search row's band, and no flow child can. See the column's
+        // comment in the view for the owner's measure it answers to.
         let right_col = widgets.right_col.clone();
         right_col.unparent();
         root.add_overlay(&right_col);

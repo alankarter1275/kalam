@@ -1,5 +1,5 @@
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index 0328fb2..efeaa66 100644
+index c35cd82..e740fee 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
 @@ -100,7 +100,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
@@ -53,9 +53,9 @@ index 0328fb2..efeaa66 100644
 +        let last = std::rc::Rc::new(std::cell::Cell::new(
 +            std::time::Instant::now() - std::time::Duration::from_secs(1),
 +        ));
+         // The closure outlives the borrow, so it carries a clone.
+         let step_sender = sender.clone();
          scroll.connect_scroll(move |_ctrl, _dx, dy| {
-             let now = std::time::Instant::now();
-             if now.duration_since(last.get()) < std::time::Duration::from_millis(250) {
 diff --git a/src/widgets/search_box.rs b/src/widgets/search_box.rs
 index 5e523a3..180295a 100644
 --- a/src/widgets/search_box.rs
@@ -73,4 +73,4 @@ index 5e523a3..180295a 100644
      // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
---- run 43951733205 ---
+--- run 43952688019 ---

@@ -50,11 +50,11 @@ const HISTORY_ROW: i32 = 44;
 /// Not in the design: the list scrolls from this height instead of growing
 /// past it, so a wide match cannot push the box off an 800-high board.
 const SCROLL_MAX: i32 = 320;
-/// Fit-and-stop, as ruled: rows join while their fixed heights fit §57's
-/// 320, and the chain is pinned to the committed sum. The probe dumps that
-/// led here read a ghost row below the outline; the photograph comparison
-/// (B29) showed the ghost is the page's own quote block under the opaque
-/// box -- the overlay doing exactly its job -- and the settled grant exact.
+// Fit-and-stop, as ruled: rows join while their fixed heights fit §57's
+// 320, and the chain is pinned to the committed sum. The probe dumps that
+// led here read a ghost row below the outline; the photograph comparison
+// (B29) showed the ghost is the page's own quote block under the opaque
+// box -- the overlay doing exactly its job -- and the settled grant exact.
 
 /// Decision 198: three rows per group until "See all N" expands it.
 const TOP_N: usize = 3;

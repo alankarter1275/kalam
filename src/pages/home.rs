@@ -100,13 +100,27 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
         "2d",
         false,
     ),
+    ("Earthsea", "A new edition appeared at the source", "3d", false),
     (
-        "Notes Toward a History",
-        "The source stopped serving chapters",
+        "The Left Hand of Darkness",
+        "Cover updated at the source",
         "4d",
+        true,
+    ),
+    (
+        "A Wizard of Earthsea",
+        "New chapter in the saved source",
+        "5d",
         false,
     ),
-    ("Giovanni's Room", "Added from a saved source", "6d", false),
+    ("Dune", "Synopsis updated at the source", "6d", false),
+    ("The Tombs of Atuan", "New edition listed at the source", "1w", false),
+    (
+        "The Farthest Shore",
+        "The source saved a new chapter",
+        "1w",
+        false,
+    ),
 ];
 
 /// Decision 198's groups, filled with invented rows (B21). Home never touches
@@ -839,7 +853,7 @@ fn paint_right(
         return;
     }
 
-    host.append(&build_book_card(&cards[current], sender));
+    host.append(&build_book_card(&cards[current], current, cards.len(), sender));
     host.append(&build_pager(cards, current, sender));
 }
 
@@ -847,7 +861,12 @@ fn paint_right(
 /// button over it — two equal pages at the app's own cover ratio, so 450 x 360
 /// rather than §60's 560 x 360 (B21). Cover click opens the book's page; play
 /// resumes in the reader at the saved position.
-fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> gtk::Widget {
+fn build_book_card(
+    card: &CardData,
+    current: usize,
+    total: usize,
+    sender: &ComponentSender<HomePageModel>,
+) -> gtk::Widget {
     let CardData {
         book,
         chapter_title,
@@ -908,6 +927,12 @@ fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> 
     chapter.add_css_class("kalam-home-book-chapter");
     chapter.set_halign(gtk::Align::Start);
     chapter.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    // The cap, not the ellipsis, is what holds the card's width: an
+    // ellipsised label's natural width is still its whole text on one
+    // line, and the owner's photographs showed a long title stretching
+    // the card past its 450. At 22 characters the natural width is the
+    // 177px text column itself.
+    chapter.set_max_width_chars(22);
     chapter.set_margin_top(6);
     page.append(&chapter);
 
@@ -921,6 +946,12 @@ fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> 
     }));
     text.add_css_class("kalam-home-book-excerpt");
     text.set_wrap(true);
+    // Nine lines and no more: the excerpt's natural height is the whole
+    // passage otherwise, and the card grew with it (385 high on one book,
+    // 370 on the next, in the owner's photographs). Nine wrapped lines
+    // fill the reading page to where the 96 fade takes over, so the fade
+    // still says "there is more" exactly as §60 wants.
+    text.set_lines(9);
     text.set_xalign(0.0);
     text.set_yalign(0.0);
     text.set_valign(gtk::Align::Start);
@@ -936,17 +967,34 @@ fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> 
     body.append(&page);
     overlay.set_child(Some(&body));
 
-    // Ribbon: 18×36 accent, 32 from the right (§60). The board's notched
-    // bottom would need a clip path, which GTK CSS does not have; the
-    // rounded rectangle is the honest approximation.
-    let ribbon = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    ribbon.add_css_class("kalam-home-ribbon");
+    // Ribbon: 18×36 accent, 32 from the right, hanging from the top edge
+    // (§60), and notched as decision 16 draws it -- a V cut into the
+    // bottom, the shape that reads as a bookmark rather than a tab. CSS
+    // has no clip path, so the notch is Cairo: a drawing area over the
+    // card, reading the accent token from a probe like every other drawn
+    // component does.
+    let ribbon_probe = crate::widgets::paint::color_probe("kalam-ui-token-accent");
+    let ribbon = gtk::DrawingArea::new();
     ribbon.set_size_request(18, 36);
     ribbon.set_halign(gtk::Align::End);
     ribbon.set_valign(gtk::Align::Start);
     ribbon.set_margin_end(32);
     ribbon.set_can_target(false);
+    let probe_for_ribbon = ribbon_probe.clone();
+    ribbon.set_draw_func(move |_area, cr, width, height| {
+        let notch = 8.0f64;
+        cr.move_to(0.0, 0.0);
+        cr.line_to(width as f64, 0.0);
+        cr.line_to(width as f64, height as f64);
+        cr.line_to(width as f64 / 2.0, height as f64 - notch);
+        cr.line_to(0.0, height as f64);
+        cr.close_path();
+        let accent = crate::widgets::paint::probe_color(&probe_for_ribbon);
+        crate::widgets::paint::set_source(cr, accent, 1.0);
+        let _ = cr.fill();
+    });
     overlay.add_overlay(&ribbon);
+    overlay.add_overlay(&ribbon_probe);
 
     // Play: the triangle is the page colour cut out of the accent disc —
     // the rail's active face (§56), reused for §60's button.
@@ -967,6 +1015,31 @@ fn build_book_card(card: &CardData, sender: &ComponentSender<HomePageModel>) -> 
         s.output(HomeOut::Read { book_id: id }).ok();
     });
     overlay.add_overlay(&play);
+
+    // Decision 188, as the owner re-ruled it: a scroll or a two-finger
+    // swipe anywhere over the book moves to the next in-progress book --
+    // down for next, up for previous, wrapping at both ends. The cooldown
+    // is what keeps a trackpad fling from spending three books in one
+    // gesture; the pager dots repaint through the same Switch message.
+    if total > 1 {
+        let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
+        let last = std::rc::Rc::new(std::cell::Cell::new(std::time::Instant::now()
+            - std::time::Duration::from_secs(1)));
+        scroll.connect_scroll(move |_ctrl, _dx, dy| {
+            let now = std::time::Instant::now();
+            if now.duration_since(last.get()) < std::time::Duration::from_millis(250) {
+                return gtk::glib::Propagation::Stop;
+            }
+            if dy == 0.0 {
+                return gtk::glib::Propagation::Stop;
+            }
+            last.set(now);
+            let step = if dy > 0.0 { 1 } else { total - 1 };
+            sender.input(HomeMsg::Switch((current + step) % total));
+            gtk::glib::Propagation::Stop
+        });
+        overlay.add_controller(scroll);
+    }
 
     overlay.upcast()
 }

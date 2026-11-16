@@ -740,11 +740,6 @@ button.kalam-author-link-reader:hover {
     background: linear-gradient(to bottom, alpha(@kalam_card, 0) 0%, @kalam_card 100%);
 }
 
-.kalam-home-ribbon {
-    background: @kalam_accent;
-    border-radius: 0 0 2px 2px;
-}
-
 .kalam-home-play {
     background: @kalam_accent;
     border: none;

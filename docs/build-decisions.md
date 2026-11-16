@@ -900,14 +900,20 @@ Three more from the owner's hand on the running app (2026-10-29):
   the card's top edge to the window's top edge should be the same
   number. §1's rule (the column's top 52 below the search row, i.e.
   y=120) cannot reach that high, because a flow child never rises
-  above the row ahead of it; so the right column leaves the flow
-  entirely and hangs off the root overlay, end-anchored at its 32 and
-  top-anchored at the card's whole 54. This supersedes §1's 52 and
-  B30's "the top stays where the spec puts it"; the deviation is the
-  owner's own ruler.
+  above the row ahead of it; so the search row leaves the flow
+  instead -- it hangs off the root overlay at its usual 28 and 56,
+  start-anchored like the result box that has hung there since B27 --
+  and the two columns become the first things in the flow, the right
+  one top-anchored at the card's whole 54 and end-anchored at §1's 32
+  as before. Hanging the column itself off the overlay was tried
+  first and refused to keep its width: an overlay child is offered
+  the whole board and the column took it, marching Updates off to the
+  window's left edge; the flow sizes it correctly. This supersedes
+  §1's 52 and B30's "the top stays where the spec puts it"; the
+  deviation is the owner's own ruler.
 - Updates rises with the card, which falls out of the same move: it
   rides inside the column, 36 below the card as §1 has it, so both
-  moved up by the same 88 pixels and nothing between them changed.
+  moved up by the same 66 pixels and nothing between them changed.
 - The scroll over the book detents instead of cooling down. The
   owner's words: a lock that stops at the books, not a smooth scroll
   -- one gesture reaches the next or previous book and then waits for

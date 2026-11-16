@@ -1,5 +1,63 @@
+diff --git a/src/pages/home.rs b/src/pages/home.rs
+index 0328fb2..efeaa66 100644
+--- a/src/pages/home.rs
++++ b/src/pages/home.rs
+@@ -100,7 +100,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
+         "2d",
+         false,
+     ),
+-    ("Earthsea", "A new edition appeared at the source", "3d", false),
++    (
++        "Earthsea",
++        "A new edition appeared at the source",
++        "3d",
++        false,
++    ),
+     (
+         "The Left Hand of Darkness",
+         "Cover updated at the source",
+@@ -114,7 +119,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
+         false,
+     ),
+     ("Dune", "Synopsis updated at the source", "6d", false),
+-    ("The Tombs of Atuan", "New edition listed at the source", "1w", false),
++    (
++        "The Tombs of Atuan",
++        "New edition listed at the source",
++        "1w",
++        false,
++    ),
+     (
+         "The Farthest Shore",
+         "The source saved a new chapter",
+@@ -853,7 +863,12 @@ fn paint_right(
+         return;
+     }
+ 
+-    host.append(&build_book_card(&cards[current], current, cards.len(), sender));
++    host.append(&build_book_card(
++        &cards[current],
++        current,
++        cards.len(),
++        sender,
++    ));
+     host.append(&build_pager(cards, current, sender));
+ }
+ 
+@@ -1023,8 +1038,9 @@ fn build_book_card(
+     // gesture; the pager dots repaint through the same Switch message.
+     if total > 1 {
+         let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
+-        let last = std::rc::Rc::new(std::cell::Cell::new(std::time::Instant::now()
+-            - std::time::Duration::from_secs(1)));
++        let last = std::rc::Rc::new(std::cell::Cell::new(
++            std::time::Instant::now() - std::time::Duration::from_secs(1),
++        ));
+         scroll.connect_scroll(move |_ctrl, _dx, dy| {
+             let now = std::time::Instant::now();
+             if now.duration_since(last.get()) < std::time::Duration::from_millis(250) {
 diff --git a/src/widgets/search_box.rs b/src/widgets/search_box.rs
-index 1692558..d7bab17 100644
+index 5e523a3..180295a 100644
 --- a/src/widgets/search_box.rs
 +++ b/src/widgets/search_box.rs
 @@ -162,11 +162,7 @@ impl SearchItem {
@@ -15,4 +73,4 @@ index 1692558..d7bab17 100644
      // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
---- run 42940609765 ---
+--- run 43951053434 ---

@@ -1,6 +1,23 @@
+[1m[33mwarning[0m[1m: unused workspace dependency `style_atoms`[0m
+  [1m[94m--> [0mCargo.toml:36:1
+   [1m[94m|[0m
+[1m[94m36[0m [1m[94m|[0m style_atoms = { version = "=0.20.0", package = "stylo_atoms" }
+   [1m[94m|[0m [1m[33m^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `cargo::unused_workspace_dependencies` is set to `warn` by default
+[1m[96mhelp[0m: consider removing the workspace dependency `style_atoms`
+[1m[33mwarning[0m[1m: unused field `readme` in `workspace.package`[0m
+  [1m[94m--> [0mCargo.toml:21:1
+   [1m[94m|[0m
+[1m[94m21[0m [1m[94m|[0m readme = "README.md"
+   [1m[94m|[0m [1m[33m^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `cargo::unused_workspace_package_fields` is set to `warn` by default
+[1m[96mhelp[0m: consider removing the field `workspace.package.readme`
+[1m[33mwarning[0m: workspace (manifest) generated 2 warnings
 [1m[92m   Compiling[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
 [1m[92m    Finished[0m `release` profile [optimized] target(s) in 1m 33s
-[1m[92m     Running[0m unittests src/main.rs (target/release/deps/kalam-af013f76e0a84a12)
+[1m[92m     Running[0m unittests src/main.rs (target/release/build/kalam/afc45973a129a09f/out/kalam-afc45973a129a09f)
 
 running 1 test
 === page 1: 125 word boxes, 15 line groups, 15 recognition results
@@ -255,6 +272,6 @@ page 5: all expected snippets present in OCR output
 === end page 5 ===
 test ocr::tests::ocr_scan_probe_fixture_pages ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 859 filtered out; finished in 10.71s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 859 filtered out; finished in 11.07s
 
---- run 42938927286 ---
+--- run 43953708764 ---

@@ -270,34 +270,25 @@ impl Component for HomePageModel {
                 set_hexpand: true,
                 set_vexpand: true,
 
-            // The search row (§57): 28 above it, 520 x 40, 56 from the rail —
-            // the board's own numbers, which hold now that Home owns its
-            // surface and the shell adds no padding of its own (B21). The bar
-            // itself is `widgets::search_bar`, which `init` appends to the
-            // host below; the result box under it waits for search (B17).
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                set_margin_top: 28,
-                set_margin_start: 56,
-                set_halign: gtk::Align::Start,
-
-                #[name = "search_host"]
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                },
-            },
-
-            // The two columns (home-spec §1).
+            // The two columns (home-spec §1), and the first thing in the
+            // flow: the search row no longer stands ahead of them (§57's
+            // bar hangs off the root overlay in init, the way its result
+            // box does), so the columns' top margins measure from the
+            // window's own top edge.
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_hexpand: true,
                 set_vexpand: true,
 
-                // Left column: 470 wide, 56 from the rail.
+                // Left column: 470 wide, 56 from the rail, its top below
+                // the search row's band (28 above the bar plus the bar's
+                // 40) even though the row itself now hangs off the
+                // overlay: the greeting has always started there.
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_width_request: 470,
                     set_margin_start: 56,
+                    set_margin_top: 68,
                     set_halign: gtk::Align::Start,
                     set_valign: gtk::Align::Start,
 
@@ -382,21 +373,15 @@ impl Component for HomePageModel {
                 // right edge to the window's right edge, and the frames put
                 // that at 54 everywhere -- the column's 32 margin plus the
                 // 22 the pager dots take beside the card. §1's
-                // 52-below-the-search-row put the top at 120, and a flow
-                // child can never rise above the row ahead of it, so init
-                // lifts this column out of the flow and hangs it off the
-                // root overlay at these margins; Updates rides inside it and
-                // rises just as far.
-                #[name = "right_col"]
+                // 52-below-the-search-row put the top at 120; with the row
+                // off the flow the column can keep §1's right anchor and
+                // take the owner's top instead: 54, the card's own right
+                // gap, so the two distances from the window's edges match
+                // exactly. Updates rides inside and rises just as far.
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_width_request: 600,
-                    // No expand: an overlay child is offered the whole
-                    // board, and expanding would take it, stretching the
-                    // column from the window's left edge. In the flow the
-                    // expand was what claimed the leftover width; here the
-                    // 600 request and the end anchor are the whole story.
-                    set_hexpand: false,
+                    set_hexpand: true,
                     set_halign: gtk::Align::End,
                     set_valign: gtk::Align::Start,
                     set_margin_top: 54,
@@ -441,21 +426,25 @@ impl Component for HomePageModel {
         };
         let widgets = view_output!();
 
-        // The right column hangs off the overlay, not off the flow: its
-        // top margin is the card's right gap of 54, which sits above the
-        // search row's band, and no flow child can. See the column's
-        // comment in the view for the owner's measure it answers to.
-        let right_col = widgets.right_col.clone();
-        right_col.unparent();
-        root.add_overlay(&right_col);
 
         // §57's bar and box and §62's timeline (B21): all three come from
         // widget modules and go into the hosts the view reserves for them, the
         // way the shelf and the book card do. The bar and the box are wired to
         // each other — focus, typing, the count, the option menu — and their
         // rows are the invented ones below; the timeline's are too.
+        // §57's search row hangs off the overlay at the board's own
+        // numbers -- 28 above it, 56 from the rail -- start-anchored like
+        // the result box under it, which has hung here since B27 and
+        // sizes itself correctly. Keeping the row off the flow is what
+        // lets the columns start at the window's top edge (B31).
         let search = search_bar::search_bar(SEARCH_HINT);
-        widgets.search_host.append(&search.root);
+        let search_row = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        search_row.set_margin_top(28);
+        search_row.set_margin_start(56);
+        search_row.set_halign(gtk::Align::Start);
+        search_row.set_valign(gtk::Align::Start);
+        search_row.append(&search.root);
+        root.add_overlay(&search_row);
         let box_pop = search_box::search_box(&search, &showcase_search(), &showcase_history());
         // §57 hangs the box off the bar and over the page: start-aligned at
         // the board's 56, its top the search row's 28 plus the bar's 40.

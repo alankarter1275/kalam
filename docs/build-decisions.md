@@ -853,6 +853,42 @@ The lesson for the next visual hunt: compare states before inventing
 faults. The difference between the clean frames and the "leaking" one
 was the box's height over unchanged page content, not the box's chain.
 
+## B30. The owner's five card and Updates corrections
+
+From the owner's own photographs and chat ruling (2026-10-29), all
+five now in the build and verified in both themes' frames:
+
+- Updates carries ten dummy updates, which is §62's ten nodes: four
+  show at 56 each, the rest scroll under the 48 fade with no bar of
+  their own. With four dummies the fade had nothing to fade and the
+  block read as static.
+- The card cannot change size per book any more. The chapter title
+  caps its natural width at the 177px text column (an ellipsised
+  label's natural width is still its whole text, which is what
+  stretched the card in the owner's photos), and the excerpt caps at
+  nine wrapped lines, which is where §60's 96 fade takes over. Both
+  pages stay 225 x 360, the card 450 x 360, for every book.
+- The ribbon is decision 16's bookmark at last: 18 x 36, accent, 32
+  from the right, hanging from the top edge, with the V cut into its
+  bottom drawn in Cairo -- CSS has no clip path, and the rounded
+  rectangle that stood in for it is what the owner rightly called a
+  rectangle.
+- A scroll or two-finger swipe anywhere over the book steps the
+  in-progress books: down next, up previous, wrapping at both ends,
+  one book per gesture under a 250 ms cooldown so a trackpad fling
+  cannot spend three books at once. Decision 188 said exactly this;
+  the owner re-ruled it in chat and the pager dots repaint through
+  the same Switch message.
+- The card's top stays at §1's 52 below the search row. Held at 360
+  high, the card no longer pushes Updates under the window fold: the
+  frames show all four rows and the fade inside an 800-high board.
+
+Also recorded: CI's clippy grew stricter between runs and began
+denying index-by-loop-variable in three pre-existing loops -- the
+chapbook-layout table, pdf column selection, and the OCR
+reading-order test. None are Home's code; all are enumerate now,
+because CI is the compiler and the branch must build.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

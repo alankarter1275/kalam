@@ -1001,14 +1001,20 @@ fn build_book_card(
     }));
     text.add_css_class("kalam-home-book-excerpt");
     text.set_wrap(true);
-    // Nine lines and no more: the excerpt's natural height is the whole
-    // passage otherwise, and the card grew with it (385 high on one book,
-    // 370 on the next, in the owner's photographs). Nine wrapped lines
-    // fill the reading page to where the 96 fade takes over, so the fade
-    // still says "there is more" exactly as §60 wants.
-    text.set_lines(9);
+    // Six lines and no more, and this cap is about the card's bottom
+    // edge, not the excerpt's: the page's natural height is however
+    // many lines the passage wraps to, and the card -- whose 360 is a
+    // floor, not a ceiling -- grew to match it, book by book, leaving
+    // the cover page short of the bottom edge by the difference (23px
+    // in the CI frames, a different number per book in the owner's).
+    // At the rendered 36px line pitch six lines keep the page's
+    // natural height inside the cover's 360, so the card is 360 high
+    // for every book and both pages meet the bottom edge together.
+    // The 96 fade still lands across the last lines, saying "there is
+    // more" exactly as §60 wants.
+    text.set_lines(6);
     // And the width cap that goes with the height cap: a wrapping
-    // label's natural width is its ideal wrap under nine lines, which
+    // label's natural width is its ideal wrap under the line cap, which
     // for a short passage is the whole passage on one line -- and the
     // card is only as wide as the widest natural width inside it,
     // which is how the card came to change size per book (B32). At 22

@@ -964,6 +964,33 @@ Three from the owner's hand on the running app again (2026-10-29):
   -- so it is recorded as harmless compositor-side noise and left
   alone; a future GTK release is the only fix anywhere.
 
+## B33. The bottom edge, and two equal pages
+
+From the owner's photograph of the fourth book (2026-10-29): the
+card's bottom edge was not the cover's bottom edge. A strip of card
+background showed under the cover, of a different height per book,
+and the two pages did not look like one fixed rectangle.
+
+The widths were already exact -- both CI frames measure 225 and
+225 -- and the strip was a height leak: the card's 360 is a floor,
+and the reading page's natural height is however many wrapped lines
+its excerpt holds, at the rendered 36px line pitch. Seven lines made
+the page 383 high, so the card followed to 385 and the cover, which
+is exactly 360, stopped short of the bottom edge by 23. The excerpt
+caps at six wrapped lines now (set_lines 6, was 9): six lines keep
+the page's natural height inside the cover's 360 at the observed
+pitch, so the card is 360 high for every book, both pages meet the
+bottom edge together, and the 96 fade still crosses the last two
+lines. The width cap of B32 still holds the other axis: 22
+characters on both labels, so the page's natural width stays under
+its 225 and the body box is two equal pages at exactly 450.
+
+Measured in ci-logs/branches/.../home-terracotta-dark.png and
+home-book3-terracotta-light.png before the fix: card y 54..438
+(385), cover y 55..414 (360), strip 23, pages 225 and 225. After the
+fix the same measurement should read 362 and no strip; the next CI
+run is the proof.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

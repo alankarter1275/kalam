@@ -1065,7 +1065,17 @@ Two from the owner's photograph of the fixed card (2026-10-29):
   card's 10px left corners showing behind it for the same reason.
   Inside .kalam-home-cover the frame now sits flat -- no shadow --
   and takes the card's left corners, frame, placeholder and picture
-  alike.
+  alike. That removed the shadow but not the seam, and three more
+  fixes (frame fills the button, underlay fills the frame) moved it
+  without ending it, because none of them was its home: GTK measures
+  min-width and min-height on the content box, not the border box
+  the way web CSS does. The floors said 487 x 362 "border included",
+  so the content box was 487 x 362 too, and the 485 x 360 body left
+  a 2px rim of card background under the cover and beside the page
+  -- exactly the seam in the owner's photograph. At 485 x 360 the
+  content box is the card, the border sits outside it, and the
+  frames confirm: the border row now follows the cover's last row
+  with nothing between, in all three, both themes.
 - The reading page is wider than the cover, by the owner's ruling:
   "keep the cover side fix, but make the details side wider." The
   page is 260 where §474 and B21 had two equal pages, the card 485 x

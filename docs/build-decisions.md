@@ -997,8 +997,24 @@ the label also ellipsizes. So the excerpt ellipsizes at the end of
 its sixth line now; the ellipsis sits under the opaque tail of the
 96 fade, which is what the eye reads there. With both, the page's
 natural height is six lines at the rendered 36px pitch, inside the
-cover's 360, and the same measurement should read 362 and no strip;
-the next CI run is the proof.
+cover's 360.
+
+That still left the width: an ellipsized label with a line cap
+reports its six-line wrap as its natural width, 198, which stretched
+the page past 225 once more. The excerpt therefore hangs over a
+fixed slot as an overlay child aligned to fill -- such a child
+contributes nothing to the overlay's measured size, which is how
+the cover has carried real cover textures without stretching all
+along -- and the chapter cap dropped to twenty characters, the
+number that is actually the 177px text column (twenty-two measured
+198). The page's natural size is now the slot's, for every book.
+
+Confirmed after the fix in all three CI frames (first book light
+and dark, third book light): card content 450 x 360, cover page
+225 x 360 flush to the bottom border, reading page 225 wide, six
+excerpt lines with the end ellipsis under the fade. The two pages
+are equal dimensions and fixed, which is what the owner asked for
+twice.
 
 ## Still open
 

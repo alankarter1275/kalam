@@ -955,14 +955,25 @@ fn build_book_card(
     // is and the Card-title line carries the book's own title — real data in
     // the slot the chapter name will take, rather than a hole (B21). Decision
     // 188's "no text beside the book" is about the space outside the card.
-    let page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    // An overlay with a fixed slot for its main child and the whole
+    // reading page hanging over it: a fill-aligned overlay child
+    // contributes nothing to the overlay's measured size (the cover's
+    // picture and the excerpt slot both prove it), so the page reports
+    // exactly 225 x 360 however long the title, however the passage
+    // wraps, and whatever fonts the machine has -- the owner's last
+    // photograph came from a machine whose fallback fonts made twenty
+    // capped characters wider than the text column, and the page's
+    // preferred width lifted the card once more (B34). With the slot,
+    // the card's own minimums are the only sizes left in the
+    // negotiation, on every machine and every book.
+    let page = gtk::Overlay::new();
     page.add_css_class("kalam-home-book-page");
-    // A request, not an expansion: the excerpt label wraps, and a wrapping
-    // label's natural width is its whole text on one line, so an expanding
-    // page lets that natural width stretch the card past its 450 (measured
-    // 486 in ci-logs/branches/.../home-terracotta-light.png, run 42862494812).
-    // Fixed at one cover width, the card is exactly two pages again.
-    page.set_size_request(COVER_W, -1);
+    page.set_overflow(gtk::Overflow::Hidden);
+    let page_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    page_slot.set_size_request(COVER_W, COVER_H);
+    page.set_child(Some(&page_slot));
+    let page_flow = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    page.add_overlay(&page_flow);
     page.set_vexpand(true);
 
     let line = gtk::Label::new(Some("Continue reading"));
@@ -971,7 +982,7 @@ fn build_book_card(
     // No ellipsis here: the kicker is this one fixed string and at §3's
     // Label size it fits the 177px text column, so an ellipsis on it can only
     // mean the column shrank — which is worth seeing as overflow, not hiding.
-    page.append(&line);
+    page_flow.append(&line);
 
     let title: &str = if chapter_title.is_empty() {
         &book.title
@@ -990,7 +1001,7 @@ fn build_book_card(
     // measured 198 and stretched the page past its 225 (B33).
     chapter.set_max_width_chars(20);
     chapter.set_margin_top(6);
-    page.append(&chapter);
+    page_flow.append(&chapter);
 
     let excerpt_box = gtk::Overlay::new();
     excerpt_box.set_margin_top(20);
@@ -1048,7 +1059,7 @@ fn build_book_card(
     fade.set_valign(gtk::Align::End);
     fade.set_can_target(false);
     excerpt_box.add_overlay(&fade);
-    page.append(&excerpt_box);
+    page_flow.append(&excerpt_box);
 
     body.append(&page);
     overlay.set_child(Some(&body));

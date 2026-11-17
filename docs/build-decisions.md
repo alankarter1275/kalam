@@ -1016,6 +1016,30 @@ excerpt lines with the end ellipsis under the fade. The two pages
 are equal dimensions and fixed, which is what the owner asked for
 twice.
 
+## B34. The page becomes a slot; no text measure reaches the card
+
+The owner's next photograph (a DK cover, long title) showed the card
+wide again on their machine, and narrow again on a book with a short
+title. The chapter cap of B33 counts characters, and characters are
+only as wide as the machine's fonts: without the design's Playfair
+faces, twenty capped characters measured past the 177px text column,
+the page's preferred width followed, and the card followed the page.
+Every fix so far had capped one text measure at a time; the caps are
+in characters or lines, and both are font-relative, so a different
+machine reopens the door.
+
+The page is therefore an overlay whose main child is an empty slot
+of exactly 225 x 360, with the whole reading page -- kicker, chapter
+line, excerpt and its fade -- hanging over it as one fill-aligned
+child. A fill-aligned overlay child contributes nothing to the
+overlay's measured size; that is how the cover page has carried real
+cover textures at 225 all along, and how the excerpt slot of B33
+worked. With every text measure out of the negotiation, the card's
+minimums -- CSS 452 x 362, the board's 450 x 360 plus its border --
+are the only sizes left, on every machine, every font, every book.
+The page's padding stays on the overlay, so the flow inside still
+gets the 177px column and the 296px height it had before.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

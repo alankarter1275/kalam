@@ -420,7 +420,14 @@ impl Component for HomePageModel {
         let model = HomePageModel {
             service: LibraryService::new(catalog),
             importing: false,
-            current: 0,
+            // A launch lever for the CI photographs and nothing else,
+            // like KALAM_HOME_SEARCH: open the card at its third book so
+            // a frame can prove the card is one size for every book
+            // (B32). A normal launch has no such variable.
+            current: std::env::var("KALAM_HOME_BOOK")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(0),
             cards: Vec::new(),
             library_empty: false,
         };
@@ -875,6 +882,15 @@ fn paint_right(
 /// button over it — two equal pages at the app's own cover ratio, so 450 x 360
 /// rather than §60's 560 x 360 (B21). Cover click opens the book's page; play
 /// resumes in the reader at the saved position.
+/// How much gathered scroll one book costs. A trackpad swipe piles up
+/// several units in its first few events, so four still answers at once
+/// while a resting finger or a stray flick spends nothing (B32: the
+/// owner asked for less sensitive, twice).
+const SCROLL_STEP: f64 = 4.0;
+/// How long the scroll stream must hold its breath before the detent
+/// opens again. Long enough that a hesitant swipe stays one gesture.
+const SCROLL_QUIET_MS: u64 = 350;
+
 /// Push the detent's quiet moment further off: once the scroll stream has
 /// been silent this long the lock opens, pending stroke resets, and the
 /// next gesture may spend the next book.
@@ -891,7 +907,8 @@ fn arm_quiet(
     // The closure moves what it captures, so it gets clones of its own
     // and the originals stay here to store the source id.
     let quiet_cb = quiet.clone();
-    let id = gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(200), move || {
+    let id =
+        gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(SCROLL_QUIET_MS), move || {
         locked.set(false);
         pending.set(0.0);
         *quiet_cb.borrow_mut() = None;
@@ -1081,7 +1098,7 @@ fn build_book_card(
                 return gtk::glib::Propagation::Stop;
             }
             pending.set(pending.get() + dy);
-            if pending.get().abs() < 1.0 {
+            if pending.get().abs() < SCROLL_STEP {
                 return gtk::glib::Propagation::Stop;
             }
             let step = if pending.get() > 0.0 { 1 } else { total - 1 };

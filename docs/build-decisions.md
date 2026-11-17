@@ -924,6 +924,41 @@ Three more from the owner's hand on the running app (2026-10-29):
   quiet moment further off. A held mouse wheel behaves the same way:
   one book per burst of scrolling.
 
+## B32. The card's size becomes a hard bound, the detent calms down
+
+Three from the owner's hand on the running app again (2026-10-29):
+
+- The card is one size for every book, enforced where size cannot
+  argue back. The 450 x 360 request was only a floor: GTK size
+  negotiation takes the largest natural width of the children when
+  it exceeds the request, and the excerpt's natural width is its
+  ideal wrap under the nine-line cap -- wide for a long passage,
+  narrow for a short one -- so the reading page, and the card with
+  it, changed size per book (473 wide in the Dune frame; the owner
+  watched it breathe while cycling). CSS min-width and max-width are
+  hard bounds, so the card class now carries 452 x 362 -- the board's
+  450 x 360 plus the 1px border on each side -- and the body box,
+  whose two pages ask for exactly 225 each, receives exactly 450 and
+  wraps its text inside that. A new CI photograph opens the card at
+  its third book (KALAM_HOME_BOOK, a launch lever in the same family
+  as KALAM_HOME_SEARCH) so two frames, first book and third, can be
+  measured against each other.
+- The scroll over the book is less eager: one book now costs four
+  gathered scroll units instead of one (SCROLL_STEP), and the quiet
+  that opens the detent again is 350 ms instead of 200
+  (SCROLL_QUIET_MS), so a hesitant mid-swipe pause stays one gesture.
+  A deliberate swipe still answers at once; a resting finger or a
+  stray flick spends nothing.
+- The terminal's `gdk_frame_timings_submitted() called on submitted
+  frame` is GTK's, not kalam's. The warning lives in GDK's own
+  gdkframetimings.c; it reproduces in gtk4-demo and gnome-calculator
+  (GNOME Discourse, July 2026, where the maintainer asked for a GTK
+  issue rather than an app change), and unrelated GTK4 apps report
+  the same line on Wayland sessions. Nothing in this codebase touches
+  frame timings -- no call path leads to gdk_frame_timings_submitted
+  -- so it is recorded as harmless compositor-side noise and left
+  alone; a future GTK release is the only fix anywhere.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

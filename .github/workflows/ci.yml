@@ -1139,6 +1139,12 @@ jobs:
           BOOKS=20 OUT=ci-shots-home-search-light SETTLE=20 ROUTE=home \
             THEME=terracotta-light OUTPUT_W=1280 OUTPUT_H=800 \
             KALAM_HOME_SEARCH=ursula docs/ci/screenshot.sh
+      - name: open home at its third book (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-home-book3-light SETTLE=20 ROUTE=home \
+            THEME=terracotta-light OUTPUT_W=1280 OUTPUT_H=800 \
+            KALAM_HOME_BOOK=2 docs/ci/screenshot.sh
       - name: open home whole (light) and report
         if: matrix.group == 'pages'
         run: |
@@ -2486,6 +2492,10 @@ jobs:
             "$CILOG_DIR/home-search-terracotta-light.png" 2>/dev/null || true
           cp ci-shots-home-tall-light/03-home-settled.png \
             "$CILOG_DIR/home-tall-terracotta-light.png" 2>/dev/null || true
+          # The third book's card beside the first book's: two frames,
+          # one size, which is the whole of B32's promise (B32).
+          cp ci-shots-home-book3-light/03-home-settled.png \
+            "$CILOG_DIR/home-book3-terracotta-light.png" 2>/dev/null || true
           # And the keystroke probe's frame of Home after Ctrl+f: the same box
           # open, but opened by a real chord through a real compositor rather
           # than by a launch variable, which is the difference between a

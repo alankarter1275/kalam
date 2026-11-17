@@ -1,5 +1,5 @@
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index be60239..0f97157 100644
+index 2c8078b..684cd9f 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
 @@ -100,7 +100,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
@@ -30,7 +30,7 @@ index be60239..0f97157 100644
      (
          "The Farthest Shore",
          "The source saved a new chapter",
-@@ -426,7 +436,6 @@ impl Component for HomePageModel {
+@@ -433,7 +443,6 @@ impl Component for HomePageModel {
          };
          let widgets = view_output!();
  
@@ -38,7 +38,7 @@ index be60239..0f97157 100644
          // §57's bar and box and §62's timeline (B21): all three come from
          // widget modules and go into the hosts the view reserves for them, the
          // way the shelf and the book card do. The bar and the box are wired to
-@@ -867,7 +876,12 @@ fn paint_right(
+@@ -874,7 +883,12 @@ fn paint_right(
          return;
      }
  
@@ -50,6 +50,27 @@ index be60239..0f97157 100644
 +        sender,
 +    ));
      host.append(&build_pager(cards, current, sender));
+ }
+ 
+@@ -907,12 +921,14 @@ fn arm_quiet(
+     // The closure moves what it captures, so it gets clones of its own
+     // and the originals stay here to store the source id.
+     let quiet_cb = quiet.clone();
+-    let id =
+-        gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(SCROLL_QUIET_MS), move || {
+-        locked.set(false);
+-        pending.set(0.0);
+-        *quiet_cb.borrow_mut() = None;
+-    });
++    let id = gtk::glib::timeout_add_local_once(
++        std::time::Duration::from_millis(SCROLL_QUIET_MS),
++        move || {
++            locked.set(false);
++            pending.set(0.0);
++            *quiet_cb.borrow_mut() = None;
++        },
++    );
+     *quiet.borrow_mut() = Some(id);
  }
  
 diff --git a/src/widgets/search_box.rs b/src/widgets/search_box.rs
@@ -69,4 +90,4 @@ index 5e523a3..180295a 100644
      // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
---- run 43977341395 ---
+--- run 43985768423 ---

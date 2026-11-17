@@ -987,9 +987,18 @@ its 225 and the body box is two equal pages at exactly 450.
 
 Measured in ci-logs/branches/.../home-terracotta-dark.png and
 home-book3-terracotta-light.png before the fix: card y 54..438
-(385), cover y 55..414 (360), strip 23, pages 225 and 225. After the
-fix the same measurement should read 362 and no strip; the next CI
-run is the proof.
+(385), cover y 55..414 (360), strip 23, pages 225 and 225.
+
+First attempt (six lines alone) changed nothing, and the property
+documentation says why: GtkLabel:lines caps a wrapping label's
+height request, but its natural height -- the number the card's
+size negotiation follows -- stays the whole wrapped passage unless
+the label also ellipsizes. So the excerpt ellipsizes at the end of
+its sixth line now; the ellipsis sits under the opaque tail of the
+96 fade, which is what the eye reads there. With both, the page's
+natural height is six lines at the rendered 36px pitch, inside the
+cover's 360, and the same measurement should read 362 and no strip;
+the next CI run is the proof.
 
 ## Still open
 

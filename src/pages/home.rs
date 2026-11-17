@@ -1013,6 +1013,14 @@ fn build_book_card(
     // The 96 fade still lands across the last lines, saying "there is
     // more" exactly as §60 wants.
     text.set_lines(6);
+    // And ellipsized, because GTK only lets `lines` cap the label's
+    // natural height when it also ellipsizes (the property's own
+    // documentation: without wrap or ellipsize it does nothing, and
+    // with wrap alone it caps the height request while the natural
+    // height -- the one this card's size follows -- stays the whole
+    // passage). The end ellipsis lands on the sixth line, under the
+    // opaque tail of the fade, so the fade is what the eye reads.
+    text.set_ellipsize(gtk::pango::EllipsizeMode::End);
     // And the width cap that goes with the height cap: a wrapping
     // label's natural width is its ideal wrap under the line cap, which
     // for a short passage is the whole passage on one line -- and the

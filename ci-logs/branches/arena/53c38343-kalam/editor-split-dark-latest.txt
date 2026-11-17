@@ -1,14 +1,14 @@
 === kalam screenshot run ===
 books=20 out=ci-shots-editor-split-dark settle=20 output=1600x1200
 config home: /home/runner/work/kalam/kalam/ci-shots-editor-split-dark/config-home
-binary: 74774672 bytes
+binary: 74826128 bytes
 
 === seeding 20 books ===
 seed-library: 20 books, 18 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.20910.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.22231.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -30,7 +30,7 @@ requested PDF action: <none>
 settings fixture: 0 empty-dicts=0
 windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 readiness: min=2s max=30s stable_max_changed=0.5%
-readiness: route and window seen after 0s
+readiness: route and window seen after 1s
 toplevel windows seen: 1
   shot: 01-edit-book-1 (244058 bytes)
 focused: 1
@@ -39,38 +39,38 @@ focused: 1
 navigation: app accepted route 'edit-book-1'
 navigation: 'edit-book-1' is not a grid page; no grid_build expected
 readiness: Home seen after 1s
-  shot: 04-home-for-comparison (110243 bytes)
+  shot: 04-home-for-comparison (107486 bytes)
 readiness: Home stable after 3s
 navigation: 'edit-book-1' differs from Home -- the page really did change
 navigation: OK -- the images below are 'edit-book-1'
 
 === timing lines from the app ===
-  [timing] startup_fonts           2.5 ms
-  [timing] startup_gtk_init       57.5 ms
-  [timing] startup_splash_show      1.3 ms
-  [timing] icons_write             0.1 ms
-  [timing] icons_theme             0.0 ms
-  [timing] icons_init              0.2 ms
-  [timing] startup_splash_pump    123.0 ms
-  [timing] startup_libraries       0.1 ms
-  [timing] startup_db_open         8.3 ms
-  [timing] startup_theme          71.5 ms
-  [timing] pre_run               264.3 ms
-  [timing] route_open:home        21.6 ms
-  [timing] startup_first_page     21.6 ms
-  [timing] service_home            0.5 ms
-  [timing] init_done             300.7 ms
-  [timing] window_shown          303.4 ms
+  [timing] startup_fonts           2.8 ms
+  [timing] startup_gtk_init       51.4 ms
+  [timing] startup_splash_show      1.6 ms
+  [timing] icons_write             0.2 ms
+  [timing] icons_theme             0.1 ms
+  [timing] icons_init              0.3 ms
+  [timing] startup_splash_pump    123.9 ms
+  [timing] startup_libraries       0.3 ms
+  [timing] startup_db_open         8.8 ms
+  [timing] startup_theme          67.2 ms
+  [timing] pre_run               256.4 ms
+  [timing] route_open:home        34.0 ms
+  [timing] startup_first_page     34.0 ms
+  [timing] service_home            0.7 ms
+  [timing] init_done             306.7 ms
+  [timing] window_shown          309.8 ms
   [timing] covers_queued             5
-  [timing] home_fill               3.0 ms
+  [timing] home_fill               3.5 ms
   [timing] page_cache_miss           1
   [timing] route_open:editor_workspace      8.5 ms
   [timing] covers_land             0.1 ms
   [timing] covers_decoded            5
   [timing] covers_thumb              3
   [timing] covers_full               2
-  [timing] covers_decode          30.6 ms
-  [timing] covers_decode_max      10.0 ms
+  [timing] covers_decode          30.1 ms
+  [timing] covers_decode_max      10.8 ms
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
@@ -78,43 +78,43 @@ navigation: OK -- the images below are 'edit-book-1'
   [timing] covers_land             0.1 ms
   [timing] covers_gap              0.0 ms
   [timing] covers_land             0.1 ms
-  [timing] book_open               3.2 ms
+  [timing] book_open               3.7 ms
   [timing] thumbs_backfilled        18
   [timing] render_backend     GskCairoRenderer
-  [timing] frame_after:startup_fonts    416.9 ms
-  [timing] frame_after:startup_gtk_init    359.4 ms
-  [timing] frame_after:startup_splash_show    358.1 ms
-  [timing] frame_after:icons_write    355.0 ms
-  [timing] frame_after:icons_theme    355.0 ms
-  [timing] frame_after:icons_init    355.0 ms
-  [timing] frame_after:startup_splash_pump    235.1 ms
-  [timing] frame_after:startup_libraries    234.9 ms
-  [timing] frame_after:startup_db_open    226.6 ms
-  [timing] frame_after:startup_theme    155.2 ms
-  [timing] frame_after:pre_run    155.2 ms
-  [timing] frame_after:route_open:home    133.1 ms
-  [timing] frame_after:startup_first_page    133.1 ms
-  [timing] frame_after:service_home    132.6 ms
-  [timing] frame_after:init_done    118.7 ms
-  [timing] frame_after:window_shown    116.0 ms
-  [timing] frame_after:home_fill    110.2 ms
-  [timing] frame_after:route_open:editor_workspace    101.4 ms
-  [timing] frame_after:covers_land     98.2 ms
-  [timing] frame_after:covers_decode     66.2 ms
-  [timing] frame_after:covers_decode_max     66.2 ms
-  [timing] frame_after:covers_land     14.1 ms
-  [timing] frame_after:covers_gap     14.1 ms
-  [timing] frame_after:covers_land     14.0 ms
-  [timing] frame_after:covers_gap     14.0 ms
-  [timing] frame_after:covers_land     13.9 ms
-  [timing] frame_after:covers_gap     13.9 ms
-  [timing] frame_after:covers_land     13.8 ms
-  [timing] frame_after:book_open     10.5 ms
-  [timing] frame_paint:book_open     68.1 ms
+  [timing] frame_after:startup_fonts    421.2 ms
+  [timing] frame_after:startup_gtk_init    369.7 ms
+  [timing] frame_after:startup_splash_show    368.0 ms
+  [timing] frame_after:icons_write    364.2 ms
+  [timing] frame_after:icons_theme    364.2 ms
+  [timing] frame_after:icons_init    364.1 ms
+  [timing] frame_after:startup_splash_pump    244.1 ms
+  [timing] frame_after:startup_libraries    243.8 ms
+  [timing] frame_after:startup_db_open    235.0 ms
+  [timing] frame_after:startup_theme    167.8 ms
+  [timing] frame_after:pre_run    167.8 ms
+  [timing] frame_after:route_open:home    133.0 ms
+  [timing] frame_after:startup_first_page    133.0 ms
+  [timing] frame_after:service_home    132.3 ms
+  [timing] frame_after:init_done    117.5 ms
+  [timing] frame_after:window_shown    114.3 ms
+  [timing] frame_after:home_fill    107.7 ms
+  [timing] frame_after:route_open:editor_workspace     98.8 ms
+  [timing] frame_after:covers_land     95.0 ms
+  [timing] frame_after:covers_decode     63.6 ms
+  [timing] frame_after:covers_decode_max     63.6 ms
+  [timing] frame_after:covers_land     13.6 ms
+  [timing] frame_after:covers_gap     13.6 ms
+  [timing] frame_after:covers_land     13.5 ms
+  [timing] frame_after:covers_gap     13.5 ms
+  [timing] frame_after:covers_land     13.4 ms
+  [timing] frame_after:covers_gap     13.4 ms
+  [timing] frame_after:covers_land     13.2 ms
+  [timing] frame_after:book_open      9.5 ms
+  [timing] frame_paint:book_open     76.6 ms
   [timing] thumbs_backfill_done       18
   [timing] home_focus:resting        1
-  [timing] startup_dicts        1282.4 ms
-  [timing] frame_after:startup_dicts    202.3 ms
+  [timing] startup_dicts        1749.2 ms
+  [timing] frame_after:startup_dicts    234.2 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
   (none -- no UI-loop block over ~100 ms was detected)
@@ -131,32 +131,32 @@ navigation: OK -- the images below are 'edit-book-1'
   bf78e2f1862217f112f6b84edb139678  ci-shots-editor-split-dark/01-edit-book-1.png
   bf78e2f1862217f112f6b84edb139678  ci-shots-editor-split-dark/02-edit-book-1-settling.png
   bf78e2f1862217f112f6b84edb139678  ci-shots-editor-split-dark/03-edit-book-1-settled.png
-  73f620bafa2cf3e2a086cb063f6619d0  ci-shots-editor-split-dark/04-home-for-comparison.png
+  e4ee858a19f32010fafe806d5a30a422  ci-shots-editor-split-dark/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (process:20966): Gtk-WARNING **: 02:12:02.316: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:22287): Gtk-WARNING **: 02:32:41.545: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-dark — applying terracotta-dark for this run (not saved)
   kalam: KALAM_ROUTE=edit-book-1 — navigating
 
 === peak memory ===
-books=20 peak_rss_kb=304752 peak_rss_mb=297
+books=20 peak_rss_kb=305528 peak_rss_mb=298
 
 === shutting down ===
 
 === artifacts ===
   total 872
-  drwxr-xr-x  3 runner runner   4096 Nov 17 02:12 .
-  drwxr-xr-x 48 runner runner   4096 Nov 17 02:12 ..
-  -rw-r--r--  1 runner runner 244058 Nov 17 02:12 01-edit-book-1.png
-  -rw-r--r--  1 runner runner 244058 Nov 17 02:12 02-edit-book-1-settling.png
-  -rw-r--r--  1 runner runner 244058 Nov 17 02:12 03-edit-book-1-settled.png
-  -rw-r--r--  1 runner runner 110243 Nov 17 02:12 04-home-for-comparison.png
-  drwxr-xr-x  3 runner runner   4096 Nov 17 02:12 config-home
-  -rw-r--r--  1 runner runner      0 Nov 17 02:12 grim.log
-  -rw-r--r--  1 runner runner   4383 Nov 17 02:12 kalam-home.log
-  -rw-r--r--  1 runner runner   3452 Nov 17 02:12 kalam.log
-  -rw-r--r--  1 runner runner   6452 Nov 17 02:12 report.txt
-  -rw-r--r--  1 runner runner     88 Nov 17 02:12 sway.log
-  -rw-r--r--  1 runner runner   7185 Nov 17 02:12 tree.json
---- run 43999448167 ---
+  drwxr-xr-x  3 runner runner   4096 Nov 17 02:32 .
+  drwxr-xr-x 48 runner runner   4096 Nov 17 02:32 ..
+  -rw-r--r--  1 runner runner 244058 Nov 17 02:32 01-edit-book-1.png
+  -rw-r--r--  1 runner runner 244058 Nov 17 02:32 02-edit-book-1-settling.png
+  -rw-r--r--  1 runner runner 244058 Nov 17 02:32 03-edit-book-1-settled.png
+  -rw-r--r--  1 runner runner 107486 Nov 17 02:32 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner   4096 Nov 17 02:32 config-home
+  -rw-r--r--  1 runner runner      0 Nov 17 02:32 grim.log
+  -rw-r--r--  1 runner runner   4383 Nov 17 02:32 kalam-home.log
+  -rw-r--r--  1 runner runner   3452 Nov 17 02:32 kalam.log
+  -rw-r--r--  1 runner runner   6452 Nov 17 02:32 report.txt
+  -rw-r--r--  1 runner runner     88 Nov 17 02:32 sway.log
+  -rw-r--r--  1 runner runner   7185 Nov 17 02:32 tree.json
+--- run 44001939778 ---

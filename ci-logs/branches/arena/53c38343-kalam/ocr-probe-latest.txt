@@ -16,8 +16,8 @@
 [1m[96mhelp[0m: consider removing the field `workspace.package.readme`
 [1m[33mwarning[0m: workspace (manifest) generated 2 warnings
 [1m[92m   Compiling[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-[1m[92m    Finished[0m `release` profile [optimized] target(s) in 1m 23s
-[1m[92m     Running[0m unittests src/main.rs (target/release/build/kalam/667f6c07817128ef/out/kalam-667f6c07817128ef)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 1m 37s
+[1m[92m     Running[0m unittests src/main.rs (target/release/build/kalam/1c2fa448b41b4e63/out/kalam-1c2fa448b41b4e63)
 
 running 1 test
 === page 1: 125 word boxes, 15 line groups, 15 recognition results
@@ -272,6 +272,6 @@ page 5: all expected snippets present in OCR output
 === end page 5 ===
 test ocr::tests::ocr_scan_probe_fixture_pages ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 859 filtered out; finished in 7.91s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 859 filtered out; finished in 11.14s
 
---- run 44104614817 ---
+--- run 44108638311 ---

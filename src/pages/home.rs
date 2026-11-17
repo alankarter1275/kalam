@@ -942,6 +942,13 @@ fn build_book_card(
     // Cover page.
     let art = cover_widget_deferred(book.cover_path.as_deref(), COVER_W, COVER_H);
     art.add_css_class("kalam-home-cover-art");
+    // The frame arrives top-aligned for the library grid, where covers
+    // of different heights share a row. In the card it fills: whatever
+    // the body's height ends up being -- and a two-pixel seam between
+    // the cover's bottom edge and the card's border survived three
+    // attempts to explain it (B33, B35) -- a filling frame meets the
+    // border exactly, and two pixels in 360 is not a ratio anyone sees.
+    art.set_valign(gtk::Align::Fill);
     let cover = gtk::Button::builder().child(&art).build();
     cover.add_css_class("flat");
     cover.add_css_class("kalam-home-cover");

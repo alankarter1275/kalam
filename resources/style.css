@@ -697,14 +697,13 @@ button.kalam-author-link-reader:hover {
     border-radius: 10px;
     /* The card is one size for every book. GTK's CSS has min-width
        and min-height but no max-width at all (the guardrail test
-       lists the absent pair), so the floor lives here -- 452 x 362
-       is the board's 450 x 360 card plus its 1px border on each
-       side (home-spec §474, B21) -- and the ceiling lives where the
-       size actually came from: the reading page's natural width,
-       capped at the text column on both its labels (B32). Floor and
-       cap meet at exactly two 225px pages, so the body box can
-       neither stretch nor shrink the card. */
-    min-width: 452px;
+       lists the absent pair), so the floor lives here -- 487 x 362
+       is the 485 x 360 card of B35 (cover 225, reading page 260)
+       plus its 1px border on each side -- and the ceiling lives in
+       the page's fixed slot (B34), which no text measure on any
+       machine can lift. Floor and slot together mean the body box
+       can neither stretch nor shrink the card. */
+    min-width: 487px;
     min-height: 362px;
 }
 
@@ -712,6 +711,23 @@ button.kalam-author-link-reader:hover {
     padding: 0;
     border: none;
     background: none;
+    border-radius: 10px 0 0 10px;
+}
+
+/* The cover frame carries a lift shadow and a 6px round for the
+   library grid, where a cover floats on the surface. In the Home
+   card the cover page is flush with the card's own edges: the lift
+   fell inside the card as a 2px dark seam under the cover -- the
+   "gap" the owner saw -- and the 6px round left the card's 10px
+   corners showing behind it. Here the frame sits flat and takes the
+   card's left corners (B35). */
+.kalam-home-cover .kalam-cover-frame {
+    box-shadow: none;
+    border-radius: 10px 0 0 10px;
+}
+
+.kalam-home-cover .kalam-cover-placeholder,
+.kalam-home-cover .kalam-cover-img {
     border-radius: 10px 0 0 10px;
 }
 

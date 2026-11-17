@@ -1050,6 +1050,32 @@ dark, third book light): card content 450 x 360, cover page 225 x
 books, themes and -- because no font measure remains in the
 negotiation -- machines.
 
+## B35. The seam under the cover, and a wider reading page
+
+Two from the owner's photograph of the fixed card (2026-10-29):
+
+- The "slight gap" under the cover was the cover frame's own lift
+  shadow. The frame carries box-shadow 0 2px 10px for the library
+  grid, where a cover floats on the surface; in the Home card the
+  cover page is flush with the card's bottom edge, so the shadow's
+  2px offset fell inside the card as a dark seam between the cover
+  and the border -- measured in the owner's photo: cover content
+  ends at y 368, rows 369-370 are (28,23,20), darker than the card's
+  (36,29,25), then the border row. The frame's 6px round left the
+  card's 10px left corners showing behind it for the same reason.
+  Inside .kalam-home-cover the frame now sits flat -- no shadow --
+  and takes the card's left corners, frame, placeholder and picture
+  alike.
+- The reading page is wider than the cover, by the owner's ruling:
+  "keep the cover side fix, but make the details side wider." The
+  page is 260 where §474 and B21 had two equal pages, the card 485 x
+  360 instead of 450 x 360, the text column 212 instead of 177, and
+  the chapter line's visual cap twenty-four characters instead of
+  twenty. The cover stays 225 x 360 exactly. This is a deliberate
+  deviation from §474's symmetric spread, recorded here because the
+  design docs are read-only; the slot of B34 moves with the page, so
+  the wider card is as fixed as the narrow one was.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

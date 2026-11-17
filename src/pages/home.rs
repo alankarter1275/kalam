@@ -49,7 +49,11 @@ use std::sync::Arc;
 const COVER_W: i32 = 225;
 const COVER_H: i32 = 360;
 /// The card: its two equal pages side by side (§60, B21).
-const CARD_W: i32 = COVER_W * 2;
+/// The reading page: wider than the cover by the owner's ruling
+/// (2026-10-29, B35) -- "keep the cover side fixed, but make the
+/// details side wider" -- where §474 and B21 had two equal pages.
+const PAGE_W: i32 = 260;
+const CARD_W: i32 = COVER_W + PAGE_W;
 /// How many in-progress books the pager holds (§60: five dots).
 const PAGER_MAX: usize = 5;
 /// The greeting's second Display line (decision 186: "the greeting stacked on
@@ -977,7 +981,7 @@ fn build_book_card(
     // always had; plus the padding, the page reports exactly one
     // cover page.
     let page_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    page_slot.set_size_request(COVER_W - 48, COVER_H - 64);
+    page_slot.set_size_request(PAGE_W - 48, COVER_H - 64);
     page.set_child(Some(&page_slot));
     let page_flow = gtk::Box::new(gtk::Orientation::Vertical, 0);
     page.add_overlay(&page_flow);
@@ -1000,13 +1004,11 @@ fn build_book_card(
     chapter.add_css_class("kalam-home-book-chapter");
     chapter.set_halign(gtk::Align::Start);
     chapter.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    // The cap, not the ellipsis, is what holds the card's width: an
-    // ellipsised label's natural width is still its whole text on one
-    // line, and the owner's photographs showed a long title stretching
-    // the card past its 450. Twenty characters of the Card title face
-    // are the 177px text column itself; twenty-two, the old number,
-    // measured 198 and stretched the page past its 225 (B33).
-    chapter.set_max_width_chars(20);
+    // The cap is visual only now -- the page's slot holds the card's
+    // width whatever the label prefers (B34) -- and at the wider page
+    // of B35 the column is 212px, which is twenty-four characters of
+    // the Card title face.
+    chapter.set_max_width_chars(24);
     chapter.set_margin_top(6);
     page_flow.append(&chapter);
 

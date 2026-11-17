@@ -1038,7 +1038,17 @@ worked. With every text measure out of the negotiation, the card's
 minimums -- CSS 452 x 362, the board's 450 x 360 plus its border --
 are the only sizes left, on every machine, every font, every book.
 The page's padding stays on the overlay, so the flow inside still
-gets the 177px column and the 296px height it had before.
+gets the 177px column and the 296px height it had before. The first
+cut of this sized the slot at the page's outer 225 x 360 and forgot
+the padding sits on the overlay: the page reported 273 x 424 and CI
+came back with a 496 x 426 card inside one run; the slot is the
+content box, 177 x 296, and the page reports exactly one cover page.
+
+Confirmed after the fix in all three CI frames (first book light and
+dark, third book light): card content 450 x 360, cover page 225 x
+360 flush to the bottom border, reading page 225, identical across
+books, themes and -- because no font measure remains in the
+negotiation -- machines.
 
 ## Still open
 

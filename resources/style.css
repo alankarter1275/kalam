@@ -695,18 +695,17 @@ button.kalam-author-link-reader:hover {
     background: @kalam_card;
     border: 1px solid @kalam_border;
     border-radius: 10px;
-    /* The card is one size for every book, and this is what makes it
-       so: min and max are hard bounds in GTK's size negotiation,
-       where the widget's own size request is only a floor. A long
-       passage's natural width used to stretch the reading page past
-       its 225 and take the card with it; clamped, the body box gets
-       exactly its two 225px pages and the text wraps inside them.
-       452 x 362 is the board's 450 x 360 card plus its 1px border on
-       each side (home-spec §474, B21, B32). */
+    /* The card is one size for every book. GTK's CSS has min-width
+       and min-height but no max-width at all (the guardrail test
+       lists the absent pair), so the floor lives here -- 452 x 362
+       is the board's 450 x 360 card plus its 1px border on each
+       side (home-spec §474, B21) -- and the ceiling lives where the
+       size actually came from: the reading page's natural width,
+       capped at the text column on both its labels (B32). Floor and
+       cap meet at exactly two 225px pages, so the body box can
+       neither stretch nor shrink the card. */
     min-width: 452px;
-    max-width: 452px;
     min-height: 362px;
-    max-height: 362px;
 }
 
 .kalam-home-cover {

@@ -928,20 +928,25 @@ Three more from the owner's hand on the running app (2026-10-29):
 
 Three from the owner's hand on the running app again (2026-10-29):
 
-- The card is one size for every book, enforced where size cannot
-  argue back. The 450 x 360 request was only a floor: GTK size
-  negotiation takes the largest natural width of the children when
-  it exceeds the request, and the excerpt's natural width is its
-  ideal wrap under the nine-line cap -- wide for a long passage,
-  narrow for a short one -- so the reading page, and the card with
-  it, changed size per book (473 wide in the Dune frame; the owner
-  watched it breathe while cycling). CSS min-width and max-width are
-  hard bounds, so the card class now carries 452 x 362 -- the board's
-  450 x 360 plus the 1px border on each side -- and the body box,
-  whose two pages ask for exactly 225 each, receives exactly 450 and
-  wraps its text inside that. A new CI photograph opens the card at
-  its third book (KALAM_HOME_BOOK, a launch lever in the same family
-  as KALAM_HOME_SEARCH) so two frames, first book and third, can be
+- The card is one size for every book, enforced at both ends of
+  size negotiation. The 450 x 360 request was only a floor: GTK
+  takes the largest natural width inside a widget when it exceeds
+  the request, and the excerpt's natural width is its ideal wrap
+  under the nine-line cap -- one long line for a short passage, a
+  narrow column for a long one -- so the reading page, and the card
+  with it, changed size per book (473 wide in the Dune frame and in
+  the owner's Pines photograph alike; the cover page, measured in
+  that same photograph, never moved off 225 even with a real
+  texture, so the leak was the reading page alone). The ceiling is
+  now a 22-character cap on the excerpt's natural width, matching
+  the chapter line's, so the page's natural width is the 177px text
+  column and the card is exactly two 225px pages; the floor is CSS
+  min-width and min-height at 452 x 362 -- the board's 450 x 360
+  plus the 1px border each side -- because GTK's CSS has no
+  max-width at all, which the guardrail test already knew (§58's
+  lesson, listed there). A new CI photograph opens the card at its
+  third book (KALAM_HOME_BOOK, a launch lever in the same family as
+  KALAM_HOME_SEARCH) so two frames, first book and third, can be
   measured against each other.
 - The scroll over the book is less eager: one book now costs four
   gathered scroll units instead of one (SCROLL_STEP), and the quiet

@@ -1007,6 +1007,16 @@ fn build_book_card(
     // fill the reading page to where the 96 fade takes over, so the fade
     // still says "there is more" exactly as §60 wants.
     text.set_lines(9);
+    // And the width cap that goes with the height cap: a wrapping
+    // label's natural width is its ideal wrap under nine lines, which
+    // for a short passage is the whole passage on one line -- and the
+    // card is only as wide as the widest natural width inside it,
+    // which is how the card came to change size per book (B32). At 22
+    // characters the natural width is under the 177px text column, so
+    // the reading page's natural width is the chapter line's, and the
+    // card is two 225px pages for every book. The drawn wrap still
+    // follows the allocation, not this cap.
+    text.set_max_width_chars(22);
     text.set_xalign(0.0);
     text.set_yalign(0.0);
     text.set_valign(gtk::Align::Start);

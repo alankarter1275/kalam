@@ -1,14 +1,14 @@
 === kalam screenshot run ===
 books=20 out=ci-shots-home-light settle=20 output=1280x800
 config home: /home/runner/work/kalam/kalam/ci-shots-home-light/config-home
-binary: 74826128 bytes
+binary: 74827152 bytes
 
 === seeding 20 books ===
 seed-library: 20 books, 18 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.8320.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.6760.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,35 +32,35 @@ windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 readiness: min=2s max=30s stable_max_changed=0.5%
 readiness: route and window seen after 1s
 toplevel windows seen: 1
-  shot: 01-home (103555 bytes)
+  shot: 01-home (102044 bytes)
 focused: 1
-  shot: 02-home-settling (103555 bytes)
+  shot: 02-home-settling (102044 bytes)
   shot: 03-home-settled (stable after 3s)
 navigation: app accepted route 'home'
 navigation: 'home' is not a grid page; no grid_build expected
 navigation: OK -- the images below are 'home'
 
 === timing lines from the app ===
-  [timing] startup_fonts           2.7 ms
-  [timing] startup_gtk_init       48.3 ms
-  [timing] startup_splash_show      1.4 ms
+  [timing] startup_fonts           3.3 ms
+  [timing] startup_gtk_init       53.5 ms
+  [timing] startup_splash_show      1.6 ms
   [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
   [timing] icons_init              0.3 ms
-  [timing] startup_splash_pump    122.6 ms
-  [timing] startup_libraries       0.3 ms
-  [timing] startup_db_open         8.5 ms
-  [timing] startup_theme          25.3 ms
-  [timing] pre_run               209.4 ms
-  [timing] route_open:home        28.5 ms
-  [timing] startup_first_page     28.5 ms
+  [timing] startup_splash_pump    123.4 ms
+  [timing] startup_libraries       0.2 ms
+  [timing] startup_db_open        19.0 ms
+  [timing] startup_theme          25.7 ms
+  [timing] pre_run               227.0 ms
+  [timing] route_open:home        29.9 ms
+  [timing] startup_first_page     30.0 ms
   [timing] service_home            0.6 ms
-  [timing] init_done             257.5 ms
-  [timing] window_shown          261.9 ms
+  [timing] init_done             277.7 ms
+  [timing] window_shown          280.9 ms
   [timing] covers_queued             5
-  [timing] home_fill               8.2 ms
+  [timing] home_fill               8.6 ms
   [timing] page_cache_miss           1
-  [timing] route_open:home         5.3 ms
+  [timing] route_open:home         2.3 ms
   [timing] service_home            0.5 ms
   [timing] covers_land             0.1 ms
   [timing] covers_queued             4
@@ -68,58 +68,57 @@ navigation: OK -- the images below are 'home'
   [timing] covers_decoded            4
   [timing] covers_thumb              3
   [timing] covers_full               1
-  [timing] covers_decode          25.0 ms
-  [timing] covers_decode_max      12.2 ms
+  [timing] covers_decode          23.1 ms
+  [timing] covers_decode_max      14.7 ms
   [timing] covers_decoded            5
   [timing] covers_thumb              3
   [timing] covers_full               2
-  [timing] covers_decode          35.8 ms
-  [timing] covers_decode_max      14.2 ms
+  [timing] covers_decode          34.7 ms
+  [timing] covers_decode_max      16.8 ms
   [timing] render_backend     GskCairoRenderer
-  [timing] frame_after:startup_fonts    281.2 ms
-  [timing] frame_after:startup_gtk_init    232.8 ms
-  [timing] frame_after:startup_splash_show    231.4 ms
-  [timing] frame_after:icons_write    227.9 ms
-  [timing] frame_after:icons_theme    227.9 ms
-  [timing] frame_after:icons_init    227.9 ms
-  [timing] frame_after:startup_splash_pump    108.7 ms
-  [timing] frame_after:startup_libraries    108.4 ms
-  [timing] frame_after:startup_db_open     99.9 ms
-  [timing] frame_after:startup_theme     74.5 ms
-  [timing] frame_after:pre_run     74.5 ms
-  [timing] frame_after:route_open:home     45.3 ms
-  [timing] frame_after:startup_first_page     45.3 ms
-  [timing] frame_after:service_home     44.7 ms
-  [timing] frame_after:init_done     26.4 ms
-  [timing] frame_after:window_shown     22.1 ms
-  [timing] frame_after:home_fill     10.2 ms
-  [timing] frame_after:route_open:home      4.5 ms
-  [timing] frame_after:service_home      3.9 ms
-  [timing] frame_after:covers_land      3.5 ms
-  [timing] frame_after:home_fill      3.1 ms
-  [timing] frame_after:covers_decode      0.0 ms
-  [timing] frame_after:covers_decode_max      0.0 ms
-  [timing] frame_after:covers_decode      0.0 ms
-  [timing] frame_after:covers_decode_max      0.0 ms
-  [timing] frame_paint:covers_decode_max     54.5 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.0 ms
+  [timing] frame_after:startup_fonts    293.0 ms
+  [timing] frame_after:startup_gtk_init    239.5 ms
+  [timing] frame_after:startup_splash_show    237.8 ms
+  [timing] frame_after:icons_write    234.2 ms
+  [timing] frame_after:icons_theme    234.1 ms
+  [timing] frame_after:icons_init    234.1 ms
+  [timing] frame_after:startup_splash_pump    114.4 ms
+  [timing] frame_after:startup_libraries    114.2 ms
+  [timing] frame_after:startup_db_open     95.1 ms
+  [timing] frame_after:startup_theme     69.4 ms
+  [timing] frame_after:pre_run     69.4 ms
+  [timing] frame_after:route_open:home     38.8 ms
+  [timing] frame_after:startup_first_page     38.8 ms
+  [timing] frame_after:service_home     38.1 ms
+  [timing] frame_after:init_done     18.6 ms
+  [timing] frame_after:window_shown     15.5 ms
+  [timing] frame_after:home_fill      4.0 ms
+  [timing] frame_after:route_open:home      1.4 ms
+  [timing] frame_after:service_home      0.8 ms
   [timing] frame_after:covers_land      0.5 ms
-  [timing] frame_after:covers_gap      0.5 ms
+  [timing] frame_after:home_fill      0.1 ms
+  [timing] frame_after:covers_decode      0.0 ms
+  [timing] frame_after:covers_decode_max      0.0 ms
+  [timing] frame_after:covers_decode      0.0 ms
+  [timing] frame_after:covers_decode_max      0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.0 ms
   [timing] frame_after:covers_land      0.4 ms
   [timing] frame_after:covers_gap      0.4 ms
+  [timing] frame_after:covers_land      0.3 ms
+  [timing] frame_after:covers_gap      0.3 ms
   [timing] frame_after:covers_land      0.2 ms
   [timing] frame_after:covers_gap      0.2 ms
   [timing] frame_after:covers_land      0.1 ms
@@ -134,8 +133,8 @@ navigation: OK -- the images below are 'home'
   [timing] home_focus:resting        1
   [timing] thumbs_backfilled        18
   [timing] thumbs_backfill_done       18
-  [timing] startup_dicts        1678.3 ms
-  [timing] frame_after:startup_dicts    300.4 ms
+  [timing] startup_dicts        1709.8 ms
+  [timing] frame_after:startup_dicts    269.1 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
   (none -- no UI-loop block over ~100 ms was detected)
@@ -148,32 +147,32 @@ navigation: OK -- the images below are 'home'
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  5d22e92f14ab43b7d1010153dc2dabd2  ci-shots-home-light/01-home.png
-  5d22e92f14ab43b7d1010153dc2dabd2  ci-shots-home-light/02-home-settling.png
-  5d22e92f14ab43b7d1010153dc2dabd2  ci-shots-home-light/03-home-settled.png
+  2545db60af5d6f44ce8b98e70e93ffea  ci-shots-home-light/01-home.png
+  2545db60af5d6f44ce8b98e70e93ffea  ci-shots-home-light/02-home-settling.png
+  2545db60af5d6f44ce8b98e70e93ffea  ci-shots-home-light/03-home-settled.png
 
 === app stderr (non-timing lines) ===
   
-  (process:8376): Gtk-WARNING **: 02:29:37.557: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:6817): Gtk-WARNING **: 02:47:56.825: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-light — applying terracotta-light for this run (not saved)
   kalam: KALAM_ROUTE=home — navigating
 
 === peak memory ===
-books=20 peak_rss_kb=260524 peak_rss_mb=254
+books=20 peak_rss_kb=198296 peak_rss_mb=193
 
 === shutting down ===
 
 === artifacts ===
-  total 352
-  drwxr-xr-x  3 runner runner   4096 Nov 17 02:29 .
-  drwxr-xr-x 22 runner runner   4096 Nov 17 02:29 ..
-  -rw-r--r--  1 runner runner 103555 Nov 17 02:29 01-home.png
-  -rw-r--r--  1 runner runner 103555 Nov 17 02:29 02-home-settling.png
-  -rw-r--r--  1 runner runner 103555 Nov 17 02:29 03-home-settled.png
-  drwxr-xr-x  3 runner runner   4096 Nov 17 02:29 config-home
-  -rw-r--r--  1 runner runner      0 Nov 17 02:29 grim.log
-  -rw-r--r--  1 runner runner   4474 Nov 17 02:29 kalam.log
-  -rw-r--r--  1 runner runner   6842 Nov 17 02:29 report.txt
-  -rw-r--r--  1 runner runner     88 Nov 17 02:29 sway.log
-  -rw-r--r--  1 runner runner   7176 Nov 17 02:29 tree.json
---- run 44001939778 ---
+  total 340
+  drwxr-xr-x  3 runner runner   4096 Nov 17 02:47 .
+  drwxr-xr-x 22 runner runner   4096 Nov 17 02:47 ..
+  -rw-r--r--  1 runner runner 102044 Nov 17 02:47 01-home.png
+  -rw-r--r--  1 runner runner 102044 Nov 17 02:47 02-home-settling.png
+  -rw-r--r--  1 runner runner 102044 Nov 17 02:47 03-home-settled.png
+  drwxr-xr-x  3 runner runner   4096 Nov 17 02:47 config-home
+  -rw-r--r--  1 runner runner      0 Nov 17 02:47 grim.log
+  -rw-r--r--  1 runner runner   4423 Nov 17 02:47 kalam.log
+  -rw-r--r--  1 runner runner   6789 Nov 17 02:47 report.txt
+  -rw-r--r--  1 runner runner     88 Nov 17 02:47 sway.log
+  -rw-r--r--  1 runner runner   7176 Nov 17 02:47 tree.json
+--- run 44004484952 ---

@@ -969,8 +969,15 @@ fn build_book_card(
     let page = gtk::Overlay::new();
     page.add_css_class("kalam-home-book-page");
     page.set_overflow(gtk::Overflow::Hidden);
+    // The slot is the content box, not the page: the page's padding
+    // (32 above and below, 24 each side, §474's built numbers) sits on
+    // the overlay itself, so a slot of the full 225 x 360 made the page
+    // 273 x 424 and the card followed (CI caught it: card 496 x 426).
+    // 177 x 296 is the column and the height the flow inside has
+    // always had; plus the padding, the page reports exactly one
+    // cover page.
     let page_slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    page_slot.set_size_request(COVER_W, COVER_H);
+    page_slot.set_size_request(COVER_W - 48, COVER_H - 64);
     page.set_child(Some(&page_slot));
     let page_flow = gtk::Box::new(gtk::Orientation::Vertical, 0);
     page.add_overlay(&page_flow);

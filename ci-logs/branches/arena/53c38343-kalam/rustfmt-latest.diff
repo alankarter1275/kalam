@@ -1,5 +1,5 @@
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index f61a77a..e101668 100644
+index 9a50563..67499be 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
 @@ -100,7 +100,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
@@ -90,4 +90,4 @@ index 5e523a3..180295a 100644
      // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
---- run 43987102447 ---
+--- run 43999448167 ---

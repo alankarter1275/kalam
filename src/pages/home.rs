@@ -985,15 +985,28 @@ fn build_book_card(
     // The cap, not the ellipsis, is what holds the card's width: an
     // ellipsised label's natural width is still its whole text on one
     // line, and the owner's photographs showed a long title stretching
-    // the card past its 450. At 22 characters the natural width is the
-    // 177px text column itself.
-    chapter.set_max_width_chars(22);
+    // the card past its 450. Twenty characters of the Card title face
+    // are the 177px text column itself; twenty-two, the old number,
+    // measured 198 and stretched the page past its 225 (B33).
+    chapter.set_max_width_chars(20);
     chapter.set_margin_top(6);
     page.append(&chapter);
 
     let excerpt_box = gtk::Overlay::new();
     excerpt_box.set_margin_top(20);
     excerpt_box.set_vexpand(true);
+    excerpt_box.set_overflow(gtk::Overflow::Hidden);
+    // A fixed slot is the overlay's main child and the text hangs over
+    // it: an overlay child aligned to fill contributes nothing to the
+    // overlay's own measured size -- the cover's picture proves it,
+    // real textures and all -- so however the passage wraps,
+    // ellipsizes or refuses to, the page's natural size is this slot's
+    // and the card's rectangle never moves (B33). The slot's height is
+    // six lines at the rendered 36px pitch; where a machine's fonts
+    // render shorter, the slot simply reserves the room.
+    let slot = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    slot.set_size_request(-1, 216);
+    excerpt_box.set_child(Some(&slot));
     let text = gtk::Label::new(Some(if excerpt.is_empty() {
         SHOWCASE_EXCERPT
     } else {
@@ -1021,20 +1034,14 @@ fn build_book_card(
     // passage). The end ellipsis lands on the sixth line, under the
     // opaque tail of the fade, so the fade is what the eye reads.
     text.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    // And the width cap that goes with the height cap: a wrapping
-    // label's natural width is its ideal wrap under the line cap, which
-    // for a short passage is the whole passage on one line -- and the
-    // card is only as wide as the widest natural width inside it,
-    // which is how the card came to change size per book (B32). At 22
-    // characters the natural width is under the 177px text column, so
-    // the reading page's natural width is the chapter line's, and the
-    // card is two 225px pages for every book. The drawn wrap still
-    // follows the allocation, not this cap.
-    text.set_max_width_chars(22);
+    // No width cap on the text itself any more: as an overlay child
+    // its measured size never reaches the page's, and the wrap it
+    // draws follows the slot's width, which follows the page's 225.
     text.set_xalign(0.0);
     text.set_yalign(0.0);
     text.set_valign(gtk::Align::Start);
-    excerpt_box.set_child(Some(&text));
+    text.set_halign(gtk::Align::Fill);
+    excerpt_box.add_overlay(&text);
     let fade = gtk::Box::new(gtk::Orientation::Vertical, 0);
     fade.add_css_class("kalam-home-excerpt-fade");
     fade.set_size_request(-1, 96);

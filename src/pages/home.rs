@@ -1323,10 +1323,12 @@ mod tests {
         assert!(!PLACEHOLDER_QUOTE.1.is_empty());
     }
 
-    /// The card is two equal pages at the cover ratio the rest of the app
-    /// uses, and the card's width is twice a page — B21's ruling, pinned
-    /// because the numbers used to disagree with `book_row::COVER_ASPECT` and
-    /// nothing said so.
+    /// The cover page keeps the cover ratio the rest of the app uses,
+    /// and the card is that cover page plus the wider reading page of
+    /// the owner's ruling -- B35: "keep the cover side fix, but make
+    /// the details side wider" -- which supersedes B21's equal-pages
+    /// pin. The ratio half stays: the numbers used to disagree with
+    /// `book_row::COVER_ASPECT` and nothing said so.
     #[test]
     fn the_card_is_two_pages_at_the_cover_ratio() {
         let ratio = f64::from(COVER_H) / f64::from(COVER_W);
@@ -1334,8 +1336,9 @@ mod tests {
             (ratio - crate::widgets::book_row::COVER_ASPECT).abs() < 0.01,
             "a page must hold the app's cover ratio, got 1:{ratio:.3}"
         );
-        assert_eq!(CARD_W, COVER_W * 2, "two equal pages side by side");
-        assert_eq!((CARD_W, COVER_H), (450, 360), "the card B21 rules");
+        assert_eq!(CARD_W, COVER_W + PAGE_W, "cover page plus reading page");
+        assert_eq!((CARD_W, COVER_H), (485, 360), "the card B35 rules");
+        assert_eq!(COVER_W, 225, "the cover side stays fixed");
     }
 
     /// The greeting's second line is a name, not a date: decision 186 draws

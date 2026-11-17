@@ -697,14 +697,17 @@ button.kalam-author-link-reader:hover {
     border-radius: 10px;
     /* The card is one size for every book. GTK's CSS has min-width
        and min-height but no max-width at all (the guardrail test
-       lists the absent pair), so the floor lives here -- 487 x 362
-       is the 485 x 360 card of B35 (cover 225, reading page 260)
-       plus its 1px border on each side -- and the ceiling lives in
-       the page's fixed slot (B34), which no text measure on any
-       machine can lift. Floor and slot together mean the body box
-       can neither stretch nor shrink the card. */
-    min-width: 487px;
-    min-height: 362px;
+       lists the absent pair), so the floor lives here -- and GTK
+       measures these floors on the content box, not the border box
+       the way web CSS does: 485 x 360 is exactly the card of B35
+       (cover 225, reading page 260), with the 1px border added
+       outside it. The first two cuts said 487 x 362, "border
+       included", and left a 2px rim of card background under the
+       cover and beside the page -- the seam the owner kept seeing
+       (B35). The ceiling lives in the page's fixed slot (B34), which
+       no text measure on any machine can lift. */
+    min-width: 485px;
+    min-height: 360px;
 }
 
 .kalam-home-cover {

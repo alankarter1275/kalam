@@ -1089,6 +1089,14 @@ fn new_deferred_overlay_frame(
     frame.set_halign(gtk::Align::Center);
     frame.set_valign(gtk::Align::Start);
     frame.set_overflow(gtk::Overflow::Hidden);
+    // The underlay fills the frame, not just its top-left: in the grid
+    // the frame is exactly the underlay's size and this changes
+    // nothing, but the Home card lets the frame fill a height two
+    // pixels taller than the cover's 360, and a top-aligned underlay
+    // left those two pixels of frame background showing as a seam
+    // under the cover (B35).
+    underlay.set_halign(gtk::Align::Fill);
+    underlay.set_valign(gtk::Align::Fill);
     frame.set_child(Some(underlay));
     let picture = cover_picture(w, h);
     frame.add_overlay(&picture);

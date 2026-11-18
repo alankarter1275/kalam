@@ -39,11 +39,12 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/pages/home.rs:904:1: [1m[91merror[0m: this function has too many arguments (8/7)
-src/widgets/surface.rs:175:12: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+src/pages/home.rs:691:5: [1m[91merror[E0407][0m: method `state_face` is not a member of trait `Component`: not a member of trait `Component`
+src/pages/home.rs:750:26: [1m[91merror[E0599][0m: no method named `state_face` found for mutable reference `&mut pages::home::HomePageModel` in the current scope: method not found in `&mut pages::home::HomePageModel`
+src/pages/home.rs:762:30: [1m[91merror[E0599][0m: no method named `state_face` found for mutable reference `&mut pages::home::HomePageModel` in the current scope: method not found in `&mut pages::home::HomePageModel`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
 [1m[33mwarning[0m[1m: unused dependency `url`[0m
   [1m[94m--> [0mcrates/chapbook-epub/Cargo.toml:13:1
    [1m[94m|[0m

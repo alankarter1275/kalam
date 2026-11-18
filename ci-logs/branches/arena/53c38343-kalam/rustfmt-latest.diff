@@ -114,10 +114,10 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index 013a642..835f5ab 100644
+index bb2c5c5..cdacbd6 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
-@@ -37,20 +37,118 @@ pub struct ShelfBook {
+@@ -41,20 +41,118 @@ pub struct ShelfBook {
  pub fn showcase_shelf() -> Vec<ShelfBook> {
      use ShelfBook as B;
      vec![
@@ -250,7 +250,7 @@ index 013a642..835f5ab 100644
      ]
  }
  
-@@ -70,8 +168,18 @@ const MIN_GAP_YEARS: f64 = 6.0;
+@@ -74,8 +172,18 @@ const MIN_GAP_YEARS: f64 = 6.0;
  const READOUT_MS: u64 = 900;
  
  const MONTHS: [&str; 12] = [
@@ -271,7 +271,7 @@ index 013a642..835f5ab 100644
  ];
  
  /// Day number (unix days) of a date; the ruler's only clock.
-@@ -257,8 +365,7 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
+@@ -261,8 +369,7 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
              cr.set_source_rgba(accent.0, accent.1, accent.2, 1.0);
              cr.arc(AXIS_X, y, 5.0, 0.0, std::f64::consts::TAU);
              cr.stroke().ok();
@@ -281,7 +281,7 @@ index 013a642..835f5ab 100644
              set_font(layout, "Playfair Display", 18.0, false);
              let (w, _) = layout.size();
              cr.move_to(
-@@ -273,7 +380,16 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
+@@ -277,7 +384,16 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
          }
  
          draw_ticks(cr, widget, &anchors, pan, st.zoom, height, &dim, &text);
@@ -299,7 +299,7 @@ index 013a642..835f5ab 100644
          draw_dots(cr, &draw_dates, &anchors, pan, st.zoom, &accent);
          draw_today(cr, widget, &anchors, pan, height, &accent, &bg);
          draw_fade(cr, width, &bg);
-@@ -286,11 +402,13 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
+@@ -290,11 +406,13 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
      let scroll_area = area.clone();
      let scroll_dates = dates.clone();
      let scroll_label = readout_label();
@@ -316,7 +316,7 @@ index 013a642..835f5ab 100644
              let next = match st.zoom {
                  Zoom::Weeks if dy > 0.0 => Zoom::Months,
                  Zoom::Months if dy < 0.0 => Zoom::Weeks,
-@@ -461,8 +579,7 @@ fn draw_ticks(
+@@ -465,8 +583,7 @@ fn draw_ticks(
                          cr.line_to(AXIS_X + len, y);
                          cr.stroke().ok();
                          if weekday == 0 {
@@ -326,4 +326,4 @@ index 013a642..835f5ab 100644
                              set_font(layout, "DM Sans", 11.0, false);
                              cr.move_to(AXIS_X + 18.0, y - 6.0);
                              cr.set_source_rgba(dim.0, dim.1, dim.2, 0.8);
---- run 44259067682 ---
+--- run 44259142065 ---

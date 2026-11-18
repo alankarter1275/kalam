@@ -391,8 +391,20 @@ impl Component for HomePageModel {
                         gtk::Label {
                             set_label: "Your shelf",
                             add_css_class: "kalam-home-heading",
-                            set_hexpand: true,
                             set_halign: gtk::Align::Start,
+                        },
+                        // decision 193's filter pill: the ruler wires
+                        // it (B38); it stands beside the heading while
+                        // a month is filtered.
+                        #[name = "shelf_filter_pill"]
+                        gtk::Button {
+                            add_css_class: "kalam-shelf-filter-pill",
+                            set_margin_start: 8,
+                            set_valign: gtk::Align::Center,
+                            set_visible: false,
+                        },
+                        gtk::Box {
+                            set_hexpand: true,
                         },
                         gtk::Label {
                             set_label: "Arrange by · Most recent",
@@ -953,7 +965,11 @@ fn paint_below(
     // The ruler itself (§61, B38): one drawn widget, or its empty
     // face when the library is. The dashed stand-in of B12 retires
     // here.
-    let ruler = crate::widgets::shelf::shelf_ruler(library_empty, theme);
+    let ruler = crate::widgets::shelf::shelf_ruler(
+        library_empty,
+        theme,
+        &widgets.shelf_filter_pill,
+    );
     ruler.set_vexpand(true);
     ruler.set_valign(gtk::Align::Start);
     shelf.append(&ruler);

@@ -247,34 +247,21 @@ struct Geom {
 /// hanging over it, and the caption line (home-spec §1). The empty
 /// library draws the ruler's own empty face instead -- base line,
 /// Today ring and one Quote-style line (§64, decision 193).
-pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+pub fn shelf_ruler(
+    empty: bool,
+    theme: &crate::theme::Theme,
+    filter_pill: &gtk::Button,
+) -> gtk::Box {
     let pal = Palette {
         accent: hex(theme.accent),
         dim: hex(theme.text_dim),
         bg: hex(theme.bg),
         text: hex(theme.text),
     };
+    // The heading row (with the Arrange by chip and the filter pill)
+    // lives in the page's view; the ruler is the drawn area, the
+    // caption and nothing else.
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
-
-    let head = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    let title = gtk::Label::new(Some("Your shelf"));
-    title.add_css_class("kalam-home-heading");
-    title.set_halign(gtk::Align::Start);
-    head.append(&title);
-    // The month-filter pill (decision 193): stands while a month is
-    // filtered, and clears it when clicked.
-    let filter_pill = gtk::Button::new();
-    filter_pill.add_css_class("kalam-shelf-filter-pill");
-    filter_pill.set_margin_start(crate::style::spacing::SM);
-    filter_pill.set_visible(false);
-    head.append(&filter_pill);
-    // R3 hangs the Arrange by chip here.
-    let chip_host = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    chip_host.set_widget_name("arrange_host");
-    chip_host.set_hexpand(true);
-    chip_host.set_halign(gtk::Align::End);
-    head.append(&chip_host);
-    root.append(&head);
 
     let overlay = gtk::Overlay::new();
     overlay.set_size_request(-1, AREA_H);

@@ -788,12 +788,16 @@ button.kalam-author-link-reader:hover {
    :focus-visible, exactly as the shared family above it: a
    programmatic or mouse-born focus still has to show the ring, and
    :focus-visible stays dark under both (B37, first cut learned it
-   in a CI frame). The search entry is deliberately absent: its
+   in a CI frame). And a .kalam-focus-ring class shares the rule,
+   because GTK's focus states also ask for a focused WINDOW, which
+   headless CI never has: the class rides the widget's own focus
+   notify, the trick the search bar already uses (B27). The search entry is deliberately absent: its
    focus face is §57's accent underline and dropped box, not a ring
    (B27). */
 button:focus,
 menubutton:focus,
-switch:focus {
+switch:focus,
+.kalam-focus-ring {
     outline-color: @kalam_accent;
     outline-style: solid;
     outline-width: 2px;

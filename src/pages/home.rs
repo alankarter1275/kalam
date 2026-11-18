@@ -903,10 +903,23 @@ impl Component for HomePageModel {
 }
 
 /// Walk depth-first to the first button and give it the keyboard, so
-/// a CI frame can show the focus ring §7 asks for (B37).
+/// a CI frame can show the focus ring §7 asks for (B37). The ring
+/// itself rides a class toggled by the widget's own focus notify:
+/// GTK's :focus states also ask for a focused window, which headless
+/// CI never has, and the search bar's focus face already uses this
+/// trick (B27).
 fn focus_first_button(widget: &gtk::Widget) -> bool {
-    if widget.downcast_ref::<gtk::Button>().is_some() {
-        widget.grab_focus();
+    if let Some(button) = widget.downcast_ref::<gtk::Button>() {
+        button.add_css_class("kalam-focus-ring");
+        button.connect_notify_local(Some("has-focus"), |widget, _| {
+            let focused = widget.has_focus();
+            if focused {
+                widget.add_css_class("kalam-focus-ring");
+            } else {
+                widget.remove_css_class("kalam-focus-ring");
+            }
+        });
+        button.grab_focus();
         return true;
     }
     let mut child = widget.first_child();

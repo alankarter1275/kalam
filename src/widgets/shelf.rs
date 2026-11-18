@@ -508,24 +508,27 @@ pub fn shelf_ruler(
         let geom = geom.clone();
         let pop_area = area.clone();
         std::rc::Rc::new(move |i: usize| {
-            // A popover needs a toplevel to hang its surface from;
-            // before the window maps there is none, and asking for
-            // one anyway leaves the whole frame dark (B38, first
-            // hover photograph).
+            // A popover needs a toplevel to hang its surface from,
+            // and a bar to point at: before the window maps there is
+            // no surface, and before the first draw there is no bar
+            // geometry. Asking anyway wedged the whole frame in CI
+            // (B38, first two hover photographs).
             if !pop_area.is_mapped() {
                 return;
             }
-            let g = geom.borrow();
-            if let Some((x, y, len, thick)) = g.bars.get(i).copied() {
-                if len > 0.0 {
-                    popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(
-                        (x + len + 30.0) as i32,
-                        y as i32,
-                        2,
-                        thick.max(4.0) as i32,
-                    )));
-                }
-            }
+            let rect = {
+                let g = geom.borrow();
+                g.bars.get(i).copied().filter(|r| r.2 > 0.0)
+            };
+            let Some((x, y, len, thick)) = rect else {
+                return;
+            };
+            popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(
+                (x + len + 30.0) as i32,
+                y as i32,
+                2,
+                thick.max(4.0) as i32,
+            )));
             popover.popup();
         })
     };
@@ -698,10 +701,18 @@ pub fn shelf_ruler(
         let h_fill = fill_card.clone();
         let h_show = show_at.clone();
         area.connect_map(move |_| {
-            h_state.borrow_mut().hover = Some(i);
-            h_area.queue_draw();
-            h_fill(i);
-            h_show(i);
+            // One beat after the first draw, so the bars exist and
+            // the map cascade is over before the popover opens.
+            let h_state = h_state.clone();
+            let h_area = h_area.clone();
+            let h_fill = h_fill.clone();
+            let h_show = h_show.clone();
+            gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+                h_state.borrow_mut().hover = Some(i);
+                h_area.queue_draw();
+                h_fill(i);
+                h_show(i);
+            });
         });
     }
 

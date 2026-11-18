@@ -14,7 +14,7 @@ index 68ea3a7..d7a4c3f 100644
                  );
                  PageSlot::Home(ctrl)
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index 2970234..c4e37cf 100644
+index d06a4af..68ff30e 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
 @@ -112,7 +112,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
@@ -61,7 +61,20 @@ index 2970234..c4e37cf 100644
          // §57's bar and box and §62's timeline (B21): all three come from
          // widget modules and go into the hosts the view reserves for them, the
          // way the shelf and the book card do. The bar and the box are wired to
-@@ -999,7 +1007,12 @@ fn paint_right(
+@@ -941,11 +949,7 @@ fn focus_first_button(widget: &gtk::Widget) -> bool {
+ /// stand-in for the ruler (§61 waits on the owner's board picture,
+ /// B12) and the Updates block (§62), replacing the loading skeletons.
+ /// The empty library hides Updates, as decision 194 draws it.
+-fn paint_below(
+-    widgets: &HomePageModelWidgets,
+-    library_empty: bool,
+-    theme: &crate::theme::Theme,
+-) {
++fn paint_below(widgets: &HomePageModelWidgets, library_empty: bool, theme: &crate::theme::Theme) {
+     let shelf = &widgets.shelf_host;
+     while let Some(child) = shelf.first_child() {
+         shelf.remove(&child);
+@@ -1004,7 +1008,12 @@ fn paint_right(
      }
  
      let Some(face) = face else {
@@ -75,7 +88,7 @@ index 2970234..c4e37cf 100644
          host.append(&build_pager(cards, current, sender));
          return;
      };
-@@ -1099,12 +1112,14 @@ fn arm_quiet(
+@@ -1104,12 +1113,14 @@ fn arm_quiet(
      // The closure moves what it captures, so it gets clones of its own
      // and the originals stay here to store the source id.
      let quiet_cb = quiet.clone();
@@ -114,7 +127,7 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index bb2c5c5..cdacbd6 100644
+index 918dd9b..ff86456 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
 @@ -41,20 +41,118 @@ pub struct ShelfBook {
@@ -271,7 +284,7 @@ index bb2c5c5..cdacbd6 100644
  ];
  
  /// Day number (unix days) of a date; the ruler's only clock.
-@@ -261,8 +369,7 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
+@@ -261,8 +369,7 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
              cr.set_source_rgba(accent.0, accent.1, accent.2, 1.0);
              cr.arc(AXIS_X, y, 5.0, 0.0, std::f64::consts::TAU);
              cr.stroke().ok();
@@ -281,7 +294,7 @@ index bb2c5c5..cdacbd6 100644
              set_font(layout, "Playfair Display", 18.0, false);
              let (w, _) = layout.size();
              cr.move_to(
-@@ -277,7 +384,16 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
+@@ -277,7 +384,16 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
          }
  
          draw_ticks(cr, widget, &anchors, pan, st.zoom, height, &dim, &text);
@@ -299,7 +312,7 @@ index bb2c5c5..cdacbd6 100644
          draw_dots(cr, &draw_dates, &anchors, pan, st.zoom, &accent);
          draw_today(cr, widget, &anchors, pan, height, &accent, &bg);
          draw_fade(cr, width, &bg);
-@@ -290,11 +406,13 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
+@@ -290,11 +406,13 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
      let scroll_area = area.clone();
      let scroll_dates = dates.clone();
      let scroll_label = readout_label();
@@ -316,7 +329,17 @@ index bb2c5c5..cdacbd6 100644
              let next = match st.zoom {
                  Zoom::Weeks if dy > 0.0 => Zoom::Months,
                  Zoom::Months if dy < 0.0 => Zoom::Weeks,
-@@ -465,8 +583,7 @@ fn draw_ticks(
+@@ -368,8 +486,7 @@ fn anchors_for(zoom: Zoom, dates: &[i64], today: i64, area_h: f64) -> Vec<(i64,
+ /// off charts.rs already uses (B38).
+ fn hex(s: &str) -> (f64, f64, f64) {
+     let bytes = s.trim_start_matches('#');
+-    let v = u32::from_str_radix(bytes.get(0..6).unwrap_or("888888"), 16)
+-        .unwrap_or(0x88_88_88);
++    let v = u32::from_str_radix(bytes.get(0..6).unwrap_or("888888"), 16).unwrap_or(0x88_88_88);
+     (
+         ((v >> 16) & 255) as f64 / 255.0,
+         ((v >> 8) & 255) as f64 / 255.0,
+@@ -473,8 +590,7 @@ fn draw_ticks(
                          cr.line_to(AXIS_X + len, y);
                          cr.stroke().ok();
                          if weekday == 0 {
@@ -326,4 +349,4 @@ index bb2c5c5..cdacbd6 100644
                              set_font(layout, "DM Sans", 11.0, false);
                              cr.move_to(AXIS_X + 18.0, y - 6.0);
                              cr.set_source_rgba(dim.0, dim.1, dim.2, 0.8);
---- run 44259142065 ---
+--- run 44260072070 ---

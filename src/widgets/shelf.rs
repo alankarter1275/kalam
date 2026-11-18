@@ -572,8 +572,7 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
     let m_fill = fill_card.clone();
     let m_show = show_at.clone();
     let m_cancel = cancel_hide.clone();
-    motion.connect_motion(move |_ctrl, ev| {
-        let (x, y) = ev.position();
+    motion.connect_motion(move |_ctrl, x, y| {
         let idx = hit_bar(&m_geom.borrow(), x, y);
         let changed = {
             let mut st = m_state.borrow_mut();

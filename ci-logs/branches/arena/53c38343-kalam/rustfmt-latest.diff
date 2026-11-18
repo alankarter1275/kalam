@@ -14,7 +14,7 @@ index 68ea3a7..d7a4c3f 100644
                  );
                  PageSlot::Home(ctrl)
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index b24e8f3..740adad 100644
+index 7402dfb..ea8e830 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
 @@ -112,7 +112,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
@@ -61,7 +61,7 @@ index b24e8f3..740adad 100644
          // §57's bar and box and §62's timeline (B21): all three come from
          // widget modules and go into the hosts the view reserves for them, the
          // way the shelf and the book card do. The bar and the box are wired to
-@@ -997,7 +1005,12 @@ fn paint_right(
+@@ -1001,7 +1009,12 @@ fn paint_right(
      }
  
      let Some(face) = face else {
@@ -75,7 +75,7 @@ index b24e8f3..740adad 100644
          host.append(&build_pager(cards, current, sender));
          return;
      };
-@@ -1097,12 +1110,14 @@ fn arm_quiet(
+@@ -1101,12 +1114,14 @@ fn arm_quiet(
      // The closure moves what it captures, so it gets clones of its own
      // and the originals stay here to store the source id.
      let quiet_cb = quiet.clone();
@@ -113,4 +113,4 @@ index 5e523a3..180295a 100644
      // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
---- run 44231237336 ---
+--- run 44234064099 ---

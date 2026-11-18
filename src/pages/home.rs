@@ -265,6 +265,38 @@ pub struct HomePageModel {
     library_empty: bool,
 }
 
+impl HomePageModel {
+    /// Which of §64's faces the right column shows, if any: the
+    /// lever's choice first, so a photograph can hold a face over a
+    /// library that contradicts it, then the real conditions in the
+    /// order they exclude each other -- a failed read with nothing
+    /// to show, no books at all, books but none open (B36).
+    fn state_face(&self) -> Option<&'static str> {
+        match self.forced_state.as_deref() {
+            Some("loading") | Some("empty") | Some("none") | Some("error") => {
+                self.forced_state.as_deref().map(|s| match s {
+                    "loading" => "loading",
+                    "empty" => "empty",
+                    "none" => "none",
+                    _ => "error",
+                })
+            }
+            _ => {
+                if !self.cards.is_empty() {
+                    None
+                } else if self.load_failed {
+                    Some("error")
+                } else if self.library_empty {
+                    Some("empty")
+                } else {
+                    Some("none")
+                }
+            }
+        }
+    }
+
+}
+
 #[relm4::component(pub)]
 impl Component for HomePageModel {
     type Init = Arc<Catalog>;
@@ -681,35 +713,6 @@ impl Component for HomePageModel {
         }
 
         ComponentParts { model, widgets }
-    }
-
-    /// Which of §64's faces the right column shows, if any: the
-    /// lever's choice first, so a photograph can hold a face over a
-    /// library that contradicts it, then the real conditions in the
-    /// order they exclude each other -- a failed read with nothing
-    /// to show, no books at all, books but none open (B36).
-    fn state_face(&self) -> Option<&'static str> {
-        match self.forced_state.as_deref() {
-            Some("loading") | Some("empty") | Some("none") | Some("error") => {
-                self.forced_state.as_deref().map(|s| match s {
-                    "loading" => "loading",
-                    "empty" => "empty",
-                    "none" => "none",
-                    _ => "error",
-                })
-            }
-            _ => {
-                if !self.cards.is_empty() {
-                    None
-                } else if self.load_failed {
-                    Some("error")
-                } else if self.library_empty {
-                    Some("empty")
-                } else {
-                    Some("none")
-                }
-            }
-        }
     }
 
     fn update_with_view(

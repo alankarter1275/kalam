@@ -127,10 +127,10 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index 35e10f8..cc75e10 100644
+index 8fc1d45..6bcbc80 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
-@@ -41,20 +41,118 @@ pub struct ShelfBook {
+@@ -46,20 +46,118 @@ pub struct ShelfBook {
  pub fn showcase_shelf() -> Vec<ShelfBook> {
      use ShelfBook as B;
      vec![
@@ -263,7 +263,7 @@ index 35e10f8..cc75e10 100644
      ]
  }
  
-@@ -74,8 +172,18 @@ const MIN_GAP_YEARS: f64 = 6.0;
+@@ -79,8 +177,18 @@ const MIN_GAP_YEARS: f64 = 6.0;
  const READOUT_MS: u64 = 900;
  
  const MONTHS: [&str; 12] = [
@@ -284,8 +284,8 @@ index 35e10f8..cc75e10 100644
  ];
  
  /// Day number (unix days) of a date; the ruler's only clock.
-@@ -261,8 +369,7 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
-             cr.set_source_rgba(accent.0, accent.1, accent.2, 1.0);
+@@ -288,8 +396,7 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+             cr.set_source_rgba(pal.accent.0, pal.accent.1, pal.accent.2, 1.0);
              cr.arc(AXIS_X, y, 5.0, 0.0, std::f64::consts::TAU);
              cr.stroke().ok();
 -            let layout =
@@ -294,25 +294,21 @@ index 35e10f8..cc75e10 100644
              set_font(&layout, "Playfair Display", 18.0, false);
              let (w, _) = layout.size();
              cr.move_to(
-@@ -277,7 +384,16 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+@@ -303,7 +410,12 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+             return;
          }
  
-         draw_ticks(cr, widget, &anchors, pan, st.zoom, height, &dim, &text);
--        draw_bars(cr, widget, &draw_books, &draw_dates, &anchors, pan, st.zoom, height);
-+        draw_bars(
-+            cr,
-+            widget,
-+            &draw_books,
-+            &draw_dates,
-+            &anchors,
+-        let view = View { anchors: &anchors, pan, zoom: st.zoom, height };
++        let view = View {
++            anchors: &anchors,
 +            pan,
-+            st.zoom,
++            zoom: st.zoom,
 +            height,
-+        );
-         draw_dots(cr, &draw_dates, &anchors, pan, st.zoom, &accent);
-         draw_today(cr, widget, &anchors, pan, height, &accent, &bg);
-         draw_fade(cr, width, &bg);
-@@ -293,11 +409,13 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
++        };
+         draw_ticks(cr, widget, &view, &pal);
+         draw_bars(cr, widget, &draw_books, &draw_dates, &view);
+         draw_dots(cr, &draw_dates, &view, &pal);
+@@ -321,11 +433,13 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
      // pill below keeps the original.
      let readout_label = readout_label();
      let scroll_label = readout_label.clone();
@@ -329,7 +325,7 @@ index 35e10f8..cc75e10 100644
              let next = match st.zoom {
                  Zoom::Weeks if dy > 0.0 => Zoom::Months,
                  Zoom::Months if dy < 0.0 => Zoom::Weeks,
-@@ -371,8 +489,7 @@ fn anchors_for(zoom: Zoom, dates: &[i64], today: i64, area_h: f64) -> Vec<(i64,
+@@ -399,8 +513,7 @@ fn anchors_for(zoom: Zoom, dates: &[i64], today: i64, area_h: f64) -> Vec<(i64,
  /// off charts.rs already uses (B38).
  fn hex(s: &str) -> (f64, f64, f64) {
      let bytes = s.trim_start_matches('#');
@@ -339,7 +335,28 @@ index 35e10f8..cc75e10 100644
      (
          ((v >> 16) & 255) as f64 / 255.0,
          ((v >> 8) & 255) as f64 / 255.0,
-@@ -476,8 +593,7 @@ fn draw_ticks(
+@@ -420,13 +533,13 @@ fn draw_fade(cr: &gtk::cairo::Context, width: i32, bg: &(f64, f64, f64)) {
+     }
+ }
+ 
+-fn draw_ticks(
+-    cr: &gtk::cairo::Context,
+-    widget: &gtk::Widget,
+-    view: &View<'_>,
+-    pal: &Palette,
+-) {
+-    let View { anchors, pan, zoom, height } = *view;
++fn draw_ticks(cr: &gtk::cairo::Context, widget: &gtk::Widget, view: &View<'_>, pal: &Palette) {
++    let View {
++        anchors,
++        pan,
++        zoom,
++        height,
++    } = *view;
+     let (dim, text) = (pal.dim, pal.text);
+     let (y0, y1) = match (anchors.first(), anchors.last()) {
+         (Some(a), Some(b)) => (a.0.min(b.0), a.0.max(b.0)),
+@@ -502,8 +615,7 @@ fn draw_ticks(
                          cr.line_to(AXIS_X + len, y);
                          cr.stroke().ok();
                          if weekday == 0 {
@@ -349,4 +366,37 @@ index 35e10f8..cc75e10 100644
                              set_font(&layout, "DM Sans", 11.0, false);
                              cr.move_to(AXIS_X + 18.0, y - 6.0);
                              cr.set_source_rgba(dim.0, dim.1, dim.2, 0.8);
---- run 44260577707 ---
+@@ -525,7 +637,12 @@ fn draw_bars(
+     dates: &[i64],
+     view: &View<'_>,
+ ) {
+-    let View { anchors, pan, zoom, height } = *view;
++    let View {
++        anchors,
++        pan,
++        zoom,
++        height,
++    } = *view;
+     for (book, day) in books.iter().zip(dates.iter()) {
+         let y = map_date(anchors, *day, pan);
+         if y < -30.0 || y > height as f64 + 30.0 {
+@@ -568,13 +685,10 @@ fn rounded_bar(cr: &gtk::cairo::Context, x: f64, y: f64, w: f64, h: f64) {
+     cr.close_path();
+ }
+ 
+-fn draw_dots(
+-    cr: &gtk::cairo::Context,
+-    dates: &[i64],
+-    view: &View<'_>,
+-    pal: &Palette,
+-) {
+-    let View { anchors, pan, zoom, .. } = *view;
++fn draw_dots(cr: &gtk::cairo::Context, dates: &[i64], view: &View<'_>, pal: &Palette) {
++    let View {
++        anchors, pan, zoom, ..
++    } = *view;
+     let accent = pal.accent;
+     let r = if zoom == Zoom::Years { 2.0 } else { 3.5 };
+     for day in dates {
+(truncated: 21 further diff lines not committed)
+--- run 44262931618 ---

@@ -8,7 +8,7 @@ seed-library: 22 books, 20 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.11612.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.11869.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -30,7 +30,7 @@ requested PDF action: <none>
 settings fixture: 0 empty-dicts=0
 windowed grid: 1 (KALAM_NO_WINDOWED_GRID=0)
 readiness: min=2s max=30s stable_max_changed=0.5%
-readiness: route and window seen after 0s
+readiness: route and window seen after 1s
 toplevel windows seen: 1
   shot: 01-comic-series-book-22 (84130 bytes)
 focused: 1
@@ -38,89 +38,88 @@ focused: 1
   shot: 03-comic-series-book-22-settled (stable after 3s)
 navigation: app accepted route 'comic-series-book-22'
 navigation: 'comic-series-book-22' is not a grid page; no grid_build expected
-readiness: Home seen after 0s
+readiness: Home seen after 1s
   shot: 04-home-for-comparison (108270 bytes)
 readiness: Home stable after 3s
 navigation: 'comic-series-book-22' differs from Home -- the page really did change
 navigation: OK -- the images below are 'comic-series-book-22'
 
 === timing lines from the app ===
-  [timing] startup_fonts           2.7 ms
-  [timing] startup_gtk_init       49.1 ms
-  [timing] startup_splash_show      1.2 ms
+  [timing] startup_fonts           4.1 ms
+  [timing] startup_gtk_init       76.4 ms
+  [timing] startup_splash_show      1.7 ms
   [timing] icons_write             0.2 ms
   [timing] icons_theme             0.1 ms
   [timing] icons_init              0.3 ms
-  [timing] startup_splash_pump    122.4 ms
-  [timing] startup_libraries       0.2 ms
-  [timing] startup_db_open         8.5 ms
-  [timing] startup_theme          59.2 ms
-  [timing] pre_run               243.5 ms
-  [timing] route_open:home        28.0 ms
-  [timing] startup_first_page     28.0 ms
-  [timing] service_home            0.6 ms
-  [timing] init_done             285.6 ms
-  [timing] window_shown          287.5 ms
+  [timing] startup_splash_pump    122.0 ms
+  [timing] startup_libraries       0.3 ms
+  [timing] startup_db_open        13.0 ms
+  [timing] startup_theme          99.9 ms
+  [timing] pre_run               317.7 ms
+  [timing] route_open:home        33.6 ms
+  [timing] startup_first_page     33.7 ms
+  [timing] service_home            0.8 ms
+  [timing] init_done             370.8 ms
+  [timing] window_shown          373.5 ms
   [timing] covers_queued             5
-  [timing] home_fill               5.1 ms
+  [timing] home_fill               8.1 ms
   [timing] page_cache_miss           1
-  [timing] route_open:comic_series      1.2 ms
+  [timing] route_open:comic_series      1.8 ms
   [timing] covers_decoded            1
   [timing] covers_thumb              1
   [timing] covers_full               0
-  [timing] covers_decode           2.2 ms
-  [timing] covers_decode_max       2.2 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
+  [timing] covers_decode           3.1 ms
+  [timing] covers_decode_max       3.1 ms
   [timing] covers_land             0.1 ms
   [timing] covers_land             0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
+  [timing] covers_gap              0.0 ms
+  [timing] covers_land             0.1 ms
   [timing] covers_decoded            5
-  [timing] covers_thumb              4
-  [timing] covers_full               1
-  [timing] covers_decode          21.1 ms
-  [timing] covers_decode_max      10.1 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
-  [timing] covers_gap              0.0 ms
-  [timing] covers_land             0.1 ms
+  [timing] covers_thumb              3
+  [timing] covers_full               2
+  [timing] covers_decode          44.4 ms
+  [timing] covers_decode_max      17.5 ms
   [timing] render_backend     GskCairoRenderer
-  [timing] frame_after:startup_fonts    329.6 ms
-  [timing] frame_after:startup_gtk_init    280.5 ms
-  [timing] frame_after:startup_splash_show    279.2 ms
-  [timing] frame_after:icons_write    275.9 ms
-  [timing] frame_after:icons_theme    275.9 ms
-  [timing] frame_after:icons_init    275.9 ms
-  [timing] frame_after:startup_splash_pump    156.8 ms
-  [timing] frame_after:startup_libraries    156.6 ms
-  [timing] frame_after:startup_db_open    148.1 ms
-  [timing] frame_after:startup_theme     88.9 ms
-  [timing] frame_after:pre_run     88.9 ms
-  [timing] frame_after:route_open:home     60.1 ms
-  [timing] frame_after:startup_first_page     60.1 ms
-  [timing] frame_after:service_home     59.5 ms
-  [timing] frame_after:init_done     46.8 ms
-  [timing] frame_after:window_shown     44.9 ms
-  [timing] frame_after:home_fill     37.4 ms
-  [timing] frame_after:route_open:comic_series     35.9 ms
-  [timing] frame_after:covers_decode     34.0 ms
-  [timing] frame_after:covers_decode_max     34.0 ms
-  [timing] frame_after:covers_land     29.7 ms
-  [timing] frame_after:covers_gap     29.7 ms
-  [timing] frame_after:covers_land     29.6 ms
-  [timing] frame_after:covers_land     29.5 ms
-  [timing] frame_after:covers_decode      2.5 ms
-  [timing] frame_after:covers_decode_max      2.5 ms
+  [timing] frame_after:startup_fonts    426.4 ms
+  [timing] frame_after:startup_gtk_init    350.0 ms
+  [timing] frame_after:startup_splash_show    348.2 ms
+  [timing] frame_after:icons_write    343.5 ms
+  [timing] frame_after:icons_theme    343.4 ms
+  [timing] frame_after:icons_init    343.4 ms
+  [timing] frame_after:startup_splash_pump    226.2 ms
+  [timing] frame_after:startup_libraries    225.9 ms
+  [timing] frame_after:startup_db_open    212.8 ms
+  [timing] frame_after:startup_theme    112.9 ms
+  [timing] frame_after:pre_run    112.9 ms
+  [timing] frame_after:route_open:home     78.5 ms
+  [timing] frame_after:startup_first_page     78.5 ms
+  [timing] frame_after:service_home     77.8 ms
+  [timing] frame_after:init_done     59.8 ms
+  [timing] frame_after:window_shown     57.1 ms
+  [timing] frame_after:home_fill     45.8 ms
+  [timing] frame_after:route_open:comic_series     43.6 ms
+  [timing] frame_after:covers_decode     41.0 ms
+  [timing] frame_after:covers_decode_max     41.0 ms
+  [timing] frame_after:covers_land     33.9 ms
+  [timing] frame_after:covers_land     33.8 ms
+  [timing] frame_after:covers_land      0.3 ms
+  [timing] frame_after:covers_gap      0.3 ms
   [timing] frame_after:covers_land      0.2 ms
   [timing] frame_after:covers_gap      0.2 ms
   [timing] frame_after:covers_land      0.1 ms
-  [timing] frame_after:covers_gap      0.1 ms
-  [timing] frame_after:covers_land      0.0 ms
+  [timing] frame_after:covers_decode      0.0 ms
+  [timing] frame_after:covers_decode_max      0.0 ms
+  [timing] frame_paint:covers_decode_max     58.2 ms
+  [timing] covers_land             0.1 ms
   [timing] home_focus:resting        1
+  [timing] frame_after:covers_land      0.3 ms
   [timing] thumbs_backfilled        20
   [timing] thumbs_backfill_done       18
-  [timing] startup_dicts        1715.4 ms
-  [timing] frame_after:startup_dicts    271.3 ms
+  [timing] startup_dicts        1926.4 ms
+  [timing] frame_after:startup_dicts     54.8 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
   (none -- no UI-loop block over ~100 ms was detected)
@@ -141,28 +140,28 @@ navigation: OK -- the images below are 'comic-series-book-22'
 
 === app stderr (non-timing lines) ===
   
-  (process:11668): Gtk-WARNING **: 13:49:32.175: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:11925): Gtk-WARNING **: 14:12:07.860: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-dark — applying terracotta-dark for this run (not saved)
   kalam: KALAM_ROUTE=comic-series-book-22 — navigating
 
 === peak memory ===
-books=20 peak_rss_kb=273092 peak_rss_mb=266
+books=20 peak_rss_kb=174284 peak_rss_mb=170
 
 === shutting down ===
 
 === artifacts ===
   total 404
-  drwxr-xr-x  3 runner runner   4096 Nov 18 13:49 .
-  drwxr-xr-x 30 runner runner   4096 Nov 18 13:49 ..
-  -rw-r--r--  1 runner runner  84130 Nov 18 13:49 01-comic-series-book-22.png
-  -rw-r--r--  1 runner runner  84130 Nov 18 13:49 02-comic-series-book-22-settling.png
-  -rw-r--r--  1 runner runner  84130 Nov 18 13:49 03-comic-series-book-22-settled.png
-  -rw-r--r--  1 runner runner 108270 Nov 18 13:49 04-home-for-comparison.png
-  drwxr-xr-x  3 runner runner   4096 Nov 18 13:49 config-home
-  -rw-r--r--  1 runner runner      0 Nov 18 13:49 grim.log
-  -rw-r--r--  1 runner runner   4383 Nov 18 13:49 kalam-home.log
-  -rw-r--r--  1 runner runner   3701 Nov 18 13:49 kalam.log
-  -rw-r--r--  1 runner runner   6872 Nov 18 13:49 report.txt
-  -rw-r--r--  1 runner runner     88 Nov 18 13:49 sway.log
-  -rw-r--r--  1 runner runner   7185 Nov 18 13:49 tree.json
---- run 44315607771 ---
+  drwxr-xr-x  3 runner runner   4096 Nov 18 14:12 .
+  drwxr-xr-x 30 runner runner   4096 Nov 18 14:12 ..
+  -rw-r--r--  1 runner runner  84130 Nov 18 14:12 01-comic-series-book-22.png
+  -rw-r--r--  1 runner runner  84130 Nov 18 14:12 02-comic-series-book-22-settling.png
+  -rw-r--r--  1 runner runner  84130 Nov 18 14:12 03-comic-series-book-22-settled.png
+  -rw-r--r--  1 runner runner 108270 Nov 18 14:12 04-home-for-comparison.png
+  drwxr-xr-x  3 runner runner   4096 Nov 18 14:12 config-home
+  -rw-r--r--  1 runner runner      0 Nov 18 14:12 grim.log
+  -rw-r--r--  1 runner runner   4383 Nov 18 14:12 kalam-home.log
+  -rw-r--r--  1 runner runner   3668 Nov 18 14:12 kalam.log
+  -rw-r--r--  1 runner runner   6837 Nov 18 14:12 report.txt
+  -rw-r--r--  1 runner runner     88 Nov 18 14:12 sway.log
+  -rw-r--r--  1 runner runner   7185 Nov 18 14:12 tree.json
+--- run 44319403766 ---

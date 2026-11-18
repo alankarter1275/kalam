@@ -814,18 +814,12 @@ pub fn shelf_ruler(
         let s_geom = geom.clone();
         let s_fill = fill_card.clone();
         let s_show = show_at.clone();
-        area.connect_map(move |_| {
-            let s_state = s_state.clone();
-            let s_area = s_area.clone();
-            let s_geom = s_geom.clone();
-            let s_fill = s_fill.clone();
-            let s_show = s_show.clone();
-            gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
-                s_state.borrow_mut().selected = Some(3);
-                s_area.queue_draw();
-                open_later(&s_geom, &s_fill, &s_show, 3, 0);
-            });
+        let beat: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || {
+            s_state.borrow_mut().selected = Some(3);
+            s_area.queue_draw();
+            open_later(&s_geom, &s_fill, &s_show, 3, 0);
         });
+        when_mapped(&area, beat);
     }
 
     // CI's photograph of the hover card (B38): hold it open on one
@@ -840,20 +834,14 @@ pub fn shelf_ruler(
         let h_geom = geom.clone();
         let h_fill = fill_card.clone();
         let h_show = show_at.clone();
-        area.connect_map(move |_| {
-            // One beat after the first draw, so the bars exist and
-            // the map cascade is over before the popover opens.
-            let h_state = h_state.clone();
-            let h_area = h_area.clone();
-            let h_geom = h_geom.clone();
-            let h_fill = h_fill.clone();
-            let h_show = h_show.clone();
-            gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
-                h_state.borrow_mut().hover = Some(i);
-                h_area.queue_draw();
-                open_later(&h_geom, &h_fill, &h_show, i, 0);
-            });
+        // One beat after the first draw, so the bars exist and the
+        // map cascade is over before the popover opens.
+        let beat: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || {
+            h_state.borrow_mut().hover = Some(i);
+            h_area.queue_draw();
+            open_later(&h_geom, &h_fill, &h_show, i, 0);
         });
+        when_mapped(&area, beat);
     }
 
     root
@@ -873,6 +861,23 @@ fn stat_pair(host: &gtk::Box, name: &str) -> gtk::Label {
     col.append(&value);
     host.append(&col);
     value
+}
+
+/// Run a lever's opening beat once the area is mapped -- or at once
+/// if it already is: Loaded can land either side of the window's
+/// first map, and connect_map never fires for a widget that mapped
+/// before the connection (B39, the ringless kbd frame).
+fn when_mapped(area: &gtk::DrawingArea, beat: std::rc::Rc<dyn Fn()>) {
+    let run = move || {
+        gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+            beat();
+        });
+    };
+    if area.is_mapped() {
+        run();
+    } else {
+        area.connect_map(move |_| run());
+    }
 }
 
 /// Open a lever's card once the first draw has written bar geometry;

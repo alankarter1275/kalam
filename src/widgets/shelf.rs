@@ -89,9 +89,9 @@ fn today_day() -> i64 {
         .unwrap_or(0)
 }
 
-fn ymd(day: i64) -> (i32, u32, u32) {
+fn ymd(day: i64) -> (i32, i32, i32) {
     gtk::glib::DateTime::from_unix_utc(day * 86_400)
-        .map(|dt| (dt.year(), dt.month() as u32, dt.day_of_month() as u32))
+        .map(|dt| (dt.year(), dt.month() as i32, dt.day_of_month() as i32))
         .unwrap_or((1970, 1, 1))
 }
 
@@ -263,7 +263,7 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
             cr.stroke().ok();
             let layout =
                 widget.create_pango_layout(Some("Your first finished book stands here."));
-            set_font(layout, "Playfair Display", 18.0, false);
+            set_font(&layout, "Playfair Display", 18.0, false);
             let (w, _) = layout.size();
             cr.move_to(
                 ((width as f64 - f64::from(w) / gtk::pango::SCALE as f64) / 2.0).max(AXIS_X + 20.0),
@@ -289,7 +289,10 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
     let scroll_state = state.clone();
     let scroll_area = area.clone();
     let scroll_dates = dates.clone();
-    let scroll_label = readout_label();
+    // One label, two owners: the scroll closure takes a clone and the
+    // pill below keeps the original.
+    let readout_label = readout_label();
+    let scroll_label = readout_label.clone();
     let controller =
         gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
     controller.connect_scroll(move |ctrl, _dx, dy| {
@@ -329,7 +332,7 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
     readout.set_halign(gtk::Align::End);
     readout.set_valign(gtk::Align::Start);
     readout.set_visible(false);
-    readout.append(&scroll_label);
+    readout.append(&readout_label);
     overlay.add_overlay(&readout);
 
     root.append(&overlay);
@@ -419,7 +422,7 @@ fn draw_ticks(
                 cr.line_to(AXIS_X + 44.0, y);
                 cr.stroke().ok();
                 let layout = widget.create_pango_layout(Some(&year.to_string()));
-                set_font(layout, "Playfair Display", 12.0, true);
+                set_font(&layout, "Playfair Display", 12.0, true);
                 cr.move_to(AXIS_X + 56.0, y - 7.0);
                 cr.set_source_rgba(text.0, text.1, text.2, 1.0);
                 pangocairo::functions::update_layout(cr, &layout);
@@ -430,9 +433,9 @@ fn draw_ticks(
             let (yy0, mm0, _) = ymd(y0);
             let (yy1, mm1, _) = ymd(y1);
             let mut year = yy0;
-            let mut month = mm0 as i32;
-            while (year, month) <= (yy1, mm1 as i32) {
-                let day = day_number(year, month as u32, 1);
+            let mut month = mm0;
+            while (year, month) <= (yy1, mm1) {
+                let day = day_number(year, month, 1);
                 let y = map_date(anchors, day, pan);
                 if y > -20.0 && y < height as f64 + 20.0 {
                     cr.set_line_width(1.0);
@@ -442,7 +445,7 @@ fn draw_ticks(
                     cr.stroke().ok();
                     let name = MONTHS[(month - 1) as usize % 12];
                     let layout = widget.create_pango_layout(Some(name));
-                    set_font(layout, "DM Sans", 11.0, false);
+                    set_font(&layout, "DM Sans", 11.0, false);
                     cr.move_to(AXIS_X + 56.0, y - 6.0);
                     cr.set_source_rgba(dim.0, dim.1, dim.2, 1.0);
                     pangocairo::functions::update_layout(cr, &layout);
@@ -475,7 +478,7 @@ fn draw_ticks(
                         if weekday == 0 {
                             let layout =
                                 widget.create_pango_layout(Some(&dom.to_string()));
-                            set_font(layout, "DM Sans", 11.0, false);
+                            set_font(&layout, "DM Sans", 11.0, false);
                             cr.move_to(AXIS_X + 18.0, y - 6.0);
                             cr.set_source_rgba(dim.0, dim.1, dim.2, 0.8);
                             pangocairo::functions::update_layout(cr, &layout);
@@ -518,7 +521,7 @@ fn draw_bars(
         if zoom == Zoom::Weeks {
             // The title inside the bar at 11px, ellipsised to the bar.
             let layout = widget.create_pango_layout(Some(book.title));
-            set_font(layout, "DM Sans", 11.0, false);
+            set_font(&layout, "DM Sans", 11.0, false);
             layout.set_width(((len - 24.0).max(20.0) as i32) * gtk::pango::SCALE);
             layout.set_ellipsize(gtk::pango::EllipsizeMode::End);
             cr.move_to(AXIS_X + 14.0, top + thick / 2.0 - 6.0);
@@ -580,14 +583,14 @@ fn draw_today(
     cr.arc(AXIS_X, y, 5.0, 0.0, std::f64::consts::TAU);
     cr.stroke().ok();
     let layout = widget.create_pango_layout(Some("Today"));
-    set_font(layout, "DM Sans", 11.0, false);
+    set_font(&layout, "DM Sans", 11.0, false);
     cr.move_to(AXIS_X + 12.0, y - 6.0);
     cr.set_source_rgba(accent.0, accent.1, accent.2, 1.0);
     pangocairo::functions::update_layout(cr, &layout);
     pangocairo::functions::show_layout(cr, &layout);
 }
 
-fn set_font(layout: gtk::pango::Layout, family: &str, px: f64, bold: bool) {
+fn set_font(layout: &gtk::pango::Layout, family: &str, px: f64, bold: bool) {
     let desc = gtk::pango::FontDescription::from_string(&format!(
         "{family}{bold} {size}px",
         bold = if bold { " Bold" } else { "" },
@@ -597,7 +600,7 @@ fn set_font(layout: gtk::pango::Layout, family: &str, px: f64, bold: bool) {
 }
 
 /// Day number of a calendar date, for tick generation.
-fn day_number(year: i32, month: u32, day: u32) -> i64 {
+fn day_number(year: i32, month: i32, day: i32) -> i64 {
     gtk::glib::DateTime::from_utc(year, month, day, 0, 0, 0.0)
         .map(|dt| day_of(&dt))
         .unwrap_or(0)

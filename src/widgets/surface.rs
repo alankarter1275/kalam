@@ -136,17 +136,6 @@ pub fn state_card(heading: &str, message: &str) -> gtk::Box {
     state_card_shell(heading, message, None)
 }
 
-/// State card with the optional ghost action used by empty/error states.
-/// A state card whose wrapping labels are capped at `max_chars`, for columns
-/// narrow enough that the labels' natural width would otherwise stretch the
-/// column: a width request is a floor, and a wrapping label's natural width
-/// is its whole text on one line, so Home's 470 column (home-spec §1) came
-/// out 518 with the plain card. Columns wide enough to wrap at their
-/// allocation look the same either way, so they keep [`state_card`].
-pub fn state_card_narrow(heading: &str, message: &str, max_chars: i32) -> gtk::Box {
-    state_card_shell(heading, message, Some(max_chars))
-}
-
 pub fn state_card_with_action(
     heading: &str,
     message: &str,

@@ -27,11 +27,16 @@ pub enum Zoom {
 /// was finished, page count, cover colour, rating.
 #[derive(Debug, Clone)]
 pub struct ShelfBook {
+    // `author` and `rating` wait for R2's hover card (B38); the
+    // drawing itself needs neither, and clippy counts unread fields
+    // in a binary crate.
+    #[allow(dead_code)]
     pub title: &'static str,
     pub author: &'static str,
     pub days_ago: i64,
     pub pages: i32,
     pub colour: (f64, f64, f64),
+    #[allow(dead_code)]
     pub rating: f64,
 }
 
@@ -91,7 +96,7 @@ fn today_day() -> i64 {
 
 fn ymd(day: i64) -> (i32, i32, i32) {
     gtk::glib::DateTime::from_unix_utc(day * 86_400)
-        .map(|dt| (dt.year(), dt.month() as i32, dt.day_of_month() as i32))
+        .map(|dt| (dt.year(), dt.month(), dt.day_of_month()))
         .unwrap_or((1970, 1, 1))
 }
 
@@ -178,6 +183,26 @@ fn bar_metrics(zoom: Zoom, pages: i32) -> (f64, f64) {
     }
 }
 
+type Rgb = (f64, f64, f64);
+
+/// The resolved theme tokens a drawn widget paints with.
+struct Palette {
+    accent: Rgb,
+    dim: Rgb,
+    bg: Rgb,
+    text: Rgb,
+}
+
+/// Where the content stands right now: the elastic anchors, the pan,
+/// the zoom and the widget's height, passed together so the draw
+/// helpers stay under clippy's argument count.
+struct View<'a> {
+    anchors: &'a [(i64, f64)],
+    pan: f64,
+    zoom: Zoom,
+    height: i32,
+}
+
 struct ShelfState {
     zoom: Zoom,
     /// Downward shift of the content from its opened-at-bottom rest;
@@ -192,10 +217,12 @@ struct ShelfState {
 /// library draws the ruler's own empty face instead -- base line,
 /// Today ring and one Quote-style line (§64, decision 193).
 pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
-    let accent = hex(&theme.accent);
-    let dim = hex(&theme.text_dim);
-    let bg = hex(&theme.bg);
-    let text = hex(&theme.text);
+    let pal = Palette {
+        accent: hex(theme.accent),
+        dim: hex(theme.text_dim),
+        bg: hex(theme.bg),
+        text: hex(theme.text),
+    };
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
     let head = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -250,7 +277,7 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
 
         // The base line: the axis itself, 2px, dim at half strength.
         cr.set_line_width(2.0);
-        cr.set_source_rgba(dim.0, dim.1, dim.2, 0.5);
+        cr.set_source_rgba(pal.dim.0, pal.dim.1, pal.dim.2, 0.5);
         cr.move_to(AXIS_X, 0.0);
         cr.line_to(AXIS_X, height as f64);
         cr.stroke().ok();
@@ -258,7 +285,7 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
         if empty {
             let y = height as f64 - 18.0;
             cr.set_line_width(2.0);
-            cr.set_source_rgba(accent.0, accent.1, accent.2, 1.0);
+            cr.set_source_rgba(pal.accent.0, pal.accent.1, pal.accent.2, 1.0);
             cr.arc(AXIS_X, y, 5.0, 0.0, std::f64::consts::TAU);
             cr.stroke().ok();
             let layout =
@@ -269,18 +296,19 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
                 ((width as f64 - f64::from(w) / gtk::pango::SCALE as f64) / 2.0).max(AXIS_X + 20.0),
                 y - 40.0,
             );
-            cr.set_source_rgba(dim.0, dim.1, dim.2, 1.0);
+            cr.set_source_rgba(pal.dim.0, pal.dim.1, pal.dim.2, 1.0);
             pangocairo::functions::update_layout(cr, &layout);
             pangocairo::functions::show_layout(cr, &layout);
-            draw_fade(cr, width, &bg);
+            draw_fade(cr, width, &pal.bg);
             return;
         }
 
-        draw_ticks(cr, widget, &anchors, pan, st.zoom, height, &dim, &text);
-        draw_bars(cr, widget, &draw_books, &draw_dates, &anchors, pan, st.zoom, height);
-        draw_dots(cr, &draw_dates, &anchors, pan, st.zoom, &accent);
-        draw_today(cr, widget, &anchors, pan, height, &accent, &bg);
-        draw_fade(cr, width, &bg);
+        let view = View { anchors: &anchors, pan, zoom: st.zoom, height };
+        draw_ticks(cr, widget, &view, &pal);
+        draw_bars(cr, widget, &draw_books, &draw_dates, &view);
+        draw_dots(cr, &draw_dates, &view, &pal);
+        draw_today(cr, widget, &view, &pal);
+        draw_fade(cr, width, &pal.bg);
     });
 
     // Plain scroll travels through time; Ctrl+scroll changes the
@@ -395,13 +423,11 @@ fn draw_fade(cr: &gtk::cairo::Context, width: i32, bg: &(f64, f64, f64)) {
 fn draw_ticks(
     cr: &gtk::cairo::Context,
     widget: &gtk::Widget,
-    anchors: &[(i64, f64)],
-    pan: f64,
-    zoom: Zoom,
-    height: i32,
-    dim: &(f64, f64, f64),
-    text: &(f64, f64, f64),
+    view: &View<'_>,
+    pal: &Palette,
 ) {
+    let View { anchors, pan, zoom, height } = *view;
+    let (dim, text) = (pal.dim, pal.text);
     let (y0, y1) = match (anchors.first(), anchors.last()) {
         (Some(a), Some(b)) => (a.0.min(b.0), a.0.max(b.0)),
         _ => return,
@@ -497,11 +523,9 @@ fn draw_bars(
     widget: &gtk::Widget,
     books: &[ShelfBook],
     dates: &[i64],
-    anchors: &[(i64, f64)],
-    pan: f64,
-    zoom: Zoom,
-    height: i32,
+    view: &View<'_>,
 ) {
+    let View { anchors, pan, zoom, height } = *view;
     for (book, day) in books.iter().zip(dates.iter()) {
         let y = map_date(anchors, *day, pan);
         if y < -30.0 || y > height as f64 + 30.0 {
@@ -547,11 +571,11 @@ fn rounded_bar(cr: &gtk::cairo::Context, x: f64, y: f64, w: f64, h: f64) {
 fn draw_dots(
     cr: &gtk::cairo::Context,
     dates: &[i64],
-    anchors: &[(i64, f64)],
-    pan: f64,
-    zoom: Zoom,
-    accent: &(f64, f64, f64),
+    view: &View<'_>,
+    pal: &Palette,
 ) {
+    let View { anchors, pan, zoom, .. } = *view;
+    let accent = pal.accent;
     let r = if zoom == Zoom::Years { 2.0 } else { 3.5 };
     for day in dates {
         let y = map_date(anchors, *day, pan);
@@ -564,12 +588,11 @@ fn draw_dots(
 fn draw_today(
     cr: &gtk::cairo::Context,
     widget: &gtk::Widget,
-    anchors: &[(i64, f64)],
-    pan: f64,
-    height: i32,
-    accent: &(f64, f64, f64),
-    bg: &(f64, f64, f64),
+    view: &View<'_>,
+    pal: &Palette,
 ) {
+    let View { anchors, pan, height, .. } = *view;
+    let (accent, bg) = (pal.accent, pal.bg);
     let today = today_day();
     let y = map_date(anchors, today, pan);
     if y < -20.0 || y > height as f64 + 20.0 {

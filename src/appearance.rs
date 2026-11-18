@@ -376,6 +376,51 @@ fn apply_motion(motion: ReduceMotion) {
             settings.set_gtk_enable_animations(with_state(|s| s.system_animations))
         }
     }
+    sync_motion_provider();
+}
+
+/// GTK's animation switch reaches GTK's own animated widgets -- the
+/// revealers, the pulses -- but not CSS transitions, which is what
+/// most of the app's gentle fades and slides are. Reduce motion
+/// therefore also installs a stylesheet of its own, one rule deep,
+/// that switches every transition and animation off; lifting the
+/// setting removes it again. Installed for the display, so windows
+/// that open later inherit it (B37).
+fn sync_motion_provider() {
+    let Some(display) = gtk::gdk::Display::default() else {
+        return;
+    };
+    let kill = gtk::Settings::default()
+        .map(|settings| !settings.is_gtk_enable_animations())
+        .unwrap_or(false);
+    MOTION_PROVIDER.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        match (kill, slot.is_some()) {
+            (true, false) => {
+                let provider = gtk::CssProvider::new();
+                provider.load_from_string("* { transition: none; animation: none; }");
+                gtk::style_context_add_provider_for_display(
+                    &display,
+                    &provider,
+                    gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 2,
+                );
+                *slot = Some(provider);
+            }
+            (false, true) => {
+                if let Some(provider) = slot.take() {
+                    gtk::style_context_remove_provider_for_display(&display, &provider);
+                }
+            }
+            _ => {}
+        }
+    });
+}
+
+thread_local! {
+    /// The reduce-motion stylesheet, while it is installed. GTK is
+    /// main-thread only, and so is this.
+    static MOTION_PROVIDER: std::cell::RefCell<Option<gtk::CssProvider>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// Whether transitions should be gentled right now — consulted by new

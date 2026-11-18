@@ -779,6 +779,29 @@ button.kalam-author-link-reader:hover {
     min-height: 40px;
 }
 
+/* home-spec §7 and design system §12: wherever the keyboard lands,
+   a 2px accent ring stands 2px clear of it. The shared control
+   family above already draws exactly this for pills, icon buttons,
+   chips and segments; this catches the buttons that carry only a
+   page class -- Home's play disc, pager dots, cover page, option
+   picker -- and any bare button elsewhere. The search entry is
+   deliberately absent: its focus face is §57's accent underline and
+   dropped box, not a ring (B27). */
+button:focus-visible,
+menubutton:focus-visible,
+switch:focus-visible {
+    outline-color: @kalam_accent;
+    outline-style: solid;
+    outline-width: 2px;
+    outline-offset: 2px;
+}
+
+/* §12: a primary face hovers under a 10% white veil rather than
+   changing colour outright. */
+button.kalam-home-play:hover {
+    background-image: linear-gradient(alpha(white, 0.10), alpha(white, 0.10));
+}
+
 /* §60's pager: 8px circles at 45% of text-2; the current one an 8×22
    accent pill. */
 .kalam-home-pager-dot {

@@ -746,6 +746,13 @@ impl Component for HomePageModel {
                     widgets,
                     self.library_empty || self.forced_state.as_deref() == Some("empty"),
                 );
+                // CI's photograph of a focus ring (B37): hand the
+                // keyboard to the first button on the card, the way a
+                // Tab walk would. A normal launch never sets this.
+                if std::env::var_os("KALAM_HOME_FOCUS").is_some() {
+                    let host = widgets.card_host.clone();
+                    focus_first_button(&host.upcast::<gtk::Widget>());
+                }
                 paint_right(
                     widgets,
                     &self.cards,
@@ -893,6 +900,23 @@ impl Component for HomePageModel {
         // about, in case a watch is added later.
         self.update_view(widgets, sender);
     }
+}
+
+/// Walk depth-first to the first button and give it the keyboard, so
+/// a CI frame can show the focus ring §7 asks for (B37).
+fn focus_first_button(widget: &gtk::Widget) -> bool {
+    if widget.downcast_ref::<gtk::Button>().is_some() {
+        widget.grab_focus();
+        return true;
+    }
+    let mut child = widget.first_child();
+    while let Some(next) = child {
+        if focus_first_button(&next) {
+            return true;
+        }
+        child = next.next_sibling();
+    }
+    false
 }
 
 /// The shelf and Updates once the first snapshot lands: the dashed

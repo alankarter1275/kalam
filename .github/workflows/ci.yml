@@ -1173,6 +1173,15 @@ jobs:
           BOOKS=20 OUT=ci-shots-home-none-light SETTLE=20 ROUTE=home \
             THEME=terracotta-light OUTPUT_W=1280 OUTPUT_H=800 \
             KALAM_HOME_STATE=none docs/ci/screenshot.sh
+      # A focus ring to photograph: the empty face's first pill takes
+      # the keyboard through KALAM_HOME_FOCUS, the way a Tab walk
+      # would put it there (B37).
+      - name: open home with a focused pill (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-home-focus-light SETTLE=20 ROUTE=home \
+            THEME=terracotta-light OUTPUT_W=1280 OUTPUT_H=800 \
+            KALAM_HOME_STATE=empty KALAM_HOME_FOCUS=1 docs/ci/screenshot.sh
       - name: open home whole (light) and report
         if: matrix.group == 'pages'
         run: |
@@ -2533,6 +2542,8 @@ jobs:
             "$CILOG_DIR/home-error-terracotta-light.png" 2>/dev/null || true
           cp ci-shots-home-none-light/03-home-settled.png \
             "$CILOG_DIR/home-none-terracotta-light.png" 2>/dev/null || true
+          cp ci-shots-home-focus-light/03-home-settled.png \
+            "$CILOG_DIR/home-focus-terracotta-light.png" 2>/dev/null || true
           # And the keystroke probe's frame of Home after Ctrl+f: the same box
           # open, but opened by a real chord through a real compositor rather
           # than by a launch variable, which is the difference between a

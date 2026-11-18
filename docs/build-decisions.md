@@ -1118,6 +1118,44 @@ home-empty, home-loading, home-error, home-none, all terracotta
 light -- publish beside the existing Home frames so every face can
 be seen without emptying a real library.
 
+## B37. The focus ring everywhere, and reduced motion that reaches CSS
+
+The polish stage the owner chose after the state cards (2026-10-29):
+home-spec §7's "keyboard focus rings everywhere (2px accent, 2px
+offset)" and "Reduce motion turns slides and fades off".
+
+The ring: the shared control family (pills, icon buttons, chips,
+segments) already drew exactly §12's ring on :focus, and the search
+entry deliberately draws §57's underline instead (B27). What had no
+ring was every button that carries only a page class -- Home's play
+disc, pager dots, cover page, option picker -- so one generic rule
+catches bare buttons, menubuttons and switches at :focus-visible,
+2px accent at 2px offset; the family rules stay more specific and
+keep their own wording, and the entry stays out of the selector.
+§12's primary hover (a 10% white veil over the accent fill) lands on
+the play disc; the picker's border-fill hover and the family hovers
+already existed. Disabled faces are the family's 40% opacity; Home
+has no disabled controls, so nothing else was touched. A guardrail
+test now fails if the generic ring rule or its offset disappears.
+
+Reduced motion: the Settings pane already writes GTK's
+gtk-enable-animations (appearance.rs, ReduceMotion On/Off/System),
+and GTK's own animated widgets honour it -- but CSS transitions do
+not, and most of the app's gentle fades are CSS. apply_motion now
+also installs, for the display, a one-rule stylesheet -- `* {
+transition: none; animation: none; }` at APPLICATION+2 -- whenever
+animations are off, and removes it when they return; windows opened
+later inherit it. One deviation on the record: the System variant
+pins the OS value captured at startup, so flipping the desktop
+setting mid-session waits for the next setting touch, as it has
+since the setting was built.
+
+A launch lever pair -- KALAM_HOME_STATE=empty with KALAM_HOME_FOCUS=1
+-- hands the keyboard to the empty face's first pill the way a Tab
+walk would, and the frame publishes as
+home-focus-terracotta-light.png, so the ring is photographed rather
+than asserted.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

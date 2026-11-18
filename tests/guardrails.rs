@@ -251,6 +251,23 @@ fn stylesheet_declares_no_property_gtk_rejects() {
 }
 
 #[test]
+fn bare_buttons_carry_the_drawn_focus_ring() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/style.css");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("could not read {}: {e}", path.display()));
+    // home-spec §7 and design system §12: a 2px accent ring at 2px
+    // offset, for the buttons that carry only a page class (B37).
+    assert!(
+        text.contains("button:focus-visible"),
+        "the generic focus ring rule is gone; bare buttons lose their ring"
+    );
+    assert!(
+        text.contains("outline-offset: 2px"),
+        "the ring's 2px offset is gone; §12 draws it standing clear"
+    );
+}
+
+#[test]
 fn settled_screenshots_are_not_black() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("ci-logs");
     let mut frames: Vec<(String, f64, String)> = Vec::new();

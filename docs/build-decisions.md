@@ -1129,7 +1129,9 @@ segments) already drew exactly §12's ring on :focus, and the search
 entry deliberately draws §57's underline instead (B27). What had no
 ring was every button that carries only a page class -- Home's play
 disc, pager dots, cover page, option picker -- so one generic rule
-catches bare buttons, menubuttons and switches at :focus-visible,
+catches bare buttons, menubuttons and switches at plain :focus --
+not :focus-visible, which stayed dark under a programmatic focus in
+the first CI frame, and which the shared family never used either --
 2px accent at 2px offset; the family rules stay more specific and
 keep their own wording, and the entry stays out of the selector.
 §12's primary hover (a 10% white veil over the accent fill) lands on

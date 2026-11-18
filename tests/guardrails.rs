@@ -258,7 +258,7 @@ fn bare_buttons_carry_the_drawn_focus_ring() {
     // home-spec §7 and design system §12: a 2px accent ring at 2px
     // offset, for the buttons that carry only a page class (B37).
     assert!(
-        text.contains("button:focus-visible"),
+        text.contains("button:focus,"),
         "the generic focus ring rule is gone; bare buttons lose their ring"
     );
     assert!(

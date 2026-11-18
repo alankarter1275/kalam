@@ -1,8 +1,23 @@
+diff --git a/src/app.rs b/src/app.rs
+index 68ea3a7..d7a4c3f 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -452,9 +452,7 @@ impl AppModel {
+                         // instead of resetting the fraction inside it.
+                         HomeOut::Read { book_id } => AppMsg::OpenReader { book_id },
+                         // The nothing-in-progress face's pill (§64).
+-                        HomeOut::OpenLibrary => {
+-                            AppMsg::Push(Route::Module(NavItem::Library))
+-                        }
++                        HomeOut::OpenLibrary => AppMsg::Push(Route::Module(NavItem::Library)),
+                     },
+                 );
+                 PageSlot::Home(ctrl)
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index 1dc69bb..cddfd0e 100644
+index 856b1c2..a999645 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
-@@ -104,7 +104,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
+@@ -112,7 +112,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
          "2d",
          false,
      ),
@@ -16,7 +31,7 @@ index 1dc69bb..cddfd0e 100644
      (
          "The Left Hand of Darkness",
          "Cover updated at the source",
-@@ -118,7 +123,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
+@@ -126,7 +131,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
          false,
      ),
      ("Dune", "Synopsis updated at the source", "6d", false),
@@ -30,7 +45,7 @@ index 1dc69bb..cddfd0e 100644
      (
          "The Farthest Shore",
          "The source saved a new chapter",
-@@ -437,7 +447,6 @@ impl Component for HomePageModel {
+@@ -456,7 +466,6 @@ impl Component for HomePageModel {
          };
          let widgets = view_output!();
  
@@ -38,21 +53,21 @@ index 1dc69bb..cddfd0e 100644
          // §57's bar and box and §62's timeline (B21): all three come from
          // widget modules and go into the hosts the view reserves for them, the
          // way the shelf and the book card do. The bar and the box are wired to
-@@ -878,7 +887,12 @@ fn paint_right(
+@@ -947,7 +956,12 @@ fn paint_right(
+     };
+ 
+     let Some(face) = face else {
+-        host.append(&build_book_card(&cards[current], current, cards.len(), sender));
++        host.append(&build_book_card(
++            &cards[current],
++            current,
++            cards.len(),
++            sender,
++        ));
+         host.append(&build_pager(cards, current, sender));
          return;
-     }
- 
--    host.append(&build_book_card(&cards[current], current, cards.len(), sender));
-+    host.append(&build_book_card(
-+        &cards[current],
-+        current,
-+        cards.len(),
-+        sender,
-+    ));
-     host.append(&build_pager(cards, current, sender));
- }
- 
-@@ -911,12 +925,14 @@ fn arm_quiet(
+     };
+@@ -1045,12 +1059,14 @@ fn arm_quiet(
      // The closure moves what it captures, so it gets clones of its own
      // and the originals stay here to store the source id.
      let quiet_cb = quiet.clone();
@@ -90,4 +105,4 @@ index 5e523a3..180295a 100644
      // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
---- run 44112657687 ---
+--- run 44210430821 ---

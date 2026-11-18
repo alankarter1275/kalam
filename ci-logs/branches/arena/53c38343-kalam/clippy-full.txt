@@ -34,24 +34,17 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/kalam/kalam)
-src/widgets/shelf.rs:273:16: [1m[91merror[E0599][0m: no method named `update_layout` found for reference `&gtk4::cairo::Context` in the current scope: method not found in `&gtk4::cairo::Context`
-src/widgets/shelf.rs:274:16: [1m[91merror[E0599][0m: no method named `show_layout` found for reference `&gtk4::cairo::Context` in the current scope: method not found in `&gtk4::cairo::Context`
-src/widgets/shelf.rs:367:7: [1m[91merror[E0599][0m: the method `lookup_color` exists for reference `&gtk4::Widget`, but its trait bounds were not satisfied: method cannot be called on `&gtk4::Widget` due to unsatisfied trait bounds
-src/widgets/shelf.rs:417:20: [1m[91merror[E0599][0m: no method named `update_layout` found for reference `&gtk4::cairo::Context` in the current scope: method not found in `&gtk4::cairo::Context`
-src/widgets/shelf.rs:418:20: [1m[91merror[E0599][0m: no method named `show_layout` found for reference `&gtk4::cairo::Context` in the current scope: method not found in `&gtk4::cairo::Context`
-src/widgets/shelf.rs:440:24: [1m[91merror[E0599][0m: no method named `update_layout` found for reference `&gtk4::cairo::Context` in the current scope: method not found in `&gtk4::cairo::Context`
-src/widgets/shelf.rs:441:24: [1m[91merror[E0599][0m: no method named `show_layout` found for reference `&gtk4::cairo::Context` in the current scope: method not found in `&gtk4::cairo::Context`
-src/widgets/shelf.rs:473:32: [1m[91merror[E0599][0m: no method named `update_layout` found for reference `&gtk4::cairo::Context` in the current scope: method not found in `&gtk4::cairo::Context`
-src/widgets/shelf.rs:474:32: [1m[91merror[E0599][0m: no method named `show_layout` found for reference `&gtk4::cairo::Context` in the current scope: method not found in `&gtk4::cairo::Context`
-src/widgets/shelf.rs:518:16: [1m[91merror[E0599][0m: no method named `update_layout` found for reference `&gtk4::cairo::Context` in the current scope: method not found in `&gtk4::cairo::Context`
-src/widgets/shelf.rs:519:16: [1m[91merror[E0599][0m: no method named `show_layout` found for reference `&gtk4::cairo::Context` in the current scope: method not found in `&gtk4::cairo::Context`
-src/widgets/shelf.rs:526:17: [1m[91merror[E0689][0m: can't call method `min` on ambiguous numeric type `{float}`
-src/widgets/shelf.rs:578:8: [1m[91merror[E0599][0m: no method named `update_layout` found for reference `&gtk4::cairo::Context` in the current scope: method not found in `&gtk4::cairo::Context`
-src/widgets/shelf.rs:579:8: [1m[91merror[E0599][0m: no method named `show_layout` found for reference `&gtk4::cairo::Context` in the current scope: method not found in `&gtk4::cairo::Context`
-src/widgets/shelf.rs:593:26: [1m[91merror[E0599][0m: no associated function or constant named `from_ymd` found for struct `glib::DateTime` in the current scope: associated function or constant not found in `glib::DateTime`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 15 previous errors
+src/widgets/shelf.rs:601:5: [1m[91merror[E0308][0m: arguments to this function are incorrect
+src/widgets/shelf.rs:267:26: [1m[91merror[E0382][0m: borrow of moved value: `layout`: value borrowed here after move
+src/widgets/shelf.rs:332:20: [1m[91merror[E0382][0m: borrow of moved value: `scroll_label`: value borrowed here after move
+src/widgets/shelf.rs:425:58: [1m[91merror[E0382][0m: borrow of moved value: `layout`: value borrowed here after move
+src/widgets/shelf.rs:448:62: [1m[91merror[E0382][0m: borrow of moved value: `layout`: value borrowed here after move
+src/widgets/shelf.rs:481:70: [1m[91merror[E0382][0m: borrow of moved value: `layout`: value borrowed here after move
+src/widgets/shelf.rs:522:13: [1m[91merror[E0382][0m: borrow of moved value: `layout`: value borrowed here after move
+src/widgets/shelf.rs:586:46: [1m[91merror[E0382][0m: borrow of moved value: `layout`: value borrowed here after move
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 8 previous errors
 [1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 15 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 8 previous errors
 [1m[33mwarning[0m[1m: unused dependency `url`[0m
   [1m[94m--> [0mcrates/chapbook-epub/Cargo.toml:13:1
    [1m[94m|[0m

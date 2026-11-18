@@ -14,7 +14,7 @@ index 68ea3a7..d7a4c3f 100644
                  );
                  PageSlot::Home(ctrl)
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index 22d7b09..b5d7363 100644
+index bd7612e..6f42593 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
 @@ -112,7 +112,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
@@ -45,7 +45,15 @@ index 22d7b09..b5d7363 100644
      (
          "The Farthest Shore",
          "The source saved a new chapter",
-@@ -456,7 +466,6 @@ impl Component for HomePageModel {
+@@ -294,7 +304,6 @@ impl HomePageModel {
+             }
+         }
+     }
+-
+ }
+ 
+ #[relm4::component(pub)]
+@@ -488,7 +497,6 @@ impl Component for HomePageModel {
          };
          let widgets = view_output!();
  
@@ -53,7 +61,7 @@ index 22d7b09..b5d7363 100644
          // §57's bar and box and §62's timeline (B21): all three come from
          // widget modules and go into the hosts the view reserves for them, the
          // way the shelf and the book card do. The bar and the box are wired to
-@@ -948,7 +957,12 @@ fn paint_right(
+@@ -951,7 +959,12 @@ fn paint_right(
      }
  
      let Some(face) = face else {
@@ -67,7 +75,7 @@ index 22d7b09..b5d7363 100644
          host.append(&build_pager(cards, current, sender));
          return;
      };
-@@ -1048,12 +1062,14 @@ fn arm_quiet(
+@@ -1051,12 +1064,14 @@ fn arm_quiet(
      // The closure moves what it captures, so it gets clones of its own
      // and the originals stay here to store the source id.
      let quiet_cb = quiet.clone();
@@ -105,4 +113,4 @@ index 5e523a3..180295a 100644
      // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
---- run 44213025057 ---
+--- run 44213348241 ---

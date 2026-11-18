@@ -451,6 +451,10 @@ impl AppModel {
                         // chapter override, which resumes the saved position
                         // instead of resetting the fraction inside it.
                         HomeOut::Read { book_id } => AppMsg::OpenReader { book_id },
+                        // The nothing-in-progress face's pill (§64).
+                        HomeOut::OpenLibrary => {
+                            AppMsg::Push(Route::Module(NavItem::Library))
+                        }
                     },
                 );
                 PageSlot::Home(ctrl)

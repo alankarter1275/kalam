@@ -49,6 +49,14 @@ use std::sync::Arc;
 const COVER_W: i32 = 225;
 const COVER_H: i32 = 360;
 /// The card: its two equal pages side by side (§60, B21).
+/// §64's state cards: the column-wide face and the narrower
+/// "Nothing in progress" face, both 360 high -- the book card's
+/// height, since every face stands in the book's place or the
+/// column's.
+const STATE_W: i32 = 600;
+const STATE_W_NONE: i32 = 560;
+const STATE_H: i32 = 360;
+
 /// The reading page: wider than the cover by the owner's ruling
 /// (2026-10-29, B35) -- "keep the cover side fixed, but make the
 /// details side wider" -- where §474 and B21 had two equal pages.
@@ -200,6 +208,8 @@ pub enum HomeOut {
     /// fraction inside the chapter, and resuming must not move the position
     /// the card was just showing. `None` opens at the stored spot.
     Read { book_id: i64 },
+    /// The nothing-in-progress face's pill (§64): walk to the Library.
+    OpenLibrary,
 }
 
 #[derive(Debug)]
@@ -244,6 +254,8 @@ struct CardData {
 pub struct HomePageModel {
     service: LibraryService,
     importing: bool,
+    forced_state: Option<String>,
+    load_failed: bool,
     /// Which pager card the book card shows (§60).
     current: usize,
     /// Kept so a pager click repaints without another worker run.
@@ -424,6 +436,13 @@ impl Component for HomePageModel {
         let model = HomePageModel {
             service: LibraryService::new(catalog),
             importing: false,
+            // The CI photograph lever for §64's four faces: open Home
+            // in one state however full the library is, the way
+            // KALAM_HOME_BOOK opens a chosen book (B36). A normal
+            // launch has no such variable and the real conditions
+            // decide.
+            forced_state: std::env::var("KALAM_HOME_STATE").ok(),
+            load_failed: false,
             // A launch lever for the CI photographs and nothing else,
             // like KALAM_HOME_SEARCH: open the card at its third book so
             // a frame can prove the card is one size for every book
@@ -515,8 +534,14 @@ impl Component for HomePageModel {
                 crate::timing::note("home_focus:resting", 1);
             }
         });
-        let updates_block = updates::updates(&showcase_updates(), SHOWCASE_CHECKED);
-        widgets.updates_host.append(&updates_block);
+        // §64's loading face: skeletons for the book, the shelf and
+        // Updates, in `border` fill with 6px rounds. The first snapshot
+        // replaces all three; the KALAM_HOME_STATE=loading lever never
+        // asks, so a photograph can hold this face (B36).
+        let updates_skeleton = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        updates_skeleton.add_css_class("kalam-skeleton");
+        updates_skeleton.set_size_request(-1, 224);
+        widgets.updates_host.append(&updates_skeleton);
 
         // home-spec §7's keys, on B22's ruling: Home's field wins Ctrl+F while
         // Home is showing, and the shell's binding keeps its job everywhere
@@ -640,22 +665,20 @@ impl Component for HomePageModel {
         // Stage-1 placeholders (B12): the shelf area says what is coming,
         // and the card host shows the dashed block the snapshot replaces a
         // moment later.
-        let shelf_card = surface::state_card_narrow(
-            "Your shelf",
-            "Weeks, months and years of your reading, drawn as lines on a \
-             ruler — that arrives with a later stage of this build.",
-            46,
-        );
-        shelf_card.set_valign(gtk::Align::Center);
-        shelf_card.set_vexpand(true);
-        widgets.shelf_host.append(&shelf_card);
+        let shelf_skeleton = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        shelf_skeleton.add_css_class("kalam-skeleton");
+        shelf_skeleton.set_size_request(-1, 200);
+        shelf_skeleton.set_vexpand(true);
+        widgets.shelf_host.append(&shelf_skeleton);
 
         let skeleton = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        skeleton.add_css_class("kalam-placeholder");
+        skeleton.add_css_class("kalam-skeleton");
         skeleton.set_size_request(CARD_W, COVER_H);
         widgets.card_host.append(&skeleton);
 
-        request_snapshot(&model.service, &sender);
+        if model.forced_state.as_deref() != Some("loading") {
+            request_snapshot(&model.service, &sender);
+        }
 
         ComponentParts { model, widgets }
     }
@@ -680,17 +703,25 @@ impl Component for HomePageModel {
                 }
                 self.cards = payload.cards;
                 self.library_empty = payload.snap.stats.total_books == 0;
+                self.load_failed = !payload.snap.errors.is_empty();
                 if self.current >= self.cards.len() {
                     self.current = 0;
                 }
                 // Here and not in the worker that read them — see
                 // `warm_pager_covers`.
                 warm_pager_covers(&self.cards, self.current);
+                paint_below(
+                    widgets,
+                    self.library_empty || self.forced_state.as_deref() == Some("empty"),
+                );
                 paint_right(
                     widgets,
                     &self.cards,
                     self.current,
                     self.library_empty,
+                    self.load_failed,
+                    self.forced_state.as_deref(),
+                    &self.service,
                     &sender,
                 );
             }
@@ -702,6 +733,9 @@ impl Component for HomePageModel {
                         &self.cards,
                         self.current,
                         self.library_empty,
+                        self.load_failed,
+                        self.forced_state.as_deref(),
+                        &self.service,
                         &sender,
                     );
                 }
@@ -833,13 +867,48 @@ impl Component for HomePageModel {
     }
 }
 
-/// The right column's card: the book card with its pager (§60), or the
-/// state card (§64) that covers it until there is something to show.
+/// The shelf and Updates once the first snapshot lands: the dashed
+/// stand-in for the ruler (§61 waits on the owner's board picture,
+/// B12) and the Updates block (§62), replacing the loading skeletons.
+/// The empty library hides Updates, as decision 194 draws it.
+fn paint_below(widgets: &HomePageModelWidgets, library_empty: bool) {
+    let shelf = &widgets.shelf_host;
+    while let Some(child) = shelf.first_child() {
+        shelf.remove(&child);
+    }
+    let shelf_card = surface::state_card_narrow(
+        "Your shelf",
+        "Weeks, months and years of your reading, drawn as lines on a \
+         ruler — that arrives with a later stage of this build.",
+        46,
+    );
+    shelf_card.set_valign(gtk::Align::Center);
+    shelf_card.set_vexpand(true);
+    shelf.append(&shelf_card);
+
+    let host = &widgets.updates_host;
+    host.set_visible(!library_empty);
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+    if !library_empty {
+        host.append(&updates::updates(&showcase_updates(), SHOWCASE_CHECKED));
+    }
+}
+
+/// The right column's card: the book card with its pager (§60), or one
+/// of §64's four state faces -- empty library, error, nothing in
+/// progress, and the loading skeletons that init puts up and this
+/// leaves alone only while the KALAM_HOME_STATE lever holds the page
+/// before its first snapshot (B36).
 fn paint_right(
     widgets: &HomePageModelWidgets,
     cards: &[CardData],
     current: usize,
     library_empty: bool,
+    load_failed: bool,
+    forced: Option<&str>,
+    service: &LibraryService,
     sender: &ComponentSender<HomePageModel>,
 ) {
     let host = &widgets.card_host;
@@ -847,39 +916,104 @@ fn paint_right(
         host.remove(&child);
     }
 
-    if cards.is_empty() {
-        let card = if library_empty {
-            let s = sender.clone();
-            surface::state_card_with_action(
-                "Your library is empty",
-                "Add the books you are reading; the last one you opened will \
-                 wait for you here.",
-                "Add books",
-                move || {
-                    s.input(HomeMsg::AddBooks);
-                },
-            )
-        } else {
-            // §64's drawn empty-shelf variant stands on the ruler's
-            // baseline, which is stage 2; the dashed card covers the gap
-            // until then (B12).
-            surface::state_card(
-                "Nothing in progress",
-                "Open any book and it will wait for you here.",
-            )
-        };
-        // §64 sizes the two against different things: the empty-library card
-        // spans the column, and "Nothing in progress" stands where the book
-        // would, so it takes the book's footprint (B21).
-        let width = if library_empty { 600 } else { CARD_W };
-        card.set_size_request(width, COVER_H);
-        card.set_valign(gtk::Align::Center);
-        host.append(&card);
+    if forced == Some("loading") {
+        let skeleton = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        skeleton.add_css_class("kalam-skeleton");
+        skeleton.set_size_request(CARD_W, COVER_H);
+        host.append(&skeleton);
         return;
     }
 
-    host.append(&build_book_card(&cards[current], current, cards.len(), sender));
-    host.append(&build_pager(cards, current, sender));
+    // The lever can hold a face over a library that contradicts it, so
+    // a photograph shows the face; without it the real conditions
+    // decide, in the order the states exclude each other: a failed
+    // read with nothing to show, then no books at all, then books but
+    // none open.
+    let face = match forced {
+        Some("empty") => Some("empty"),
+        Some("none") => Some("none"),
+        Some("error") => Some("error"),
+        _ => {
+            if !cards.is_empty() {
+                None
+            } else if load_failed {
+                Some("error")
+            } else if library_empty {
+                Some("empty")
+            } else {
+                Some("none")
+            }
+        }
+    };
+
+    let Some(face) = face else {
+        host.append(&build_book_card(&cards[current], current, cards.len(), sender));
+        host.append(&build_pager(cards, current, sender));
+        return;
+    };
+
+    let card = match face {
+        "empty" => {
+            let add = sender.clone();
+            let choose = sender.clone();
+            let card = surface::home_state_card(
+                STATE_W,
+                STATE_H,
+                "Your library is empty",
+                "Add the books you are reading; the last one you opened \
+                 will wait for you here.",
+                vec![
+                    (
+                        "Add books",
+                        crate::widgets::pill_button::PillButtonKind::Primary,
+                        Box::new(move || add.input(HomeMsg::AddBooks)) as Box<dyn Fn()>,
+                    ),
+                    (
+                        "Choose a folder",
+                        crate::widgets::pill_button::PillButtonKind::Ghost,
+                        Box::new(move || choose.input(HomeMsg::AddBooks)),
+                    ),
+                ],
+            );
+            card.set_halign(gtk::Align::Fill);
+            card
+        }
+        "error" => {
+            let retry_service = LibraryService::new(service.catalog().clone());
+            let retry_sender = sender.clone();
+            let card = surface::home_state_card(
+                STATE_W,
+                STATE_H,
+                "Home could not load.",
+                "Your books are not changed.",
+                vec![(
+                    "Retry",
+                    crate::widgets::pill_button::PillButtonKind::Ghost,
+                    Box::new(move || request_snapshot(&retry_service, &retry_sender))
+                        as Box<dyn Fn()>,
+                )],
+            );
+            card.set_halign(gtk::Align::Fill);
+            card
+        }
+        _ => {
+            let open = sender.clone();
+            let card = surface::home_state_card(
+                STATE_W_NONE,
+                STATE_H,
+                "Nothing in progress",
+                "Open any book and it will wait for you here.",
+                vec![(
+                    "Open My Library",
+                    crate::widgets::pill_button::PillButtonKind::Ghost,
+                    Box::new(move || open.output(HomeOut::OpenLibrary).ok()) as Box<dyn Fn()>,
+                )],
+            );
+            card.set_halign(gtk::Align::Center);
+            card
+        }
+    };
+    host.append(&card);
 }
 
 /// One card from §60: cover page left, reading page right, ribbon and play
@@ -1346,6 +1480,16 @@ mod tests {
         assert_eq!(CARD_W, COVER_W + PAGE_W, "cover page plus reading page");
         assert_eq!((CARD_W, COVER_H), (485, 360), "the card B35 rules");
         assert_eq!(COVER_W, 225, "the cover side stays fixed");
+    }
+
+    /// §64 sizes the state faces against the column and the book: the
+    /// empty and error cards span the 600 column, "Nothing in
+    /// progress" stands a little narrower where the book would, and
+    /// all three are exactly the book card's height (B36).
+    #[test]
+    fn state_cards_hold_section_64_sizes() {
+        assert_eq!((STATE_W, STATE_H), (600, 360), "the column-wide faces");
+        assert_eq!((STATE_W_NONE, STATE_H), (560, 360), "nothing in progress");
     }
 
     /// The greeting's second line is a name, not a date: decision 186 draws

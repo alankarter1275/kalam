@@ -1086,6 +1086,38 @@ Two from the owner's photograph of the fixed card (2026-10-29):
   design docs are read-only; the slot of B34 moves with the page, so
   the wider card is as fixed as the narrow one was.
 
+## B36. Home's four state faces
+
+§64 and decision 194 drawn and wired (2026-10-29, the owner's "go"):
+the empty library, the loading skeletons, the failed read and the
+nothing-in-progress face, each a dashed card at §64's sizes -- 600 x
+360 for the column-wide faces, 560 x 360 for "Nothing in progress",
+which stands a little narrower where the book would -- with the
+Section's 18 for the title, the meta line under it, and forty-high
+pills: Add books (primary) and Choose a folder on the empty face,
+both opening the import chooser that already exists; Retry on the
+error face, re-running the snapshot; Open My Library on the
+nothing-in-progress face, walking to the Library page through a new
+HomeOut. Loading is three skeletons in the border token with 6px
+rounds -- book, shelf, Updates -- standing until the first snapshot
+replaces them. The empty face hides Updates, as 194 draws it.
+
+Two deviations, both carried from earlier rulings: the empty-shelf
+face of §64 (the ruler's base line with the Today ring and a quote
+line) lives inside the shelf ruler, which waits on the owner's board
+picture, so the dashed "Your shelf" card still stands in for it in
+every state; and 194 hides Updates in the nothing-in-progress face
+only "when there are no saved sources" -- no source store exists and
+the ten rows are the owner's approved showcase content, so Updates
+stays visible there.
+
+A launch lever, KALAM_HOME_STATE=empty|loading|error|none, holds a
+face open however full the library is, in the same family as
+KALAM_HOME_BOOK and KALAM_HOME_SEARCH, and four new CI frames --
+home-empty, home-loading, home-error, home-none, all terracotta
+light -- publish beside the existing Home frames so every face can
+be seen without emptying a real library.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

@@ -1,7 +1,7 @@
 //! Shared surfaces: inset cards, outlined sections, side-panel shells,
 //! state cards and quiet notices (design-system §§9, 10, 14 and 30).
 
-use super::pill_button::{ghost_button, icon_button};
+use super::pill_button::{ghost_button, icon_button, pill_button, PillButtonKind};
 use gtk::prelude::*;
 
 /// Recessed card used inside reader side panels. Add rows with
@@ -158,6 +158,55 @@ pub fn state_card_with_action(
     action.set_halign(gtk::Align::Center);
     action.set_margin_top(crate::style::spacing::XS);
     card.append(&action);
+    card
+}
+
+/// Home's larger state card (§64, decision 194): the dashed shell of
+/// §10 at a fixed size, its heading at the Section's 18 rather than
+/// the shell's 16, the meta line under it, and forty-high pills in a
+/// centred row beneath -- primary or ghost as the state draws them.
+/// The inner box centres vertically: the card is 360 high whatever
+/// the copy, so the content stands in the middle of it.
+pub fn home_state_card(
+    width: i32,
+    height: i32,
+    title: &str,
+    meta: &str,
+    pills: Vec<(&str, PillButtonKind, Box<dyn Fn()>)>,
+) -> gtk::Box {
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    card.add_css_class("kalam-ui-state-card");
+    card.add_css_class("kalam-home-state-card");
+    card.set_size_request(width, height);
+    card.set_valign(gtk::Align::Center);
+
+    let inner = gtk::Box::new(gtk::Orientation::Vertical, crate::style::spacing::XS);
+    inner.set_valign(gtk::Align::Center);
+
+    let heading = gtk::Label::new(Some(title));
+    heading.add_css_class("kalam-ui-state-heading");
+    heading.set_halign(gtk::Align::Center);
+    heading.set_xalign(0.5);
+    heading.set_wrap(true);
+    inner.append(&heading);
+
+    let body = gtk::Label::new(Some(meta));
+    body.add_css_class("kalam-ui-meta");
+    body.set_halign(gtk::Align::Center);
+    body.set_xalign(0.5);
+    body.set_wrap(true);
+    inner.append(&body);
+
+    if !pills.is_empty() {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, crate::style::spacing::SM);
+        row.set_halign(gtk::Align::Center);
+        row.set_margin_top(crate::style::spacing::MD);
+        for (label, kind, on_click) in pills {
+            row.append(&pill_button(label, kind, on_click));
+        }
+        inner.append(&row);
+    }
+    card.append(&inner);
     card
 }
 

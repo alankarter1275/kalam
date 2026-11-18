@@ -7814,6 +7814,18 @@ scale.kalam-ui-slider slider {
     padding: 24px;
 }
 
+/* §64 draws Home's state faces with the Section's 18, a step above
+   the 16 the shared §10 shell uses elsewhere. */
+.kalam-home-state-card .kalam-ui-state-heading {
+    font-size: 18px;
+}
+
+/* §64's loading skeletons: the border token as a fill, radius 6. */
+.kalam-skeleton {
+    background: @kalam_border;
+    border-radius: 6px;
+}
+
 .kalam-ui-state-heading {
     font-family: "Playfair Display", "Literata", Georgia, serif;
     font-size: 16px;

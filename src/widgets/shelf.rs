@@ -191,7 +191,11 @@ struct ShelfState {
 /// hanging over it, and the caption line (home-spec §1). The empty
 /// library draws the ruler's own empty face instead -- base line,
 /// Today ring and one Quote-style line (§64, decision 193).
-pub fn shelf_ruler(empty: bool) -> gtk::Box {
+pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+    let accent = hex(&theme.accent);
+    let dim = hex(&theme.text_dim);
+    let bg = hex(&theme.bg);
+    let text = hex(&theme.text);
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
     let head = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -241,10 +245,6 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
     area.set_draw_func(move |area, cr, width, height| {
         let st = draw_state.borrow();
         let widget = area.upcast_ref::<gtk::Widget>();
-        let accent = color(widget, "kalam_accent", (0.78, 0.32, 0.16));
-        let dim = color(widget, "kalam_text_dim", (0.45, 0.42, 0.40));
-        let bg = color(widget, "kalam_bg", (0.97, 0.95, 0.93));
-        let text = color(widget, "kalam_text", (0.15, 0.13, 0.12));
         let anchors = anchors_for(st.zoom, &draw_dates, today, height as f64);
         let pan = st.pan;
 
@@ -270,8 +270,8 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
                 y - 40.0,
             );
             cr.set_source_rgba(dim.0, dim.1, dim.2, 1.0);
-            cr.update_layout(&layout);
-            cr.show_layout(&layout);
+            pangocairo::functions::update_layout(cr, &layout);
+            pangocairo::functions::show_layout(cr, &layout);
             draw_fade(cr, width, &bg);
             return;
         }
@@ -363,10 +363,18 @@ fn anchors_for(zoom: Zoom, dates: &[i64], today: i64, area_h: f64) -> Vec<(i64, 
     layout_books(dates, today, ppd, gap, area_h)
 }
 
-fn color(w: &gtk::Widget, name: &str, fall: (f64, f64, f64)) -> (f64, f64, f64) {
-    w.lookup_color(name)
-        .map(|c| (c.red() as f64, c.green() as f64, c.blue() as f64))
-        .unwrap_or(fall)
+/// A theme token as paint: the resolved theme's hex strings, parsed.
+/// Drawn widgets cannot read CSS tokens, and this is the same hand-
+/// off charts.rs already uses (B38).
+fn hex(s: &str) -> (f64, f64, f64) {
+    let bytes = s.trim_start_matches('#');
+    let v = u32::from_str_radix(bytes.get(0..6).unwrap_or("888888"), 16)
+        .unwrap_or(0x88_88_88);
+    (
+        ((v >> 16) & 255) as f64 / 255.0,
+        ((v >> 8) & 255) as f64 / 255.0,
+        (v & 255) as f64 / 255.0,
+    )
 }
 
 fn draw_fade(cr: &gtk::cairo::Context, width: i32, bg: &(f64, f64, f64)) {
@@ -414,8 +422,8 @@ fn draw_ticks(
                 set_font(layout, "Playfair Display", 12.0, true);
                 cr.move_to(AXIS_X + 56.0, y - 7.0);
                 cr.set_source_rgba(text.0, text.1, text.2, 1.0);
-                cr.update_layout(&layout);
-                cr.show_layout(&layout);
+                pangocairo::functions::update_layout(cr, &layout);
+                pangocairo::functions::show_layout(cr, &layout);
             }
         }
         Zoom::Months | Zoom::Weeks => {
@@ -437,8 +445,8 @@ fn draw_ticks(
                     set_font(layout, "DM Sans", 11.0, false);
                     cr.move_to(AXIS_X + 56.0, y - 6.0);
                     cr.set_source_rgba(dim.0, dim.1, dim.2, 1.0);
-                    cr.update_layout(&layout);
-                    cr.show_layout(&layout);
+                    pangocairo::functions::update_layout(cr, &layout);
+                    pangocairo::functions::show_layout(cr, &layout);
                 }
                 month += 1;
                 if month > 12 {
@@ -470,8 +478,8 @@ fn draw_ticks(
                             set_font(layout, "DM Sans", 11.0, false);
                             cr.move_to(AXIS_X + 18.0, y - 6.0);
                             cr.set_source_rgba(dim.0, dim.1, dim.2, 0.8);
-                            cr.update_layout(&layout);
-                            cr.show_layout(&layout);
+                            pangocairo::functions::update_layout(cr, &layout);
+                            pangocairo::functions::show_layout(cr, &layout);
                         }
                     }
                     day += 1;
@@ -515,15 +523,15 @@ fn draw_bars(
             layout.set_ellipsize(gtk::pango::EllipsizeMode::End);
             cr.move_to(AXIS_X + 14.0, top + thick / 2.0 - 6.0);
             cr.set_source_rgba(1.0, 1.0, 1.0, 0.92);
-            cr.update_layout(&layout);
-            cr.show_layout(&layout);
+            pangocairo::functions::update_layout(cr, &layout);
+            pangocairo::functions::show_layout(cr, &layout);
         }
     }
 }
 
 fn rounded_bar(cr: &gtk::cairo::Context, x: f64, y: f64, w: f64, h: f64) {
     // radius 0 3 3 0: square at the axis, round at the far end.
-    let r = 3.0.min(h / 2.0);
+    let r = 3.0f64.min(h / 2.0);
     cr.move_to(x, y);
     cr.line_to(x + w - r, y);
     cr.arc(x + w - r, y + r, r, -std::f64::consts::FRAC_PI_2, 0.0);
@@ -575,8 +583,8 @@ fn draw_today(
     set_font(layout, "DM Sans", 11.0, false);
     cr.move_to(AXIS_X + 12.0, y - 6.0);
     cr.set_source_rgba(accent.0, accent.1, accent.2, 1.0);
-    cr.update_layout(&layout);
-    cr.show_layout(&layout);
+    pangocairo::functions::update_layout(cr, &layout);
+    pangocairo::functions::show_layout(cr, &layout);
 }
 
 fn set_font(layout: gtk::pango::Layout, family: &str, px: f64, bold: bool) {
@@ -590,7 +598,7 @@ fn set_font(layout: gtk::pango::Layout, family: &str, px: f64, bold: bool) {
 
 /// Day number of a calendar date, for tick generation.
 fn day_number(year: i32, month: u32, day: u32) -> i64 {
-    gtk::glib::DateTime::from_ymd(year, month, day, 0, 0, 0.0)
+    gtk::glib::DateTime::from_utc(year, month, day, 0, 0, 0.0)
         .map(|dt| day_of(&dt))
         .unwrap_or(0)
 }

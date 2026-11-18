@@ -745,6 +745,7 @@ impl Component for HomePageModel {
                 paint_below(
                     widgets,
                     self.library_empty || self.forced_state.as_deref() == Some("empty"),
+                    &crate::theme::current(self.service.catalog()),
                 );
                 paint_right(
                     widgets,
@@ -940,7 +941,11 @@ fn focus_first_button(widget: &gtk::Widget) -> bool {
 /// stand-in for the ruler (§61 waits on the owner's board picture,
 /// B12) and the Updates block (§62), replacing the loading skeletons.
 /// The empty library hides Updates, as decision 194 draws it.
-fn paint_below(widgets: &HomePageModelWidgets, library_empty: bool) {
+fn paint_below(
+    widgets: &HomePageModelWidgets,
+    library_empty: bool,
+    theme: &crate::theme::Theme,
+) {
     let shelf = &widgets.shelf_host;
     while let Some(child) = shelf.first_child() {
         shelf.remove(&child);
@@ -948,7 +953,7 @@ fn paint_below(widgets: &HomePageModelWidgets, library_empty: bool) {
     // The ruler itself (§61, B38): one drawn widget, or its empty
     // face when the library is. The dashed stand-in of B12 retires
     // here.
-    let ruler = crate::widgets::shelf::shelf_ruler(library_empty);
+    let ruler = crate::widgets::shelf::shelf_ruler(library_empty, theme);
     ruler.set_vexpand(true);
     ruler.set_valign(gtk::Align::Start);
     shelf.append(&ruler);

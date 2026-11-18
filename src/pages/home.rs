@@ -1006,7 +1006,9 @@ fn paint_right(
                 vec![(
                     "Open My Library",
                     crate::widgets::pill_button::PillButtonKind::Ghost,
-                    Box::new(move || open.output(HomeOut::OpenLibrary).ok()) as Box<dyn Fn()>,
+                    Box::new(move || {
+                        open.output(HomeOut::OpenLibrary).ok();
+                    }) as Box<dyn Fn()>,
                 )],
             );
             card.set_halign(gtk::Align::Center);

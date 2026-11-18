@@ -415,7 +415,7 @@ pub fn shelf_ruler(
     caption.set_margin_top(crate::style::spacing::XS);
     root.append(&caption);
     if filter.is_some() {
-        apply_filter(filter, &filter_pill, &caption);
+        apply_filter(filter, filter_pill, &caption);
     }
 
     // ---- R2: the hover card, the month filter, the keyboard.

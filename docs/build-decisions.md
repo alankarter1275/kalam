@@ -1134,14 +1134,19 @@ not :focus-visible, which stayed dark under a programmatic focus in
 the first CI frame, and which the shared family never used either --
 2px accent at 2px offset; the family rules stay more specific and
 keep their own wording, and the entry stays out of the selector.
-Two CI frames taught the rest: :focus-visible stayed dark under a
-programmatic grab, and plain :focus stayed dark too, because GTK's
-focus states also ask for a focused WINDOW and headless sway never
-focuses one -- so the ring also rides a .kalam-focus-ring class
-toggled by the widget's own has-focus notify, the same trick the
-search bar's focus face uses (B27). On a real desktop the :focus
-half is what the hand sees; the class half is what the photographs
-and any focus-grabbing flow see.
+Three CI frames taught the rest, in order: :focus-visible stayed
+dark under a programmatic grab; plain :focus stayed dark too,
+because GTK's focus states also ask for a focused WINDOW and
+headless sway never focuses one, so the ring also rides a
+.kalam-focus-ring class toggled by the widget's own has-focus
+notify, the same trick the search bar's focus face uses (B27); and
+the third frame stayed dark because the grab ran before the paint
+that builds the pill, so the paint threw the focused pill away --
+the grab now follows the paint. On a real desktop the :focus half
+is what the hand sees; the class half is what the photographs and
+any focus-grabbing flow see. The fourth frame shows the ring: 2px
+accent at 2px offset around the empty face's first pill,
+home-focus-terracotta-light.png.
 §12's primary hover (a 10% white veil over the accent fill) lands on
 the play disc; the picker's border-fill hover and the family hovers
 already existed. Disabled faces are the family's 40% opacity; Home

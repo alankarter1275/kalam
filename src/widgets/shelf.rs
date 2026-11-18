@@ -703,6 +703,28 @@ pub fn shelf_ruler(
         root.add_controller(keys);
     });
 
+    // CI's photograph of the keyboard path (B38): the lever does
+    // what three Downs and an Enter would -- select a bar and open
+    // its card -- because the harness sends no arrows of its own.
+    if std::env::var_os("KALAM_SHELF_KEYS").is_some() {
+        let s_state = state.clone();
+        let s_area = area.clone();
+        let s_fill = fill_card.clone();
+        let s_show = show_at.clone();
+        area.connect_map(move |_| {
+            let s_state = s_state.clone();
+            let s_area = s_area.clone();
+            let s_fill = s_fill.clone();
+            let s_show = s_show.clone();
+            gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+                s_state.borrow_mut().selected = Some(3);
+                s_area.queue_draw();
+                s_fill(3);
+                s_show(3);
+            });
+        });
+    }
+
     // CI's photograph of the hover card (B38): hold it open on one
     // book, the way a resting pointer would -- but only once the
     // widget is inside a mapped window, or the popover has no

@@ -1199,11 +1199,32 @@ elastic stretch has something to do. Two unit tests pin the map:
 crowded books keep their gap while a quiet month keeps the scale,
 and today stands at the bottom.
 
-R2 (hover, month filter, keyboard) and R3 (Arrange by, the colour
-stack, the states) follow as separate stages; the hover card omits
-Reading time (Proposed in 192, needs a session log that does not
-exist) and the reaction chips (no impressions store yet), both on
-the record here.
+R2 arrived in the same unit: hovering a bar slides it out 14 with a
+hairline leader to the 278-wide card (cover swatch, title, author,
+accent stars with the number, finish date, Took and Pages as
+Label-over-13px stats, an impression line in Quote style); clicking
+a month label filters the shelf to it with the quarter-strength
+rest, the accent month name, the 28-high pill with its cross and
+the changed caption; Left and Right walk a drawn ring along the
+bars through a key controller hung on the root at realize (the area
+cannot hold focus, so a controller on it never saw a key), Enter
+opens the card, Escape closes it. Years carries its Meta "N books"
+line under each year label.
+
+Three CI frames taught the hover card manners: a popover asked to
+open before the window maps has no surface and wedges the frame
+black; one asked to open inside the map cascade, before the first
+draw has written any bar geometry, wedges the whole UI thread for
+twenty seconds; so show_at refuses without a mapped area and a bar
+rectangle, and the photograph lever waits a beat past map. The keys
+photograph uses a lever of its own (KALAM_SHELF_KEYS) that selects a
+bar and opens its card the way three Downs and an Enter would,
+because the harness sends no arrows.
+
+Still to come: R3 (Arrange by and its dropdown list, the colour
+stack, the remaining states). The hover card omits Reading time
+(Proposed in 192, needs a session log that does not exist) and the
+reaction chips (no impressions store yet), both on the record here.
 
 ## Still open
 

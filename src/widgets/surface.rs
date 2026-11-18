@@ -167,12 +167,17 @@ pub fn state_card_with_action(
 /// centred row beneath -- primary or ghost as the state draws them.
 /// The inner box centres vertically: the card is 360 high whatever
 /// the copy, so the content stands in the middle of it.
+/// One pill on a §64 state card: its label, its kind, its click.
+/// Named because the bare tuple trips clippy's type-complexity lint
+/// the moment it appears in a signature.
+pub type StatePill = (&'static str, PillButtonKind, Box<dyn Fn()>);
+
 pub fn home_state_card(
     width: i32,
     height: i32,
     title: &str,
     meta: &str,
-    pills: Vec<(&str, PillButtonKind, Box<dyn Fn()>)>,
+    pills: Vec<StatePill>,
 ) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
     card.add_css_class("kalam-ui-state-card");

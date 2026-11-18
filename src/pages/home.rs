@@ -683,6 +683,35 @@ impl Component for HomePageModel {
         ComponentParts { model, widgets }
     }
 
+    /// Which of §64's faces the right column shows, if any: the
+    /// lever's choice first, so a photograph can hold a face over a
+    /// library that contradicts it, then the real conditions in the
+    /// order they exclude each other -- a failed read with nothing
+    /// to show, no books at all, books but none open (B36).
+    fn state_face(&self) -> Option<&'static str> {
+        match self.forced_state.as_deref() {
+            Some("loading") | Some("empty") | Some("none") | Some("error") => {
+                self.forced_state.as_deref().map(|s| match s {
+                    "loading" => "loading",
+                    "empty" => "empty",
+                    "none" => "none",
+                    _ => "error",
+                })
+            }
+            _ => {
+                if !self.cards.is_empty() {
+                    None
+                } else if self.load_failed {
+                    Some("error")
+                } else if self.library_empty {
+                    Some("empty")
+                } else {
+                    Some("none")
+                }
+            }
+        }
+    }
+
     fn update_with_view(
         &mut self,
         widgets: &mut Self::Widgets,
@@ -718,9 +747,7 @@ impl Component for HomePageModel {
                     widgets,
                     &self.cards,
                     self.current,
-                    self.library_empty,
-                    self.load_failed,
-                    self.forced_state.as_deref(),
+                    self.state_face(),
                     &self.service,
                     &sender,
                 );
@@ -732,9 +759,7 @@ impl Component for HomePageModel {
                         widgets,
                         &self.cards,
                         self.current,
-                        self.library_empty,
-                        self.load_failed,
-                        self.forced_state.as_deref(),
+                        self.state_face(),
                         &self.service,
                         &sender,
                     );
@@ -905,9 +930,7 @@ fn paint_right(
     widgets: &HomePageModelWidgets,
     cards: &[CardData],
     current: usize,
-    library_empty: bool,
-    load_failed: bool,
-    forced: Option<&str>,
+    face: Option<&str>,
     service: &LibraryService,
     sender: &ComponentSender<HomePageModel>,
 ) {
@@ -916,35 +939,13 @@ fn paint_right(
         host.remove(&child);
     }
 
-    if forced == Some("loading") {
+    if face == Some("loading") {
         let skeleton = gtk::Box::new(gtk::Orientation::Vertical, 0);
         skeleton.add_css_class("kalam-skeleton");
         skeleton.set_size_request(CARD_W, COVER_H);
         host.append(&skeleton);
         return;
     }
-
-    // The lever can hold a face over a library that contradicts it, so
-    // a photograph shows the face; without it the real conditions
-    // decide, in the order the states exclude each other: a failed
-    // read with nothing to show, then no books at all, then books but
-    // none open.
-    let face = match forced {
-        Some("empty") => Some("empty"),
-        Some("none") => Some("none"),
-        Some("error") => Some("error"),
-        _ => {
-            if !cards.is_empty() {
-                None
-            } else if load_failed {
-                Some("error")
-            } else if library_empty {
-                Some("empty")
-            } else {
-                Some("none")
-            }
-        }
-    };
 
     let Some(face) = face else {
         host.append(&build_book_card(&cards[current], current, cards.len(), sender));

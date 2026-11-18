@@ -1171,6 +1171,40 @@ walk would, and the frame publishes as
 home-focus-terracotta-light.png, so the ring is photographed rather
 than asserted.
 
+## B38. The shelf ruler, R1: the drawing and the zooms
+
+The owner lifted the skip on §61 (2026-10-29: "let's complete the
+shelf ruler"), and the written spec ruled: no board picture came
+with the go, so §61 and decisions 190 to 193 are the ruler.
+
+One drawn widget in the shelf's 340-high area, as the builder notes
+demand: the 2px base line that is also the axis; bars in cover
+colours with the 2px white band 8 from the left and 6 from the
+right, radius 0 3 3 0, thickness and length from the page count;
+accent dots on the axis (2px in Years); month ticks and names, day
+and Monday ticks in Weeks, year ticks with Playfair labels in Years;
+the Today ring at the foot with the shelf opened scrolled to it; the
+top 40px melting into the page. The elastic date-to-position map is
+one piecewise function shared by bars, dots and ticks: proportional
+at the zoom's pixels-per-day, stretched wherever books crowd so each
+keeps its minimum gap (17 in Months, 18 in Weeks, 6 in Years), with
+a month of air above the oldest book and today pinned at the foot.
+Plain scroll pans through time; Ctrl+scroll walks Weeks, Months and
+Years with the readout pill shown for 900 ms after the last zoom.
+
+The shelf is showcase content like Updates: the catalog keeps no
+finish dates, page counts or cover colours, so fourteen invented
+books across fifteen months stand in, crowded in pairs so the
+elastic stretch has something to do. Two unit tests pin the map:
+crowded books keep their gap while a quiet month keeps the scale,
+and today stands at the bottom.
+
+R2 (hover, month filter, keyboard) and R3 (Arrange by, the colour
+stack, the states) follow as separate stages; the hover card omits
+Reading time (Proposed in 192, needs a session log that does not
+exist) and the reaction chips (no impressions store yet), both on
+the record here.
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

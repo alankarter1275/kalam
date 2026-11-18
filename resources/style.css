@@ -7845,6 +7845,19 @@ scale.kalam-ui-slider slider {
     padding: 24px;
 }
 
+/* §61's zoom readout: a 32-high pill in `card` with a 1px border,
+   shown only while Ctrl+scroll is changing the scale. */
+.kalam-shelf-readout {
+    background: @kalam_card;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    min-height: 32px;
+    padding: 0 12px;
+    margin: 8px 8px 0 0;
+    font-size: 11px;
+    color: @kalam_text_dim;
+}
+
 /* §64 draws Home's state faces with the Section's 18, a step above
    the 16 the shared §10 shell uses elsewhere. */
 .kalam-home-state-card .kalam-ui-state-heading {

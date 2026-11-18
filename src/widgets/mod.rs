@@ -23,6 +23,7 @@ pub mod search_box;
 pub mod segmented;
 pub mod selection_chip;
 pub mod setting_row;
+pub mod shelf;
 pub mod slide_out_pill;
 pub mod surface;
 pub mod timeline;

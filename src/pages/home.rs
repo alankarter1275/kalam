@@ -945,15 +945,13 @@ fn paint_below(widgets: &HomePageModelWidgets, library_empty: bool) {
     while let Some(child) = shelf.first_child() {
         shelf.remove(&child);
     }
-    let shelf_card = surface::state_card_narrow(
-        "Your shelf",
-        "Weeks, months and years of your reading, drawn as lines on a \
-         ruler — that arrives with a later stage of this build.",
-        46,
-    );
-    shelf_card.set_valign(gtk::Align::Center);
-    shelf_card.set_vexpand(true);
-    shelf.append(&shelf_card);
+    // The ruler itself (§61, B38): one drawn widget, or its empty
+    // face when the library is. The dashed stand-in of B12 retires
+    // here.
+    let ruler = crate::widgets::shelf::shelf_ruler(library_empty);
+    ruler.set_vexpand(true);
+    ruler.set_valign(gtk::Align::Start);
+    shelf.append(&ruler);
 
     let host = &widgets.updates_host;
     host.set_visible(!library_empty);

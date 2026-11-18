@@ -55,5 +55,5 @@ glib-2.0: 2.88.0
    [1m[94m= [0m[1mnote[0m: `cargo::unused_dependencies` is set to `warn` by default
 [1m[96mhelp[0m: consider removing the dependency on `image`
 [1m[33mwarning[0m: `chapbook-render-tinyskia` (manifest) generated 1 warning
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 14.89s
---- run 44300207833 ---
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 18.53s
+--- run 44300428429 ---

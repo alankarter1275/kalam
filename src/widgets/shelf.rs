@@ -798,24 +798,46 @@ pub fn shelf_ruler(
         root.add_controller(keys);
     });
 
+    // The levers open their card only once the first draw has
+    // written bar geometry; a loaded runner can miss the first beat,
+    // so this waits and tries again (B38, kbd frame without a card).
+    let open_later: std::rc::Rc<dyn Fn(usize, u32)> = {
+        let geom = geom.clone();
+        let fill_card = fill_card.clone();
+        let show_at = show_at.clone();
+        std::rc::Rc::new(move |i, tries| {
+            let ready = {
+                let g = geom.borrow();
+                g.bars.iter().any(|r| r.4 == i && r.2 > 0.0)
+            };
+            if ready {
+                fill_card(i);
+                show_at(i);
+            } else if tries < 10 {
+                let again = open_later.clone();
+                gtk::glib::timeout_add_local_once(
+                    std::time::Duration::from_millis(200),
+                    move || again(i, tries + 1),
+                );
+            }
+        })
+    };
+
     // CI's photograph of the keyboard path (B38): the lever does
     // what three Downs and an Enter would -- select a bar and open
     // its card -- because the harness sends no arrows of its own.
     if std::env::var_os("KALAM_SHELF_KEYS").is_some() {
         let s_state = state.clone();
         let s_area = area.clone();
-        let s_fill = fill_card.clone();
-        let s_show = show_at.clone();
+        let s_open = open_later.clone();
         area.connect_map(move |_| {
             let s_state = s_state.clone();
             let s_area = s_area.clone();
-            let s_fill = s_fill.clone();
-            let s_show = s_show.clone();
+            let s_open = s_open.clone();
             gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
                 s_state.borrow_mut().selected = Some(3);
                 s_area.queue_draw();
-                s_fill(3);
-                s_show(3);
+                s_open(3, 0);
             });
         });
     }
@@ -829,20 +851,17 @@ pub fn shelf_ruler(
     {
         let h_state = state.clone();
         let h_area = area.clone();
-        let h_fill = fill_card.clone();
-        let h_show = show_at.clone();
+        let h_open = open_later.clone();
         area.connect_map(move |_| {
             // One beat after the first draw, so the bars exist and
             // the map cascade is over before the popover opens.
             let h_state = h_state.clone();
             let h_area = h_area.clone();
-            let h_fill = h_fill.clone();
-            let h_show = h_show.clone();
+            let h_open = h_open.clone();
             gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
                 h_state.borrow_mut().hover = Some(i);
                 h_area.queue_draw();
-                h_fill(i);
-                h_show(i);
+                h_open(i, 0);
             });
         });
     }

@@ -1226,6 +1226,44 @@ stack, the remaining states). The hover card omits Reading time
 (Proposed in 192, needs a session log that does not exist) and the
 reaction chips (no impressions store yet), both on the record here.
 
+## B39. The shelf ruler closes: R3 and the photographs
+
+R3 finished §61 (2026-10-29): the Arrange by chip is §43's dropdown
+list wearing the chip's clothes, with the five orders of decision
+193; choosing any but Date finished restacks the bars in that order
+and hides the ruler -- no axis ticks, no month names, no Today ring,
+the base line stays -- and Colour runs the stack round the hue
+wheel, the rainbow of 193. The caption follows the arrangement
+("Arranged by colour."), the month filter is a date idea and clears
+itself under the others, and the empty face (base line, Today ring,
+"Your first finished book stands here." in the Quote style) gained
+a lever so CI can photograph it. A test pins every arrangement to a
+permutation of the books and the rainbow to hue order.
+
+The published frames, light theme: the default Months ruler with its
+elastic stretch and Today at the foot; Weeks with titles inside the
+fat bars and Monday numbers; Years with thin lines, Playfair year
+labels and the Meta book counts; the hover card beside a slid bar;
+the filtered October with its quarter-strength rest and accent
+pill; the keyboard's selection ring with its card; the rainbow
+stack; the empty face. Nine shelf frames in all, each held open by
+a launch lever (zoom, hover, filter, keys, arrange, empty) because
+a headless compositor has neither pointer nor arrow keys.
+
+Three CI wounds taught the lever family its manners, all recorded
+in B38: a popover before the window maps has no surface; a popover
+inside the map cascade wedged the UI thread for twenty seconds; and
+a lever that fires before the first draw finds no bar geometry --
+open_later now retries until the geometry exists. The keyboard
+itself hangs on the root at realize, because the drawn area cannot
+hold focus and a controller on it never saw a key.
+
+Deviations carried: the hover card omits Reading time (Proposed in
+192, no session log) and the reaction chips (no impressions store);
+the accessible ListView alternative of §6 is not built (Proposed
+there too); the scrub marker and drag on the ruler remain undesigned
+(decisions.md "Not designed yet").
+
 ## Still open
 
 1. **The tasks box needs drawing.** B5 puts running and failed tasks in a

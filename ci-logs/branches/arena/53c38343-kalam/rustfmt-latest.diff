@@ -14,7 +14,7 @@ index 68ea3a7..d7a4c3f 100644
                  );
                  PageSlot::Home(ctrl)
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index d06a4af..68ff30e 100644
+index fe04290..56388f1 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
 @@ -112,7 +112,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
@@ -53,7 +53,7 @@ index d06a4af..68ff30e 100644
  }
  
  #[relm4::component(pub)]
-@@ -488,7 +497,6 @@ impl Component for HomePageModel {
+@@ -500,7 +509,6 @@ impl Component for HomePageModel {
          };
          let widgets = view_output!();
  
@@ -61,7 +61,7 @@ index d06a4af..68ff30e 100644
          // §57's bar and box and §62's timeline (B21): all three come from
          // widget modules and go into the hosts the view reserves for them, the
          // way the shelf and the book card do. The bar and the box are wired to
-@@ -941,11 +949,7 @@ fn focus_first_button(widget: &gtk::Widget) -> bool {
+@@ -953,11 +961,7 @@ fn focus_first_button(widget: &gtk::Widget) -> bool {
  /// stand-in for the ruler (§61 waits on the owner's board picture,
  /// B12) and the Updates block (§62), replacing the loading skeletons.
  /// The empty library hides Updates, as decision 194 draws it.
@@ -74,7 +74,21 @@ index d06a4af..68ff30e 100644
      let shelf = &widgets.shelf_host;
      while let Some(child) = shelf.first_child() {
          shelf.remove(&child);
-@@ -1004,7 +1008,12 @@ fn paint_right(
+@@ -965,11 +969,8 @@ fn paint_below(
+     // The ruler itself (§61, B38): one drawn widget, or its empty
+     // face when the library is. The dashed stand-in of B12 retires
+     // here.
+-    let ruler = crate::widgets::shelf::shelf_ruler(
+-        library_empty,
+-        theme,
+-        &widgets.shelf_filter_pill,
+-    );
++    let ruler =
++        crate::widgets::shelf::shelf_ruler(library_empty, theme, &widgets.shelf_filter_pill);
+     ruler.set_vexpand(true);
+     ruler.set_valign(gtk::Align::Start);
+     shelf.append(&ruler);
+@@ -1020,7 +1021,12 @@ fn paint_right(
      }
  
      let Some(face) = face else {
@@ -88,7 +102,7 @@ index d06a4af..68ff30e 100644
          host.append(&build_pager(cards, current, sender));
          return;
      };
-@@ -1104,12 +1113,14 @@ fn arm_quiet(
+@@ -1120,12 +1126,14 @@ fn arm_quiet(
      // The closure moves what it captures, so it gets clones of its own
      // and the originals stay here to store the source id.
      let quiet_cb = quiet.clone();
@@ -127,7 +141,7 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index 9723763..dc93644 100644
+index 4e08dc8..fb99530 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
 @@ -51,20 +51,146 @@ pub struct ShelfBook {
@@ -312,7 +326,7 @@ index 9723763..dc93644 100644
  ];
  
  /// Day number (unix days) of a date; the ruler's only clock.
-@@ -336,8 +472,7 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+@@ -323,8 +459,7 @@ pub fn shelf_ruler(
              cr.set_source_rgba(pal.accent.0, pal.accent.1, pal.accent.2, 1.0);
              cr.arc(AXIS_X, y, 5.0, 0.0, std::f64::consts::TAU);
              cr.stroke().ok();
@@ -322,7 +336,7 @@ index 9723763..dc93644 100644
              set_font(&layout, "Playfair Display", 18.0, false);
              let (w, _) = layout.size();
              cr.move_to(
-@@ -351,11 +486,20 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+@@ -338,11 +473,20 @@ pub fn shelf_ruler(
              return;
          }
  
@@ -345,7 +359,7 @@ index 9723763..dc93644 100644
          draw_ticks(cr, widget, &draw_dates, &view, &pal, &mut geom, &fx);
          draw_bars(cr, widget, &draw_books, &draw_dates, &view, &mut geom, &fx);
          draw_dots(cr, &draw_dates, &view, &pal);
-@@ -373,11 +517,13 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+@@ -360,11 +504,13 @@ pub fn shelf_ruler(
      // pill below keeps the original.
      let readout_label = readout_label();
      let scroll_label = readout_label.clone();
@@ -362,7 +376,7 @@ index 9723763..dc93644 100644
              let next = match st.zoom {
                  Zoom::Weeks if dy > 0.0 => Zoom::Months,
                  Zoom::Months if dy < 0.0 => Zoom::Weeks,
-@@ -488,8 +634,13 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+@@ -475,8 +621,13 @@ pub fn shelf_ruler(
      popover.set_child(Some(&card_box));
  
      let fill_card: std::rc::Rc<dyn Fn(usize)> = {
@@ -378,25 +392,11 @@ index 9723763..dc93644 100644
          let (took_l, pages_l) = (took_l.clone(), pages_l.clone());
          let cc = cover_colour.clone();
          let cover = cover.clone();
-@@ -629,7 +780,11 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+@@ -616,7 +767,11 @@ pub fn shelf_ruler(
          if let Some((yy, mm)) = label {
              let next = {
                  let mut st = c_state.borrow_mut();
 -                st.filter = if st.filter == Some((yy, mm)) { None } else { Some((yy, mm)) };
 +                st.filter = if st.filter == Some((yy, mm)) {
-+                    None
-+                } else {
-+                    Some((yy, mm))
-+                };
-                 st.filter
-             };
-             apply_filter(next, &c_pill, &c_caption);
-@@ -703,7 +858,8 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
-     // book, the way a resting pointer would -- but only once the
-     // widget is inside a mapped window, or the popover has no
-     // surface to open onto.
--    if let Ok(i) = std::env::var("KALAM_SHELF_HOVER").map_err(|_| ())
-+    if let Ok(i) = std::env::var("KALAM_SHELF_HOVER")
-+        .map_err(|_| ())
-(truncated: 100 further diff lines not committed)
---- run 44271498134 ---
+(truncated: 114 further diff lines not committed)
+--- run 44271656249 ---

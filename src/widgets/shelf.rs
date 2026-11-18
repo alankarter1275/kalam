@@ -649,7 +649,11 @@ pub fn shelf_ruler(
 
     // Keyboard: Left and Right walk the bars, Enter opens the card,
     // Escape closes it (home-spec §6).
-    let keys = gtk::EventControllerKey::new();
+    // The ruler area cannot hold focus, so typed keys never reach a
+    // controller on it. Hang the controller on the root instead: it
+    // sees every key the focused widget does not consume (the search
+    // entry swallows its own typing; arrow keys and enter on a bare
+    // window land here).
     let k_state = state.clone();
     let k_area = area.clone();
     let k_fill = fill_card.clone();
@@ -657,7 +661,16 @@ pub fn shelf_ruler(
     let k_cancel = cancel_hide.clone();
     let k_pop = popover.clone();
     let book_len = books.len();
-    keys.connect_key_pressed(move |_c, key, _code, _mod| {
+    area.connect_realize(move |a| {
+        let Some(root) = a.root() else { return };
+        let keys = gtk::EventControllerKey::new();
+        let k_state = k_state.clone();
+        let k_area = k_area.clone();
+        let k_fill = k_fill.clone();
+        let k_show = k_show.clone();
+        let k_cancel = k_cancel.clone();
+        let k_pop = k_pop.clone();
+        keys.connect_key_pressed(move |_c, key, _code, _mod| {
         use gtk::gdk::Key;
         match key {
             Key::Right | Key::Down | Key::Left | Key::Up => {
@@ -686,8 +699,9 @@ pub fn shelf_ruler(
             }
             _ => gtk::glib::Propagation::Proceed,
         }
+        });
+        root.add_controller(keys);
     });
-    area.add_controller(keys);
 
     // CI's photograph of the hover card (B38): hold it open on one
     // book, the way a resting pointer would -- but only once the

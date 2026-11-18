@@ -363,7 +363,17 @@ pub fn shelf_ruler(
     let draw_dates = dates.clone();
     let draw_state = state.clone();
     let draw_geom = geom.clone();
+    let draw_count = std::rc::Rc::new(std::cell::Cell::new(0u32));
+    let draw_count2 = draw_count.clone();
+    let draw_state_ptr = std::rc::Rc::as_ptr(&draw_state) as usize;
+    let draw_geom_ptr = std::rc::Rc::as_ptr(&draw_geom) as usize;
+    eprintln!("ruler build: state_ptr={draw_state_ptr:#x} geom_ptr={draw_geom_ptr:#x}");
     area.set_draw_func(move |area, cr, width, height| {
+        let n = draw_count2.get();
+        if n < 2 {
+            eprintln!("draw #{n} running");
+            draw_count2.set(n + 1);
+        }
         let st = draw_state.borrow();
         let widget = area.upcast_ref::<gtk::Widget>();
         let anchors = anchors_for(st.zoom, &draw_dates, today, height as f64);
@@ -816,7 +826,10 @@ pub fn shelf_ruler(
         let s_fill = fill_card.clone();
         let s_show = show_at.clone();
         let beat: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || {
-            eprintln!("kbd lever: beat ran");
+            eprintln!(
+                "kbd lever: beat ran, state_ptr={:#x}",
+                std::rc::Rc::as_ptr(&s_state) as usize
+            );
             s_state.borrow_mut().selected = Some(3);
             s_area.queue_draw();
             open_later(&s_geom, &s_fill, &s_show, 3, 0);
@@ -902,7 +915,14 @@ fn open_later(
         let g = geom.borrow();
         g.bars.iter().any(|r| r.4 == i && r.2 > 0.0)
     };
-    eprintln!("open_later: i={} tries={} ready={}", i, tries, ready);
+    eprintln!(
+        "open_later: i={} tries={} ready={} bars={} geom_ptr={:#x}",
+        i,
+        tries,
+        ready,
+        geom.borrow().bars.len(),
+        std::rc::Rc::as_ptr(geom) as usize
+    );
     if ready {
         fill(i);
         show(i);

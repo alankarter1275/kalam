@@ -127,27 +127,27 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index fd114f1..e0a6da1 100644
+index 6c29f99..95b33f0 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
-@@ -46,20 +46,118 @@ pub struct ShelfBook {
+@@ -51,20 +51,146 @@ pub struct ShelfBook {
  pub fn showcase_shelf() -> Vec<ShelfBook> {
      use ShelfBook as B;
      vec![
--        B { title: "The Left Hand of Darkness", author: "Ursula K. Le Guin", days_ago: 452, pages: 304, colour: (0.42, 0.50, 0.62), rating: 4.5 },
--        B { title: "Piranesi", author: "Susanna Clarke", days_ago: 418, pages: 245, colour: (0.55, 0.47, 0.42), rating: 4.0 },
--        B { title: "Wolf Hall", author: "Hilary Mantel", days_ago: 372, pages: 653, colour: (0.36, 0.30, 0.26), rating: 4.5 },
--        B { title: "Kindred", author: "Octavia E. Butler", days_ago: 330, pages: 287, colour: (0.62, 0.36, 0.30), rating: 5.0 },
--        B { title: "Blindsight", author: "Peter Watts", days_ago: 291, pages: 384, colour: (0.30, 0.42, 0.44), rating: 4.0 },
--        B { title: "A Wizard of Earthsea", author: "Ursula K. Le Guin", days_ago: 244, pages: 183, colour: (0.47, 0.52, 0.38), rating: 4.5 },
--        B { title: "The Dispossessed", author: "Ursula K. Le Guin", days_ago: 198, pages: 387, colour: (0.52, 0.40, 0.50), rating: 5.0 },
--        B { title: "Solaris", author: "Stanisław Lem", days_ago: 151, pages: 204, colour: (0.35, 0.45, 0.55), rating: 4.0 },
--        B { title: "Wayward Pines", author: "Blake Crouch", days_ago: 96, pages: 320, colour: (0.60, 0.30, 0.26), rating: 3.5 },
--        B { title: "Pines", author: "Blake Crouch", days_ago: 88, pages: 320, colour: (0.28, 0.38, 0.32), rating: 4.0 },
--        B { title: "Ubik", author: "Philip K. Dick", days_ago: 61, pages: 272, colour: (0.58, 0.44, 0.36), rating: 4.5 },
--        B { title: "Dune", author: "Frank Herbert", days_ago: 34, pages: 688, colour: (0.66, 0.50, 0.30), rating: 5.0 },
--        B { title: "The Tombs of Atuan", author: "Ursula K. Le Guin", days_ago: 21, pages: 163, colour: (0.44, 0.36, 0.44), rating: 4.0 },
--        B { title: "The Farthest Shore", author: "Ursula K. Le Guin", days_ago: 9, pages: 259, colour: (0.32, 0.44, 0.50), rating: 4.5 },
+-        B { title: "The Left Hand of Darkness", author: "Ursula K. Le Guin", days_ago: 452, pages: 304, colour: (0.42, 0.50, 0.62), rating: 4.5, took_days: 148, note: "The north kept getting colder as she read it." },
+-        B { title: "Piranesi", author: "Susanna Clarke", days_ago: 418, pages: 245, colour: (0.55, 0.47, 0.42), rating: 4.0, took_days: 96, note: "A house of staircases; she still draws them." },
+-        B { title: "Wolf Hall", author: "Hilary Mantel", days_ago: 372, pages: 653, colour: (0.36, 0.30, 0.26), rating: 4.5, took_days: 210, note: "Cromwell's quiet, and the court's noise." },
+-        B { title: "Kindred", author: "Octavia E. Butler", days_ago: 330, pages: 287, colour: (0.62, 0.36, 0.30), rating: 5.0, took_days: 61, note: "Time would not sit still for her either." },
+-        B { title: "Blindsight", author: "Peter Watts", days_ago: 291, pages: 384, colour: (0.30, 0.42, 0.44), rating: 4.0, took_days: 44, note: "The scramblebirds are still in her head." },
+-        B { title: "A Wizard of Earthsea", author: "Ursula K. Le Guin", days_ago: 244, pages: 183, colour: (0.47, 0.52, 0.38), rating: 4.5, took_days: 30, note: "The first word of the whole shelf." },
+-        B { title: "The Dispossessed", author: "Ursula K. Le Guin", days_ago: 198, pages: 387, colour: (0.52, 0.40, 0.50), rating: 5.0, took_days: 77, note: "Anarchy, and the cost of holding it." },
+-        B { title: "Solaris", author: "Stanisław Lem", days_ago: 151, pages: 204, colour: (0.35, 0.45, 0.55), rating: 4.0, took_days: 58, note: "The ocean thought back at them." },
+-        B { title: "Wayward Pines", author: "Blake Crouch", days_ago: 96, pages: 320, colour: (0.60, 0.30, 0.26), rating: 3.5, took_days: 25, note: "Read in one night, lights on." },
+-        B { title: "Pines", author: "Blake Crouch", days_ago: 88, pages: 320, colour: (0.28, 0.38, 0.32), rating: 4.0, took_days: 19, note: "Read in one night, lights on." },
+-        B { title: "Ubik", author: "Philip K. Dick", days_ago: 61, pages: 272, colour: (0.58, 0.44, 0.36), rating: 4.5, took_days: 41, note: "Every ending felt like a door." },
+-        B { title: "Dune", author: "Frank Herbert", days_ago: 34, pages: 688, colour: (0.66, 0.50, 0.30), rating: 5.0, took_days: 132, note: "The desert, and the worm, and the wait." },
+-        B { title: "The Tombs of Atuan", author: "Ursula K. Le Guin", days_ago: 21, pages: 163, colour: (0.44, 0.36, 0.44), rating: 4.0, took_days: 24, note: "The tombs were quieter than the living." },
+-        B { title: "The Farthest Shore", author: "Ursula K. Le Guin", days_ago: 9, pages: 259, colour: (0.32, 0.44, 0.50), rating: 4.5, took_days: 33, note: "Dragonflight, at last, and earned." },
 +        B {
 +            title: "The Left Hand of Darkness",
 +            author: "Ursula K. Le Guin",
@@ -155,6 +155,8 @@ index fd114f1..e0a6da1 100644
 +            pages: 304,
 +            colour: (0.42, 0.50, 0.62),
 +            rating: 4.5,
++            took_days: 148,
++            note: "The north kept getting colder as she read it.",
 +        },
 +        B {
 +            title: "Piranesi",
@@ -163,6 +165,8 @@ index fd114f1..e0a6da1 100644
 +            pages: 245,
 +            colour: (0.55, 0.47, 0.42),
 +            rating: 4.0,
++            took_days: 96,
++            note: "A house of staircases; she still draws them.",
 +        },
 +        B {
 +            title: "Wolf Hall",
@@ -171,6 +175,8 @@ index fd114f1..e0a6da1 100644
 +            pages: 653,
 +            colour: (0.36, 0.30, 0.26),
 +            rating: 4.5,
++            took_days: 210,
++            note: "Cromwell's quiet, and the court's noise.",
 +        },
 +        B {
 +            title: "Kindred",
@@ -179,6 +185,8 @@ index fd114f1..e0a6da1 100644
 +            pages: 287,
 +            colour: (0.62, 0.36, 0.30),
 +            rating: 5.0,
++            took_days: 61,
++            note: "Time would not sit still for her either.",
 +        },
 +        B {
 +            title: "Blindsight",
@@ -187,6 +195,8 @@ index fd114f1..e0a6da1 100644
 +            pages: 384,
 +            colour: (0.30, 0.42, 0.44),
 +            rating: 4.0,
++            took_days: 44,
++            note: "The scramblebirds are still in her head.",
 +        },
 +        B {
 +            title: "A Wizard of Earthsea",
@@ -195,6 +205,8 @@ index fd114f1..e0a6da1 100644
 +            pages: 183,
 +            colour: (0.47, 0.52, 0.38),
 +            rating: 4.5,
++            took_days: 30,
++            note: "The first word of the whole shelf.",
 +        },
 +        B {
 +            title: "The Dispossessed",
@@ -203,6 +215,8 @@ index fd114f1..e0a6da1 100644
 +            pages: 387,
 +            colour: (0.52, 0.40, 0.50),
 +            rating: 5.0,
++            took_days: 77,
++            note: "Anarchy, and the cost of holding it.",
 +        },
 +        B {
 +            title: "Solaris",
@@ -211,6 +225,8 @@ index fd114f1..e0a6da1 100644
 +            pages: 204,
 +            colour: (0.35, 0.45, 0.55),
 +            rating: 4.0,
++            took_days: 58,
++            note: "The ocean thought back at them.",
 +        },
 +        B {
 +            title: "Wayward Pines",
@@ -219,6 +235,8 @@ index fd114f1..e0a6da1 100644
 +            pages: 320,
 +            colour: (0.60, 0.30, 0.26),
 +            rating: 3.5,
++            took_days: 25,
++            note: "Read in one night, lights on.",
 +        },
 +        B {
 +            title: "Pines",
@@ -227,6 +245,8 @@ index fd114f1..e0a6da1 100644
 +            pages: 320,
 +            colour: (0.28, 0.38, 0.32),
 +            rating: 4.0,
++            took_days: 19,
++            note: "Read in one night, lights on.",
 +        },
 +        B {
 +            title: "Ubik",
@@ -235,6 +255,8 @@ index fd114f1..e0a6da1 100644
 +            pages: 272,
 +            colour: (0.58, 0.44, 0.36),
 +            rating: 4.5,
++            took_days: 41,
++            note: "Every ending felt like a door.",
 +        },
 +        B {
 +            title: "Dune",
@@ -243,6 +265,8 @@ index fd114f1..e0a6da1 100644
 +            pages: 688,
 +            colour: (0.66, 0.50, 0.30),
 +            rating: 5.0,
++            took_days: 132,
++            note: "The desert, and the worm, and the wait.",
 +        },
 +        B {
 +            title: "The Tombs of Atuan",
@@ -251,6 +275,8 @@ index fd114f1..e0a6da1 100644
 +            pages: 163,
 +            colour: (0.44, 0.36, 0.44),
 +            rating: 4.0,
++            took_days: 24,
++            note: "The tombs were quieter than the living.",
 +        },
 +        B {
 +            title: "The Farthest Shore",
@@ -259,11 +285,13 @@ index fd114f1..e0a6da1 100644
 +            pages: 259,
 +            colour: (0.32, 0.44, 0.50),
 +            rating: 4.5,
++            took_days: 33,
++            note: "Dragonflight, at last, and earned.",
 +        },
      ]
  }
  
-@@ -79,8 +177,18 @@ const MIN_GAP_YEARS: f64 = 6.0;
+@@ -84,8 +210,18 @@ const MIN_GAP_YEARS: f64 = 6.0;
  const READOUT_MS: u64 = 900;
  
  const MONTHS: [&str; 12] = [
@@ -284,7 +312,7 @@ index fd114f1..e0a6da1 100644
  ];
  
  /// Day number (unix days) of a date; the ruler's only clock.
-@@ -288,8 +396,7 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+@@ -336,8 +472,7 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
              cr.set_source_rgba(pal.accent.0, pal.accent.1, pal.accent.2, 1.0);
              cr.arc(AXIS_X, y, 5.0, 0.0, std::f64::consts::TAU);
              cr.stroke().ok();
@@ -294,7 +322,7 @@ index fd114f1..e0a6da1 100644
              set_font(&layout, "Playfair Display", 18.0, false);
              let (w, _) = layout.size();
              cr.move_to(
-@@ -303,7 +410,12 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+@@ -351,11 +486,20 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
              return;
          }
  
@@ -305,10 +333,19 @@ index fd114f1..e0a6da1 100644
 +            zoom: st.zoom,
 +            height,
 +        };
-         draw_ticks(cr, widget, &view, &pal);
-         draw_bars(cr, widget, &draw_books, &draw_dates, &view);
+         let mut geom = draw_geom.borrow_mut();
+         geom.bars.clear();
+         geom.labels.clear();
+-        let fx = Fx { hover: st.hover, selected: st.selected, filter: st.filter };
++        let fx = Fx {
++            hover: st.hover,
++            selected: st.selected,
++            filter: st.filter,
++        };
+         draw_ticks(cr, widget, &draw_dates, &view, &pal, &mut geom, &fx);
+         draw_bars(cr, widget, &draw_books, &draw_dates, &view, &mut geom, &fx);
          draw_dots(cr, &draw_dates, &view, &pal);
-@@ -321,11 +433,13 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+@@ -373,11 +517,13 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
      // pill below keeps the original.
      let readout_label = readout_label();
      let scroll_label = readout_label.clone();
@@ -325,78 +362,41 @@ index fd114f1..e0a6da1 100644
              let next = match st.zoom {
                  Zoom::Weeks if dy > 0.0 => Zoom::Months,
                  Zoom::Months if dy < 0.0 => Zoom::Weeks,
-@@ -399,8 +513,7 @@ fn anchors_for(zoom: Zoom, dates: &[i64], today: i64, area_h: f64) -> Vec<(i64,
- /// off charts.rs already uses (B38).
- fn hex(s: &str) -> (f64, f64, f64) {
-     let bytes = s.trim_start_matches('#');
--    let v = u32::from_str_radix(bytes.get(0..6).unwrap_or("888888"), 16)
--        .unwrap_or(0x88_88_88);
-+    let v = u32::from_str_radix(bytes.get(0..6).unwrap_or("888888"), 16).unwrap_or(0x88_88_88);
-     (
-         ((v >> 16) & 255) as f64 / 255.0,
-         ((v >> 8) & 255) as f64 / 255.0,
-@@ -420,13 +533,13 @@ fn draw_fade(cr: &gtk::cairo::Context, width: i32, bg: &(f64, f64, f64)) {
-     }
- }
+@@ -488,8 +634,13 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+     popover.set_child(Some(&card_box));
  
--fn draw_ticks(
--    cr: &gtk::cairo::Context,
--    widget: &gtk::Widget,
--    view: &View<'_>,
--    pal: &Palette,
--) {
--    let View { anchors, pan, zoom, height } = *view;
-+fn draw_ticks(cr: &gtk::cairo::Context, widget: &gtk::Widget, view: &View<'_>, pal: &Palette) {
-+    let View {
-+        anchors,
-+        pan,
-+        zoom,
-+        height,
-+    } = *view;
-     let (dim, text) = (pal.dim, pal.text);
-     let (y0, y1) = match (anchors.first(), anchors.last()) {
-         (Some(a), Some(b)) => (a.0.min(b.0), a.0.max(b.0)),
-@@ -502,8 +615,7 @@ fn draw_ticks(
-                         cr.line_to(AXIS_X + len, y);
-                         cr.stroke().ok();
-                         if weekday == 0 {
--                            let layout =
--                                widget.create_pango_layout(Some(&dom.to_string()));
-+                            let layout = widget.create_pango_layout(Some(&dom.to_string()));
-                             set_font(&layout, "DM Sans", 11.0, false);
-                             cr.move_to(AXIS_X + 18.0, y - 6.0);
-                             cr.set_source_rgba(dim.0, dim.1, dim.2, 0.8);
-@@ -525,7 +637,12 @@ fn draw_bars(
-     dates: &[i64],
-     view: &View<'_>,
- ) {
--    let View { anchors, pan, zoom, height } = *view;
-+    let View {
-+        anchors,
-+        pan,
-+        zoom,
-+        height,
-+    } = *view;
-     for (book, day) in books.iter().zip(dates.iter()) {
-         let y = map_date(anchors, *day, pan);
-         if y < -30.0 || y > height as f64 + 30.0 {
-@@ -568,13 +685,10 @@ fn rounded_bar(cr: &gtk::cairo::Context, x: f64, y: f64, w: f64, h: f64) {
-     cr.close_path();
- }
+     let fill_card: std::rc::Rc<dyn Fn(usize)> = {
+-        let (title_l, author_l, stars_l, date_l, note_l) =
+-            (title_l.clone(), author_l.clone(), stars_l.clone(), date_l.clone(), note_l.clone());
++        let (title_l, author_l, stars_l, date_l, note_l) = (
++            title_l.clone(),
++            author_l.clone(),
++            stars_l.clone(),
++            date_l.clone(),
++            note_l.clone(),
++        );
+         let (took_l, pages_l) = (took_l.clone(), pages_l.clone());
+         let cc = cover_colour.clone();
+         let cover = cover.clone();
+@@ -622,7 +773,11 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+         if let Some((yy, mm)) = label {
+             let next = {
+                 let mut st = c_state.borrow_mut();
+-                st.filter = if st.filter == Some((yy, mm)) { None } else { Some((yy, mm)) };
++                st.filter = if st.filter == Some((yy, mm)) {
++                    None
++                } else {
++                    Some((yy, mm))
++                };
+                 st.filter
+             };
+             apply_filter(next, &c_pill, &c_caption);
+@@ -694,7 +849,8 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
  
--fn draw_dots(
--    cr: &gtk::cairo::Context,
--    dates: &[i64],
--    view: &View<'_>,
--    pal: &Palette,
--) {
--    let View { anchors, pan, zoom, .. } = *view;
-+fn draw_dots(cr: &gtk::cairo::Context, dates: &[i64], view: &View<'_>, pal: &Palette) {
-+    let View {
-+        anchors, pan, zoom, ..
-+    } = *view;
-     let accent = pal.accent;
-     let r = if zoom == Zoom::Years { 2.0 } else { 3.5 };
-     for day in dates {
-(truncated: 21 further diff lines not committed)
---- run 44263215297 ---
+     // CI's photograph of the hover card (B38): hold it open on one
+     // book, the way a resting pointer would.
+-    if let Ok(i) = std::env::var("KALAM_SHELF_HOVER").map_err(|_| ())
++    if let Ok(i) = std::env::var("KALAM_SHELF_HOVER")
++        .map_err(|_| ())
+(truncated: 100 further diff lines not committed)
+--- run 44266978337 ---

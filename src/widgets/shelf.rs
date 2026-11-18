@@ -519,7 +519,15 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
     let show_at: std::rc::Rc<dyn Fn(usize)> = {
         let popover = popover.clone();
         let geom = geom.clone();
+        let pop_area = area.clone();
         std::rc::Rc::new(move |i: usize| {
+            // A popover needs a toplevel to hang its surface from;
+            // before the window maps there is none, and asking for
+            // one anyway leaves the whole frame dark (B38, first
+            // hover photograph).
+            if !pop_area.is_mapped() {
+                return;
+            }
             let g = geom.borrow();
             if let Some((x, y, len, thick)) = g.bars.get(i).copied() {
                 if len > 0.0 {
@@ -692,7 +700,9 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
     area.add_controller(keys);
 
     // CI's photograph of the hover card (B38): hold it open on one
-    // book, the way a resting pointer would.
+    // book, the way a resting pointer would -- but only once the
+    // widget is inside a mapped window, or the popover has no
+    // surface to open onto.
     if let Ok(i) = std::env::var("KALAM_SHELF_HOVER").map_err(|_| ())
         .and_then(|v| v.parse::<usize>().map_err(|_| ()))
     {
@@ -700,7 +710,7 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
         let h_area = area.clone();
         let h_fill = fill_card.clone();
         let h_show = show_at.clone();
-        gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(400), move || {
+        area.connect_map(move |_| {
             h_state.borrow_mut().hover = Some(i);
             h_area.queue_draw();
             h_fill(i);

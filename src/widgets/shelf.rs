@@ -761,6 +761,7 @@ pub fn shelf_ruler(
     let k_show = show_at.clone();
     let k_cancel = cancel_hide.clone();
     let k_pop = popover.clone();
+    let k_dates = dates.clone();
     let book_len = books.len();
     area.connect_realize(move |a| {
         let Some(root) = a.root() else { return };
@@ -781,6 +782,11 @@ pub fn shelf_ruler(
                     (Some(i), _) => i.saturating_sub(1),
                     (None, _) => 0,
                 });
+                // The shelf opens at Today; walking toward older
+                // books pans them into the window.
+                if let Some(sel) = st.selected {
+                    scroll_to_show(&mut st, &k_dates, sel);
+                }
                 drop(st);
                 k_area.queue_draw();
                 gtk::glib::Propagation::Stop
@@ -815,9 +821,12 @@ pub fn shelf_ruler(
         let s_fill = fill_card.clone();
         let s_show = show_at.clone();
         let beat: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || {
-            s_state.borrow_mut().selected = Some(3);
+            // Book 11 (Dune) stands in the open window; book 3 is
+            // above the fade at rest, and a ring around an offscreen
+            // bar photographs as nothing (B39).
+            s_state.borrow_mut().selected = Some(11);
             s_area.queue_draw();
-            open_later(&s_geom, &s_fill, &s_show, 3, 0);
+            open_later(&s_geom, &s_fill, &s_show, 11, 0);
         });
         when_mapped(&area, beat);
     }
@@ -881,6 +890,20 @@ fn when_mapped(area: &gtk::DrawingArea, beat: std::rc::Rc<dyn Fn()>) {
                 move || beat(),
             );
         });
+    }
+}
+
+/// Bring a bar into the visible window by panning the content
+/// (the shelf opens at Today; the oldest books stand above it).
+fn scroll_to_show(st: &mut ShelfState, dates: &[i64], sel: usize) {
+    let Some(day) = dates.get(sel) else { return };
+    let anchors = anchors_for(st.zoom, dates, today_day(), AREA_H as f64);
+    let y = map_date(&anchors, *day, st.pan);
+    let max = max_pan(&anchors);
+    if y < 50.0 {
+        st.pan = (st.pan + (50.0 - y)).min(max);
+    } else if y > AREA_H as f64 - 30.0 {
+        st.pan = (st.pan - (y - (AREA_H as f64 - 30.0))).max(0.0);
     }
 }
 

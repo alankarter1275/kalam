@@ -14,7 +14,7 @@ index 68ea3a7..d7a4c3f 100644
                  );
                  PageSlot::Home(ctrl)
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index 7402dfb..ea8e830 100644
+index 2970234..c4e37cf 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
 @@ -112,7 +112,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
@@ -61,7 +61,7 @@ index 7402dfb..ea8e830 100644
          // §57's bar and box and §62's timeline (B21): all three come from
          // widget modules and go into the hosts the view reserves for them, the
          // way the shelf and the book card do. The bar and the box are wired to
-@@ -1001,7 +1009,12 @@ fn paint_right(
+@@ -999,7 +1007,12 @@ fn paint_right(
      }
  
      let Some(face) = face else {
@@ -75,7 +75,7 @@ index 7402dfb..ea8e830 100644
          host.append(&build_pager(cards, current, sender));
          return;
      };
-@@ -1101,12 +1114,14 @@ fn arm_quiet(
+@@ -1099,12 +1112,14 @@ fn arm_quiet(
      // The closure moves what it captures, so it gets clones of its own
      // and the originals stay here to store the source id.
      let quiet_cb = quiet.clone();
@@ -113,4 +113,217 @@ index 5e523a3..180295a 100644
      // Not a GtkPopover, and run 42893860400 is the reason: popup() on the
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
---- run 44236563459 ---
+diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
+index 013a642..835f5ab 100644
+--- a/src/widgets/shelf.rs
++++ b/src/widgets/shelf.rs
+@@ -37,20 +37,118 @@ pub struct ShelfBook {
+ pub fn showcase_shelf() -> Vec<ShelfBook> {
+     use ShelfBook as B;
+     vec![
+-        B { title: "The Left Hand of Darkness", author: "Ursula K. Le Guin", days_ago: 452, pages: 304, colour: (0.42, 0.50, 0.62), rating: 4.5 },
+-        B { title: "Piranesi", author: "Susanna Clarke", days_ago: 418, pages: 245, colour: (0.55, 0.47, 0.42), rating: 4.0 },
+-        B { title: "Wolf Hall", author: "Hilary Mantel", days_ago: 372, pages: 653, colour: (0.36, 0.30, 0.26), rating: 4.5 },
+-        B { title: "Kindred", author: "Octavia E. Butler", days_ago: 330, pages: 287, colour: (0.62, 0.36, 0.30), rating: 5.0 },
+-        B { title: "Blindsight", author: "Peter Watts", days_ago: 291, pages: 384, colour: (0.30, 0.42, 0.44), rating: 4.0 },
+-        B { title: "A Wizard of Earthsea", author: "Ursula K. Le Guin", days_ago: 244, pages: 183, colour: (0.47, 0.52, 0.38), rating: 4.5 },
+-        B { title: "The Dispossessed", author: "Ursula K. Le Guin", days_ago: 198, pages: 387, colour: (0.52, 0.40, 0.50), rating: 5.0 },
+-        B { title: "Solaris", author: "Stanisław Lem", days_ago: 151, pages: 204, colour: (0.35, 0.45, 0.55), rating: 4.0 },
+-        B { title: "Wayward Pines", author: "Blake Crouch", days_ago: 96, pages: 320, colour: (0.60, 0.30, 0.26), rating: 3.5 },
+-        B { title: "Pines", author: "Blake Crouch", days_ago: 88, pages: 320, colour: (0.28, 0.38, 0.32), rating: 4.0 },
+-        B { title: "Ubik", author: "Philip K. Dick", days_ago: 61, pages: 272, colour: (0.58, 0.44, 0.36), rating: 4.5 },
+-        B { title: "Dune", author: "Frank Herbert", days_ago: 34, pages: 688, colour: (0.66, 0.50, 0.30), rating: 5.0 },
+-        B { title: "The Tombs of Atuan", author: "Ursula K. Le Guin", days_ago: 21, pages: 163, colour: (0.44, 0.36, 0.44), rating: 4.0 },
+-        B { title: "The Farthest Shore", author: "Ursula K. Le Guin", days_ago: 9, pages: 259, colour: (0.32, 0.44, 0.50), rating: 4.5 },
++        B {
++            title: "The Left Hand of Darkness",
++            author: "Ursula K. Le Guin",
++            days_ago: 452,
++            pages: 304,
++            colour: (0.42, 0.50, 0.62),
++            rating: 4.5,
++        },
++        B {
++            title: "Piranesi",
++            author: "Susanna Clarke",
++            days_ago: 418,
++            pages: 245,
++            colour: (0.55, 0.47, 0.42),
++            rating: 4.0,
++        },
++        B {
++            title: "Wolf Hall",
++            author: "Hilary Mantel",
++            days_ago: 372,
++            pages: 653,
++            colour: (0.36, 0.30, 0.26),
++            rating: 4.5,
++        },
++        B {
++            title: "Kindred",
++            author: "Octavia E. Butler",
++            days_ago: 330,
++            pages: 287,
++            colour: (0.62, 0.36, 0.30),
++            rating: 5.0,
++        },
++        B {
++            title: "Blindsight",
++            author: "Peter Watts",
++            days_ago: 291,
++            pages: 384,
++            colour: (0.30, 0.42, 0.44),
++            rating: 4.0,
++        },
++        B {
++            title: "A Wizard of Earthsea",
++            author: "Ursula K. Le Guin",
++            days_ago: 244,
++            pages: 183,
++            colour: (0.47, 0.52, 0.38),
++            rating: 4.5,
++        },
++        B {
++            title: "The Dispossessed",
++            author: "Ursula K. Le Guin",
++            days_ago: 198,
++            pages: 387,
++            colour: (0.52, 0.40, 0.50),
++            rating: 5.0,
++        },
++        B {
++            title: "Solaris",
++            author: "Stanisław Lem",
++            days_ago: 151,
++            pages: 204,
++            colour: (0.35, 0.45, 0.55),
++            rating: 4.0,
++        },
++        B {
++            title: "Wayward Pines",
++            author: "Blake Crouch",
++            days_ago: 96,
++            pages: 320,
++            colour: (0.60, 0.30, 0.26),
++            rating: 3.5,
++        },
++        B {
++            title: "Pines",
++            author: "Blake Crouch",
++            days_ago: 88,
++            pages: 320,
++            colour: (0.28, 0.38, 0.32),
++            rating: 4.0,
++        },
++        B {
++            title: "Ubik",
++            author: "Philip K. Dick",
++            days_ago: 61,
++            pages: 272,
++            colour: (0.58, 0.44, 0.36),
++            rating: 4.5,
++        },
++        B {
++            title: "Dune",
++            author: "Frank Herbert",
++            days_ago: 34,
++            pages: 688,
++            colour: (0.66, 0.50, 0.30),
++            rating: 5.0,
++        },
++        B {
++            title: "The Tombs of Atuan",
++            author: "Ursula K. Le Guin",
++            days_ago: 21,
++            pages: 163,
++            colour: (0.44, 0.36, 0.44),
++            rating: 4.0,
++        },
++        B {
++            title: "The Farthest Shore",
++            author: "Ursula K. Le Guin",
++            days_ago: 9,
++            pages: 259,
++            colour: (0.32, 0.44, 0.50),
++            rating: 4.5,
++        },
+     ]
+ }
+ 
+@@ -70,8 +168,18 @@ const MIN_GAP_YEARS: f64 = 6.0;
+ const READOUT_MS: u64 = 900;
+ 
+ const MONTHS: [&str; 12] = [
+-    "January", "February", "March", "April", "May", "June", "July",
+-    "August", "September", "October", "November", "December",
++    "January",
++    "February",
++    "March",
++    "April",
++    "May",
++    "June",
++    "July",
++    "August",
++    "September",
++    "October",
++    "November",
++    "December",
+ ];
+ 
+ /// Day number (unix days) of a date; the ruler's only clock.
+@@ -257,8 +365,7 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
+             cr.set_source_rgba(accent.0, accent.1, accent.2, 1.0);
+             cr.arc(AXIS_X, y, 5.0, 0.0, std::f64::consts::TAU);
+             cr.stroke().ok();
+-            let layout =
+-                widget.create_pango_layout(Some("Your first finished book stands here."));
++            let layout = widget.create_pango_layout(Some("Your first finished book stands here."));
+             set_font(layout, "Playfair Display", 18.0, false);
+             let (w, _) = layout.size();
+             cr.move_to(
+@@ -273,7 +380,16 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
+         }
+ 
+         draw_ticks(cr, widget, &anchors, pan, st.zoom, height, &dim, &text);
+-        draw_bars(cr, widget, &draw_books, &draw_dates, &anchors, pan, st.zoom, height);
++        draw_bars(
++            cr,
++            widget,
++            &draw_books,
++            &draw_dates,
++            &anchors,
++            pan,
++            st.zoom,
++            height,
++        );
+         draw_dots(cr, &draw_dates, &anchors, pan, st.zoom, &accent);
+         draw_today(cr, widget, &anchors, pan, height, &accent, &bg);
+         draw_fade(cr, width, &bg);
+@@ -286,11 +402,13 @@ pub fn shelf_ruler(empty: bool) -> gtk::Box {
+     let scroll_area = area.clone();
+     let scroll_dates = dates.clone();
+     let scroll_label = readout_label();
+-    let controller =
+-        gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
++    let controller = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
+     controller.connect_scroll(move |ctrl, _dx, dy| {
+         let mut st = scroll_state.borrow_mut();
+-        if ctrl.current_event_state().contains(gdk::ModifierType::CONTROL_MASK) {
++        if ctrl
++            .current_event_state()
++            .contains(gdk::ModifierType::CONTROL_MASK)
++        {
+             let next = match st.zoom {
+                 Zoom::Weeks if dy > 0.0 => Zoom::Months,
+                 Zoom::Months if dy < 0.0 => Zoom::Weeks,
+@@ -461,8 +579,7 @@ fn draw_ticks(
+                         cr.line_to(AXIS_X + len, y);
+                         cr.stroke().ok();
+                         if weekday == 0 {
+-                            let layout =
+-                                widget.create_pango_layout(Some(&dom.to_string()));
++                            let layout = widget.create_pango_layout(Some(&dom.to_string()));
+                             set_font(layout, "DM Sans", 11.0, false);
+                             cr.move_to(AXIS_X + 18.0, y - 6.0);
+                             cr.set_source_rgba(dim.0, dim.1, dim.2, 0.8);
+--- run 44259067682 ---

@@ -499,7 +499,13 @@ pub fn shelf_ruler(
     let caption = gtk::Label::new(Some(if empty {
         "Your first finished book stands here."
     } else {
-        "Finished books, newest at the bottom."
+        match arrange {
+            Arrange::Colour => "Arranged by colour.",
+            Arrange::Rating => "Arranged by rating.",
+            Arrange::Length => "Arranged by length.",
+            Arrange::Author => "Arranged by author.",
+            Arrange::Date => "Finished books, newest at the bottom.",
+        }
     }));
     caption.add_css_class("kalam-ui-meta");
     caption.set_visible(!empty);
@@ -916,7 +922,6 @@ fn apply_filter(f: Option<(i32, i32)>, pill: &gtk::Button, caption: &gtk::Label)
         }
         None => {
             pill.set_visible(false);
-            caption.set_text("Finished books, newest at the bottom.");
         }
     }
 }

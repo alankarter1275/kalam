@@ -7881,7 +7881,7 @@ popover.kalam-shelf-popover > contents {
 
 /* The Arrange by chip is a dropdown list (§43) wearing the chip's
    clothes: the inner button takes the pill shape and fills. */
-menubutton.kalam-arrange > button {
+menubutton.kalam-ui-dropdown.kalam-arrange > button {
     background: @kalam_accent_dim;
     color: @kalam_text;
     border-radius: 999px;

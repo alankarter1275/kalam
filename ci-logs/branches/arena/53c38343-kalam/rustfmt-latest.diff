@@ -14,7 +14,7 @@ index 68ea3a7..d7a4c3f 100644
                  );
                  PageSlot::Home(ctrl)
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index 030fa09..b55b561 100644
+index 0bdd162..5fad58f 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
 @@ -112,7 +112,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
@@ -125,7 +125,7 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index 28a9544..330d6b1 100644
+index d673918..35eaec7 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
 @@ -62,10 +62,15 @@ pub fn order_books(books: &[ShelfBook], dates: &[i64], arrange: Arrange) -> Vec<
@@ -328,20 +328,7 @@ index 28a9544..330d6b1 100644
  ];
  
  /// Day number (unix days) of a date; the ruler's only clock.
-@@ -318,7 +459,11 @@ pub fn shelf_ruler(
-     // The filter is a date idea; other arrangements have no months
-     // to filter (decision 193).
-     let empty = empty || std::env::var_os("KALAM_SHELF_EMPTY").is_some();
--    let filter = if arrange == Arrange::Date { filter } else { None };
-+    let filter = if arrange == Arrange::Date {
-+        filter
-+    } else {
-+        None
-+    };
-     let pal = Palette {
-         accent: hex(theme.accent),
-         dim: hex(theme.text_dim),
-@@ -391,8 +536,7 @@ pub fn shelf_ruler(
+@@ -394,8 +535,7 @@ pub fn shelf_ruler(
              cr.set_source_rgba(pal.accent.0, pal.accent.1, pal.accent.2, 1.0);
              cr.arc(AXIS_X, y, 5.0, 0.0, std::f64::consts::TAU);
              cr.stroke().ok();
@@ -351,7 +338,7 @@ index 28a9544..330d6b1 100644
              set_font(&layout, "Playfair Display", 18.0, false);
              let (w, _) = layout.size();
              cr.move_to(
-@@ -406,7 +550,12 @@ pub fn shelf_ruler(
+@@ -409,7 +549,12 @@ pub fn shelf_ruler(
              return;
          }
  
@@ -365,7 +352,7 @@ index 28a9544..330d6b1 100644
          let mut geom = draw_geom.borrow_mut();
          geom.bars.clear();
          geom.labels.clear();
-@@ -461,11 +610,13 @@ pub fn shelf_ruler(
+@@ -464,11 +609,13 @@ pub fn shelf_ruler(
      // pill below keeps the original.
      let readout_label = readout_label();
      let scroll_label = readout_label.clone();
@@ -382,7 +369,7 @@ index 28a9544..330d6b1 100644
              let next = match st.zoom {
                  Zoom::Weeks if dy > 0.0 => Zoom::Months,
                  Zoom::Months if dy < 0.0 => Zoom::Weeks,
-@@ -576,8 +727,13 @@ pub fn shelf_ruler(
+@@ -579,8 +726,13 @@ pub fn shelf_ruler(
      popover.set_child(Some(&card_box));
  
      let fill_card: std::rc::Rc<dyn Fn(usize)> = {
@@ -398,5 +385,18 @@ index 28a9544..330d6b1 100644
          let (took_l, pages_l) = (took_l.clone(), pages_l.clone());
          let cc = cover_colour.clone();
          let cover = cover.clone();
-(truncated: 175 further diff lines not committed)
---- run 44290409775 ---
+@@ -622,10 +774,7 @@ pub fn shelf_ruler(
+             }
+             let rect = {
+                 let g = geom.borrow();
+-                g.bars
+-                    .iter()
+-                    .copied()
+-                    .find(|r| r.4 == i && r.2 > 0.0)
++                g.bars.iter().copied().find(|r| r.4 == i && r.2 > 0.0)
+             };
+             let Some((x, y, len, thick, _)) = rect else {
+                 return;
+@@ -726,7 +875,11 @@ pub fn shelf_ruler(
+(truncated: 162 further diff lines not committed)
+--- run 44292999644 ---

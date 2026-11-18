@@ -141,7 +141,7 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index 4e08dc8..fb99530 100644
+index a2faeee..d6e90d1 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
 @@ -51,20 +51,146 @@ pub struct ShelfBook {
@@ -399,4 +399,4 @@ index 4e08dc8..fb99530 100644
 -                st.filter = if st.filter == Some((yy, mm)) { None } else { Some((yy, mm)) };
 +                st.filter = if st.filter == Some((yy, mm)) {
 (truncated: 114 further diff lines not committed)
---- run 44271656249 ---
+--- run 44271922046 ---

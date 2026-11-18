@@ -399,4 +399,4 @@ index 0d6b765..59d9837 100644
                  return;
 @@ -720,7 +869,11 @@ pub fn shelf_ruler(
 (truncated: 190 further diff lines not committed)
---- run 44315607771 ---
+--- run 44319403766 ---

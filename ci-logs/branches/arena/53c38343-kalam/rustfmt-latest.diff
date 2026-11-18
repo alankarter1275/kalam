@@ -127,7 +127,7 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index 8fc1d45..6bcbc80 100644
+index fd114f1..e0a6da1 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
 @@ -46,20 +46,118 @@ pub struct ShelfBook {
@@ -399,4 +399,4 @@ index 8fc1d45..6bcbc80 100644
      let r = if zoom == Zoom::Years { 2.0 } else { 3.5 };
      for day in dates {
 (truncated: 21 further diff lines not committed)
---- run 44262931618 ---
+--- run 44263215297 ---

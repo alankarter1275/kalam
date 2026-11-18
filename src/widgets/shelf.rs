@@ -10,6 +10,10 @@
 
 use gtk::prelude::*;
 
+// The scroll controller's modifier state lives in gdk, which this
+// module does not otherwise name.
+use gtk::gdk;
+
 /// The three zooms (decision 191). Months is the default; there is
 /// no switch, only Ctrl+scroll.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

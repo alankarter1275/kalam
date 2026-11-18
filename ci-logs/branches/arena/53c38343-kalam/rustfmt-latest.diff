@@ -14,7 +14,7 @@ index 68ea3a7..d7a4c3f 100644
                  );
                  PageSlot::Home(ctrl)
 diff --git a/src/pages/home.rs b/src/pages/home.rs
-index 0bdd162..5fad58f 100644
+index 525bc54..f1dd8b0 100644
 --- a/src/pages/home.rs
 +++ b/src/pages/home.rs
 @@ -112,7 +112,12 @@ const SHOWCASE_UPDATES: &[(&str, &str, &str, bool)] = &[
@@ -72,7 +72,7 @@ index 0bdd162..5fad58f 100644
                  })
                  .collect(),
              model.arrange,
-@@ -1075,7 +1081,12 @@ fn paint_right(
+@@ -1082,7 +1088,12 @@ fn paint_right(
      }
  
      let Some(face) = face else {
@@ -86,7 +86,7 @@ index 0bdd162..5fad58f 100644
          host.append(&build_pager(cards, current, sender));
          return;
      };
-@@ -1175,12 +1186,14 @@ fn arm_quiet(
+@@ -1182,12 +1193,14 @@ fn arm_quiet(
      // The closure moves what it captures, so it gets clones of its own
      // and the originals stay here to store the source id.
      let quiet_cb = quiet.clone();
@@ -125,7 +125,7 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index 9c627cc..0602fac 100644
+index 5753f08..6453242 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
 @@ -50,10 +50,15 @@ pub fn order_books(books: &[ShelfBook], dates: &[i64], arrange: Arrange) -> Vec<
@@ -399,4 +399,4 @@ index 9c627cc..0602fac 100644
                  return;
 @@ -730,7 +879,11 @@ pub fn shelf_ruler(
 (truncated: 181 further diff lines not committed)
---- run 44307086421 ---
+--- run 44311182910 ---

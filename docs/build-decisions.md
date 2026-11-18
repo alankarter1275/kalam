@@ -1258,6 +1258,20 @@ open_later now retries until the geometry exists. The keyboard
 itself hangs on the root at realize, because the drawn area cannot
 hold focus and a controller on it never saw a key.
 
+Two last wounds, both found by the keyboard photograph. The
+dropdown announces its initial selection while it is being built,
+so the page repainted the shelf a second time in the same load and
+the levers ended up wired to a ruler that was immediately discarded
+-- arranging to the order already in force is now a no-op, and one
+ruler stands per load. And the shelf opens scrolled to Today, so the
+oldest bars sit above the window with zero drawn length: the first
+keyboard lever selected book 3, an offscreen bar, and its ring and
+card photographed as nothing at all. Left and Right now pan the
+selection into the window (scroll_to_show), and the photograph lever
+selects a book that is already on screen. The final kbd frame shows
+the ring around Dune's slid bar with the leader and the full card
+above it.
+
 Deviations carried: the hover card omits Reading time (Proposed in
 192, no session log) and the reaction chips (no impressions store);
 the accessible ListView alternative of §6 is not built (Proposed

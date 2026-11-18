@@ -746,13 +746,6 @@ impl Component for HomePageModel {
                     widgets,
                     self.library_empty || self.forced_state.as_deref() == Some("empty"),
                 );
-                // CI's photograph of a focus ring (B37): hand the
-                // keyboard to the first button on the card, the way a
-                // Tab walk would. A normal launch never sets this.
-                if std::env::var_os("KALAM_HOME_FOCUS").is_some() {
-                    let host = widgets.card_host.clone();
-                    focus_first_button(&host.upcast::<gtk::Widget>());
-                }
                 paint_right(
                     widgets,
                     &self.cards,
@@ -761,6 +754,17 @@ impl Component for HomePageModel {
                     &self.service,
                     &sender,
                 );
+                // CI's photograph of a focus ring (B37): hand the
+                // keyboard to the first button on the card, the way a
+                // Tab walk would. A normal launch never sets this.
+                // After paint_right, not before: paint rebuilds the
+                // card, and a pill focused before the rebuild is a
+                // pill thrown away with its ring (the first two
+                // ringless frames).
+                if std::env::var_os("KALAM_HOME_FOCUS").is_some() {
+                    let host = widgets.card_host.clone();
+                    focus_first_button(&host.upcast::<gtk::Widget>());
+                }
             }
             HomeMsg::Switch(i) => {
                 if i < self.cards.len() {

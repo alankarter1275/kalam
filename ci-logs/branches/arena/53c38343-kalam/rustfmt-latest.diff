@@ -125,7 +125,7 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index e933ff8..72b5a08 100644
+index b9611d5..b4b635d 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
 @@ -50,10 +50,15 @@ pub fn order_books(books: &[ShelfBook], dates: &[i64], arrange: Arrange) -> Vec<
@@ -369,7 +369,7 @@ index e933ff8..72b5a08 100644
              let next = match st.zoom {
                  Zoom::Weeks if dy > 0.0 => Zoom::Months,
                  Zoom::Months if dy < 0.0 => Zoom::Weeks,
-@@ -567,8 +714,13 @@ pub fn shelf_ruler(
+@@ -573,8 +720,13 @@ pub fn shelf_ruler(
      popover.set_child(Some(&card_box));
  
      let fill_card: std::rc::Rc<dyn Fn(usize)> = {
@@ -385,7 +385,7 @@ index e933ff8..72b5a08 100644
          let (took_l, pages_l) = (took_l.clone(), pages_l.clone());
          let cc = cover_colour.clone();
          let cover = cover.clone();
-@@ -610,10 +762,7 @@ pub fn shelf_ruler(
+@@ -616,10 +768,7 @@ pub fn shelf_ruler(
              }
              let rect = {
                  let g = geom.borrow();
@@ -397,6 +397,6 @@ index e933ff8..72b5a08 100644
              };
              let Some((x, y, len, thick, _)) = rect else {
                  return;
-@@ -714,7 +863,11 @@ pub fn shelf_ruler(
-(truncated: 162 further diff lines not committed)
---- run 44297187041 ---
+@@ -720,7 +869,11 @@ pub fn shelf_ruler(
+(truncated: 167 further diff lines not committed)
+--- run 44297355024 ---

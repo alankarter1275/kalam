@@ -27,8 +27,8 @@ glib-2.0: 2.88.0
 [1m[33mwarning[0m: workspace (manifest) generated 2 warnings
 [1m[92m Downloading[0m crates ...
 [1m[92m  Downloaded[0m regex v1.13.2
-[1m[92m  Downloaded[0m regex-syntax v0.8.12
 [1m[92m  Downloaded[0m regex-automata v0.4.19
+[1m[92m  Downloaded[0m regex-syntax v0.8.12
 [1m[92m    Checking[0m chapbook-core v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-core)
 [1m[92m    Checking[0m regex-syntax v0.8.12
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (/home/runner/work/kalam/kalam/crates/chapbook-paint)
@@ -39,12 +39,12 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m chapbook-cli v0.1.0 (/home/runner/work/kalam/kalam/tools/chapbook-cli)
 [1m[92m    Checking[0m regex-automata v0.4.19
 [1m[92m    Checking[0m proptest v1.12.0
+[1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m    Checking[0m globset v0.4.21
 [1m[92m    Checking[0m regex v1.13.2
 [1m[92m    Checking[0m insta v1.49.0
 [1m[92m    Checking[0m env_filter v2.0.0
 [1m[92m    Checking[0m env_logger v0.11.11
-[1m[92m    Checking[0m kalam-reader v0.1.0 (/home/runner/work/kalam/kalam/crates/kalam-reader)
 [1m[92m   Compiling[0m bindgen v0.72.1
 [1m[92m   Compiling[0m mupdf-sys v0.8.0
 [1m[92m    Checking[0m mupdf v0.8.0
@@ -67,4 +67,4 @@ glib-2.0: 2.88.0
    [1m[94m= [0m[1mnote[0m: `cargo::unused_dependencies` is set to `warn` by default
 [1m[96mhelp[0m: consider removing the dependency on `image`
 [1m[33mwarning[0m: `chapbook-render-tinyskia` (manifest) generated 1 warning
-[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 1m 35s
+[1m[92m    Finished[0m `dev` profile [optimized + debuginfo] target(s) in 1m 31s

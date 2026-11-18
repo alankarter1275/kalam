@@ -1204,7 +1204,7 @@ jobs:
       - name: open home with the shelf under the keyboard (light) and report
         if: matrix.group == 'pages'
         run: |
-          BOOKS=20 OUT=ci-shots-home-shelf-keys-light SETTLE=20 ROUTE=home \
+          BOOKS=20 OUT=ci-shots-home-shelf-kbd-light SETTLE=20 ROUTE=home \
             THEME=terracotta-light OUTPUT_W=1280 OUTPUT_H=800 \
             KALAM_SHELF_KEYS=1 docs/ci/screenshot.sh
       - name: open home with the shelf filtered (light) and report
@@ -2592,8 +2592,8 @@ jobs:
             "$CILOG_DIR/home-shelf-hover-terracotta-light.png" 2>/dev/null || true
           cp ci-shots-home-shelf-filter-light/03-home-settled.png \
             "$CILOG_DIR/home-shelf-filter-terracotta-light.png" 2>/dev/null || true
-          cp ci-shots-home-shelf-keys-light/03-home-settled.png \
-            "$CILOG_DIR/home-shelf-keys-terracotta-light.png" 2>/dev/null || true
+          cp ci-shots-home-shelf-kbd-light/03-home-settled.png \
+            "$CILOG_DIR/home-shelf-kbd-terracotta-light.png" 2>/dev/null || true
           # And the keystroke probe's frame of Home after Ctrl+f: the same box
           # open, but opened by a real chord through a real compositor rather
           # than by a launch variable, which is the difference between a

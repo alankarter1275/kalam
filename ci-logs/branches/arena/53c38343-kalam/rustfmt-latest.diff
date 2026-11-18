@@ -127,7 +127,7 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index 6c29f99..95b33f0 100644
+index c311e5c..68ad538 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
 @@ -51,20 +51,146 @@ pub struct ShelfBook {
@@ -378,7 +378,7 @@ index 6c29f99..95b33f0 100644
          let (took_l, pages_l) = (took_l.clone(), pages_l.clone());
          let cc = cover_colour.clone();
          let cover = cover.clone();
-@@ -622,7 +773,11 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+@@ -621,7 +772,11 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
          if let Some((yy, mm)) = label {
              let next = {
                  let mut st = c_state.borrow_mut();
@@ -391,7 +391,7 @@ index 6c29f99..95b33f0 100644
                  st.filter
              };
              apply_filter(next, &c_pill, &c_caption);
-@@ -694,7 +849,8 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+@@ -693,7 +848,8 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
  
      // CI's photograph of the hover card (B38): hold it open on one
      // book, the way a resting pointer would.
@@ -399,4 +399,4 @@ index 6c29f99..95b33f0 100644
 +    if let Ok(i) = std::env::var("KALAM_SHELF_HOVER")
 +        .map_err(|_| ())
 (truncated: 100 further diff lines not committed)
---- run 44266978337 ---
+--- run 44267381357 ---

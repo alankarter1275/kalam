@@ -26,18 +26,6 @@ pub enum Arrange {
     Author,
 }
 
-impl Arrange {
-    pub fn from_id(id: &str) -> Self {
-        match id {
-            "colour" => Self::Colour,
-            "rating" => Self::Rating,
-            "length" => Self::Length,
-            "author" => Self::Author,
-            _ => Self::Date,
-        }
-    }
-}
-
 /// The hue of a cover colour, for the rainbow stack.
 fn hue(c: (f64, f64, f64)) -> f64 {
     let (r, g, b) = c;

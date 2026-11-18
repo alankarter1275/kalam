@@ -1188,6 +1188,22 @@ jobs:
           BOOKS=20 OUT=ci-shots-home-shelf-years-light SETTLE=20 ROUTE=home \
             THEME=terracotta-light OUTPUT_W=1280 OUTPUT_H=800 \
             KALAM_SHELF_ZOOM=years docs/ci/screenshot.sh
+      # The shelf's hover card and its filtered month, held open by
+      # levers a headless compositor can otherwise never produce
+      # (B38): a resting pointer on the twelfth book, and October of
+      # the showcase year.
+      - name: open home with a shelf hover card (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-home-shelf-hover-light SETTLE=20 ROUTE=home \
+            THEME=terracotta-light OUTPUT_W=1280 OUTPUT_H=800 \
+            KALAM_SHELF_HOVER=11 docs/ci/screenshot.sh
+      - name: open home with the shelf filtered (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-home-shelf-filter-light SETTLE=20 ROUTE=home \
+            THEME=terracotta-light OUTPUT_W=1280 OUTPUT_H=800 \
+            KALAM_SHELF_FILTER=2026-10 docs/ci/screenshot.sh
       # A focus ring to photograph: the empty face's first pill takes
       # the keyboard through KALAM_HOME_FOCUS, the way a Tab walk
       # would put it there (B37).
@@ -2563,6 +2579,10 @@ jobs:
             "$CILOG_DIR/home-shelf-weeks-terracotta-light.png" 2>/dev/null || true
           cp ci-shots-home-shelf-years-light/03-home-settled.png \
             "$CILOG_DIR/home-shelf-years-terracotta-light.png" 2>/dev/null || true
+          cp ci-shots-home-shelf-hover-light/03-home-settled.png \
+            "$CILOG_DIR/home-shelf-hover-terracotta-light.png" 2>/dev/null || true
+          cp ci-shots-home-shelf-filter-light/03-home-settled.png \
+            "$CILOG_DIR/home-shelf-filter-terracotta-light.png" 2>/dev/null || true
           # And the keystroke probe's frame of Home after Ctrl+f: the same box
           # open, but opened by a real chord through a real compositor rather
           # than by a launch variable, which is the difference between a

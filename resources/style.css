@@ -7845,6 +7845,52 @@ scale.kalam-ui-slider slider {
     padding: 24px;
 }
 
+/* §61's hover card: the popover itself stays invisible; the card
+   inside carries the surface -- bg fill, 1px border, radius 14,
+   padding 16, 278 wide (decision 192). */
+popover.kalam-shelf-popover,
+popover.kalam-shelf-popover > contents {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+}
+
+.kalam-shelf-card {
+    background: @kalam_bg;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 16px;
+}
+
+.kalam-shelf-stars {
+    color: @kalam_accent;
+    font-size: 12px;
+}
+
+.kalam-shelf-stat-label {
+    font-size: 11px;
+    color: @kalam_text_dim;
+}
+
+.kalam-shelf-stat-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+/* decision 193: the filtered month's pill, 28 high, accent border,
+   with its cross. */
+.kalam-shelf-filter-pill {
+    min-height: 28px;
+    border: 1px solid @kalam_accent;
+    border-radius: 999px;
+    background: transparent;
+    color: @kalam_accent;
+    padding: 0 10px;
+    font-size: 11px;
+}
+
 /* §61's zoom readout: a 32-high pill in `card` with a 1px border,
    shown only while Ctrl+scroll is changing the scale. */
 .kalam-shelf-readout {

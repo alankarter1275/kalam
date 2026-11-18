@@ -36,8 +36,13 @@ pub struct ShelfBook {
     pub days_ago: i64,
     pub pages: i32,
     pub colour: (f64, f64, f64),
-    #[allow(dead_code)]
     pub rating: f64,
+    /// Invented days from first opened to finished, for the hover
+    /// card's Took stat (decision 192).
+    pub took_days: i32,
+    /// An invented impression line, for the hover card's Quote-style
+    /// note (B38).
+    pub note: &'static str,
 }
 
 /// The showcase shelf (B38): fourteen finished books across fifteen
@@ -46,20 +51,20 @@ pub struct ShelfBook {
 pub fn showcase_shelf() -> Vec<ShelfBook> {
     use ShelfBook as B;
     vec![
-        B { title: "The Left Hand of Darkness", author: "Ursula K. Le Guin", days_ago: 452, pages: 304, colour: (0.42, 0.50, 0.62), rating: 4.5 },
-        B { title: "Piranesi", author: "Susanna Clarke", days_ago: 418, pages: 245, colour: (0.55, 0.47, 0.42), rating: 4.0 },
-        B { title: "Wolf Hall", author: "Hilary Mantel", days_ago: 372, pages: 653, colour: (0.36, 0.30, 0.26), rating: 4.5 },
-        B { title: "Kindred", author: "Octavia E. Butler", days_ago: 330, pages: 287, colour: (0.62, 0.36, 0.30), rating: 5.0 },
-        B { title: "Blindsight", author: "Peter Watts", days_ago: 291, pages: 384, colour: (0.30, 0.42, 0.44), rating: 4.0 },
-        B { title: "A Wizard of Earthsea", author: "Ursula K. Le Guin", days_ago: 244, pages: 183, colour: (0.47, 0.52, 0.38), rating: 4.5 },
-        B { title: "The Dispossessed", author: "Ursula K. Le Guin", days_ago: 198, pages: 387, colour: (0.52, 0.40, 0.50), rating: 5.0 },
-        B { title: "Solaris", author: "Stanisław Lem", days_ago: 151, pages: 204, colour: (0.35, 0.45, 0.55), rating: 4.0 },
-        B { title: "Wayward Pines", author: "Blake Crouch", days_ago: 96, pages: 320, colour: (0.60, 0.30, 0.26), rating: 3.5 },
-        B { title: "Pines", author: "Blake Crouch", days_ago: 88, pages: 320, colour: (0.28, 0.38, 0.32), rating: 4.0 },
-        B { title: "Ubik", author: "Philip K. Dick", days_ago: 61, pages: 272, colour: (0.58, 0.44, 0.36), rating: 4.5 },
-        B { title: "Dune", author: "Frank Herbert", days_ago: 34, pages: 688, colour: (0.66, 0.50, 0.30), rating: 5.0 },
-        B { title: "The Tombs of Atuan", author: "Ursula K. Le Guin", days_ago: 21, pages: 163, colour: (0.44, 0.36, 0.44), rating: 4.0 },
-        B { title: "The Farthest Shore", author: "Ursula K. Le Guin", days_ago: 9, pages: 259, colour: (0.32, 0.44, 0.50), rating: 4.5 },
+        B { title: "The Left Hand of Darkness", author: "Ursula K. Le Guin", days_ago: 452, pages: 304, colour: (0.42, 0.50, 0.62), rating: 4.5, took_days: 148, note: "The north kept getting colder as she read it." },
+        B { title: "Piranesi", author: "Susanna Clarke", days_ago: 418, pages: 245, colour: (0.55, 0.47, 0.42), rating: 4.0, took_days: 96, note: "A house of staircases; she still draws them." },
+        B { title: "Wolf Hall", author: "Hilary Mantel", days_ago: 372, pages: 653, colour: (0.36, 0.30, 0.26), rating: 4.5, took_days: 210, note: "Cromwell's quiet, and the court's noise." },
+        B { title: "Kindred", author: "Octavia E. Butler", days_ago: 330, pages: 287, colour: (0.62, 0.36, 0.30), rating: 5.0, took_days: 61, note: "Time would not sit still for her either." },
+        B { title: "Blindsight", author: "Peter Watts", days_ago: 291, pages: 384, colour: (0.30, 0.42, 0.44), rating: 4.0, took_days: 44, note: "The scramblebirds are still in her head." },
+        B { title: "A Wizard of Earthsea", author: "Ursula K. Le Guin", days_ago: 244, pages: 183, colour: (0.47, 0.52, 0.38), rating: 4.5, took_days: 30, note: "The first word of the whole shelf." },
+        B { title: "The Dispossessed", author: "Ursula K. Le Guin", days_ago: 198, pages: 387, colour: (0.52, 0.40, 0.50), rating: 5.0, took_days: 77, note: "Anarchy, and the cost of holding it." },
+        B { title: "Solaris", author: "Stanisław Lem", days_ago: 151, pages: 204, colour: (0.35, 0.45, 0.55), rating: 4.0, took_days: 58, note: "The ocean thought back at them." },
+        B { title: "Wayward Pines", author: "Blake Crouch", days_ago: 96, pages: 320, colour: (0.60, 0.30, 0.26), rating: 3.5, took_days: 25, note: "Read in one night, lights on." },
+        B { title: "Pines", author: "Blake Crouch", days_ago: 88, pages: 320, colour: (0.28, 0.38, 0.32), rating: 4.0, took_days: 19, note: "Read in one night, lights on." },
+        B { title: "Ubik", author: "Philip K. Dick", days_ago: 61, pages: 272, colour: (0.58, 0.44, 0.36), rating: 4.5, took_days: 41, note: "Every ending felt like a door." },
+        B { title: "Dune", author: "Frank Herbert", days_ago: 34, pages: 688, colour: (0.66, 0.50, 0.30), rating: 5.0, took_days: 132, note: "The desert, and the worm, and the wait." },
+        B { title: "The Tombs of Atuan", author: "Ursula K. Le Guin", days_ago: 21, pages: 163, colour: (0.44, 0.36, 0.44), rating: 4.0, took_days: 24, note: "The tombs were quieter than the living." },
+        B { title: "The Farthest Shore", author: "Ursula K. Le Guin", days_ago: 9, pages: 259, colour: (0.32, 0.44, 0.50), rating: 4.5, took_days: 33, note: "Dragonflight, at last, and earned." },
     ]
 }
 
@@ -203,6 +208,15 @@ struct View<'a> {
     height: i32,
 }
 
+/// What the pointer, the keyboard and the month filter are doing to
+/// the drawing this frame.
+#[derive(Clone, Copy)]
+struct Fx {
+    hover: Option<usize>,
+    selected: Option<usize>,
+    filter: Option<(i32, i32)>,
+}
+
 struct ShelfState {
     zoom: Zoom,
     /// Downward shift of the content from its opened-at-bottom rest;
@@ -210,6 +224,23 @@ struct ShelfState {
     /// ceiling brings the oldest anchor to the top edge.
     pan: f64,
     readout: Option<gtk::glib::SourceId>,
+    /// The bar the pointer rests on (§61: it slides out 14).
+    hover: Option<usize>,
+    /// The bar the keyboard stands on (Left, Right, Enter).
+    selected: Option<usize>,
+    /// A month the shelf is filtered to (decision 193).
+    filter: Option<(i32, i32)>,
+    hide_grace: Option<gtk::glib::SourceId>,
+}
+
+/// Where things were drawn, kept between frames so the pointer and
+/// the keyboard can hit-test what the eye sees.
+#[derive(Default)]
+struct Geom {
+    /// x, y, width, thickness per book, in draw order.
+    bars: Vec<(f64, f64, f64, f64)>,
+    /// x, y, width, height, year, month per month label.
+    labels: Vec<(f64, f64, f64, f64, i32, i32)>,
 }
 
 /// The shelf block: heading, the drawn ruler with its zoom readout
@@ -230,6 +261,13 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
     title.add_css_class("kalam-home-heading");
     title.set_halign(gtk::Align::Start);
     head.append(&title);
+    // The month-filter pill (decision 193): stands while a month is
+    // filtered, and clears it when clicked.
+    let filter_pill = gtk::Button::new();
+    filter_pill.add_css_class("kalam-shelf-filter-pill");
+    filter_pill.set_margin_start(crate::style::spacing::SM);
+    filter_pill.set_visible(false);
+    head.append(&filter_pill);
     // R3 hangs the Arrange by chip here.
     let chip_host = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     chip_host.set_widget_name("arrange_host");
@@ -260,15 +298,25 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
             _ => Zoom::Months,
         }
     };
+    let filter = std::env::var("KALAM_SHELF_FILTER").ok().and_then(|v| {
+        let (y, m) = v.split_once('-')?;
+        Some((y.parse::<i32>().ok()?, m.parse::<i32>().ok()?))
+    });
     let state = std::rc::Rc::new(std::cell::RefCell::new(ShelfState {
         zoom,
         pan: 0.0,
         readout: None,
+        hover: None,
+        selected: None,
+        filter,
+        hide_grace: None,
     }));
+    let geom = std::rc::Rc::new(std::cell::RefCell::new(Geom::default()));
 
     let draw_books = books.clone();
     let draw_dates = dates.clone();
     let draw_state = state.clone();
+    let draw_geom = geom.clone();
     area.set_draw_func(move |area, cr, width, height| {
         let st = draw_state.borrow();
         let widget = area.upcast_ref::<gtk::Widget>();
@@ -304,8 +352,12 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
         }
 
         let view = View { anchors: &anchors, pan, zoom: st.zoom, height };
-        draw_ticks(cr, widget, &view, &pal);
-        draw_bars(cr, widget, &draw_books, &draw_dates, &view);
+        let mut geom = draw_geom.borrow_mut();
+        geom.bars.clear();
+        geom.labels.clear();
+        let fx = Fx { hover: st.hover, selected: st.selected, filter: st.filter };
+        draw_ticks(cr, widget, &draw_dates, &view, &pal, &mut geom, &fx);
+        draw_bars(cr, widget, &draw_books, &draw_dates, &view, &mut geom, &fx);
         draw_dots(cr, &draw_dates, &view, &pal);
         draw_today(cr, widget, &view, &pal);
         draw_fade(cr, width, &pal.bg);
@@ -375,8 +427,343 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
     caption.set_halign(gtk::Align::Start);
     caption.set_margin_top(crate::style::spacing::XS);
     root.append(&caption);
+    if filter.is_some() {
+        apply_filter(filter, &filter_pill, &caption);
+    }
+
+    // ---- R2: the hover card, the month filter, the keyboard.
+    let popover = gtk::Popover::new();
+    popover.set_has_arrow(false);
+    popover.add_css_class("kalam-shelf-popover");
+    popover.set_parent(&area);
+
+    let card_box = gtk::Box::new(gtk::Orientation::Vertical, crate::style::spacing::XS);
+    card_box.add_css_class("kalam-shelf-card");
+    card_box.set_size_request(278, -1);
+
+    let cover_colour = std::rc::Rc::new(std::cell::Cell::new((0.5, 0.5, 0.5)));
+    let cover = gtk::DrawingArea::new();
+    cover.set_size_request(56, 84);
+    cover.set_halign(gtk::Align::Start);
+    let cover_cc = cover_colour.clone();
+    cover.set_draw_func(move |_w, cr, width, height| {
+        let (r, g, b) = cover_cc.get();
+        cr.set_source_rgba(r, g, b, 1.0);
+        round_rect(cr, 0.0, 0.0, width as f64, height as f64, 6.0);
+        cr.fill().ok();
+    });
+    card_box.append(&cover);
+
+    let title_l = gtk::Label::new(None);
+    title_l.add_css_class("kalam-ui-card-title");
+    title_l.set_halign(gtk::Align::Start);
+    title_l.set_wrap(true);
+    card_box.append(&title_l);
+    let author_l = gtk::Label::new(None);
+    author_l.add_css_class("kalam-ui-meta");
+    author_l.set_halign(gtk::Align::Start);
+    card_box.append(&author_l);
+    let stars_l = gtk::Label::new(None);
+    stars_l.add_css_class("kalam-shelf-stars");
+    stars_l.set_halign(gtk::Align::Start);
+    card_box.append(&stars_l);
+    let date_l = gtk::Label::new(None);
+    date_l.add_css_class("kalam-ui-meta");
+    date_l.set_halign(gtk::Align::Start);
+    card_box.append(&date_l);
+
+    let stats = gtk::Box::new(gtk::Orientation::Horizontal, crate::style::spacing::LG);
+    stats.set_margin_top(crate::style::spacing::XS);
+    let took_l = stat_pair(&stats, "Took");
+    let pages_l = stat_pair(&stats, "Pages");
+    card_box.append(&stats);
+
+    let note_l = gtk::Label::new(None);
+    note_l.add_css_class("kalam-ui-quote");
+    note_l.set_halign(gtk::Align::Start);
+    note_l.set_xalign(0.0);
+    note_l.set_wrap(true);
+    note_l.set_margin_top(crate::style::spacing::XS);
+    card_box.append(&note_l);
+    popover.set_child(Some(&card_box));
+
+    let fill_card: std::rc::Rc<dyn Fn(usize)> = {
+        let (title_l, author_l, stars_l, date_l, note_l) =
+            (title_l.clone(), author_l.clone(), stars_l.clone(), date_l.clone(), note_l.clone());
+        let (took_l, pages_l) = (took_l.clone(), pages_l.clone());
+        let cc = cover_colour.clone();
+        let cover = cover.clone();
+        let books = books.clone();
+        let dates = dates.clone();
+        std::rc::Rc::new(move |i: usize| {
+            let Some(b) = books.get(i) else { return };
+            title_l.set_text(b.title);
+            author_l.set_text(b.author);
+            let stars = "★".repeat(b.rating.round() as usize);
+            stars_l.set_text(&format!("{stars}  {}", b.rating));
+            let (y, m, d) = ymd(dates[i]);
+            date_l.set_text(&format!(
+                "Finished {} {} {}",
+                d,
+                MONTHS[(m - 1) as usize % 12],
+                y
+            ));
+            took_l.set_text(&format!("{} days", b.took_days));
+            pages_l.set_text(&b.pages.to_string());
+            note_l.set_text(b.note);
+            cc.set(b.colour);
+            cover.queue_draw();
+        })
+    };
+
+    let show_at: std::rc::Rc<dyn Fn(usize)> = {
+        let popover = popover.clone();
+        let geom = geom.clone();
+        std::rc::Rc::new(move |i: usize| {
+            let g = geom.borrow();
+            if let Some((x, y, len, thick)) = g.bars.get(i).copied() {
+                if len > 0.0 {
+                    popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(
+                        (x + len + 30.0) as i32,
+                        y as i32,
+                        2,
+                        thick.max(4.0) as i32,
+                    )));
+                }
+            }
+            popover.popup();
+        })
+    };
+
+    let cancel_hide: std::rc::Rc<dyn Fn()> = {
+        let state = state.clone();
+        std::rc::Rc::new(move || {
+            if let Some(id) = state.borrow_mut().hide_grace.take() {
+                id.remove();
+            }
+        })
+    };
+    let hide_later: std::rc::Rc<dyn Fn()> = {
+        let popover = popover.clone();
+        let state = state.clone();
+        std::rc::Rc::new(move || {
+            if let Some(id) = state.borrow_mut().hide_grace.take() {
+                id.remove();
+            }
+            let st = state.clone();
+            let pop = popover.clone();
+            let id = gtk::glib::timeout_add_local_once(
+                std::time::Duration::from_millis(300),
+                move || {
+                    pop.popdown();
+                    st.borrow_mut().hide_grace = None;
+                },
+            );
+            state.borrow_mut().hide_grace = Some(id);
+        })
+    };
+
+    // Hover: the bar slides, the leader runs, the card stands to the
+    // right (§61). Leave gives a 300 ms grace before the card goes.
+    let motion = gtk::EventControllerMotion::new();
+    let m_state = state.clone();
+    let m_area = area.clone();
+    let m_geom = geom.clone();
+    let m_fill = fill_card.clone();
+    let m_show = show_at.clone();
+    let m_cancel = cancel_hide.clone();
+    motion.connect_motion(move |_ctrl, ev| {
+        let (x, y) = ev.position();
+        let idx = hit_bar(&m_geom.borrow(), x, y);
+        let changed = {
+            let mut st = m_state.borrow_mut();
+            let changed = st.hover != idx;
+            st.hover = idx;
+            changed
+        };
+        if changed {
+            m_area.queue_draw();
+        }
+        if let Some(i) = idx {
+            m_cancel();
+            m_fill(i);
+            m_show(i);
+        }
+    });
+    let l_state = state.clone();
+    let l_area = area.clone();
+    let l_hide = hide_later.clone();
+    motion.connect_leave(move |_ctrl| {
+        l_state.borrow_mut().hover = None;
+        l_area.queue_draw();
+        l_hide();
+    });
+    area.add_controller(motion);
+
+    // Click: a month label filters the shelf to it; a bar takes the
+    // keyboard's place and opens the card (decisions 191, 193).
+    let click = gtk::GestureClick::new();
+    let c_state = state.clone();
+    let c_area = area.clone();
+    let c_geom = geom.clone();
+    let c_pill = filter_pill.clone();
+    let c_caption = caption.clone();
+    let c_fill = fill_card.clone();
+    let c_show = show_at.clone();
+    let c_cancel = cancel_hide.clone();
+    click.connect_pressed(move |_g, _n, x, y| {
+        let label = {
+            let g = c_geom.borrow();
+            g.labels
+                .iter()
+                .find(|r| x >= r.0 && x <= r.0 + r.2 && y >= r.1 && y <= r.1 + r.3)
+                .map(|r| (r.4, r.5))
+        };
+        if let Some((yy, mm)) = label {
+            let next = {
+                let mut st = c_state.borrow_mut();
+                st.filter = if st.filter == Some((yy, mm)) { None } else { Some((yy, mm)) };
+                st.filter
+            };
+            apply_filter(next, &c_pill, &c_caption);
+            c_area.queue_draw();
+            return;
+        }
+        if let Some(i) = hit_bar(&c_geom.borrow(), x, y) {
+            c_state.borrow_mut().selected = Some(i);
+            c_area.queue_draw();
+            c_cancel();
+            c_fill(i);
+            c_show(i);
+        }
+    });
+    area.add_controller(click);
+
+    // The pill clears what the label set.
+    let p_state = state.clone();
+    let p_area = area.clone();
+    let p_pill = filter_pill.clone();
+    let p_caption = caption.clone();
+    filter_pill.connect_clicked(move |_| {
+        p_state.borrow_mut().filter = None;
+        apply_filter(None, &p_pill, &p_caption);
+        p_area.queue_draw();
+    });
+
+    // Keyboard: Left and Right walk the bars, Enter opens the card,
+    // Escape closes it (home-spec §6).
+    let keys = gtk::EventControllerKey::new();
+    let k_state = state.clone();
+    let k_area = area.clone();
+    let k_fill = fill_card.clone();
+    let k_show = show_at.clone();
+    let k_cancel = cancel_hide.clone();
+    let k_pop = popover.clone();
+    let book_len = books.len();
+    keys.connect_key_pressed(move |_c, key, _code, _mod| {
+        use gtk::gdk::Key;
+        match key {
+            Key::Right | Key::Down | Key::Left | Key::Up => {
+                let mut st = k_state.borrow_mut();
+                st.selected = Some(match (st.selected, key) {
+                    (Some(i), Key::Right) | (Some(i), Key::Down) => (i + 1).min(book_len - 1),
+                    (Some(i), _) => i.saturating_sub(1),
+                    (None, _) => 0,
+                });
+                drop(st);
+                k_area.queue_draw();
+                gtk::glib::Propagation::Stop
+            }
+            Key::Return | Key::KP_Enter => {
+                let sel = k_state.borrow().selected;
+                if let Some(i) = sel {
+                    k_cancel();
+                    k_fill(i);
+                    k_show(i);
+                }
+                gtk::glib::Propagation::Stop
+            }
+            Key::Escape => {
+                k_pop.popdown();
+                gtk::glib::Propagation::Stop
+            }
+            _ => gtk::glib::Propagation::Proceed,
+        }
+    });
+    area.add_controller(keys);
+
+    // CI's photograph of the hover card (B38): hold it open on one
+    // book, the way a resting pointer would.
+    if let Ok(i) = std::env::var("KALAM_SHELF_HOVER").map_err(|_| ())
+        .and_then(|v| v.parse::<usize>().map_err(|_| ()))
+    {
+        let h_state = state.clone();
+        let h_area = area.clone();
+        let h_fill = fill_card.clone();
+        let h_show = show_at.clone();
+        gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(400), move || {
+            h_state.borrow_mut().hover = Some(i);
+            h_area.queue_draw();
+            h_fill(i);
+            h_show(i);
+        });
+    }
 
     root
+}
+
+/// One Label-over-13px stat for the hover card (§61); returns the
+/// value label for the filler to write.
+fn stat_pair(host: &gtk::Box, name: &str) -> gtk::Label {
+    let col = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    let label = gtk::Label::new(Some(name));
+    label.add_css_class("kalam-shelf-stat-label");
+    label.set_halign(gtk::Align::Start);
+    col.append(&label);
+    let value = gtk::Label::new(None);
+    value.add_css_class("kalam-shelf-stat-value");
+    value.set_halign(gtk::Align::Start);
+    col.append(&value);
+    host.append(&col);
+    value
+}
+
+/// Which bar the pointer is over, if any.
+fn hit_bar(geom: &Geom, x: f64, y: f64) -> Option<usize> {
+    geom.bars.iter().position(|&(bx, by, len, thick)| {
+        len > 0.0 && x >= AXIS_X && x <= bx + len + 4.0 && y >= by - 2.0 && y <= by + thick + 2.0
+    })
+}
+
+/// The month-filter pill and the caption follow the filter
+/// (decision 193: the pill with a cross, the caption changes).
+fn apply_filter(f: Option<(i32, i32)>, pill: &gtk::Button, caption: &gtk::Label) {
+    match f {
+        Some((y, m)) => {
+            let name = MONTHS[(m - 1) as usize % 12];
+            pill.set_label(&format!("{name} '{} ×", y % 100));
+            pill.set_visible(true);
+            caption.set_text(&format!("Finished in {name} {y}."));
+        }
+        None => {
+            pill.set_visible(false);
+            caption.set_text("Finished books, newest at the bottom.");
+        }
+    }
+}
+
+fn round_rect(cr: &gtk::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
+    let r = r.min(w / 2.0).min(h / 2.0);
+    cr.move_to(x + r, y);
+    cr.line_to(x + w - r, y);
+    cr.arc(x + w - r, y + r, r, -std::f64::consts::FRAC_PI_2, 0.0);
+    cr.line_to(x + w, y + h - r);
+    cr.arc(x + w - r, y + h - r, r, 0.0, std::f64::consts::FRAC_PI_2);
+    cr.line_to(x + r, y + h);
+    cr.arc(x + r, y + h - r, r, std::f64::consts::FRAC_PI_2, std::f64::consts::PI);
+    cr.line_to(x, y + r);
+    cr.arc(x + r, y + r, r, std::f64::consts::PI, 3.0 * std::f64::consts::FRAC_PI_2);
+    cr.close_path();
 }
 
 fn readout_label() -> gtk::Label {
@@ -423,8 +810,11 @@ fn draw_fade(cr: &gtk::cairo::Context, width: i32, bg: &(f64, f64, f64)) {
 fn draw_ticks(
     cr: &gtk::cairo::Context,
     widget: &gtk::Widget,
+    dates: &[i64],
     view: &View<'_>,
     pal: &Palette,
+    geom: &mut Geom,
+    fx: &Fx,
 ) {
     let View { anchors, pan, zoom, height } = *view;
     let (dim, text) = (pal.dim, pal.text);
@@ -453,6 +843,8 @@ fn draw_ticks(
                 cr.set_source_rgba(text.0, text.1, text.2, 1.0);
                 pangocairo::functions::update_layout(cr, &layout);
                 pangocairo::functions::show_layout(cr, &layout);
+                // §61: Years adds a Meta "N books" under each year.
+                draw_year_count(cr, widget, dates, year, y, dim);
             }
         }
         Zoom::Months | Zoom::Weeks => {
@@ -470,12 +862,26 @@ fn draw_ticks(
                     cr.line_to(AXIS_X + 48.0, y);
                     cr.stroke().ok();
                     let name = MONTHS[(month - 1) as usize % 12];
+                    let filtered = fx.filter == Some((year, month));
                     let layout = widget.create_pango_layout(Some(name));
-                    set_font(&layout, "DM Sans", 11.0, false);
+                    set_font(&layout, "DM Sans", 11.0, filtered);
                     cr.move_to(AXIS_X + 56.0, y - 6.0);
-                    cr.set_source_rgba(dim.0, dim.1, dim.2, 1.0);
+                    if filtered {
+                        cr.set_source_rgba(pal.accent.0, pal.accent.1, pal.accent.2, 1.0);
+                    } else {
+                        cr.set_source_rgba(dim.0, dim.1, dim.2, 1.0);
+                    }
                     pangocairo::functions::update_layout(cr, &layout);
                     pangocairo::functions::show_layout(cr, &layout);
+                    let (lw, lh) = layout.size();
+                    geom.labels.push((
+                        AXIS_X + 52.0,
+                        y - 8.0,
+                        f64::from(lw) / gtk::pango::SCALE as f64 + 8.0,
+                        f64::from(lh) / gtk::pango::SCALE as f64 + 4.0,
+                        year,
+                        month,
+                    ));
                 }
                 month += 1;
                 if month > 12 {
@@ -518,41 +924,87 @@ fn draw_ticks(
     }
 }
 
+/// The Meta "N books" line under a Years label (§61).
+fn draw_year_count(
+    cr: &gtk::cairo::Context,
+    widget: &gtk::Widget,
+    dates: &[i64],
+    year: i32,
+    y: f64,
+    dim: Rgb,
+) {
+    let n = dates.iter().filter(|d| ymd(**d).0 == year).count();
+    let text = format!("{n} book{}", if n == 1 { "" } else { "s" });
+    let layout = widget.create_pango_layout(Some(&text));
+    set_font(&layout, "DM Sans", 11.0, false);
+    cr.move_to(AXIS_X + 56.0, y + 8.0);
+    cr.set_source_rgba(dim.0, dim.1, dim.2, 1.0);
+    pangocairo::functions::update_layout(cr, &layout);
+    pangocairo::functions::show_layout(cr, &layout);
+}
+
 fn draw_bars(
     cr: &gtk::cairo::Context,
     widget: &gtk::Widget,
     books: &[ShelfBook],
     dates: &[i64],
     view: &View<'_>,
+    geom: &mut Geom,
+    fx: &Fx,
 ) {
-    let View { anchors, pan, zoom, height } = *view;
-    for (book, day) in books.iter().zip(dates.iter()) {
-        let y = map_date(anchors, *day, pan);
-        if y < -30.0 || y > height as f64 + 30.0 {
+    for (i, (book, day)) in books.iter().zip(dates.iter()).enumerate() {
+        let y = map_date(view.anchors, *day, view.pan);
+        if y < -30.0 || y > view.height as f64 + 30.0 {
+            geom.bars.push((0.0, 0.0, 0.0, 0.0));
             continue;
         }
-        let (thick, len) = bar_metrics(zoom, book.pages);
+        let (thick, len) = bar_metrics(view.zoom, book.pages);
+        let lifted = fx.hover == Some(i) || fx.selected == Some(i);
+        let slide = if lifted { 14.0 } else { 0.0 };
+        let x = AXIS_X + 2.0 + slide;
         let top = y - thick / 2.0;
+        // A filtered month keeps its colour; the rest stand at a
+        // quarter strength (decision 193).
+        let (ym, mm, _) = ymd(*day);
+        let alpha = match fx.filter {
+            Some((fy, fm)) if (fy, fm) != (ym, mm) => 0.25,
+            _ => 1.0,
+        };
         let (r, g, b) = book.colour;
-        cr.set_source_rgba(r, g, b, 1.0);
-        rounded_bar(cr, AXIS_X + 2.0, top, len, thick);
+        cr.set_source_rgba(r, g, b, alpha);
+        rounded_bar(cr, x, top, len, thick);
         cr.fill().ok();
-        // The thin white band near each end (content, §61).
-        cr.set_source_rgba(1.0, 1.0, 1.0, 0.2);
-        cr.rectangle(AXIS_X + 2.0 + 8.0, top, 2.0, thick);
-        cr.rectangle(AXIS_X + 2.0 + len - 6.0, top, 2.0, thick);
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.2 * alpha);
+        cr.rectangle(x + 8.0, top, 2.0, thick);
+        cr.rectangle(x + len - 6.0, top, 2.0, thick);
         cr.fill().ok();
-        if zoom == Zoom::Weeks {
-            // The title inside the bar at 11px, ellipsised to the bar.
+        if lifted {
+            // The hairline leader at 40% text-2, from the slid bar's
+            // end toward the card (§61).
+            cr.set_line_width(1.0);
+            cr.set_source_rgba(0.45, 0.42, 0.40, 0.4);
+            cr.move_to(x + len + 4.0, y);
+            cr.line_to(x + len + 28.0, y);
+            cr.stroke().ok();
+        }
+        if fx.selected == Some(i) {
+            // The keyboard's ring: 2px accent at 2px offset (§7).
+            cr.set_line_width(2.0);
+            cr.set_source_rgba(0.78, 0.32, 0.16, 1.0);
+            cr.rectangle(x - 2.0, top - 2.0, len + 4.0, thick + 4.0);
+            cr.stroke().ok();
+        }
+        if view.zoom == Zoom::Weeks {
             let layout = widget.create_pango_layout(Some(book.title));
             set_font(&layout, "DM Sans", 11.0, false);
             layout.set_width(((len - 24.0).max(20.0) as i32) * gtk::pango::SCALE);
             layout.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            cr.move_to(AXIS_X + 14.0, top + thick / 2.0 - 6.0);
-            cr.set_source_rgba(1.0, 1.0, 1.0, 0.92);
+            cr.move_to(x + 12.0, top + thick / 2.0 - 6.0);
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.92 * alpha);
             pangocairo::functions::update_layout(cr, &layout);
             pangocairo::functions::show_layout(cr, &layout);
         }
+        geom.bars.push((x, top, len, thick));
     }
 }
 

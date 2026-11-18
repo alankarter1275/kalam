@@ -125,7 +125,7 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index ad522b6..3532cdc 100644
+index 9c627cc..0602fac 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
 @@ -50,10 +50,15 @@ pub fn order_books(books: &[ShelfBook], dates: &[i64], arrange: Arrange) -> Vec<
@@ -328,7 +328,7 @@ index ad522b6..3532cdc 100644
  ];
  
  /// Day number (unix days) of a date; the ruler's only clock.
-@@ -382,8 +523,7 @@ pub fn shelf_ruler(
+@@ -392,8 +533,7 @@ pub fn shelf_ruler(
              cr.set_source_rgba(pal.accent.0, pal.accent.1, pal.accent.2, 1.0);
              cr.arc(AXIS_X, y, 5.0, 0.0, std::f64::consts::TAU);
              cr.stroke().ok();
@@ -338,7 +338,7 @@ index ad522b6..3532cdc 100644
              set_font(&layout, "Playfair Display", 18.0, false);
              let (w, _) = layout.size();
              cr.move_to(
-@@ -397,7 +537,12 @@ pub fn shelf_ruler(
+@@ -407,7 +547,12 @@ pub fn shelf_ruler(
              return;
          }
  
@@ -352,7 +352,7 @@ index ad522b6..3532cdc 100644
          let mut geom = draw_geom.borrow_mut();
          geom.bars.clear();
          geom.labels.clear();
-@@ -452,11 +597,13 @@ pub fn shelf_ruler(
+@@ -462,11 +607,13 @@ pub fn shelf_ruler(
      // pill below keeps the original.
      let readout_label = readout_label();
      let scroll_label = readout_label.clone();
@@ -369,7 +369,7 @@ index ad522b6..3532cdc 100644
              let next = match st.zoom {
                  Zoom::Weeks if dy > 0.0 => Zoom::Months,
                  Zoom::Months if dy < 0.0 => Zoom::Weeks,
-@@ -573,8 +720,13 @@ pub fn shelf_ruler(
+@@ -583,8 +730,13 @@ pub fn shelf_ruler(
      popover.set_child(Some(&card_box));
  
      let fill_card: std::rc::Rc<dyn Fn(usize)> = {
@@ -385,7 +385,7 @@ index ad522b6..3532cdc 100644
          let (took_l, pages_l) = (took_l.clone(), pages_l.clone());
          let cc = cover_colour.clone();
          let cover = cover.clone();
-@@ -616,10 +768,7 @@ pub fn shelf_ruler(
+@@ -626,10 +778,7 @@ pub fn shelf_ruler(
              }
              let rect = {
                  let g = geom.borrow();
@@ -397,6 +397,6 @@ index ad522b6..3532cdc 100644
              };
              let Some((x, y, len, thick, _)) = rect else {
                  return;
-@@ -720,7 +869,11 @@ pub fn shelf_ruler(
+@@ -730,7 +879,11 @@ pub fn shelf_ruler(
 (truncated: 181 further diff lines not committed)
---- run 44303796520 ---
+--- run 44307086421 ---

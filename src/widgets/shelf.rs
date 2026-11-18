@@ -14,6 +14,65 @@ use gtk::prelude::*;
 // module does not otherwise name.
 use gtk::gdk;
 
+/// The Arrange by choices (decision 193). Date finished is the
+/// default and the only one that draws the ruler; the others stack
+/// the bars in their order, and Colour stacks them by hue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Arrange {
+    Date,
+    Colour,
+    Rating,
+    Length,
+    Author,
+}
+
+impl Arrange {
+    pub fn from_id(id: &str) -> Self {
+        match id {
+            "colour" => Self::Colour,
+            "rating" => Self::Rating,
+            "length" => Self::Length,
+            "author" => Self::Author,
+            _ => Self::Date,
+        }
+    }
+}
+
+/// The hue of a cover colour, for the rainbow stack.
+fn hue(c: (f64, f64, f64)) -> f64 {
+    let (r, g, b) = c;
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    if max - min < 1e-6 {
+        return 0.0;
+    }
+    let h = if max == r {
+        (g - b) / (max - min)
+    } else if max == g {
+        2.0 + (b - r) / (max - min)
+    } else {
+        4.0 + (r - g) / (max - min)
+    };
+    (h * 60.0 + 360.0) % 360.0
+}
+
+/// The top-to-bottom order of the books under an arrangement.
+pub fn order_books(books: &[ShelfBook], dates: &[i64], arrange: Arrange) -> Vec<usize> {
+    let mut idx: Vec<usize> = (0..books.len()).collect();
+    match arrange {
+        Arrange::Date => idx.sort_by_key(|i| dates[*i]),
+        Arrange::Colour => idx.sort_by(|a, b| {
+            hue(books[*a].colour).partial_cmp(&hue(books[*b].colour)).unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        Arrange::Rating => idx.sort_by(|a, b| {
+            books[*b].rating.partial_cmp(&books[*a].rating).unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        Arrange::Length => idx.sort_by_key(|i| std::cmp::Reverse(books[*i].pages)),
+        Arrange::Author => idx.sort_by_key(|i| books[*i].author),
+    }
+    idx
+}
+
 /// The three zooms (decision 191). Months is the default; there is
 /// no switch, only Ctrl+scroll.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,11 +269,13 @@ struct View<'a> {
 
 /// What the pointer, the keyboard and the month filter are doing to
 /// the drawing this frame.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Fx {
     hover: Option<usize>,
     selected: Option<usize>,
     filter: Option<(i32, i32)>,
+    /// Per book: dimmed to a quarter by the month filter (193).
+    dimmed: Vec<bool>,
 }
 
 struct ShelfState {
@@ -230,6 +291,7 @@ struct ShelfState {
     selected: Option<usize>,
     /// A month the shelf is filtered to (decision 193).
     filter: Option<(i32, i32)>,
+    arrange: Arrange,
     hide_grace: Option<gtk::glib::SourceId>,
 }
 
@@ -237,8 +299,8 @@ struct ShelfState {
 /// the keyboard can hit-test what the eye sees.
 #[derive(Default)]
 struct Geom {
-    /// x, y, width, thickness per book, in draw order.
-    bars: Vec<(f64, f64, f64, f64)>,
+    /// x, y, width, thickness and book index, in draw order.
+    bars: Vec<(f64, f64, f64, f64, usize)>,
     /// x, y, width, height, year, month per month label.
     labels: Vec<(f64, f64, f64, f64, i32, i32)>,
 }
@@ -251,7 +313,12 @@ pub fn shelf_ruler(
     empty: bool,
     theme: &crate::theme::Theme,
     filter_pill: &gtk::Button,
+    arrange: Arrange,
 ) -> gtk::Box {
+    // The filter is a date idea; other arrangements have no months
+    // to filter (decision 193).
+    let empty = empty || std::env::var_os("KALAM_SHELF_EMPTY").is_some();
+    let filter = if arrange == Arrange::Date { filter } else { None };
     let pal = Palette {
         accent: hex(theme.accent),
         dim: hex(theme.text_dim),
@@ -296,6 +363,7 @@ pub fn shelf_ruler(
         hover: None,
         selected: None,
         filter,
+        arrange,
         hide_grace: None,
     }));
     let geom = std::rc::Rc::new(std::cell::RefCell::new(Geom::default()));
@@ -342,11 +410,44 @@ pub fn shelf_ruler(
         let mut geom = draw_geom.borrow_mut();
         geom.bars.clear();
         geom.labels.clear();
-        let fx = Fx { hover: st.hover, selected: st.selected, filter: st.filter };
-        draw_ticks(cr, widget, &draw_dates, &view, &pal, &mut geom, &fx);
-        draw_bars(cr, widget, &draw_books, &draw_dates, &view, &mut geom, &fx);
-        draw_dots(cr, &draw_dates, &view, &pal);
-        draw_today(cr, widget, &view, &pal);
+        let dimmed: Vec<bool> = draw_dates
+            .iter()
+            .map(|d| match st.filter {
+                Some((fy, fm)) => {
+                    let (y, m, _) = ymd(*d);
+                    (y, m) != (fy, fm)
+                }
+                None => false,
+            })
+            .collect();
+        let fx = Fx {
+            hover: st.hover,
+            selected: st.selected,
+            filter: st.filter,
+            dimmed,
+        };
+        // The arrangement orders the bars top to bottom; only the
+        // date arrangement owns the ruler (decision 193).
+        let order = order_books(&draw_books, &draw_dates, st.arrange);
+        let dated = st.arrange == Arrange::Date;
+        let ys: Vec<f64> = (0..draw_books.len())
+            .map(|i| {
+                if dated {
+                    map_date(&anchors, draw_dates[i], pan)
+                } else {
+                    let rank = order.iter().position(|o| *o == i).unwrap_or(0);
+                    24.0 + rank as f64 * 20.0 - pan
+                }
+            })
+            .collect();
+        if dated {
+            draw_ticks(cr, widget, &draw_dates, &view, &pal, &mut geom, &fx);
+        }
+        draw_bars(cr, widget, &draw_books, &ys, &view, &mut geom, &fx);
+        if dated {
+            draw_dots(cr, &ys, &view, &pal);
+            draw_today(cr, widget, &view, &pal);
+        }
         draw_fade(cr, width, &pal.bg);
     });
 
@@ -518,9 +619,12 @@ pub fn shelf_ruler(
             }
             let rect = {
                 let g = geom.borrow();
-                g.bars.get(i).copied().filter(|r| r.2 > 0.0)
+                g.bars
+                    .iter()
+                    .copied()
+                    .find(|r| r.4 == i && r.2 > 0.0)
             };
-            let Some((x, y, len, thick)) = rect else {
+            let Some((x, y, len, thick, _)) = rect else {
                 return;
             };
             popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(
@@ -773,8 +877,9 @@ fn stat_pair(host: &gtk::Box, name: &str) -> gtk::Label {
 
 /// Which bar the pointer is over, if any.
 fn hit_bar(geom: &Geom, x: f64, y: f64) -> Option<usize> {
-    geom.bars.iter().position(|&(bx, by, len, thick)| {
-        len > 0.0 && x >= AXIS_X && x <= bx + len + 4.0 && y >= by - 2.0 && y <= by + thick + 2.0
+    geom.bars.iter().find_map(|&(bx, by, len, thick, i)| {
+        (len > 0.0 && x >= AXIS_X && x <= bx + len + 4.0 && y >= by - 2.0 && y <= by + thick + 2.0)
+            .then_some(i)
     })
 }
 
@@ -990,15 +1095,15 @@ fn draw_bars(
     cr: &gtk::cairo::Context,
     widget: &gtk::Widget,
     books: &[ShelfBook],
-    dates: &[i64],
+    ys: &[f64],
     view: &View<'_>,
     geom: &mut Geom,
     fx: &Fx,
 ) {
-    for (i, (book, day)) in books.iter().zip(dates.iter()).enumerate() {
-        let y = map_date(view.anchors, *day, view.pan);
+    for (i, book) in books.iter().enumerate() {
+        let y = ys[i];
         if y < -30.0 || y > view.height as f64 + 30.0 {
-            geom.bars.push((0.0, 0.0, 0.0, 0.0));
+            geom.bars.push((0.0, 0.0, 0.0, 0.0, i));
             continue;
         }
         let (thick, len) = bar_metrics(view.zoom, book.pages);
@@ -1008,11 +1113,7 @@ fn draw_bars(
         let top = y - thick / 2.0;
         // A filtered month keeps its colour; the rest stand at a
         // quarter strength (decision 193).
-        let (ym, mm, _) = ymd(*day);
-        let alpha = match fx.filter {
-            Some((fy, fm)) if (fy, fm) != (ym, mm) => 0.25,
-            _ => 1.0,
-        };
+        let alpha = if fx.dimmed[i] { 0.25 } else { 1.0 };
         let (r, g, b) = book.colour;
         cr.set_source_rgba(r, g, b, alpha);
         rounded_bar(cr, x, top, len, thick);
@@ -1047,7 +1148,7 @@ fn draw_bars(
             pangocairo::functions::update_layout(cr, &layout);
             pangocairo::functions::show_layout(cr, &layout);
         }
-        geom.bars.push((x, top, len, thick));
+        geom.bars.push((x, top, len, thick, i));
     }
 }
 
@@ -1063,19 +1164,12 @@ fn rounded_bar(cr: &gtk::cairo::Context, x: f64, y: f64, w: f64, h: f64) {
     cr.close_path();
 }
 
-fn draw_dots(
-    cr: &gtk::cairo::Context,
-    dates: &[i64],
-    view: &View<'_>,
-    pal: &Palette,
-) {
-    let View { anchors, pan, zoom, .. } = *view;
+fn draw_dots(cr: &gtk::cairo::Context, ys: &[f64], view: &View<'_>, pal: &Palette) {
     let accent = pal.accent;
-    let r = if zoom == Zoom::Years { 2.0 } else { 3.5 };
-    for day in dates {
-        let y = map_date(anchors, *day, pan);
+    let r = if view.zoom == Zoom::Years { 2.0 } else { 3.5 };
+    for y in ys {
         cr.set_source_rgba(accent.0, accent.1, accent.2, 1.0);
-        cr.arc(AXIS_X, y, r, 0.0, std::f64::consts::TAU);
+        cr.arc(AXIS_X, *y, r, 0.0, std::f64::consts::TAU);
         cr.fill().ok();
     }
 }
@@ -1188,6 +1282,31 @@ mod tests {
         let quiet = anchors.iter().find(|a| a.0 == 960).unwrap().1;
         let today_y = 340.0 - 18.0;
         assert!((quiet - (today_y - 40.0 * PX_PER_DAY)).abs() < 0.001);
+    }
+
+    /// The arrangements reorder without losing or doubling a book,
+    /// and the colour stack really runs round the wheel (193).
+    #[test]
+    fn arrangements_are_permutations() {
+        let books = showcase_shelf();
+        let dates: Vec<i64> = books.iter().map(|b| 1000 - b.days_ago).collect();
+        for arrange in [
+            Arrange::Date,
+            Arrange::Colour,
+            Arrange::Rating,
+            Arrange::Length,
+            Arrange::Author,
+        ] {
+            let mut order = order_books(&books, &dates, arrange);
+            order.sort_unstable();
+            let expect: Vec<usize> = (0..books.len()).collect();
+            assert_eq!(order, expect, "arrangement {arrange:?} lost a book");
+        }
+        let colour = order_books(&books, &dates, Arrange::Colour);
+        let hues: Vec<f64> = colour.iter().map(|i| hue(books[*i].colour)).collect();
+        let mut sorted = hues.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(hues, sorted, "the rainbow stack is not in hue order");
     }
 
     /// Today is at the bottom, and the map ends there (decision 191).

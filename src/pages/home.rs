@@ -203,6 +203,8 @@ const SHOWCASE_HISTORY: &[&str] = &[
 pub enum HomeOut {
     /// The cover click (§60): open the book's details page.
     Book { book_id: i64 },
+    /// The shelf's Arrange by dropdown chose a new order (193).
+    Arrange(usize),
     /// The play button (§60): resume in the reader at the saved position.
     /// No chapter rides along — `OpenReaderAt` with one *resets* the
     /// fraction inside the chapter, and resuming must not move the position
@@ -260,6 +262,9 @@ pub struct HomePageModel {
     current: usize,
     /// Kept so a pager click repaints without another worker run.
     cards: Vec<CardData>,
+    /// The shelf's Arrange by choice (decision 193); only the date
+    /// arrangement draws the ruler.
+    arrange: usize,
     /// The empty-library state card (§64) needs the difference between
     /// "nothing in progress" and "nothing at all".
     library_empty: bool,
@@ -406,9 +411,11 @@ impl Component for HomePageModel {
                         gtk::Box {
                             set_hexpand: true,
                         },
-                        gtk::Label {
-                            set_label: "Arrange by · Most recent",
-                            add_css_class: "kalam-chip",
+                        // R3: the Arrange by chip is a dropdown list
+                        // (§43, decision 193); init hangs it here.
+                        #[name = "arrange_host"]
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Horizontal,
                             set_valign: gtk::Align::Center,
                         },
                     },
@@ -480,6 +487,13 @@ impl Component for HomePageModel {
         let model = HomePageModel {
             service: LibraryService::new(catalog),
             importing: false,
+            arrange: match std::env::var("KALAM_SHELF_ARRANGE").as_deref() {
+                Ok("colour") => 1,
+                Ok("rating") => 2,
+                Ok("length") => 3,
+                Ok("author") => 4,
+                _ => 0,
+            },
             // The CI photograph lever for §64's four faces: open Home
             // in one state however full the library is, the way
             // KALAM_HOME_BOOK opens a chosen book (B36). A normal
@@ -582,6 +596,29 @@ impl Component for HomePageModel {
         // Updates, in `border` fill with 6px rounds. The first snapshot
         // replaces all three; the KALAM_HOME_STATE=loading lever never
         // asks, so a photograph can hold this face (B36).
+        // The Arrange by chip (§43's dropdown list, decision 193):
+        // five orders, of which only the first draws the ruler.
+        let arrange = widgets.arrange_host.clone();
+        let arrange_sender = sender.clone();
+        let dd = crate::widgets::dropdown::dropdown(
+            "Arrange the shelf by",
+            ["Date finished", "Colour", "Rating", "Length", "Author"]
+                .iter()
+                .map(|label| {
+                    crate::widgets::dropdown::DropdownOption::new(format!(
+                        "Arrange by · {label}"
+                    ))
+                })
+                .collect(),
+            model.arrange,
+            None,
+            move |idx| arrange_sender.input(HomeMsg::Arrange(idx)),
+            || {},
+        );
+        let dd_widget = dd.widget();
+        dd_widget.add_css_class("kalam-arrange");
+        arrange.append(&dd_widget);
+
         let updates_skeleton = gtk::Box::new(gtk::Orientation::Vertical, 0);
         updates_skeleton.add_css_class("kalam-skeleton");
         updates_skeleton.set_size_request(-1, 224);
@@ -758,6 +795,7 @@ impl Component for HomePageModel {
                     widgets,
                     self.library_empty || self.forced_state.as_deref() == Some("empty"),
                     &crate::theme::current(self.service.catalog()),
+                    self.arrange,
                 );
                 paint_right(
                     widgets,
@@ -778,6 +816,15 @@ impl Component for HomePageModel {
                     let host = widgets.card_host.clone();
                     focus_first_button(&host.upcast::<gtk::Widget>());
                 }
+            }
+            HomeMsg::Arrange(idx) => {
+                self.arrange = idx.min(4);
+                paint_below(
+                    widgets,
+                    self.library_empty || self.forced_state.as_deref() == Some("empty"),
+                    &crate::theme::current(self.service.catalog()),
+                    self.arrange,
+                );
             }
             HomeMsg::Switch(i) => {
                 if i < self.cards.len() {
@@ -957,6 +1004,7 @@ fn paint_below(
     widgets: &HomePageModelWidgets,
     library_empty: bool,
     theme: &crate::theme::Theme,
+    arrange: usize,
 ) {
     let shelf = &widgets.shelf_host;
     while let Some(child) = shelf.first_child() {
@@ -969,6 +1017,13 @@ fn paint_below(
         library_empty,
         theme,
         &widgets.shelf_filter_pill,
+        match arrange {
+            1 => crate::widgets::shelf::Arrange::Colour,
+            2 => crate::widgets::shelf::Arrange::Rating,
+            3 => crate::widgets::shelf::Arrange::Length,
+            4 => crate::widgets::shelf::Arrange::Author,
+            _ => crate::widgets::shelf::Arrange::Date,
+        },
     );
     ruler.set_vexpand(true);
     ruler.set_valign(gtk::Align::Start);

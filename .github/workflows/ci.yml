@@ -1213,6 +1213,21 @@ jobs:
           BOOKS=20 OUT=ci-shots-home-shelf-filter-light SETTLE=20 ROUTE=home \
             THEME=terracotta-light OUTPUT_W=1280 OUTPUT_H=800 \
             KALAM_SHELF_FILTER=2026-10 docs/ci/screenshot.sh
+      # The shelf's other arrangements: the rainbow stack by colour,
+      # and the empty face with its base line, Today ring and Quote
+      # line (decision 193, §64).
+      - name: open home with the shelf arranged by colour (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-home-shelf-colour-light SETTLE=20 ROUTE=home \
+            THEME=terracotta-light OUTPUT_W=1280 OUTPUT_H=800 \
+            KALAM_SHELF_ARRANGE=colour docs/ci/screenshot.sh
+      - name: open home with an empty shelf (light) and report
+        if: matrix.group == 'pages'
+        run: |
+          BOOKS=20 OUT=ci-shots-home-shelf-empty-light SETTLE=20 ROUTE=home \
+            THEME=terracotta-light OUTPUT_W=1280 OUTPUT_H=800 \
+            KALAM_SHELF_EMPTY=1 docs/ci/screenshot.sh
       # A focus ring to photograph: the empty face's first pill takes
       # the keyboard through KALAM_HOME_FOCUS, the way a Tab walk
       # would put it there (B37).
@@ -2594,6 +2609,10 @@ jobs:
             "$CILOG_DIR/home-shelf-filter-terracotta-light.png" 2>/dev/null || true
           cp ci-shots-home-shelf-kbd-light/03-home-settled.png \
             "$CILOG_DIR/home-shelf-kbd-terracotta-light.png" 2>/dev/null || true
+          cp ci-shots-home-shelf-colour-light/03-home-settled.png \
+            "$CILOG_DIR/home-shelf-colour-terracotta-light.png" 2>/dev/null || true
+          cp ci-shots-home-shelf-empty-light/03-home-settled.png \
+            "$CILOG_DIR/home-shelf-empty-terracotta-light.png" 2>/dev/null || true
           # And the keystroke probe's frame of Home after Ctrl+f: the same box
           # open, but opened by a real chord through a real compositor rather
           # than by a launch variable, which is the difference between a

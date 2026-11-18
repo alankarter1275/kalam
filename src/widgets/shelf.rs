@@ -765,6 +765,7 @@ pub fn shelf_ruler(
     let book_len = books.len();
     area.connect_realize(move |a| {
         let Some(root) = a.root() else { return };
+        let k_dates = k_dates.clone();
         let keys = gtk::EventControllerKey::new();
         let k_state = k_state.clone();
         let k_area = k_area.clone();

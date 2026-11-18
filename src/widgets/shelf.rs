@@ -30,8 +30,8 @@ pub struct ShelfBook {
     // `author` and `rating` wait for R2's hover card (B38); the
     // drawing itself needs neither, and clippy counts unread fields
     // in a binary crate.
-    #[allow(dead_code)]
     pub title: &'static str,
+    #[allow(dead_code)]
     pub author: &'static str,
     pub days_ago: i64,
     pub pages: i32,

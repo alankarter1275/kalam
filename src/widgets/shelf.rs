@@ -798,30 +798,6 @@ pub fn shelf_ruler(
         root.add_controller(keys);
     });
 
-    // The levers open their card only once the first draw has
-    // written bar geometry; a loaded runner can miss the first beat,
-    // so this waits and tries again (B38, kbd frame without a card).
-    let open_later: std::rc::Rc<dyn Fn(usize, u32)> = {
-        let geom = geom.clone();
-        let fill_card = fill_card.clone();
-        let show_at = show_at.clone();
-        std::rc::Rc::new(move |i, tries| {
-            let ready = {
-                let g = geom.borrow();
-                g.bars.iter().any(|r| r.4 == i && r.2 > 0.0)
-            };
-            if ready {
-                fill_card(i);
-                show_at(i);
-            } else if tries < 10 {
-                let again = open_later.clone();
-                gtk::glib::timeout_add_local_once(
-                    std::time::Duration::from_millis(200),
-                    move || again(i, tries + 1),
-                );
-            }
-        })
-    };
 
     // CI's photograph of the keyboard path (B38): the lever does
     // what three Downs and an Enter would -- select a bar and open
@@ -829,15 +805,19 @@ pub fn shelf_ruler(
     if std::env::var_os("KALAM_SHELF_KEYS").is_some() {
         let s_state = state.clone();
         let s_area = area.clone();
-        let s_open = open_later.clone();
+        let s_geom = geom.clone();
+        let s_fill = fill_card.clone();
+        let s_show = show_at.clone();
         area.connect_map(move |_| {
             let s_state = s_state.clone();
             let s_area = s_area.clone();
-            let s_open = s_open.clone();
+            let s_geom = s_geom.clone();
+            let s_fill = s_fill.clone();
+            let s_show = s_show.clone();
             gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
                 s_state.borrow_mut().selected = Some(3);
                 s_area.queue_draw();
-                s_open(3, 0);
+                open_later(&s_geom, &s_fill, &s_show, 3, 0);
             });
         });
     }
@@ -851,17 +831,21 @@ pub fn shelf_ruler(
     {
         let h_state = state.clone();
         let h_area = area.clone();
-        let h_open = open_later.clone();
+        let h_geom = geom.clone();
+        let h_fill = fill_card.clone();
+        let h_show = show_at.clone();
         area.connect_map(move |_| {
             // One beat after the first draw, so the bars exist and
             // the map cascade is over before the popover opens.
             let h_state = h_state.clone();
             let h_area = h_area.clone();
-            let h_open = h_open.clone();
+            let h_geom = h_geom.clone();
+            let h_fill = h_fill.clone();
+            let h_show = h_show.clone();
             gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
                 h_state.borrow_mut().hover = Some(i);
                 h_area.queue_draw();
-                h_open(i, 0);
+                open_later(&h_geom, &h_fill, &h_show, i, 0);
             });
         });
     }
@@ -883,6 +867,33 @@ fn stat_pair(host: &gtk::Box, name: &str) -> gtk::Label {
     col.append(&value);
     host.append(&col);
     value
+}
+
+/// Open a lever's card once the first draw has written bar geometry;
+/// a loaded runner can miss the first beat, so this waits and tries
+/// again (B38, the kbd frame that drew a ring but no card).
+fn open_later(
+    geom: &std::rc::Rc<std::cell::RefCell<Geom>>,
+    fill: &std::rc::Rc<dyn Fn(usize)>,
+    show: &std::rc::Rc<dyn Fn(usize)>,
+    i: usize,
+    tries: u32,
+) {
+    let ready = {
+        let g = geom.borrow();
+        g.bars.iter().any(|r| r.4 == i && r.2 > 0.0)
+    };
+    if ready {
+        fill(i);
+        show(i);
+    } else if tries < 10 {
+        let geom = geom.clone();
+        let fill = fill.clone();
+        let show = show.clone();
+        gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(200), move || {
+            open_later(&geom, &fill, &show, i, tries + 1);
+        });
+    }
 }
 
 /// Which bar the pointer is over, if any.

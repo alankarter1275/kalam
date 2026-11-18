@@ -125,7 +125,7 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index b9611d5..b4b635d 100644
+index 4b99597..c5ab41c 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
 @@ -50,10 +50,15 @@ pub fn order_books(books: &[ShelfBook], dates: &[i64], arrange: Arrange) -> Vec<
@@ -399,4 +399,4 @@ index b9611d5..b4b635d 100644
                  return;
 @@ -720,7 +869,11 @@ pub fn shelf_ruler(
 (truncated: 167 further diff lines not committed)
---- run 44297355024 ---
+--- run 44300207833 ---

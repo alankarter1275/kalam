@@ -127,7 +127,7 @@ index 5e523a3..180295a 100644
      // popover died mid-call under headless sway (home_box:before2 logged,
      // home_box:after2 never, the unflushed log buffer taking the line with
 diff --git a/src/widgets/shelf.rs b/src/widgets/shelf.rs
-index 918dd9b..ff86456 100644
+index 35e10f8..cc75e10 100644
 --- a/src/widgets/shelf.rs
 +++ b/src/widgets/shelf.rs
 @@ -41,20 +41,118 @@ pub struct ShelfBook {
@@ -291,7 +291,7 @@ index 918dd9b..ff86456 100644
 -            let layout =
 -                widget.create_pango_layout(Some("Your first finished book stands here."));
 +            let layout = widget.create_pango_layout(Some("Your first finished book stands here."));
-             set_font(layout, "Playfair Display", 18.0, false);
+             set_font(&layout, "Playfair Display", 18.0, false);
              let (w, _) = layout.size();
              cr.move_to(
 @@ -277,7 +384,16 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
@@ -312,10 +312,10 @@ index 918dd9b..ff86456 100644
          draw_dots(cr, &draw_dates, &anchors, pan, st.zoom, &accent);
          draw_today(cr, widget, &anchors, pan, height, &accent, &bg);
          draw_fade(cr, width, &bg);
-@@ -290,11 +406,13 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
-     let scroll_area = area.clone();
-     let scroll_dates = dates.clone();
-     let scroll_label = readout_label();
+@@ -293,11 +409,13 @@ pub fn shelf_ruler(empty: bool, theme: &crate::theme::Theme) -> gtk::Box {
+     // pill below keeps the original.
+     let readout_label = readout_label();
+     let scroll_label = readout_label.clone();
 -    let controller =
 -        gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
 +    let controller = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
@@ -329,7 +329,7 @@ index 918dd9b..ff86456 100644
              let next = match st.zoom {
                  Zoom::Weeks if dy > 0.0 => Zoom::Months,
                  Zoom::Months if dy < 0.0 => Zoom::Weeks,
-@@ -368,8 +486,7 @@ fn anchors_for(zoom: Zoom, dates: &[i64], today: i64, area_h: f64) -> Vec<(i64,
+@@ -371,8 +489,7 @@ fn anchors_for(zoom: Zoom, dates: &[i64], today: i64, area_h: f64) -> Vec<(i64,
  /// off charts.rs already uses (B38).
  fn hex(s: &str) -> (f64, f64, f64) {
      let bytes = s.trim_start_matches('#');
@@ -339,14 +339,14 @@ index 918dd9b..ff86456 100644
      (
          ((v >> 16) & 255) as f64 / 255.0,
          ((v >> 8) & 255) as f64 / 255.0,
-@@ -473,8 +590,7 @@ fn draw_ticks(
+@@ -476,8 +593,7 @@ fn draw_ticks(
                          cr.line_to(AXIS_X + len, y);
                          cr.stroke().ok();
                          if weekday == 0 {
 -                            let layout =
 -                                widget.create_pango_layout(Some(&dom.to_string()));
 +                            let layout = widget.create_pango_layout(Some(&dom.to_string()));
-                             set_font(layout, "DM Sans", 11.0, false);
+                             set_font(&layout, "DM Sans", 11.0, false);
                              cr.move_to(AXIS_X + 18.0, y - 6.0);
                              cr.set_source_rgba(dim.0, dim.1, dim.2, 0.8);
---- run 44260072070 ---
+--- run 44260577707 ---

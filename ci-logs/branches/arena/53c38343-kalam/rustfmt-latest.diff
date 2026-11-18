@@ -399,4 +399,4 @@ index ddc1388..9691287 100644
 -                st.filter = if st.filter == Some((yy, mm)) { None } else { Some((yy, mm)) };
 +                st.filter = if st.filter == Some((yy, mm)) {
 (truncated: 175 further diff lines not committed)
---- run 44282347065 ---
+--- run 44286709117 ---

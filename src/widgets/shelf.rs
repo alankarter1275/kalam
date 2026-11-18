@@ -868,15 +868,19 @@ fn stat_pair(host: &gtk::Box, name: &str) -> gtk::Label {
 /// first map, and connect_map never fires for a widget that mapped
 /// before the connection (B39, the ringless kbd frame).
 fn when_mapped(area: &gtk::DrawingArea, beat: std::rc::Rc<dyn Fn()>) {
-    let run = move || {
+    if area.is_mapped() {
+        let beat = beat.clone();
         gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
             beat();
         });
-    };
-    if area.is_mapped() {
-        run();
     } else {
-        area.connect_map(move |_| run());
+        area.connect_map(move |_| {
+            let beat = beat.clone();
+            gtk::glib::timeout_add_local_once(
+                std::time::Duration::from_millis(300),
+                move || beat(),
+            );
+        });
     }
 }
 

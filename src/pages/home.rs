@@ -818,6 +818,13 @@ impl Component for HomePageModel {
                 }
             }
             HomeMsg::Arrange(idx) => {
+                // The dropdown announces its initial selection while
+                // it is being built; repainting for it built a second
+                // ruler and split the photograph levers between the
+                // kept and the discarded one (B39).
+                if idx.min(4) == self.arrange {
+                    return;
+                }
                 self.arrange = idx.min(4);
                 paint_below(
                     widgets,

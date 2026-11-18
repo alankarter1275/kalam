@@ -363,17 +363,7 @@ pub fn shelf_ruler(
     let draw_dates = dates.clone();
     let draw_state = state.clone();
     let draw_geom = geom.clone();
-    let draw_count = std::rc::Rc::new(std::cell::Cell::new(0u32));
-    let draw_count2 = draw_count.clone();
-    let draw_state_ptr = std::rc::Rc::as_ptr(&draw_state) as usize;
-    let draw_geom_ptr = std::rc::Rc::as_ptr(&draw_geom) as usize;
-    eprintln!("ruler build: state_ptr={draw_state_ptr:#x} geom_ptr={draw_geom_ptr:#x}");
     area.set_draw_func(move |area, cr, width, height| {
-        let n = draw_count2.get();
-        if n < 2 {
-            eprintln!("draw #{n} running");
-            draw_count2.set(n + 1);
-        }
         let st = draw_state.borrow();
         let widget = area.upcast_ref::<gtk::Widget>();
         let anchors = anchors_for(st.zoom, &draw_dates, today, height as f64);
@@ -819,17 +809,12 @@ pub fn shelf_ruler(
     // what three Downs and an Enter would -- select a bar and open
     // its card -- because the harness sends no arrows of its own.
     if std::env::var_os("KALAM_SHELF_KEYS").is_some() {
-        eprintln!("kbd lever: env present, mapped={}", area.is_mapped());
         let s_state = state.clone();
         let s_area = area.clone();
         let s_geom = geom.clone();
         let s_fill = fill_card.clone();
         let s_show = show_at.clone();
         let beat: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || {
-            eprintln!(
-                "kbd lever: beat ran, state_ptr={:#x}",
-                std::rc::Rc::as_ptr(&s_state) as usize
-            );
             s_state.borrow_mut().selected = Some(3);
             s_area.queue_draw();
             open_later(&s_geom, &s_fill, &s_show, 3, 0);
@@ -883,7 +868,6 @@ fn stat_pair(host: &gtk::Box, name: &str) -> gtk::Label {
 /// first map, and connect_map never fires for a widget that mapped
 /// before the connection (B39, the ringless kbd frame).
 fn when_mapped(area: &gtk::DrawingArea, beat: std::rc::Rc<dyn Fn()>) {
-    eprintln!("lever when_mapped: mapped={}", area.is_mapped());
     if area.is_mapped() {
         let beat = beat.clone();
         gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
@@ -905,7 +889,6 @@ fn when_mapped(area: &gtk::DrawingArea, beat: std::rc::Rc<dyn Fn()>) {
 /// again (B38, the kbd frame that drew a ring but no card).
 fn open_later(
     geom: &std::rc::Rc<std::cell::RefCell<Geom>>,
-    // (traces removed after B39 diagnosis)
     fill: &std::rc::Rc<dyn Fn(usize)>,
     show: &std::rc::Rc<dyn Fn(usize)>,
     i: usize,
@@ -915,14 +898,6 @@ fn open_later(
         let g = geom.borrow();
         g.bars.iter().any(|r| r.4 == i && r.2 > 0.0)
     };
-    eprintln!(
-        "open_later: i={} tries={} ready={} bars={} geom_ptr={:#x}",
-        i,
-        tries,
-        ready,
-        geom.borrow().bars.len(),
-        std::rc::Rc::as_ptr(geom) as usize
-    );
     if ready {
         fill(i);
         show(i);

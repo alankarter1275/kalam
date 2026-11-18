@@ -8,7 +8,7 @@ seed-library: 20 books, 18 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.8192.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.10940.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -42,45 +42,45 @@ navigation: OK -- the images below are 'home'
 
 === timing lines from the app ===
   [timing] startup_fonts           2.7 ms
-  [timing] startup_gtk_init       46.3 ms
-  [timing] startup_splash_show      1.1 ms
+  [timing] startup_gtk_init       49.5 ms
+  [timing] startup_splash_show      1.6 ms
   [timing] icons_write             0.2 ms
-  [timing] icons_theme             0.0 ms
-  [timing] icons_init              0.2 ms
-  [timing] startup_splash_pump    120.5 ms
-  [timing] startup_libraries       0.4 ms
-  [timing] startup_db_open        11.0 ms
-  [timing] startup_theme          24.6 ms
-  [timing] pre_run               206.8 ms
-  [timing] route_open:home        26.6 ms
-  [timing] startup_first_page     26.6 ms
-  [timing] init_done             250.4 ms
-  [timing] window_shown          252.1 ms
+  [timing] icons_theme             0.1 ms
+  [timing] icons_init              0.3 ms
+  [timing] startup_splash_pump    123.6 ms
+  [timing] startup_libraries       0.3 ms
+  [timing] startup_db_open         8.9 ms
+  [timing] startup_theme          26.2 ms
+  [timing] pre_run               213.2 ms
+  [timing] route_open:home        29.2 ms
+  [timing] startup_first_page     29.2 ms
+  [timing] init_done             261.7 ms
+  [timing] window_shown          263.6 ms
   [timing] page_cache_miss           1
-  [timing] route_open:home         1.0 ms
-  [timing] home_focus:resting        1
-  [timing] home_focus:resting        1
+  [timing] route_open:home         1.6 ms
   [timing] render_backend     GskCairoRenderer
-  [timing] frame_after:startup_fonts    254.3 ms
-  [timing] frame_after:startup_gtk_init    208.0 ms
-  [timing] frame_after:startup_splash_show    206.8 ms
-  [timing] frame_after:icons_write    203.7 ms
-  [timing] frame_after:icons_theme    203.7 ms
-  [timing] frame_after:icons_init    203.7 ms
-  [timing] frame_after:startup_splash_pump     86.3 ms
-  [timing] frame_after:startup_libraries     85.8 ms
-  [timing] frame_after:startup_db_open     74.8 ms
-  [timing] frame_after:startup_theme     50.2 ms
-  [timing] frame_after:pre_run     50.2 ms
-  [timing] frame_after:route_open:home     23.1 ms
-  [timing] frame_after:startup_first_page     23.1 ms
-  [timing] frame_after:init_done      6.6 ms
-  [timing] frame_after:window_shown      4.9 ms
+  [timing] frame_after:startup_fonts    266.8 ms
+  [timing] frame_after:startup_gtk_init    217.3 ms
+  [timing] frame_after:startup_splash_show    215.6 ms
+  [timing] frame_after:icons_write    212.1 ms
+  [timing] frame_after:icons_theme    212.0 ms
+  [timing] frame_after:icons_init    212.0 ms
+  [timing] frame_after:startup_splash_pump     92.0 ms
+  [timing] frame_after:startup_libraries     91.7 ms
+  [timing] frame_after:startup_db_open     82.7 ms
+  [timing] frame_after:startup_theme     56.5 ms
+  [timing] frame_after:pre_run     56.5 ms
+  [timing] frame_after:route_open:home     26.5 ms
+  [timing] frame_after:startup_first_page     26.5 ms
+  [timing] frame_after:init_done      7.9 ms
+  [timing] frame_after:window_shown      6.1 ms
   [timing] frame_after:route_open:home      0.8 ms
+  [timing] home_focus:resting        1
+  [timing] home_focus:resting        1
   [timing] thumbs_backfilled        18
   [timing] thumbs_backfill_done       18
-  [timing] startup_dicts        1573.8 ms
-  [timing] frame_after:startup_dicts    409.3 ms
+  [timing] startup_dicts        1719.8 ms
+  [timing] frame_after:startup_dicts    261.0 ms
 
 === main-thread stalls (roadmap 7.1 watchdog) ===
   (none -- no UI-loop block over ~100 ms was detected)
@@ -99,26 +99,26 @@ navigation: OK -- the images below are 'home'
 
 === app stderr (non-timing lines) ===
   
-  (process:8248): Gtk-WARNING **: 03:47:59.545: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (process:10996): Gtk-WARNING **: 04:11:52.544: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_THEME=terracotta-light — applying terracotta-light for this run (not saved)
   kalam: KALAM_ROUTE=home — navigating
 
 === peak memory ===
-books=20 peak_rss_kb=248848 peak_rss_mb=243
+books=20 peak_rss_kb=260452 peak_rss_mb=254
 
 === shutting down ===
 
 === artifacts ===
   total 156
-  drwxr-xr-x  3 runner runner  4096 Nov 18 03:48 .
-  drwxr-xr-x 27 runner runner  4096 Nov 18 03:47 ..
-  -rw-r--r--  1 runner runner 37895 Nov 18 03:48 01-home.png
-  -rw-r--r--  1 runner runner 37895 Nov 18 03:48 02-home-settling.png
-  -rw-r--r--  1 runner runner 37895 Nov 18 03:48 03-home-settled.png
-  drwxr-xr-x  3 runner runner  4096 Nov 18 03:47 config-home
-  -rw-r--r--  1 runner runner     0 Nov 18 03:48 grim.log
-  -rw-r--r--  1 runner runner  2164 Nov 18 03:48 kalam.log
-  -rw-r--r--  1 runner runner  4667 Nov 18 03:48 report.txt
-  -rw-r--r--  1 runner runner    88 Nov 18 03:47 sway.log
-  -rw-r--r--  1 runner runner  7176 Nov 18 03:48 tree.json
---- run 44231237336 ---
+  drwxr-xr-x  3 runner runner  4096 Nov 18 04:11 .
+  drwxr-xr-x 27 runner runner  4096 Nov 18 04:11 ..
+  -rw-r--r--  1 runner runner 37895 Nov 18 04:11 01-home.png
+  -rw-r--r--  1 runner runner 37895 Nov 18 04:11 02-home-settling.png
+  -rw-r--r--  1 runner runner 37895 Nov 18 04:11 03-home-settled.png
+  drwxr-xr-x  3 runner runner  4096 Nov 18 04:11 config-home
+  -rw-r--r--  1 runner runner     0 Nov 18 04:11 grim.log
+  -rw-r--r--  1 runner runner  2165 Nov 18 04:11 kalam.log
+  -rw-r--r--  1 runner runner  4669 Nov 18 04:11 report.txt
+  -rw-r--r--  1 runner runner    88 Nov 18 04:11 sway.log
+  -rw-r--r--  1 runner runner  7177 Nov 18 04:11 tree.json
+--- run 44234064099 ---

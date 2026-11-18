@@ -318,7 +318,6 @@ pub fn shelf_ruler(
     // The filter is a date idea; other arrangements have no months
     // to filter (decision 193).
     let empty = empty || std::env::var_os("KALAM_SHELF_EMPTY").is_some();
-    let filter = if arrange == Arrange::Date { filter } else { None };
     let pal = Palette {
         accent: hex(theme.accent),
         dim: hex(theme.text_dim),
@@ -352,10 +351,14 @@ pub fn shelf_ruler(
             _ => Zoom::Months,
         }
     };
-    let filter = std::env::var("KALAM_SHELF_FILTER").ok().and_then(|v| {
-        let (y, m) = v.split_once('-')?;
-        Some((y.parse::<i32>().ok()?, m.parse::<i32>().ok()?))
-    });
+    let filter = if arrange == Arrange::Date {
+        std::env::var("KALAM_SHELF_FILTER").ok().and_then(|v| {
+            let (y, m) = v.split_once('-')?;
+            Some((y.parse::<i32>().ok()?, m.parse::<i32>().ok()?))
+        })
+    } else {
+        None
+    };
     let state = std::rc::Rc::new(std::cell::RefCell::new(ShelfState {
         zoom,
         pan: 0.0,

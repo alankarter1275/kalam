@@ -203,8 +203,6 @@ const SHOWCASE_HISTORY: &[&str] = &[
 pub enum HomeOut {
     /// The cover click (§60): open the book's details page.
     Book { book_id: i64 },
-    /// The shelf's Arrange by dropdown chose a new order (193).
-    Arrange(usize),
     /// The play button (§60): resume in the reader at the saved position.
     /// No chapter rides along — `OpenReaderAt` with one *resets* the
     /// fraction inside the chapter, and resuming must not move the position
@@ -216,6 +214,8 @@ pub enum HomeOut {
 
 #[derive(Debug)]
 pub enum HomeMsg {
+    /// The shelf's Arrange by dropdown chose a new order (193).
+    Arrange(usize),
     AddBooks,
     FilesChosen(Vec<PathBuf>),
     /// The whole import finished.

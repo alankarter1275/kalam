@@ -941,6 +941,15 @@ fn paint_right(
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
+    // The host shrinks to its children and stands at the column's
+    // end for the book and its pager; the narrower nothing-in-
+    // progress card centres in the column instead, so the host
+    // centres with it (B36).
+    host.set_halign(if face == Some("none") {
+        gtk::Align::Center
+    } else {
+        gtk::Align::End
+    });
 
     if face == Some("loading") {
         let skeleton = gtk::Box::new(gtk::Orientation::Vertical, 0);
